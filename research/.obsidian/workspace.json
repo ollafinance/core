@@ -14,12 +14,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "development/phase-development-analysis.md",
+                "file": "core/liquid-staking-mechanics.md",
                 "mode": "preview",
                 "source": true
               },
               "icon": "lucide-file",
-              "title": "phase-development-analysis"
+              "title": "liquid-staking-mechanics"
             }
           }
         ]
@@ -112,7 +112,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "development/phase-development-analysis.md",
+                "file": "core/liquid-staking-mechanics.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -122,7 +122,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for phase-development-analysis"
+              "title": "Backlinks for liquid-staking-mechanics"
             }
           },
           {
@@ -131,12 +131,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "development/phase-development-analysis.md",
+                "file": "core/liquid-staking-mechanics.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from phase-development-analysis"
+              "title": "Outgoing links from liquid-staking-mechanics"
             }
           },
           {
@@ -160,13 +160,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "development/phase-development-analysis.md",
+                "file": "core/liquid-staking-mechanics.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of phase-development-analysis"
+              "title": "Outline of liquid-staking-mechanics"
             }
           }
         ]
@@ -189,27 +189,27 @@
   },
   "active": "639246189f32e41f",
   "lastOpenFiles": [
-    "core/oAztec-token-design.md",
-    "core/liquid-staking-mechanics.md",
     "technical/technical-architecture.md",
-    "technical/oracle-design.md",
-    "development/phase-development-analysis.md",
-    "governance/dao-governance.md",
-    "governance/emergency-procedures.md",
-    "technical/technical-architecture.md~",
-    "integrations/defi-integrations.md",
-    "standards/ERC-20.md",
-    "standards/ERC-2612.md",
-    "standards/ERC-721.md",
+    "core/liquid-staking-mechanics.md",
     "todo.md",
+    "core/oAztec-token-design.md",
+    "technical/oracle-design.md",
     "standards/OpenZeppelin-Governor.md",
     "standards/ERC20Votes.md",
     "standards/ERC-7540.md",
+    "standards/ERC-2612.md",
     "standards/ERC-1271.md",
+    "standards/ERC-721.md",
+    "standards/ERC-20.md",
+    "operations/node-operator-framework.md",
+    "integrations/defi-integrations.md",
+    "governance/dao-governance.md",
+    "development/phase-development-analysis.md",
+    "governance/emergency-procedures.md",
+    "technical/technical-architecture.md~",
     "erc-standards-analysis.md",
     "emergency-procedures.md",
     "operations/risk-assessment.md",
-    "operations/node-operator-framework.md",
     "integrations",
     "development",
     "operations",

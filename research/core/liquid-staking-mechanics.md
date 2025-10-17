@@ -17,16 +17,20 @@ The staking pool serves as an automated intermediary between users and Aztec val
 ### Key Components
 
 #### RewardsCollector
-- Handles periodic reward collection from validators
-- Updates exchange rates based on accumulated rewards
-- Manages automatic compounding to maximize yield
-- Links to: [[oracle-design|PerformanceOracle]] for validator performance data
+- **Function**: Handles periodic reward collection from validators and updates exchange rates
+- **Mechanism**: Automatically compounds rewards by reinvesting them into the pool
+- **Integration**: Links to PerformanceOracle for validator performance data
+- **Updates**: Triggers exchange rate recalculation when rewards are collected
+- **Frequency**: Configurable collection intervals (e.g., daily, weekly)
+- **Gas Optimization**: Batches multiple validator reward collections into single transaction
 
 #### Withdrawal Buffer
-- Maintains liquid Aztec reserves for immediate withdrawals
-- Prevents need to unstake from validators for small withdrawals
-- Managed through queue logic for larger redemptions
-- Related to: [[risk-assessment|withdrawal risk management]]
+- **Purpose**: Maintains liquid Aztec reserves for immediate withdrawals
+- **Management**: Queue logic handles larger redemptions that require unstaking
+- **Target**: Maintains minimum buffer size to handle 95%+ of withdrawal requests instantly
+- **Integration**: Works with ERC-7540 async redemption system
+- **Dynamic Sizing**: Buffer size adjusts based on historical withdrawal patterns
+- **Related to**: [[risk-assessment|withdrawal risk management]]
 
 #### Fee Structure
 - Protocol fees taken from staking rewards

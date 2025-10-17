@@ -65,7 +65,7 @@ graph TB
 
 ### Liquid Staking Pool (Core Contract)
 
-**Role**: Central hub for all staking operations
+**Role**: Central hub for all staking operations - implements ERC-7540 vault standard
 
 ```solidity
 contract LiquidStakingPool is ERC7540, AccessControl, Pausable {
@@ -75,16 +75,21 @@ contract LiquidStakingPool is ERC7540, AccessControl, Pausable {
     uint256 public exchangeRate;         // Current oAztec/Aztec rate
     
     // Contract dependencies
-    IOAztecToken public oAztecToken;      // Liquid staking token
-    IDelegationRouter public delegationRouter;  // Validator delegation
-    IRewardsCollector public rewardsCollector;  // Reward management
+    IOAztecToken public oAztecToken;      // ERC-20 liquid staking token
+    IDelegationRouter public delegationRouter;  // Multi-operator delegation
+    IRewardsCollector public rewardsCollector;  // Reward collection and compounding
     IWithdrawalBuffer public withdrawalBuffer;  // Liquidity management
+    IPerformanceOracle public performanceOracle; // Validator performance data
     
     // Core functions
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
     function withdraw(uint256 assets, address receiver, address owner) external returns (uint256 shares);
     function requestWithdraw(uint256 assets, address receiver) external returns (uint256 requestId);
     function claimWithdraw(address receiver) external returns (uint256 assets);
+    
+    // ERC-7540 async operations
+    function requestDeposit(uint256 assets, address receiver) external returns (uint256 requestId);
+    function claimDeposit(address receiver) external returns (uint256 shares);
 }
 ```
 
@@ -248,6 +253,8 @@ contract PerformanceOracle is AccessControl {
 
 ### Multi-Operator Delegation System
 
+**Purpose**: Manages delegation across multiple validator operators with performance-based allocation
+
 ```solidity
 contract DelegationRouter is AccessControl {
     struct DelegationTarget {
@@ -255,6 +262,7 @@ contract DelegationRouter is AccessControl {
         uint256 currentStake;      // Currently delegated amount
         uint256 targetStake;       // Desired delegation amount
         uint256 lastRebalance;     // Last rebalancing timestamp
+        uint256 performanceScore;  // Cached performance score
     }
     
     mapping(address => DelegationTarget) public delegations;
@@ -263,37 +271,63 @@ contract DelegationRouter is AccessControl {
     IOperatorRegistry public operatorRegistry;
     IPerformanceOracle public performanceOracle;
     
+    // Rebalancing parameters
+    uint256 public rebalanceThreshold = 5e16; // 5% threshold for rebalancing
+    uint256 public maxRebalanceAmount = 1e18; // 100% max rebalance per operation
+    
     function calculateOptimalAllocation() public view returns (uint256[] memory) {
         uint256[] memory weights = new uint256[](activeOperators.length);
+        uint256 totalWeight = 0;
         
         for (uint i = 0; i < activeOperators.length; i++) {
             address operator = activeOperators[i];
             
-            // Get performance score
+            // Get performance score (0-1e18)
             uint256 performance = performanceOracle.getPerformanceScore(operator);
             
-            // Get available capacity
+            // Get available capacity (remaining stake capacity)
             uint256 capacity = operatorRegistry.getAvailableCapacity(operator);
             
-            // Calculate weight based on performance and capacity
-            weights[i] = performance * capacity / 1e18;
+            // Get operator commission rate
+            uint256 commission = operatorRegistry.getCommission(operator);
+            
+            // Calculate weight: performance * capacity * (1 - commission)
+            uint256 weight = performance * capacity * (1e18 - commission) / 1e36;
+            weights[i] = weight;
+            totalWeight += weight;
         }
         
-        return normalizeWeights(weights);
+        // Normalize weights to sum to 1e18
+        for (uint i = 0; i < weights.length; i++) {
+            weights[i] = weights[i] * 1e18 / totalWeight;
+        }
+        
+        return weights;
     }
     
     function rebalance() external onlyRole(REBALANCER_ROLE) {
         uint256[] memory targetAllocations = calculateOptimalAllocation();
+        uint256 totalStake = getTotalDelegatedStake();
         
         // Execute stake movements
         for (uint i = 0; i < activeOperators.length; i++) {
             address operator = activeOperators[i];
             uint256 currentStake = delegations[operator].currentStake;
-            uint256 targetStake = targetAllocations[i];
+            uint256 targetStake = targetAllocations[i] * totalStake / 1e18;
             
-            if (targetStake != currentStake) {
-                executeStakeMovement(operator, currentStake, targetStake);
+            if (targetStake > currentStake) {
+                // Increase delegation
+                uint256 increaseAmount = targetStake - currentStake;
+                _delegateToOperator(operator, increaseAmount);
+            } else if (currentStake > targetStake) {
+                // Decrease delegation
+                uint256 decreaseAmount = currentStake - targetStake;
+                _undelegateFromOperator(operator, decreaseAmount);
             }
+            
+            // Update delegation target
+            delegations[operator].targetStake = targetStake;
+            delegations[operator].lastRebalance = block.timestamp;
         }
     }
 }

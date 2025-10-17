@@ -1,15 +1,31 @@
 # oAztec Token Design
 
 ## Overview
-oAztec is the liquid representation of staked Aztec tokens - a yield-bearing, transferable token that maintains full DeFi composability while earning staking rewards.
+oAztec is the liquid representation of staked Aztec tokens - a yield-bearing, transferable ERC-20 token that maintains full DeFi composability while earning staking rewards. The token represents shares in an ERC-7540 vault that holds the underlying Aztec tokens.
 
 ## Token Mechanics
 
 ### Core Properties
-- **Non-Rebasing**: Share-based model where token value increases over time
+- **ERC-20 Standard**: Standard token interface for oAztec shares
+- **Non-Rebasing**: Share-based model where token value increases over time via exchange rate
 - **Yield-Bearing**: Automatically accrues staking rewards without user action
 - **Transferable**: Full liquidity and DeFi composability maintained
 - **Redeemable**: Can always be exchanged back for underlying Aztec tokens
+- **Vault Integration**: Minted/burned by ERC-7540 vault as users deposit/withdraw
+
+### Token Architecture
+
+#### Relationship with ERC-7540 Vault
+- **oAztec Token**: ERC-20 token representing shares in the liquid staking pool
+- **ERC-7540 Vault**: The underlying vault contract that holds Aztec tokens and implements async deposit/redemption
+- **Rate Adapter**: Interface for external protocols to read oAztec exchange rates
+- **Minting/Burning**: oAztec tokens are minted when users deposit Aztec, burned when they withdraw
+
+#### Exchange Rate Mechanism
+- **Initial Rate**: 1 AZTEC = 1 oAZTEC at protocol launch
+- **Appreciation**: As rewards compound, 1 oAZTEC represents >1 AZTEC
+- **Formula**: `exchangeRate = (totalAztecInPool + accumulatedRewards) / totalOAztecSupply`
+- **Updates**: Rate recalculated when RewardsCollector processes validator rewards
 
 ### Value Accrual Model
 ```mermaid

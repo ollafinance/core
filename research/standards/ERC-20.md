@@ -1,7 +1,7 @@
 # ERC-20: Token Standard
 
 ## Overview
-The foundational token standard used for oAztec, providing the basic interface for transferable tokens while implementing yield-bearing semantics for liquid staking.
+The foundational token standard used for oAztec, providing the basic interface for transferable tokens while implementing yield-bearing semantics for liquid staking. oAztec is an ERC-20 token that represents shares in an ERC-7540 vault containing the underlying Aztec tokens.
 
 ## Status
 **Implementation**: Required for [[../core/oAztec-token-design|oAztec token]]  
