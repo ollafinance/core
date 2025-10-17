@@ -34,34 +34,56 @@ gantt
     Full Decentralization   :p3-4, after p3-2, 30d
 ```
 
-## Phase 0 - MVP (No Token)
+## Phase 0 - MVP (No oAZTEC Token)
 
 ### Goals
 - **Primary**: Prove end-to-end staking mechanics work reliably
 - **Secondary**: Establish basic operational procedures and monitoring
 - **Validation**: Demonstrate stable rewards flow and clean withdrawals
 
+### Token Architecture
+- **No oAZTEC Token**: Phase 0 operates without the liquid staking token
+- **AZTEC Tokens Present**: Native AZTEC tokens are still staked and earn rewards
+- **Internal Accounting**: User positions tracked via internal ledger system
+- **Reward Distribution**: Staking rewards from validators flow back to users proportionally
+
 ### Technical Scope
 
 #### Core Contracts
 ```solidity
-// Simplified vault without ERC-20 token
+// Simplified vault without oAZTEC ERC-20 token
+// Handles AZTEC token deposits and staking rewards
 contract MinimalVault {
+    IERC20 public immutable aztecToken;               // AZTEC token contract
     mapping(address => uint256) public userShares;    // Internal ledger
     mapping(address => uint256) public pendingWithdrawals;
     
     uint256 public totalShares;
-    uint256 public totalAssets;
+    uint256 public totalAssets;                       // Total AZTEC tokens staked
+    uint256 public accumulatedRewards;                // Rewards from staking
     address public internalOperator;                  // Single operator
     
-    function deposit() external payable {
-        uint256 shares = calculateShares(msg.value);
+    constructor(address _aztecToken, address _operator) {
+        aztecToken = IERC20(_aztecToken);
+        internalOperator = _operator;
+    }
+    
+    function deposit(uint256 amount) external {
+        require(amount > 0, "Invalid amount");
+        
+        // Transfer AZTEC tokens from user to vault
+        aztecToken.transferFrom(msg.sender, address(this), amount);
+        
+        uint256 shares = calculateShares(amount);
         userShares[msg.sender] += shares;
         totalShares += shares;
-        totalAssets += msg.value;
+        totalAssets += amount;
         
-        // Delegate to internal operator
-        delegateToOperator(internalOperator, msg.value);
+        // Delegate AZTEC tokens to internal operator for staking
+        aztecToken.transfer(internalOperator, amount);
+        delegateToOperator(internalOperator, amount);
+        
+        emit Deposited(msg.sender, amount, shares);
     }
     
     function withdraw(uint256 shares) external {
@@ -74,13 +96,43 @@ contract MinimalVault {
         // Try immediate withdrawal from buffer
         if (withdrawalBuffer >= assets) {
             withdrawalBuffer -= assets;
-            payable(msg.sender).transfer(assets);
+            aztecToken.transfer(msg.sender, assets);
         } else {
             // Queue for later processing
             pendingWithdrawals[msg.sender] += assets;
             requestUnstaking(assets);
         }
+        
+        emit Withdrawn(msg.sender, assets, shares);
     }
+    
+    // Process staking rewards (called by internal operator)
+    function processRewards(uint256 newRewards) external {
+        require(msg.sender == internalOperator, "Not operator");
+        accumulatedRewards += newRewards;
+        totalAssets += newRewards;
+        // Rewards automatically increase share value for all users
+        emit RewardsProcessed(newRewards);
+    }
+    
+    // Calculate shares based on current exchange rate
+    function calculateShares(uint256 assets) public view returns (uint256) {
+        if (totalShares == 0) {
+            return assets; // 1:1 ratio for first deposit
+        }
+        return (assets * totalShares) / totalAssets;
+    }
+    
+    // Calculate assets from shares
+    function calculateAssets(uint256 shares) public view returns (uint256) {
+        if (totalShares == 0) return 0;
+        return (shares * totalAssets) / totalShares;
+    }
+    
+    // Events
+    event Deposited(address indexed user, uint256 assets, uint256 shares);
+    event Withdrawn(address indexed user, uint256 assets, uint256 shares);
+    event RewardsProcessed(uint256 rewards);
 }
 ```
 
@@ -139,7 +191,7 @@ contract GuardianPause {
 ```typescript
 interface MVP_UI {
   // Core operations
-  deposit(amount: string): Promise<TransactionResult>;
+  deposit(amount: string): Promise<TransactionResult>;  // Deposits AZTEC tokens
   withdraw(shares: string): Promise<TransactionResult>;
   
   // Balance information  
@@ -149,14 +201,27 @@ interface MVP_UI {
   // Simple analytics
   getTotalPoolValue(): Promise<string>;
   getRewardsEarned(): Promise<string>;
+  
+  // AZTEC token operations
+  approveAztec(amount: string): Promise<TransactionResult>;
+  getAztecBalance(): Promise<string>;
 }
 
 interface UserBalance {
   shares: string;           // User's share balance
-  underlyingValue: string;  // Current Aztec value
+  underlyingValue: string;  // Current AZTEC value
   pendingWithdrawals: string; // Queued withdrawals
 }
 ```
+
+#### Token Structure in Phase 0
+- **No oAZTEC Token**: Phase 0 does not mint any ERC-20 tokens
+- **Native AZTEC Only**: Users interact directly with native AZTEC tokens
+- **Token Approval Required**: Users must approve the vault to spend their AZTEC tokens
+- **Internal Shares**: User positions represented as internal share balances
+- **Reward Accrual**: Staking rewards increase the value of user shares proportionally
+- **No Transferability**: Users cannot transfer or trade their staking positions
+- **Direct Redemption**: Users can only withdraw their AZTEC tokens directly
 
 #### Analytics (Events + Subgraph)
 - **Event Tracking**: All deposits, withdrawals, and reward distributions

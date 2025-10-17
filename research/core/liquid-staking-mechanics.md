@@ -95,9 +95,12 @@ graph TD
 ## Development Phases
 
 ### Phase 0 - MVP
-- Basic vault with internal ledger
-- Single internal operator
-- Simple deposit/withdraw (no ERC-20 token yet)
+- **No oAZTEC Token**: Phase 0 operates without the liquid staking ERC-20 token
+- **AZTEC Token Staking**: Native AZTEC tokens are deposited and staked with validators
+- **Internal Accounting**: User positions tracked via internal ledger system
+- **Single Internal Operator**: Protocol team runs the initial validator
+- **Reward Distribution**: Staking rewards from validators flow back to users proportionally
+- **Simple UI**: Basic deposit/withdraw interface without token transfers
 - Related: [[phase-development-analysis|Development Roadmap]]
 
 ### Phase 1 - Multi-Operator

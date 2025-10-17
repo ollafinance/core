@@ -161,10 +161,13 @@ interface IRateAdapter {
 
 ## Development Roadmap
 
-### Phase 0 - MVP (No Token)
-- Internal accounting without ERC-20 token
-- Proof of staking mechanics
-- Basic deposit/withdraw UI
+### Phase 0 - MVP (No oAZTEC Token)
+- **No ERC-20 Token**: Phase 0 operates without the oAZTEC liquid staking token
+- **Native AZTEC Staking**: Users deposit native AZTEC tokens directly
+- **Internal Ledger**: User positions tracked via internal accounting system
+- **Reward Distribution**: Staking rewards from validators distributed proportionally
+- **No Liquidity**: Users cannot transfer or trade their staking positions
+- **Proof of Concept**: Validates core staking mechanics before tokenization
 
 ### Phase 1 - Multi-Operator
 - Enhanced risk management
