@@ -1,4 +1,6 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Aztlan Labs
+
 pragma solidity >=0.8.0 <0.9.0;
 
 import "@oz/token/ERC20/IERC20.sol";

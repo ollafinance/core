@@ -1,7 +1,7 @@
 [profile.default]
 src = 'src'
 out = 'out'
-libs = ['lib', 'node_modules']
+libs = ["dependencies"]
 fs_permissions = [{ access = "read-write", path = "./"}]
 
 
@@ -42,6 +42,11 @@ tab_width = 4
 quote_style = "double"
 bracket_spacing = true
 int_types = "long"
+
+[dependencies]
+"@openzeppelin-contracts" = "5.5.0-rc.1"
+forge-std = "1.11.0"
+aztec-contracts = { version = "2.0.3", git = "git@github.com:AztecProtocol/l1-contracts.git", rev = "f05c11121e3b86fe2664c7c2e651ac93fc8f3915" }
 
 
 

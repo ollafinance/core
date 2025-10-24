@@ -1,8 +1,10 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Aztlan Labs
+
 pragma solidity ^0.8.19;
 
-import "forge-std/Script.sol";
-import "forge-std/Vm.sol";
+import "@forge-std/Script.sol";
+import "@forge-std/Vm.sol";
 // import "solidity-bytes-utils/BytesLib.sol"; // Commented out as dependency not installed
 
 /**

@@ -1,7 +1,9 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Aztlan Labs
+
 pragma solidity ^0.8.19;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test, console} from "@forge-std/Test.sol";
 import {MinimalVault} from "../src/MinimalVault.sol";
 import {StakingStub} from "../src/StakingStub.sol";
 import {testAZTEC} from "../src/testAZTEC.sol";
