@@ -46,7 +46,7 @@ int_types = "long"
 [dependencies]
 "@openzeppelin-contracts" = "5.5.0-rc.1"
 forge-std = "1.11.0"
-aztec-contracts = { version = "2.0.3", git = "git@github.com:AztecProtocol/l1-contracts.git", rev = "f05c11121e3b86fe2664c7c2e651ac93fc8f3915" }
+aztec-contracts = { version = "2.1.4", git = "git@github.com:AztecProtocol/l1-contracts.git", rev = "f0b17231361e40b6802e927fda98b8d5f84c1c24" }
 
 
 
