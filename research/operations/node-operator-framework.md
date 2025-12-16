@@ -1,7 +1,7 @@
 # Node Operator Framework
 
 ## Overview
-Node operators are the backbone of Olla's staking infrastructure, running validator nodes that secure the Aztec network and generate staking rewards. The framework ensures decentralization, performance, and accountability.
+Node operators are the backbone of Olla's staking infrastructure, running validator nodes that secure the Aztec network and generate staking rewards. The framework ensures decentralization, performance, and accountability. **V1 uses a single trusted staking provider managed via `StakingManager`; the multi-operator content below is forward-looking for V2.**
 
 ## Operator Lifecycle
 
@@ -288,7 +288,7 @@ struct OperatorReputation {
 - **Network Diversity**: Multiple ISPs and hosting providers
 - **Operational Diversity**: Different operational practices and procedures
 
-## Development Phases
+## Development Phases (post-V1 roadmap)
 
 ### Phase 0 - Internal Operations
 - **Single Operator**: Protocol team runs initial validator

@@ -4,8 +4,8 @@
 OpenZeppelin Governor is a comprehensive governance framework that provides modular, secure, and flexible on-chain governance capabilities. It works seamlessly with ERC20Votes tokens to enable decentralized protocol management.
 
 ## Status
-**Implementation**: Required for Phase 3 governance  
-**Priority**: Critical - Core DAO infrastructure  
+**Implementation**: Post-V1 (governance scope)  
+**Priority**: Critical once governance goes live  
 **Base**: Modular governance system with multiple extensions
 
 ## Core Architecture
@@ -564,22 +564,10 @@ contract GovernorTest {
 }
 ```
 
-## Development Phases
-
-### Phase 2 - Infrastructure  
-- Deploy TimelockController with initial parameters
-- Set up governance roles and permissions
-- Prepare governance token distribution
-
-### Phase 3 - Governance Launch
-- Deploy OllaGovernor with full functionality
-- Transfer protocol control to governance
-- Launch with conservative parameters
-
-### Post-Launch Evolution
-- Optimize governance parameters based on participation
-- Implement advanced voting mechanisms
-- Cross-protocol governance integration
+## Delivery alignment (post-V1)
+- Prepare TimelockController, roles, and governance token distribution for governance go-live.
+- Deploy OllaGovernor and transfer control only after audits and conservative parameter setup.
+- Evolve with parameter tuning, advanced voting mechanisms, and cross-protocol integration after launch.
 
 ---
 

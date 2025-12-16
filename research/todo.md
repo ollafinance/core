@@ -7,7 +7,7 @@ Research plan for Olla - the liquid staking protocol for Aztec network. This doc
 
 ### Core Protocol Research
 - [ ] **Liquid Staking Mechanics** - Deep dive into staking pool operations #liquid-staking #protocol-mechanics
-- [ ] **oAztec Token Design** - Analysis of the liquid staking token #tokenomics #erc-standards
+- [ ] **stAztec Token Design** - Analysis of the liquid staking token #tokenomics #erc-standards
 - [ ] **Validator Delegation Strategy** - How delegation router works #validator-management #delegation
 - [ ] **Reward Distribution System** - Compounding and reward tracking mechanisms #rewards #compounding
 
@@ -35,10 +35,10 @@ Research plan for Olla - the liquid staking protocol for Aztec network. This doc
 ## Architecture Clarifications
 
 ### Token Architecture
-- **oAztec Token**: ERC-20 token representing shares in the liquid staking pool
+- **stAztec Token**: ERC-20 token representing shares in the liquid staking pool
 - **ERC-7540 Vault**: The underlying vault contract that holds Aztec tokens and implements async deposit/redemption
-- **Rate Adapter**: Interface for external protocols to read oAztec exchange rates
-- **Relationship**: oAztec tokens are minted/burned by the ERC-7540 vault as users deposit/withdraw
+- **Rate Adapter**: Interface for external protocols to read stAztec exchange rates
+- **Relationship**: stAztec tokens are minted/burned by the ERC-7540 vault as users deposit/withdraw
 
 ### Core Components Technical Details
 
@@ -68,8 +68,8 @@ Research plan for Olla - the liquid staking protocol for Aztec network. This doc
 
 ### ERC Standards Implementation
 
-#### ERC-20 (oAztec Token)
-- **Purpose**: Standard token interface for oAztec shares
+#### ERC-20 (stAztec Token)
+- **Purpose**: Standard token interface for stAztec shares
 - **Implementation**: Non-rebasing shares where value increases via exchange rate
 - **DeFi Integration**: Enables standard DeFi protocol interactions
 
@@ -109,7 +109,7 @@ Research plan for Olla - the liquid staking protocol for Aztec network. This doc
 
 #### Core Protocol Research
 - **Liquid Staking Mechanics** - Core protocol operations and flow #liquid-staking #protocol-mechanics
-- **oAztec Token Design** - Liquid staking token architecture #tokenomics #erc-standards
+- **stAztec Token Design** - Liquid staking token architecture #tokenomics #erc-standards
 - **Validator Delegation Strategy** - DelegationRouter and operator management #validator-management #delegation
 - **Reward Distribution System** - RewardsCollector and compounding mechanics #rewards #compounding
 
@@ -148,7 +148,7 @@ All research areas identified in the original plan have been thoroughly analyzed
 ## Recent Updates
 
 ### Technical Clarifications Added (2025-01-27)
-- **Token Architecture**: Clarified relationship between oAztec (ERC-20) and ERC-7540 vault
+- **Token Architecture**: Clarified relationship between stAztec (ERC-20) and ERC-7540 vault
 - **Component Details**: Added technical details for RewardsCollector, WithdrawalBuffer, DelegationRouter, PerformanceOracle
 - **ERC Standards**: Enhanced technical implementation details for ERC-20, ERC-1271, ERC-7540
 - **Architecture**: Improved DelegationRouter with performance-based allocation algorithm

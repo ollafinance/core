@@ -1,7 +1,7 @@
 # DeFi Integration Components
 
 ## Overview
-Analysis of DeFi protocol components that can integrate with oAztec, focusing on technical characteristics and integration patterns rather than opportunities.
+Analysis of DeFi protocol components that can integrate with stAztec, focusing on technical characteristics and integration patterns rather than opportunities.
 
 ## Core Integration Components
 
@@ -16,7 +16,7 @@ interface IRateAdapter {
 ```
 
 **Characteristics:**
-- Real-time exchange rate between oAztec and underlying Aztec
+- Real-time exchange rate between stAztec and underlying Aztec
 - Bi-directional conversion functions for accurate pricing
 - Timestamp tracking for data freshness validation
 - Standard interface for external protocol integration
@@ -30,9 +30,9 @@ interface IRateAdapter {
 ## DEX Integration Patterns
 
 ### AMM Pool Structures
-- **oAztec/Aztec Pairs**: Direct pairs with underlying asset
-- **oAztec/Stablecoin Pairs**: USD-denominated trading pairs
-- **oAztec/ETH Pairs**: Base trading pairs for broader liquidity
+- **stAztec/Aztec Pairs**: Direct pairs with underlying asset
+- **stAztec/Stablecoin Pairs**: USD-denominated trading pairs
+- **stAztec/ETH Pairs**: Base trading pairs for broader liquidity
 
 ### Price Discovery Mechanisms
 - **Arbitrage-driven**: Price maintained through arbitrage between pool and intrinsic value
@@ -56,22 +56,22 @@ interface ICollateralAdapter {
 - Minimum collateral amounts for gas-efficient liquidations
 
 ### Lending Market Characteristics
-- **Supply Side**: oAztec holders can lend tokens for additional yield
-- **Borrow Side**: Users can borrow against oAztec collateral
+- **Supply Side**: stAztec holders can lend tokens for additional yield
+- **Borrow Side**: Users can borrow against stAztec collateral
 - **Interest Rate Models**: Utilization-based rates considering staking yield
 
 ## Yield Strategy Components
 
 ### Liquidity Mining Integration
-- **LP Token Rewards**: Additional tokens for providing oAztec liquidity
+- **LP Token Rewards**: Additional tokens for providing stAztec liquidity
 - **Dual Yield**: Staking rewards + liquidity mining rewards
-- **Impermanent Loss**: Risk from oAztec/other asset ratio changes
+- **Impermanent Loss**: Risk from stAztec/other asset ratio changes
 
 ### Vault Strategy Patterns
 ```solidity
 interface IYieldVault {
-    function deposit(uint256 oAztecAmount) external returns (uint256 shares);
-    function withdraw(uint256 shares) external returns (uint256 oAztecAmount);
+    function deposit(uint256 stAztecAmount) external returns (uint256 shares);
+    function withdraw(uint256 shares) external returns (uint256 stAztecAmount);
     function totalAssets() external view returns (uint256);
     function convertToShares(uint256 assets) external view returns (uint256);
 }
@@ -85,12 +85,12 @@ interface IYieldVault {
 ## Derivatives and Advanced Products
 
 ### Options Market Components
-- **Strike Price**: Based on oAztec/Aztec rate predictions
-- **Underlying Asset**: oAztec shares as underlying
-- **Settlement**: Physical delivery of oAztec tokens
+- **Strike Price**: Based on stAztec/Aztec rate predictions
+- **Underlying Asset**: stAztec shares as underlying
+- **Settlement**: Physical delivery of stAztec tokens
 
 ### Futures Market Structure
-- **Contract Specification**: Standardized oAztec delivery amounts
+- **Contract Specification**: Standardized stAztec delivery amounts
 - **Margin Requirements**: Collateral based on price volatility
 - **Cash Settlement**: Settlement in Aztec or stablecoin equivalent
 
@@ -117,15 +117,15 @@ contract LiquidityGuard {
 
 ## Protocol Integration Categories
 
-### Immediate Integration (Phase 2)
+### Near-Term Integration (post V1 launch)
 - **Standard DEX Pools**: Basic AMM pairs using ERC-20 interface
 - **Simple Lending**: Basic collateral and lending functionality
 - **Rate Oracle Access**: External protocols reading exchange rates
 
-### Advanced Integration (Phase 3+)
+### Advanced Integration (future phases)
 - **Yield Optimization Vaults**: Automated strategy management
-- **Derivatives Markets**: Options and futures on oAztec
-- **Cross-protocol Governance**: oAztec voting in multiple protocols
+- **Derivatives Markets**: Options and futures on stAztec
+- **Cross-protocol Governance**: stAztec voting in multiple protocols
 
 ### Technical Requirements
 - **Rate Adapter Integration**: All protocols need rate conversion capability
@@ -137,7 +137,7 @@ contract LiquidityGuard {
 **Tags:** #defi-integration #rate-adapter #amm #lending #yield-strategies #derivatives
 
 **Related Components:**
-- [[../core/oAztec-token-design]] - Token mechanics and properties
+- [[../core/stAztec-token-design]] - Token mechanics and properties
 - [[../standards/ERC-20]] - Base token integration patterns
 - [[../standards/ERC-7540]] - Async operations handling
 - [[../technical/oracle-design]] - Rate adapter architecture

@@ -165,6 +165,7 @@ graph LR
 ```
 
 ## Development Phases
+**Note:** V1 ships without DAO governance; the phases below are post-V1 planning.
 
 ### Phase 0 - DAO-Lite
 - **Multisig Control**: Initial parameter management
@@ -201,8 +202,8 @@ graph LR
 - **Yield Boosts**: Enhanced staking rewards for governors
 
 ### Tokenomics Integration
-- **Dual Token Model**: Governance token separate from [[oAztec-token-design|oAztec utility token]]
-- **Cross-Benefits**: Governance token holders may receive oAztec rewards
+- **Dual Token Model**: Governance token separate from [[stAztec-token-design|stAztec utility token]]
+- **Cross-Benefits**: Governance token holders may receive stAztec rewards
 - **Synergy**: Aligned incentives between token holders and stakers
 
 ---

@@ -1,7 +1,7 @@
 # Risk Assessment
 
 ## Overview
-Comprehensive risk analysis for the Olla liquid staking protocol, identifying potential threats, their impact, and mitigation strategies across all system components.
+Comprehensive risk analysis for the Olla liquid staking protocol, identifying potential threats, their impact, and mitigation strategies across all system components. This document should be read alongside the V1 architecture (`research/technical/architecture/`) which assumes a single validator and no on-chain oracle contract; multi-operator/oracle items in this file are future-looking unless noted otherwise.
 
 ## Risk Framework
 
@@ -213,7 +213,7 @@ graph LR
 #### Risk Factors
 - **Validator Unbonding**: Long unstaking periods limit immediate liquidity
 - **Market Panic**: Coordinated exit events overwhelming withdrawal buffers
-- **Secondary Market**: Insufficient DEX liquidity for [[oAztec-token-design|oAztec trading]]
+- **Secondary Market**: Insufficient DEX liquidity for [[stAztec-token-design|stAztec trading]]
 - **Seasonal Patterns**: Predictable high-demand periods
 
 #### Mitigation Strategies
@@ -224,7 +224,7 @@ graph LR
 
 ### Depeg Risk  
 **Risk Level**: Medium
-**Impact**: oAztec trading below intrinsic value
+**Impact**: stAztec trading below intrinsic value
 
 #### Depeg Causes
 - **Liquidity Constraints**: Insufficient withdrawal buffers
@@ -297,7 +297,7 @@ contract GovernanceGuard {
 **Impact**: Legal challenges, restricted access
 
 #### Regulatory Concerns
-- **Securities Classification**: oAztec potentially classified as security
+- **Securities Classification**: stAztec potentially classified as security
 - **AML/KYC Requirements**: Know-your-customer obligations
 - **Staking Regulations**: Evolving legal framework for liquid staking
 - **Cross-Border Issues**: Different regulations across jurisdictions
@@ -413,6 +413,6 @@ graph TD
 - [[oracle-design]] - Oracle-specific risk analysis  
 - [[dao-governance]] - Governance and parameter risks
 - [[emergency-procedures]] - Crisis response and recovery
-- [[oAztec-token-design]] - Token-specific risks
+- [[stAztec-token-design]] - Token-specific risks
 
 **Last Updated:** 2025-10-15

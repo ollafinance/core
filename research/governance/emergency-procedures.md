@@ -129,7 +129,7 @@ Level_1_Response:
 - Single operator slashing event
 - Oracle consensus failure
 - Withdrawal buffer depletion
-- Significant oAztec depeg (>5%)
+- Significant stAztec depeg (>5%)
 
 **Response Actions:**
 ```solidity
@@ -226,11 +226,11 @@ contract ProtocolShutdown {
         require(shutdownInitiated, "Not in shutdown");
         require(!userExited[user], "Already processed");
         
-        uint256 userShares = oAztecToken.balanceOf(user);
+        uint256 userShares = stAztecToken.balanceOf(user);
         uint256 userAssets = convertToAssetsAtShutdown(userShares);
         
         // Burn shares and return assets
-        oAztecToken.burn(user, userShares);
+        stAztecToken.burn(user, userShares);
         payable(user).transfer(userAssets);
         
         userExited[user] = true;

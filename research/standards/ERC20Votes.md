@@ -4,8 +4,8 @@
 ERC20Votes extends ERC-20 tokens with voting functionality, enabling token holders to participate in governance through direct voting or delegation to trusted representatives. Essential for decentralized governance systems.
 
 ## Status
-**Implementation**: Required for Phase 3 governance  
-**Priority**: High - Core governance infrastructure  
+**Implementation**: Post-V1 (governance scope)  
+**Priority**: High once governance is introduced  
 **Base**: Extension of ERC-20 with checkpoint system
 
 ## Interface Definition
@@ -218,19 +218,19 @@ function _checkpointsLookup(Checkpoint[] storage ckpts, uint256 blockNumber)
 ### Dual Token Model
 ```solidity
 contract OllaEcosystem {
-    IOAztecToken public oAztec;        // Utility token (liquid staking)
+    IStAztecToken public stAztec;        // Utility token (liquid staking)
     IOllaGovernance public ollaToken;  // Governance token
     
     // Cross-token benefits
-    mapping(address => bool) public oAztecHolders;
+    mapping(address => bool) public stAztecHolders;
     mapping(address => uint256) public governanceBonus;
     
-    function updateOAztecStatus(address user) external {
-        bool hasOAztec = oAztec.balanceOf(user) > 0;
-        oAztecHolders[user] = hasOAztec;
+    function updateStAztecStatus(address user) external {
+        bool hasStAztec = stAztec.balanceOf(user) > 0;
+        stAztecHolders[user] = hasStAztec;
         
-        if (hasOAztec) {
-            // oAztec holders get governance voting bonus
+        if (hasStAztec) {
+            // stAztec holders get governance voting bonus
             governanceBonus[user] = calculateGovernanceBonus(user);
         }
     }
@@ -456,22 +456,9 @@ contract ERC20VotesTest {
 }
 ```
 
-## Development Phases
+## Delivery alignment (post-V1)
 
-### Phase 2 - Preparation
-- Design governance token distribution strategy
-- Implement ERC20Votes contract with security features
-- Develop delegation infrastructure
-
-### Phase 3 - Governance Launch
-- Deploy governance token with controlled distribution
-- Launch delegation system with expert network
-- Integrate with OpenZeppelin Governor
-
-### Post-Launch Enhancements
-- Advanced delegation strategies (liquid, partial)
-- Governance rewards and incentive systems
-- Cross-protocol governance integration
+Design governance token distribution and implement ERC20Votes when governance is introduced. Launch delegation system and integrate with OpenZeppelin Governor at governance go-live. Post-launch: advanced delegation strategies, incentives, cross-protocol governance integration.
 
 ---
 
