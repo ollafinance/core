@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a reproducible problem with the contracts or tooling
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is the issue?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Why this matters and who is affected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal, reproducible sequence
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: Git commit hash or tag
+    validations:
+      required: false
+  - type: input
+    id: tooling
+    attributes:
+      label: Tooling versions
+      description: Foundry/solc/solhint/slither versions
+      placeholder: "forge 0.x, solc 0.x, solhint 0.x, slither 0.x"
+    validations:
+      required: false
+  - type: input
+    id: network
+    attributes:
+      label: Network
+      description: Network and chain id if applicable
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+    validations:
+      required: false
