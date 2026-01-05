@@ -4,14 +4,14 @@
 pragma solidity ^0.8.19;
 
 import {Test, console} from "@forge-std/Test.sol";
-import {MinimalVault} from "../src/MinimalVault.sol";
-import {StakingStub} from "../src/StakingStub.sol";
-import {testAZTEC} from "../src/testAZTEC.sol";
+import {MinimalVault} from "../src/core/MinimalVault.sol";
+import {StakingStub} from "../src/mocks/StakingStub.sol";
+import {TestAZTEC} from "../src/mocks/TestAZTEC.sol";
 
 contract IntegratedStakingTest is Test {
     MinimalVault public vault;
     StakingStub public stakingStub;
-    testAZTEC public aztecToken;
+    TestAZTEC public aztecToken;
 
     address public user = address(0x1);
     address public operator = address(0x2);
@@ -22,7 +22,7 @@ contract IntegratedStakingTest is Test {
 
     function setUp() public {
         // Deploy contracts
-        aztecToken = new testAZTEC();
+        aztecToken = new TestAZTEC();
         stakingStub = new StakingStub(address(aztecToken), operator);
         vault = new MinimalVault(address(aztecToken), operator, guardian);
 

@@ -4,18 +4,18 @@
 pragma solidity ^0.8.19;
 
 import {Test, console} from "@forge-std/Test.sol";
-import "../src/StakingStub.sol";
-import "../src/testAZTEC.sol";
+import "../src/mocks/StakingStub.sol";
+import "../src/mocks/TestAZTEC.sol";
 
 contract StakingStubTest is Test {
     StakingStub public stakingStub;
-    testAZTEC public aztecToken;
+    TestAZTEC public aztecToken;
 
     address public user = address(0x123);
     address public operator = address(0x456);
 
     function setUp() public {
-        aztecToken = new testAZTEC();
+        aztecToken = new TestAZTEC();
         stakingStub = new StakingStub(address(aztecToken), address(this));
 
         // Mint tokens to user
