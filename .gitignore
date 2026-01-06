@@ -1,0 +1,17 @@
+.DS_Store
+.env
+.env.*
+*.log
+*.swp
+*.swo
+__pycache__/
+.venv/
+
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/coverage/
+contracts/gas-report/
+contracts/node_modules/
+contracts/.gas-snapshot
+contracts/.forge-snapshots/

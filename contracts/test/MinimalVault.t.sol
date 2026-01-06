@@ -4,14 +4,14 @@
 pragma solidity ^0.8.19;
 
 import {Test, console} from "@forge-std/Test.sol";
-import {MinimalVault} from "../src/MinimalVault.sol";
-import {GuardianPause} from "../src/GuardianPause.sol";
-import {testAZTEC} from "../src/testAZTEC.sol";
+import {MinimalVault} from "../src/core/MinimalVault.sol";
+import {GuardianPause} from "../src/modules/GuardianPause.sol";
+import {TestAZTEC} from "../src/mocks/TestAZTEC.sol";
 
 contract MinimalVaultTest is Test {
     MinimalVault public vault;
     GuardianPause public guardianPause;
-    testAZTEC public aztecToken;
+    TestAZTEC public aztecToken;
 
     address public user1 = address(0x1);
     address public user2 = address(0x2);
@@ -22,7 +22,7 @@ contract MinimalVaultTest is Test {
 
     function setUp() public {
         // Deploy contracts
-        aztecToken = new testAZTEC();
+        aztecToken = new TestAZTEC();
         guardianPause = new GuardianPause(guardian);
         vault = new MinimalVault(address(aztecToken), operator, guardian);
 
