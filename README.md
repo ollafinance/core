@@ -1,14 +1,66 @@
-# Olla
+# Olla Core
 
-*Pronounced O-Ya*
+Olla Core is the Ethereum smart contract layer for the Olla liquid staking protocol on Aztec.
+This repository pairs a research vault with a Foundry-based contract workspace, and is structured
+to grow into an open-source, auditable codebase.
 
-The Liquid staking protocol for Aztec network
+## Repository layout
 
-## Overview
+- `contracts/` Foundry project for the core contracts.
+- `contracts/src/core/` Protocol core contracts.
+- `contracts/src/modules/` Reusable modules (pause/roles/etc).
+- `contracts/src/interfaces/` External-facing interfaces.
+- `contracts/src/libraries/` Shared libraries.
+- `contracts/src/mocks/` Test/mocked contracts and fixtures.
+- `contracts/script/` Foundry scripts.
+- `contracts/test/` Foundry tests.
+- `research/` Protocol research and design notes (Obsidian vault).
 
-This repo will initially contain research and code for building a PoC.
+Key research index:
+- `research/technical/technical-architecture.md`
 
-Research is structured as an Obsidian Vault: <https://obsidian.md/>
+## Tooling
 
-Key docs:
-- `research/technical/technical-architecture.md` — index for all Olla V1 architecture materials under `research/technical/architecture/`.
+- Solidity + Foundry for development and testing
+- Solhint for Solidity linting
+- Slither + Slytherin for static analysis
+
+## Quickstart
+
+From the repo root:
+
+```bash
+cd contracts
+forge install
+forge build
+forge test
+```
+
+## Linting
+
+```bash
+cd contracts
+solhint "src/**/*.sol"
+```
+
+## Static analysis
+
+```bash
+cd contracts
+slither . --config-file slither.config.json
+```
+
+For Slytherin, install the plugin and run:
+
+```bash
+cd contracts
+slytherin .
+```
+
+## Contributing
+
+See `CONTRIBUTING.md`.
+
+## License
+
+Apache-2.0. See `LICENSE`.
