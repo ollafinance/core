@@ -9,7 +9,7 @@ evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 match_path = "test/**/*.t.sol"
-fs_permissions = [{ access = "read-write", path = "./"}]
+fs_permissions = [{ access = "read-write", path = "./" }]
 
 
 [rpc_endpoints]
@@ -42,7 +42,6 @@ polygonMumbai = { key = "${ETHERSCAN_API_KEY}" }
 sepolia = { key = "${ETHERSCAN_API_KEY}" }
 
 
-
 [fmt]
 line_length = 120
 tab_width = 4
@@ -53,9 +52,6 @@ int_types = "long"
 [dependencies]
 "@openzeppelin-contracts" = "5.5.0-rc.1"
 forge-std = "1.11.0"
-aztec-contracts = { version = "2.1.4", git = "git@github.com:AztecProtocol/l1-contracts.git", rev = "f0b17231361e40b6802e927fda98b8d5f84c1c24" }
-
-
 
 
 # See more config options https://book.getfoundry.sh/reference/config/overview
