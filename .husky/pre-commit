@@ -4,4 +4,4 @@
 echo "Running forge fmt before commit..."
 (cd contracts && forge fmt)
 echo "Running solhint before commit..."
-yarn -s lint:sol
+yarn lint:sol
