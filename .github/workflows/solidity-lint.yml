@@ -18,7 +18,7 @@ jobs:
       - name: Check for Solidity files
         id: sol-files
         run: |
-          if find contracts/src contracts/test contracts/script -type f -name "*.sol" -print -quit | grep -q .; then
+          if find src test script -type f -name "*.sol" -print -quit | grep -q .; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
