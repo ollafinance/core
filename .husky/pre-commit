@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# echo "Running forge fmt before commit..."
-# (cd contracts && forge fmt)
-# echo "Running solhint before commit..."
-# yarn -s lint:sol
+echo "Running forge fmt before commit..."
+(cd contracts && forge fmt)
+echo "Running solhint before commit..."
+yarn -s lint:sol
