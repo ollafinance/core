@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Setup solc
-        uses: crytic/setup-solc@v1
+        uses: ethereum/setup-solc@v1
         with:
           version: 0.8.19
       - name: Install Slither and Slytherin
