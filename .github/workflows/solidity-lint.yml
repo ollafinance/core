@@ -34,5 +34,5 @@ jobs:
         run: yarn install --immutable
         working-directory: .
       - name: Run solhint
-        run: yarn -s lint:sol
+        run: yarn lint
         working-directory: .

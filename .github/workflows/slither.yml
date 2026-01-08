@@ -19,12 +19,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Setup solc
-        uses: ethereum/setup-solc@v1
-        with:
-          version: 0.8.19
-      - name: Install Slither and Slytherin
-        run: pip install slither-analyzer slytherin
+      - name: Install Slither, Slytherin, and solc-select
+        run: pip install slither-analyzer slytherin solc-select
+      - name: Install solc
+        run: |
+          solc-select install 0.8.24
+          solc-select use 0.8.24
       - name: Run Slither
         run: slither . --config-file slither.config.json
       - name: Run Slytherin
