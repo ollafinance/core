@@ -49,6 +49,12 @@ To enforce linting on every commit, install dependencies to enable Husky hooks:
 yarn install
 ```
 
+If hooks still don't fire, run:
+
+```bash
+yarn husky install
+```
+
 ## Static analysis
 
 ```bash

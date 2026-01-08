@@ -1,8 +1,7 @@
 {
   "extends": "solhint:recommended",
   "rules": {
-    "private-vars-no-leading-underscore": "error",
-    "func-param-name-leading-underscore": "error",
+    "private-vars-leading-underscore": "error",
     "no-global-import": "error",
     "interface-starts-with-i": "error",
     "immutable-vars-naming": [
@@ -35,7 +34,6 @@
     "named-parameters-mapping": "warn",
     "gas-struct-packing": "warn",
     "no-empty-blocks": "warn",
-    "private-func-leading-underscore": "warn",
     "max-line-length": [
       "warn",
       120
