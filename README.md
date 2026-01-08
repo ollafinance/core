@@ -39,8 +39,14 @@ forge test
 ## Linting
 
 ```bash
-cd contracts
-solhint "src/**/*.sol"
+yarn install
+yarn lint:sol
+```
+
+To enforce linting on every commit, install dependencies to enable Husky hooks:
+
+```bash
+yarn install
 ```
 
 ## Static analysis
