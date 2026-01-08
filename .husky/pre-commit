@@ -1,7 +1,11 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-echo "Running forge fmt before commit..."
-(cd contracts && forge fmt)
-echo "Running solhint before commit..."
-yarn lint:fix
+if find contracts/src contracts/test contracts/script -type f -name "*.sol" -print -quit | grep -q .; then
+  echo "Running forge fmt before commit..."
+  (cd contracts && forge fmt)
+  echo "Running solhint before commit..."
+  yarn lint:fix
+else
+  echo "No Solidity files found; skipping forge fmt and solhint."
+fi
