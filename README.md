@@ -40,7 +40,7 @@ forge test
 
 ```bash
 yarn install
-yarn lint:sol
+yarn lint
 ```
 
 To enforce linting on every commit, install dependencies to enable Husky hooks:
