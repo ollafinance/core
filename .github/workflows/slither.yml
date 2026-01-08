@@ -1,0 +1,31 @@
+name: Slither Analysis
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  slither:
+    name: Slither and Slytherin
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Setup solc
+        uses: crytic/setup-solc@v1
+        with:
+          version: 0.8.19
+      - name: Install Slither and Slytherin
+        run: pip install slither-analyzer slytherin
+      - name: Run Slither
+        run: slither . --config-file slither.config.json
+      - name: Run Slytherin
+        run: slytherin .

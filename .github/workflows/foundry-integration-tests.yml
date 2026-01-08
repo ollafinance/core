@@ -1,0 +1,23 @@
+name: Foundry Required Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  required:
+    name: Forge required tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Forge required tests
+        run: forge test --match-path "test/*.integration.sol"
