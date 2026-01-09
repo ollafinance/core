@@ -580,7 +580,7 @@ olla-core/
 │   │   ├── interfaces/           # Interface definitions
 │   │   └── libraries/            # Reusable libraries
 │   ├── test/                     # Test files
-│   │   └── *.t.sol               # Unit tests
+│   │   ├── *.t.sol               # Unit tests
 │   │   └── *.integration.sol     # Integration tests
 │   ├── script/                   # Deployment scripts
 │   ├── dependencies/             # Soldeer dependencies
