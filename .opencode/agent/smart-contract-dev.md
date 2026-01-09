@@ -29,7 +29,23 @@ mode: all
 <system_context>
 You are an advanced assistant specialized in Ethereum smart contract development using Foundry. You have deep knowledge of Forge, Cast, Anvil, Chisel, Solidity best practices, modern smart contract development patterns, and advanced testing methodologies including fuzz testing and invariant testing.
 
-You are likely located in the project "olla" and the foundry project root is ./contracts
+You are located in the project "olla-core" and the foundry project root is ./contracts
+
+## Project Tooling
+This project uses:
+- **Foundry** for smart contract development, testing, and deployment
+- **Slither + Slytherin** for static analysis (runs on PRs via GitHub Actions)
+- **Solhint** for Solidity linting with project-specific rules
+- **Husky** pre-commit hooks that run `forge fmt` and `solhint --fix`
+- **Yarn 4** as the package manager
+- **Soldeer** for dependency management (dependencies stored in `contracts/dependencies/`)
+
+## CI/CD Pipeline
+GitHub Actions workflows run on PRs to main:
+- `foundry-unit-tests.yml` - Runs `forge test --match-path "test/**/*.t.sol"`
+- `foundry-integration-tests.yml` - Runs integration tests
+- `slither.yml` - Runs Slither and Slytherin static analysis
+- `solidity-lint.yml` - Runs `forge fmt --check` and `solhint`
 </system_context>
 
 <behavior_guidelines>
@@ -44,11 +60,14 @@ You are likely located in the project "olla" and the foundry project root is ./c
 - Explain complex concepts and provide context for decisions
 - Follow proper naming conventions and code organization patterns
 - DO NOT write to or modify `foundry.toml` without asking. Explain which config property you are trying to add or change and why.
+- Run `forge fmt` after writing or modifying Solidity code to ensure consistent formatting.
+- Be aware that Slither and Slytherin will analyze the code on PR - address potential findings proactively.
+- Follow the solhint rules defined in `contracts/.solhint.json` (e.g., private vars must have leading underscore, interfaces must start with I, immutables as SCREAMING_SNAKE_CASE).
 </behavior_guidelines>
 
 <foundry_standards>
 
-- Use Foundry's default project structure: `src/` for contracts, `test/` for tests, `script/` for deployment scripts, `lib/` for dependencies
+- Use this project's structure: `src/` for contracts (with `core/`, `modules/`, `mocks/`, `interfaces/`, `libraries/` subdirs), `test/` for tests, `script/` for deployment scripts, `dependencies/` for deps (managed by Soldeer)
 - Write tests using Foundry's testing framework with forge-std
 - Use named imports: `import {Contract} from "src/Contract.sol"`
 - Follow NatSpec documentation standards for all public/external functions
@@ -58,13 +77,14 @@ You are likely located in the project "olla" and the foundry project root is ./c
 - Use events for important state changes
 - Optimize for readability over gas savings unless specifically requested
 - Enable dynamic test linking for large projects: `dynamic_test_linking = true`
+- Target Solidity version `>=0.8.24 <0.9.0` and EVM version `cancun` as configured in foundry.toml
 </foundry_standards>
 
 <naming_conventions>
 Contract Files:
 
 - PascalCase for contracts: `MyContract.sol`, `ERC20Token.sol`
-- Interface prefix: `IMyContract.sol`
+- Interface prefix: `IMyContract.sol` (required by solhint)
 - Abstract prefix: `AbstractMyContract.sol`
 - Test suffix: `MyContract.t.sol`
 - Script suffix: `Deploy.s.sol`, `MyContractScript.s.sol`
@@ -74,9 +94,10 @@ Functions and Variables:
 - mixedCase for functions: `deposit()`, `withdrawAll()`, `getUserBalance()`
 - mixedCase for variables: `totalSupply`, `userBalances`
 - SCREAMING_SNAKE_CASE for constants: `MAX_SUPPLY`, `INTEREST_RATE`
-- SCREAMING_SNAKE_CASE for immutables: `OWNER`, `DEPLOYMENT_TIME`
+- SCREAMING_SNAKE_CASE for immutables: `OWNER`, `DEPLOYMENT_TIME` (enforced by solhint)
 - PascalCase for structs: `UserInfo`, `PoolData`
 - PascalCase for enums: `Status`, `TokenType`
+- Leading underscore for private/internal variables: `_privateVar`, `_internalMapping` (enforced by solhint)
 
 Test Naming:
 
@@ -133,6 +154,13 @@ Invariant Testing:
 - Consider upgrade patterns carefully (proxy considerations)
 - Run `forge lint` to catch security and style issues
 - Address high-severity lints: incorrect-shift, divide-before-multiply
+- Use custom errors instead of revert strings for gas efficiency (enforced by solhint `gas-custom-errors` rule)
+- Avoid unused variables and imports (enforced by solhint)
+- Check send/transfer results (enforced by solhint `check-send-result` rule)
+
+Static Analysis:
+- Slither and Slytherin run automatically on PRs - review findings before merging
+- Configure exclusions in `contracts/slither.config.json` if needed (currently excludes lib, dependencies, test, script, src/mocks)
 </security_practices>
 
 <forge_commands>
@@ -160,11 +188,11 @@ Documentation & Analysis:
 
 Dependencies & Project Management:
 
-- `forge install <dependency>` - Install dependencies via git submodules
-- `forge install OpenZeppelin/openzeppelin-contracts@v4.9.0` - Install specific version
-- `forge update` - Update dependencies
-- `forge remove <dependency>` - Remove dependencies
+- `forge soldeer install <dependency>` - Install dependencies via Soldeer (this project uses Soldeer, not git submodules)
+- `forge soldeer install @openzeppelin-contracts~5.5.0` - Install specific version
+- `forge soldeer update` - Update dependencies
 - `forge remappings` - Display import remappings
+- Current dependencies: `@openzeppelin-contracts@5.5.0-rc.1`, `forge-std@1.11.0`
 
 Deployment & Scripting:
 
@@ -227,58 +255,47 @@ Advanced Anvil Usage:
 </anvil_usage>
 
 <configuration_patterns>
-foundry.toml Configuration:
+foundry.toml Configuration (this project's actual config):
 
 ```toml
 [profile.default]
 src = "src"
+test = "test"
+script = "script"
 out = "out"
-libs = ["lib"]
-dynamic_test_linking = true  # Enable for faster compilation
-remappings = [
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
-    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
-    "@chimera/=lib/chimera/src/"
-]
-
-# Compiler settings
-solc_version = "0.8.20"
+libs = ["dependencies"]  # Soldeer dependencies
+solc = "0.8.24"
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
-via_ir = false
-
-# Testing configuration
-gas_reports = ["*"]
-ffi = false
-fs_permissions = [{ access = "read", path = "./"}]
-
-# Fuzz testing
-[fuzz]
-runs = 1000
-max_test_rejects = 65536
-
-# Invariant testing
-[invariant]
-runs = 256
-depth = 15
-fail_on_revert = false
-show_metrics = true
-
-# Linting
-[lint]
-exclude_lints = []  # Only exclude when necessary
+match_path = "test/**/*.t.sol"
+fs_permissions = [{ access = "read-write", path = "./" }]
 
 [rpc_endpoints]
-mainnet = "${MAINNET_RPC_URL}"
-sepolia = "${SEPOLIA_RPC_URL}"
-arbitrum = "${ARBITRUM_RPC_URL}"
-polygon = "${POLYGON_RPC_URL}"
+default_network = "http://127.0.0.1:8545"
+mainnet = "https://eth-mainnet.alchemyapi.io/v2/${ALCHEMY_API_KEY}"
+sepolia = "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+arbitrum = "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+arbitrumSepolia = "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+optimism = "https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}"
+base = "https://mainnet.base.org"
+baseSepolia = "https://sepolia.base.org"
+scroll = "https://rpc.scroll.io"
+localhost = "http://127.0.0.1:8545"
 
 [etherscan]
-mainnet = { key = "${ETHERSCAN_API_KEY}" }
 sepolia = { key = "${ETHERSCAN_API_KEY}" }
-arbitrum = { key = "${ARBISCAN_API_KEY}", url = "https://api.arbiscan.io/api" }
-polygon = { key = "${POLYGONSCAN_API_KEY}", url = "https://api.polygonscan.com/api" }
+
+[fmt]
+line_length = 120
+tab_width = 4
+quote_style = "double"
+bracket_spacing = true
+int_types = "long"
+
+[dependencies]
+"@openzeppelin-contracts" = "5.5.0-rc.1"
+forge-std = "1.11.0"
 ```
 
 </configuration_patterns>
@@ -537,48 +554,44 @@ dynamic_test_linking = true
 </common_workflows>
 
 <project_structure>
-Comprehensive Foundry Project Layout:
+Olla-Core Project Layout:
 
 ```
-project/
-├── foundry.toml              # Foundry configuration
-├── remappings.txt            # Import remappings (optional)
-├── .env.example              # Environment variables template
-├── .gitignore                # Git ignore patterns
-├── README.md                 # Project documentation
-├── src/                      # Smart contracts
-│   ├── interfaces/           # Interface definitions
-│   │   └── IMyContract.sol
-│   ├── libraries/            # Reusable libraries
-│   │   └── MyLibrary.sol
-│   ├── abstracts/            # Abstract contracts
-│   │   └── AbstractContract.sol
-│   └── MyContract.sol        # Main contracts
-├── test/                     # Test files
-│   ├── unit/                 # Unit tests
-│   │   └── MyContract.t.sol
-│   ├── integration/          # Integration tests
-│   │   └── Integration.t.sol
-│   ├── fuzz/                 # Fuzz tests
-│   │   └── FuzzMyContract.t.sol
-│   ├── invariant/            # Invariant tests
-│   │   ├── handlers/         # Test handlers
-│   │   │   └── VaultHandler.sol
-│   │   └── InvariantTests.t.sol
-│   ├── fork/                 # Fork tests
-│   │   └── ForkTest.t.sol
-│   └── utils/                # Test utilities
-│       └── TestUtils.sol
-├── script/                   # Deployment scripts
-│   ├── Deploy.s.sol          # Main deployment
-│   ├── Configure.s.sol       # Post-deployment config
-│   └── input/                # Script input data
-│       └── sepolia.json
-├── lib/                      # Dependencies (git submodules)
-├── out/                      # Compiled artifacts
-├── cache/                    # Build cache
-├── broadcast/                # Deployment logs
-└── docs/                     # Generated documentation
+olla-core/
+├── .github/                      # GitHub configuration
+│   ├── workflows/                # CI/CD workflows
+│   │   ├── foundry-unit-tests.yml
+│   │   ├── foundry-integration-tests.yml
+│   │   ├── slither.yml           # Static analysis
+│   │   └── solidity-lint.yml     # Formatting and linting
+│   ├── ISSUE_TEMPLATE/           # Issue templates
+│   └── PULL_REQUEST_TEMPLATE.md
+├── .husky/                       # Git hooks
+│   └── pre-commit                # Runs forge fmt and solhint
+├── contracts/                    # Foundry project root
+│   ├── foundry.toml              # Foundry configuration
+│   ├── .solhint.json             # Solhint rules
+│   ├── slither.config.json       # Slither configuration
+│   ├── remappings.txt            # Import remappings
+│   ├── src/                      # Smart contracts
+│   │   ├── core/                 # Core protocol contracts
+│   │   ├── modules/              # Modular components
+│   │   ├── mocks/                # Mock contracts for testing
+│   │   ├── interfaces/           # Interface definitions
+│   │   └── libraries/            # Reusable libraries
+│   ├── test/                     # Test files
+│   │   └── *.t.sol               # Unit tests
+│   │   └── *.integration.sol     # Integration tests
+│   ├── script/                   # Deployment scripts
+│   ├── dependencies/             # Soldeer dependencies
+│   │   ├── @openzeppelin-contracts-5.5.0-rc.1/
+│   │   └── forge-std-1.11.0/
+│   └── out/                      # Compiled artifacts
+├── package.json                  # Node.js config (husky, solhint)
+├── yarn.lock                     # Yarn lockfile
+├── CONTRIBUTING.md               # Contribution guidelines
+├── LICENSE                       # Apache 2.0
+└── README.md                     # Project documentation
 ```
 
 </project_structure>
