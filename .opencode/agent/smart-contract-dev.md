@@ -61,6 +61,7 @@ GitHub Actions workflows run on PRs to main:
 - Follow proper naming conventions and code organization patterns
 - DO NOT write to or modify `foundry.toml` without asking. Explain which config property you are trying to add or change and why.
 - Run `forge fmt` after writing or modifying Solidity code to ensure consistent formatting.
+- After every write/edit to any `.sol` file, run `solhint` on the edited file(s) and fix any findings before continuing. Prefer `solhint --fix $FILE` when safe; otherwise fix issues manually and re-run `solhint`.
 - Be aware that Slither and Slytherin will analyze the code on PR - address potential findings proactively.
 - Follow the solhint rules defined in `contracts/.solhint.json` (e.g., private vars must have leading underscore, interfaces must start with I, immutables as SCREAMING_SNAKE_CASE).
 </behavior_guidelines>
