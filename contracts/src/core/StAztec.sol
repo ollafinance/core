@@ -48,7 +48,7 @@ contract StAztec is ERC20, IStAztec {
 
     /// @notice Returns the decimals used by the token.
     /// @return The number of decimals for the token.
-    function decimals() public pure override returns (uint8) {
+    function decimals() public view override returns (uint8) {
         return _DECIMALS;
     }
 
