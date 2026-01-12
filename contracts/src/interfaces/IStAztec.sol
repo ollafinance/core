@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
+import {
+    IERC20Metadata
+} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/IERC20Metadata.sol";
+import { IERC20 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/IERC20.sol";
+
 /// @title IStAztec
 /// @notice Interface for the stAztec liquid staking token.
 /// @author Olla Core contributors
-interface IStAztec {
+interface IStAztec is IERC20, IERC20Metadata {
     /// @notice Mints stAztec shares to an account.
     /// @param to The recipient address.
     /// @param amount The amount of shares to mint.

@@ -2,6 +2,9 @@
 pragma solidity ^0.8.24;
 
 import { ERC20 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/ERC20.sol";
+import {
+    IERC20Metadata
+} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/IERC20Metadata.sol";
 
 import { IStAztec } from "src/interfaces/IStAztec.sol";
 
@@ -48,7 +51,7 @@ contract StAztec is ERC20, IStAztec {
 
     /// @notice Returns the decimals used by the token.
     /// @return The number of decimals for the token.
-    function decimals() public view override returns (uint8) {
+    function decimals() public pure override(ERC20, IERC20Metadata) returns (uint8) {
         return _DECIMALS;
     }
 
