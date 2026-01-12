@@ -1,4 +1,4 @@
-name: Foundry Unit Tests
+name: Foundry Invariant Tests
 
 on:
   pull_request:
@@ -6,8 +6,8 @@ on:
       - main
 
 jobs:
-  unit:
-    name: Forge unit tests
+  invariant:
+    name: Forge invariant tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -19,5 +19,5 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
-      - name: Forge unit tests
-        run: forge test --match-path "test/**/*.t.sol" --no-match-path "test/**/*.integration.sol"
+      - name: Forge invariant tests
+        run: forge test --match-path "test/**/*.invariant.sol"
