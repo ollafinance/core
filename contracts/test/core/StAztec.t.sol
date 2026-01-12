@@ -3,12 +3,15 @@ pragma solidity ^0.8.24;
 
 import { Test } from "@forge-std/Test.sol";
 
+import { ERC20Permit } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/ERC20Permit.sol";
 import { StAztec } from "src/core/StAztec.sol";
 
 contract StAztecTest is Test {
     event Transfer(address indexed from, address indexed to, uint256 value);
 
     uint256 internal constant DECIMALS = 1e18;
+    bytes32 internal constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
     StAztec internal token;
     address internal core;
@@ -23,6 +26,15 @@ contract StAztecTest is Test {
         charlie = makeAddr("charlie");
 
         token = new StAztec(core);
+    }
+
+    function _buildPermitDigest(address owner, address spender, uint256 value, uint256 nonce, uint256 deadline)
+        internal
+        view
+        returns (bytes32)
+    {
+        bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonce, deadline));
+        return keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
     }
 
     function test_ERC20Compliance() external {
@@ -47,6 +59,50 @@ contract StAztecTest is Test {
         assertEq(token.balanceOf(bob), 70 * DECIMALS, "bob balance after transferFrom");
         assertEq(token.allowance(alice, charlie), 0, "allowance after transferFrom");
         assertEq(token.decimals(), 18, "decimals");
+    }
+
+    function test_PermitSetsAllowance() external {
+        uint256 ownerKey = 0xA11CE;
+        address owner = vm.addr(ownerKey);
+        uint256 value = 12 * DECIMALS;
+        uint256 deadline = block.timestamp + 1 days;
+        uint256 nonce = token.nonces(owner);
+
+        bytes32 digest = _buildPermitDigest(owner, bob, value, nonce, deadline);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+
+        token.permit(owner, bob, value, deadline, v, r, s);
+
+        assertEq(token.allowance(owner, bob), value, "permit allowance");
+        assertEq(token.nonces(owner), nonce + 1, "permit nonce incremented");
+    }
+
+    function test_RevertWhen_PermitExpired() external {
+        uint256 ownerKey = 0xB0B;
+        address owner = vm.addr(ownerKey);
+        uint256 deadline = block.timestamp - 1;
+        uint256 nonce = token.nonces(owner);
+
+        bytes32 digest = _buildPermitDigest(owner, bob, 1, nonce, deadline);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        token.permit(owner, bob, 1, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_PermitInvalidSigner() external {
+        uint256 ownerKey = 0xA11CE;
+        uint256 attackerKey = 0xBADC0DE;
+        address owner = vm.addr(ownerKey);
+        address attacker = vm.addr(attackerKey);
+        uint256 deadline = block.timestamp + 1 days;
+        uint256 nonce = token.nonces(owner);
+
+        bytes32 digest = _buildPermitDigest(owner, bob, 5, nonce, deadline);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(attackerKey, digest);
+
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, attacker, owner));
+        token.permit(owner, bob, 5, deadline, v, r, s);
     }
 
     function test_OnlyAuthorizedCanMint() external {
@@ -94,6 +150,23 @@ contract StAztecTest is Test {
         uint256 sumBalances = token.balanceOf(alice) + token.balanceOf(bob);
 
         assertEq(supply, sumBalances, "supply equals balances");
+    }
+
+    function testFuzz_PermitUpdatesAllowance(uint96 value, uint32 deadlineOffset) external {
+        uint256 ownerKey = 0xA11CE;
+        address owner = vm.addr(ownerKey);
+        uint256 deadline = block.timestamp + uint256(bound(deadlineOffset, 1, 30 days));
+
+        value = uint96(bound(value, 0, type(uint96).max));
+
+        uint256 nonce = token.nonces(owner);
+        bytes32 digest = _buildPermitDigest(owner, bob, value, nonce, deadline);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+
+        token.permit(owner, bob, value, deadline, v, r, s);
+
+        assertEq(token.allowance(owner, bob), value, "permit allowance");
+        assertEq(token.nonces(owner), nonce + 1, "permit nonce incremented");
     }
 
     function testFuzz_TransferPreservesTotalSupply(uint96 amount) external {
