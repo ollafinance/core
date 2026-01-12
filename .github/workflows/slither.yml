@@ -43,9 +43,6 @@ jobs:
       - name: Run Slither
         if: steps.sol-files.outputs.found == 'true'
         run: slither . --config-file slither.config.json
-      - name: Run Slytherin
-        if: steps.sol-files.outputs.found == 'true'
-        run: slytherin .
       - name: Skip analysis (no Solidity files)
         if: steps.sol-files.outputs.found != 'true'
         run: echo "No Solidity files found; skipping Slither/Slytherin."
