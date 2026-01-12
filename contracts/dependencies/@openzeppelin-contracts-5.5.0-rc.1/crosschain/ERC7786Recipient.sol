@@ -34,7 +34,11 @@ abstract contract ERC7786Recipient is IERC7786Recipient {
         bytes32 receiveId,
         bytes calldata sender, // Binary Interoperable Address
         bytes calldata payload
-    ) external payable returns (bytes4) {
+    )
+        external
+        payable
+        returns (bytes4)
+    {
         // Check authorization
         if (!_isAuthorizedGateway(msg.sender, sender)) {
             revert ERC7786RecipientUnauthorizedGateway(msg.sender, sender);
@@ -61,10 +65,7 @@ abstract contract ERC7786Recipient is IERC7786Recipient {
     function _isAuthorizedGateway(address gateway, bytes calldata sender) internal view virtual returns (bool);
 
     /// @dev Virtual function that should contain the logic to execute when a cross-chain message is received.
-    function _processMessage(
-        address gateway,
-        bytes32 receiveId,
-        bytes calldata sender,
-        bytes calldata payload
-    ) internal virtual;
+    function _processMessage(address gateway, bytes32 receiveId, bytes calldata sender, bytes calldata payload)
+        internal
+        virtual;
 }

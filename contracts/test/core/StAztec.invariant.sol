@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import { Test } from "@forge-std/Test.sol";
+import {Test} from "@forge-std/Test.sol";
 
-import { StAztec } from "src/core/StAztec.sol";
+import {StAztec} from "src/core/StAztec.sol";
 
 contract StAztecCoreHarness {
     StAztec public token;

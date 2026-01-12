@@ -34,9 +34,11 @@ library ERC4337Utils {
     uint256 internal constant SIG_VALIDATION_FAILED = 1;
 
     /// @dev Parses the validation data into its components. See {packValidationData}.
-    function parseValidationData(
-        uint256 validationData
-    ) internal pure returns (address aggregator, uint48 validAfter, uint48 validUntil) {
+    function parseValidationData(uint256 validationData)
+        internal
+        pure
+        returns (address aggregator, uint48 validAfter, uint48 validUntil)
+    {
         validAfter = uint48(bytes32(validationData).extract_32_6(0));
         validUntil = uint48(bytes32(validationData).extract_32_6(6));
         aggregator = address(bytes32(validationData).extract_32_20(12));
@@ -44,22 +46,21 @@ library ERC4337Utils {
     }
 
     /// @dev Packs the validation data into a single uint256. See {parseValidationData}.
-    function packValidationData(
-        address aggregator,
-        uint48 validAfter,
-        uint48 validUntil
-    ) internal pure returns (uint256) {
+    function packValidationData(address aggregator, uint48 validAfter, uint48 validUntil)
+        internal
+        pure
+        returns (uint256)
+    {
         return uint256(bytes6(validAfter).pack_6_6(bytes6(validUntil)).pack_12_20(bytes20(aggregator)));
     }
 
     /// @dev Same as {packValidationData}, but with a boolean signature success flag.
     function packValidationData(bool sigSuccess, uint48 validAfter, uint48 validUntil) internal pure returns (uint256) {
-        return
-            packValidationData(
-                address(uint160(Math.ternary(sigSuccess, SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED))),
-                validAfter,
-                validUntil
-            );
+        return packValidationData(
+            address(uint160(Math.ternary(sigSuccess, SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED))),
+            validAfter,
+            validUntil
+        );
     }
 
     /**
@@ -72,8 +73,8 @@ library ERC4337Utils {
         (address aggregator1, uint48 validAfter1, uint48 validUntil1) = parseValidationData(validationData1);
         (address aggregator2, uint48 validAfter2, uint48 validUntil2) = parseValidationData(validationData2);
 
-        bool success = aggregator1 == address(uint160(SIG_VALIDATION_SUCCESS)) &&
-            aggregator2 == address(uint160(SIG_VALIDATION_SUCCESS));
+        bool success = aggregator1 == address(uint160(SIG_VALIDATION_SUCCESS))
+            && aggregator2 == address(uint160(SIG_VALIDATION_SUCCESS));
         uint48 validAfter = uint48(Math.max(validAfter1, validAfter2));
         uint48 validUntil = uint48(Math.min(validUntil1, validUntil2));
         return packValidationData(success, validAfter, validUntil);

@@ -33,12 +33,10 @@ library RelayedCall {
     }
 
     /// @dev Same as {relayCall} but with a salt and a value.
-    function relayCall(
-        address target,
-        uint256 value,
-        bytes memory data,
-        bytes32 salt
-    ) internal returns (bool, bytes memory) {
+    function relayCall(address target, uint256 value, bytes memory data, bytes32 salt)
+        internal
+        returns (bool, bytes memory)
+    {
         return getRelayer(salt).call{value: value}(abi.encodePacked(target, data));
     }
 

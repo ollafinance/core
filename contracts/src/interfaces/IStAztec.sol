@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import {
     IERC20Metadata
 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/IERC20Metadata.sol";
-import { IERC20Permit } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/IERC20Permit.sol";
-import { IERC20 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/IERC20.sol";
+import {IERC20Permit} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/IERC20Permit.sol";
+import {IERC20} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/IERC20.sol";
 
 /// @title IStAztec
 /// @notice Interface for the stAztec liquid staking token.
