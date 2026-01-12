@@ -13,7 +13,7 @@ to grow into an open-source, auditable codebase.
 - `contracts/src/libraries/` Shared libraries.
 - `contracts/src/mocks/` Test/mocked contracts and fixtures.
 - `contracts/script/` Foundry scripts.
-- `contracts/test/` Foundry tests.
+- `contracts/test/` Component-based Foundry tests (e.g., `core/`, `modules/`).
 - `research/` Protocol research and design notes (Obsidian vault).
 
 Key research index:
@@ -34,6 +34,13 @@ cd contracts
 forge install
 forge build
 forge test
+```
+
+Invariant-only suite:
+
+```bash
+cd contracts
+forge test --match-path "test/**/*.invariant.sol"
 ```
 
 ## Linting
