@@ -236,4 +236,21 @@ contract OllaCoreTest is Test {
         assertEq(assetsOut, expectedAssets, "assets expected");
         assertEq(stAztec.balanceOf(alice), assets - redeemShares, "shares reduced");
     }
+
+    function testFuzz_RequestWithdrawBurnsCorrectShares(uint96 assets, uint96 withdrawAssets) external {
+        assets = uint96(bound(assets, 1, type(uint96).max));
+
+        _deposit(alice, assets);
+
+        withdrawAssets = uint96(bound(withdrawAssets, 1, assets));
+
+        uint256 expectedShares =
+            uint256(withdrawAssets).mulDiv(stAztec.totalSupply(), vault.totalAssets(), Math.Rounding.Ceil);
+
+        vm.prank(alice);
+        uint256 burnedShares = vault.requestWithdraw(withdrawAssets, alice, alice);
+
+        assertEq(burnedShares, expectedShares, "shares burned at ceil rate");
+        assertEq(stAztec.balanceOf(alice), assets - burnedShares, "shares balance");
+    }
 }
