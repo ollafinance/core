@@ -1,55 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {Test} from "@forge-std/Test.sol";
+import { Test } from "@forge-std/Test.sol";
 
-import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import {Math} from "@oz/utils/math/Math.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { Math } from "@oz/utils/math/Math.sol";
 
-import {OllaCore} from "src/core/OllaCore.sol";
-import {StAztec} from "src/core/StAztec.sol";
-import {MockAztec} from "src/mocks/MockAztec.sol";
+import { OllaCore } from "src/core/OllaCore.sol";
+import { StAztec } from "src/core/StAztec.sol";
+import { MockAztec } from "src/mocks/MockAztec.sol";
 
 contract OllaCoreTest is Test {
     using Math for uint256;
 
-    event Deposit(
-        address indexed caller,
-        address indexed receiver,
-        uint256 assets,
-        uint256 shares
-    );
+    event Deposit(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
     event Withdraw(
-        address indexed caller,
-        address indexed receiver,
-        address indexed owner,
-        uint256 assets,
-        uint256 shares
+        address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares
     );
-    event RequestWithdraw(
-        address indexed owner,
-        address indexed receiver,
-        uint256 assets,
-        uint256 shares
-    );
-    event RequestRedeem(
-        address indexed owner,
-        address indexed receiver,
-        uint256 assets,
-        uint256 shares
-    );
-    event ClaimWithdraw(
-        address indexed owner,
-        address indexed receiver,
-        uint256 assets,
-        uint256 shares
-    );
-    event ClaimRedeem(
-        address indexed owner,
-        address indexed receiver,
-        uint256 assets,
-        uint256 shares
-    );
+    event RequestWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+    event RequestRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+    event ClaimWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+    event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
 
     uint256 internal constant DECIMALS = 1e18;
 
@@ -73,10 +44,7 @@ contract OllaCoreTest is Test {
         bob = makeAddr("bob");
     }
 
-    function _deposit(
-        address owner,
-        uint256 assets
-    ) internal returns (uint256 shares) {
+    function _deposit(address owner, uint256 assets) internal returns (uint256 shares) {
         asset.mint(owner, assets);
         vm.prank(owner);
         asset.approve(address(vault), assets);
@@ -93,11 +61,7 @@ contract OllaCoreTest is Test {
         uint256 totalAssetsBefore = vault.totalAssets();
         uint256 totalSharesBefore = stAztec.totalSupply();
 
-        uint256 expectedShares = (50 * DECIMALS).mulDiv(
-            totalSharesBefore,
-            totalAssetsBefore,
-            Math.Rounding.Floor
-        );
+        uint256 expectedShares = (50 * DECIMALS).mulDiv(totalSharesBefore, totalAssetsBefore, Math.Rounding.Floor);
         uint256 secondShares = _deposit(bob, 50 * DECIMALS);
 
         assertEq(secondShares, expectedShares, "shares at exchange rate");
@@ -190,36 +154,20 @@ contract OllaCoreTest is Test {
         vm.prank(alice);
         vault.requestWithdraw(5 * DECIMALS, alice, alice);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OllaCore.OllaCorePendingWithdrawalExists.selector,
-                alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCorePendingWithdrawalExists.selector, alice));
         vm.prank(alice);
         vault.requestWithdraw(1 * DECIMALS, alice, alice);
     }
 
     function test_RevertWhen_NoPendingWithdrawal() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OllaCore.OllaCoreNoPendingWithdrawal.selector,
-                alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreNoPendingWithdrawal.selector, alice));
         vault.claimWithdraw(alice);
     }
 
     function test_RevertWhen_UnauthorizedRedeem() external {
         _deposit(alice, 15 * DECIMALS);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OllaCore.OllaCoreUnauthorized.selector,
-                bob,
-                alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreUnauthorized.selector, bob, alice));
         vm.prank(bob);
         vault.requestRedeem(5 * DECIMALS, bob, alice);
     }
@@ -227,13 +175,7 @@ contract OllaCoreTest is Test {
     function test_RevertWhen_UnauthorizedWithdraw() external {
         _deposit(alice, 15 * DECIMALS);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OllaCore.OllaCoreUnauthorized.selector,
-                bob,
-                alice
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreUnauthorized.selector, bob, alice));
         vm.prank(bob);
         vault.requestWithdraw(5 * DECIMALS, bob, alice);
     }
@@ -258,10 +200,7 @@ contract OllaCoreTest is Test {
         assertEq(vault.totalAssets(), assets, "assets buffered");
     }
 
-    function testFuzz_RequestWithdrawBurnsShares(
-        uint96 assets,
-        uint96 withdrawAssets
-    ) external {
+    function testFuzz_RequestWithdrawBurnsShares(uint96 assets, uint96 withdrawAssets) external {
         assets = uint96(bound(assets, 1, type(uint96).max));
         withdrawAssets = uint96(bound(withdrawAssets, 1, assets));
 
@@ -271,11 +210,7 @@ contract OllaCoreTest is Test {
         uint256 shares = vault.requestWithdraw(withdrawAssets, alice, alice);
 
         assertEq(shares, withdrawAssets, "shares burned");
-        assertEq(
-            stAztec.balanceOf(alice),
-            assets - withdrawAssets,
-            "shares remaining"
-        );
+        assertEq(stAztec.balanceOf(alice), assets - withdrawAssets, "shares remaining");
 
         vm.prank(bob);
         uint256 claimed = vault.claimWithdraw(alice);
@@ -284,61 +219,37 @@ contract OllaCoreTest is Test {
         assertEq(asset.balanceOf(alice), withdrawAssets, "assets received");
     }
 
-    function testFuzz_RequestRedeemByOwner(
-        uint96 assets,
-        uint96 redeemShares
-    ) external {
+    function testFuzz_RequestRedeemByOwner(uint96 assets, uint96 redeemShares) external {
         assets = uint96(bound(assets, 1, type(uint96).max));
 
         _deposit(alice, assets);
 
         redeemShares = uint96(bound(redeemShares, 1, assets));
 
-        uint256 expectedAssets = uint256(redeemShares).mulDiv(
-            vault.totalAssets(),
-            stAztec.totalSupply(),
-            Math.Rounding.Floor
-        );
+        uint256 expectedAssets =
+            uint256(redeemShares).mulDiv(vault.totalAssets(), stAztec.totalSupply(), Math.Rounding.Floor);
 
         vm.prank(alice);
         uint256 assetsOut = vault.requestRedeem(redeemShares, bob, alice);
 
         assertEq(assetsOut, expectedAssets, "assets expected");
-        assertEq(
-            stAztec.balanceOf(alice),
-            assets - redeemShares,
-            "shares reduced"
-        );
+        assertEq(stAztec.balanceOf(alice), assets - redeemShares, "shares reduced");
     }
 
-    function testFuzz_RequestWithdrawBurnsCorrectShares(
-        uint96 assets,
-        uint96 withdrawAssets
-    ) external {
+    function testFuzz_RequestWithdrawBurnsCorrectShares(uint96 assets, uint96 withdrawAssets) external {
         assets = uint96(bound(assets, 1, type(uint96).max));
 
         _deposit(alice, assets);
 
         withdrawAssets = uint96(bound(withdrawAssets, 1, assets));
 
-        uint256 expectedShares = uint256(withdrawAssets).mulDiv(
-            stAztec.totalSupply(),
-            vault.totalAssets(),
-            Math.Rounding.Ceil
-        );
+        uint256 expectedShares =
+            uint256(withdrawAssets).mulDiv(stAztec.totalSupply(), vault.totalAssets(), Math.Rounding.Ceil);
 
         vm.prank(alice);
-        uint256 burnedShares = vault.requestWithdraw(
-            withdrawAssets,
-            alice,
-            alice
-        );
+        uint256 burnedShares = vault.requestWithdraw(withdrawAssets, alice, alice);
 
         assertEq(burnedShares, expectedShares, "shares burned at ceil rate");
-        assertEq(
-            stAztec.balanceOf(alice),
-            assets - burnedShares,
-            "shares balance"
-        );
+        assertEq(stAztec.balanceOf(alice), assets - burnedShares, "shares balance");
     }
 }
