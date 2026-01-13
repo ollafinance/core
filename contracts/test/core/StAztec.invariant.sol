@@ -63,11 +63,7 @@ contract StAztecHandler is Test {
         ghostTotalSupply -= burnAmount;
     }
 
-    function transfer(
-        uint96 amount,
-        uint256 fromSeed,
-        uint256 toSeed
-    ) external {
+    function transfer(uint96 amount, uint256 fromSeed, uint256 toSeed) external {
         address from = actors[bound(fromSeed, 0, actors.length - 1)];
         address to = actors[bound(toSeed, 0, actors.length - 1)];
         uint256 balance = token.balanceOf(from);
@@ -109,10 +105,6 @@ contract StAztecInvariantTest is Test {
     }
 
     function invariant_TotalSupplyMatchesGhost() external view {
-        assertEq(
-            token.totalSupply(),
-            handler.ghostTotalSupply(),
-            "supply matches ghost"
-        );
+        assertEq(token.totalSupply(), handler.ghostTotalSupply(), "supply matches ghost");
     }
 }
