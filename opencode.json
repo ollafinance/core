@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "formatter": {
+    "forge": {
+      "command": [
+        "forge",
+        "fmt",
+        "$FILE"
+      ],
+      "extensions": [
+        ".sol"
+      ]
+    }
+  }
+}
