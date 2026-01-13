@@ -3,8 +3,8 @@ pragma solidity ^0.8.24;
 
 import { Test } from "@forge-std/Test.sol";
 
-import { ERC1967Proxy } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
-import { Math } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/utils/math/Math.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";

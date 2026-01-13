@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-// solhint-disable-next-line max-line-length
-import { IERC20 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/IERC20.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { IStAztec } from "src/interfaces/IStAztec.sol";
 

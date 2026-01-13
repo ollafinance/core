@@ -1,19 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-// solhint-disable-next-line max-line-length
-import { IERC20 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/IERC20.sol";
-// solhint-disable-next-line max-line-length
-import { SafeERC20 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/utils/SafeERC20.sol";
-// solhint-disable-next-line max-line-length
-import { Math } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/utils/math/Math.sol";
-// solhint-disable-next-line max-line-length
-import { ReentrancyGuard } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/utils/ReentrancyGuard.sol";
-// solhint-disable-next-line max-line-length
-import {
-    Initializable
-} from "dependencies/@openzeppelin-contracts-upgradeable-5.5.0-rc.1/proxy/utils/Initializable.sol";
-
+import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { Math } from "@oz/utils/math/Math.sol";
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
 
