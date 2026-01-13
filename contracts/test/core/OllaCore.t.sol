@@ -13,6 +13,15 @@ import { MockAztec } from "src/mocks/MockAztec.sol";
 contract OllaCoreTest is Test {
     using Math for uint256;
 
+    event Deposit(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
+    event Withdraw(
+        address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares
+    );
+    event RequestWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+    event RequestRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+    event ClaimWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+    event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+
     uint256 internal constant DECIMALS = 1e18;
 
     MockAztec internal asset;
@@ -63,6 +72,68 @@ contract OllaCoreTest is Test {
 
         assertEq(stAztec.balanceOf(alice), shares, "shares minted");
         assertEq(vault.totalAssets(), 10 * DECIMALS, "assets buffered");
+    }
+
+    function test_EmitDepositEvent() external {
+        uint256 assets = 10 * DECIMALS;
+
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Deposit(alice, alice, assets, assets);
+
+        vm.prank(alice);
+        vault.deposit(assets, alice);
+    }
+
+    function test_EmitRequestWithdrawAndClaimEvents() external {
+        _deposit(alice, 40 * DECIMALS);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RequestWithdraw(alice, alice, 10 * DECIMALS, 10 * DECIMALS);
+
+        vm.prank(alice);
+        uint256 shares = vault.requestWithdraw(10 * DECIMALS, alice, alice);
+
+        assertEq(shares, 10 * DECIMALS, "shares burned");
+        assertEq(stAztec.balanceOf(alice), 30 * DECIMALS, "remaining shares");
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Withdraw(bob, alice, alice, 10 * DECIMALS, 10 * DECIMALS);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit ClaimWithdraw(alice, alice, 10 * DECIMALS, 10 * DECIMALS);
+
+        vm.prank(bob);
+        vault.claimWithdraw(alice);
+
+        assertEq(asset.balanceOf(alice), 10 * DECIMALS, "assets received");
+    }
+
+    function test_EmitRequestRedeemAndClaimEvents() external {
+        _deposit(alice, 25 * DECIMALS);
+
+        vm.prank(alice);
+        stAztec.approve(address(vault), 5 * DECIMALS);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RequestRedeem(alice, bob, 5 * DECIMALS, 5 * DECIMALS);
+
+        vm.prank(bob);
+        uint256 assets = vault.requestRedeem(5 * DECIMALS, bob, alice);
+
+        assertEq(assets, 5 * DECIMALS, "assets expected");
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Withdraw(bob, bob, alice, 5 * DECIMALS, 5 * DECIMALS);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit ClaimRedeem(alice, bob, 5 * DECIMALS, 5 * DECIMALS);
+
+        vm.prank(bob);
+        vault.claimWithdraw(alice);
     }
 
     function test_RequestWithdrawAndClaim() external {
