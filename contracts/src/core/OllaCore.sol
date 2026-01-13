@@ -2,28 +2,20 @@
 pragma solidity ^0.8.24;
 
 // solhint-disable-next-line max-line-length
-import {
-    IERC20
-} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/IERC20.sol";
+import { IERC20 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/IERC20.sol";
 // solhint-disable-next-line max-line-length
-import {
-    SafeERC20
-} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/utils/SafeERC20.sol";
+import { SafeERC20 } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/utils/SafeERC20.sol";
 // solhint-disable-next-line max-line-length
-import {
-    Math
-} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/utils/math/Math.sol";
+import { Math } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/utils/math/Math.sol";
 // solhint-disable-next-line max-line-length
-import {
-    ReentrancyGuard
-} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/utils/ReentrancyGuard.sol";
+import { ReentrancyGuard } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/utils/ReentrancyGuard.sol";
 // solhint-disable-next-line max-line-length
 import {
     Initializable
 } from "dependencies/@openzeppelin-contracts-upgradeable-5.5.0-rc.1/proxy/utils/Initializable.sol";
 
-import {IOllaCore} from "src/interfaces/IOllaCore.sol";
-import {IStAztec} from "src/interfaces/IStAztec.sol";
+import { IOllaCore } from "src/interfaces/IOllaCore.sol";
+import { IStAztec } from "src/interfaces/IStAztec.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
@@ -38,8 +30,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     IStAztec private _stAztec;
     uint256 private _unusedReentrancyStatus;
 
-    mapping(address owner => PendingWithdrawal withdrawal)
-        private _pendingWithdrawals;
+    mapping(address owner => PendingWithdrawal withdrawal) private _pendingWithdrawals;
 
     /// @notice Thrown when a pending withdrawal already exists.
     error OllaCorePendingWithdrawal(address owner);
@@ -53,6 +44,9 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Thrown when assets are unavailable for claiming.
     error OllaCoreInsufficientLiquidity(uint256 assets, uint256 available);
 
+    /// @notice Thrown when a caller is not the share owner.
+    error OllaCoreUnauthorized(address caller, address owner);
+
     constructor() {
         _disableInitializers();
     }
@@ -60,10 +54,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Initializes the vault with asset and stAztec addresses.
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
-    function initialize(
-        IERC20 asset_,
-        IStAztec stAztec_
-    ) external override initializer {
+    function initialize(IERC20 asset_, IStAztec stAztec_) external override initializer {
         if (address(asset_) == address(0) || address(stAztec_) == address(0)) {
             revert OllaCoreZeroAddress();
         }
@@ -77,10 +68,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @param assets The amount of assets to deposit.
     /// @param receiver The recipient of the stAztec shares.
     /// @return shares The shares minted to the receiver.
-    function deposit(
-        uint256 assets,
-        address receiver
-    ) external override nonReentrant returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver) external override nonReentrant returns (uint256 shares) {
         if (receiver == address(0)) {
             revert OllaCoreZeroAddress();
         }
@@ -96,11 +84,12 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @param receiver The receiver of the assets.
     /// @param owner The owner of the shares.
     /// @return shares The shares burned to request the withdrawal.
-    function requestWithdraw(
-        uint256 assets,
-        address receiver,
-        address owner
-    ) external override nonReentrant returns (uint256 shares) {
+    function requestWithdraw(uint256 assets, address receiver, address owner)
+        external
+        override
+        nonReentrant
+        returns (uint256 shares)
+    {
         shares = _convertToShares(assets, Math.Rounding.Ceil);
         _requestWithdrawal(shares, assets, receiver, owner, false);
         emit RequestWithdraw(owner, receiver, assets, shares);
@@ -111,11 +100,12 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @param receiver The receiver of the assets.
     /// @param owner The owner of the shares.
     /// @return assets The assets expected from the redemption.
-    function requestRedeem(
-        uint256 shares,
-        address receiver,
-        address owner
-    ) external override nonReentrant returns (uint256 assets) {
+    function requestRedeem(uint256 shares, address receiver, address owner)
+        external
+        override
+        nonReentrant
+        returns (uint256 assets)
+    {
         assets = _convertToAssets(shares, Math.Rounding.Floor);
         _requestWithdrawal(shares, assets, receiver, owner, true);
         emit RequestRedeem(owner, receiver, assets, shares);
@@ -124,9 +114,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Claims a pending withdrawal for an owner.
     /// @param owner The owner of the pending withdrawal.
     /// @return assets The assets transferred to the receiver.
-    function claimWithdraw(
-        address owner
-    ) external override nonReentrant returns (uint256 assets) {
+    function claimWithdraw(address owner) external override nonReentrant returns (uint256 assets) {
         PendingWithdrawal memory pending = _pendingWithdrawals[owner];
         if (pending.shares == 0) {
             revert OllaCoreNoPendingWithdrawal(owner);
@@ -134,22 +122,13 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
 
         uint256 availableAssets = totalAssets();
         if (pending.assets > availableAssets) {
-            revert OllaCoreInsufficientLiquidity(
-                pending.assets,
-                availableAssets
-            );
+            revert OllaCoreInsufficientLiquidity(pending.assets, availableAssets);
         }
 
         assets = pending.assets;
         _clearPendingWithdrawal(owner);
         _asset.safeTransfer(pending.receiver, assets);
-        emit Withdraw(
-            msg.sender,
-            pending.receiver,
-            owner,
-            assets,
-            pending.shares
-        );
+        emit Withdraw(msg.sender, pending.receiver, owner, assets, pending.shares);
 
         if (pending.isRedeem) {
             emit ClaimRedeem(owner, pending.receiver, assets, pending.shares);
@@ -184,9 +163,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Returns the pending withdrawal for an owner.
     /// @param owner The owner to query.
     /// @return The pending withdrawal details.
-    function pendingWithdrawal(
-        address owner
-    ) external view override returns (PendingWithdrawal memory) {
+    function pendingWithdrawal(address owner) external view override returns (PendingWithdrawal memory) {
         return _pendingWithdrawals[owner];
     }
 
@@ -196,13 +173,9 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         return _asset.balanceOf(address(this));
     }
 
-    function _requestWithdrawal(
-        uint256 shares,
-        uint256 assets,
-        address receiver,
-        address owner,
-        bool isRedeem
-    ) internal {
+    function _requestWithdrawal(uint256 shares, uint256 assets, address receiver, address owner, bool isRedeem)
+        internal
+    {
         if (receiver == address(0) || owner == address(0)) {
             revert OllaCoreZeroAddress();
         }
@@ -211,39 +184,26 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
             revert OllaCorePendingWithdrawal(owner);
         }
 
+        if (msg.sender != owner) {
+            revert OllaCoreUnauthorized(msg.sender, owner);
+        }
+
         uint256 availableAssets = totalAssets();
         if (assets > availableAssets) {
             revert OllaCoreInsufficientLiquidity(assets, availableAssets);
         }
 
-        _pendingWithdrawals[owner] = PendingWithdrawal({
-            shares: shares,
-            assets: assets,
-            receiver: receiver,
-            isRedeem: isRedeem
-        });
+        _pendingWithdrawals[owner] =
+            PendingWithdrawal({ shares: shares, assets: assets, receiver: receiver, isRedeem: isRedeem });
 
-        IStAztec stAztecToken = _stAztec;
-        if (msg.sender != owner) {
-            IERC20(address(stAztecToken)).safeTransferFrom(
-                owner,
-                address(this),
-                shares
-            );
-            stAztecToken.burn(address(this), shares);
-        } else {
-            stAztecToken.burn(owner, shares);
-        }
+        _stAztec.burn(owner, shares);
     }
 
     function _clearPendingWithdrawal(address owner) internal {
         delete _pendingWithdrawals[owner];
     }
 
-    function _convertToShares(
-        uint256 assets,
-        Math.Rounding rounding
-    ) internal view returns (uint256) {
+    function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
         IStAztec stAztecToken = _stAztec;
         uint256 supply = stAztecToken.totalSupply();
         if (supply == 0) {
@@ -252,10 +212,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         return assets.mulDiv(supply, totalAssets(), rounding);
     }
 
-    function _convertToAssets(
-        uint256 shares,
-        Math.Rounding rounding
-    ) internal view returns (uint256) {
+    function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
         IStAztec stAztecToken = _stAztec;
         uint256 supply = stAztecToken.totalSupply();
         if (supply == 0) {

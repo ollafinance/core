@@ -115,13 +115,10 @@ contract OllaCoreTest is Test {
     function test_EmitRequestRedeemAndClaimEvents() external {
         _deposit(alice, 25 * DECIMALS);
 
-        vm.prank(alice);
-        stAztec.approve(address(vault), 5 * DECIMALS);
-
         vm.expectEmit(true, true, true, true, address(vault));
         emit RequestRedeem(alice, bob, 5 * DECIMALS, 5 * DECIMALS);
 
-        vm.prank(bob);
+        vm.prank(alice);
         uint256 assets = vault.requestRedeem(5 * DECIMALS, bob, alice);
 
         assertEq(assets, 5 * DECIMALS, "assets expected");
@@ -170,18 +167,23 @@ contract OllaCoreTest is Test {
     function test_RevertWhen_UnauthorizedRedeem() external {
         _deposit(alice, 15 * DECIMALS);
 
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreUnauthorized.selector, bob, alice));
         vm.prank(bob);
         vault.requestRedeem(5 * DECIMALS, bob, alice);
     }
 
-    function test_RequestRedeemWithApproval() external {
+    function test_RevertWhen_UnauthorizedWithdraw() external {
+        _deposit(alice, 15 * DECIMALS);
+
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreUnauthorized.selector, bob, alice));
+        vm.prank(bob);
+        vault.requestWithdraw(5 * DECIMALS, bob, alice);
+    }
+
+    function test_RequestRedeemByOwner() external {
         _deposit(alice, 25 * DECIMALS);
 
         vm.prank(alice);
-        stAztec.approve(address(vault), 5 * DECIMALS);
-
-        vm.prank(bob);
         uint256 assets = vault.requestRedeem(5 * DECIMALS, bob, alice);
 
         assertEq(assets, 5 * DECIMALS, "assets expected");
@@ -217,20 +219,17 @@ contract OllaCoreTest is Test {
         assertEq(asset.balanceOf(alice), withdrawAssets, "assets received");
     }
 
-    function testFuzz_RequestRedeemWithApproval(uint96 assets, uint96 redeemShares) external {
+    function testFuzz_RequestRedeemByOwner(uint96 assets, uint96 redeemShares) external {
         assets = uint96(bound(assets, 1, type(uint96).max));
 
         _deposit(alice, assets);
 
         redeemShares = uint96(bound(redeemShares, 1, assets));
 
-        vm.prank(alice);
-        stAztec.approve(address(vault), redeemShares);
-
         uint256 expectedAssets =
             uint256(redeemShares).mulDiv(vault.totalAssets(), stAztec.totalSupply(), Math.Rounding.Floor);
 
-        vm.prank(bob);
+        vm.prank(alice);
         uint256 assetsOut = vault.requestRedeem(redeemShares, bob, alice);
 
         assertEq(assetsOut, expectedAssets, "assets expected");
