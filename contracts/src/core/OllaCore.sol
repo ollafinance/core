@@ -25,7 +25,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     mapping(address owner => PendingWithdrawal withdrawal) private _pendingWithdrawals;
 
     /// @notice Thrown when a pending withdrawal already exists.
-    error OllaCorePendingWithdrawal(address owner);
+    error OllaCorePendingWithdrawalExists(address owner);
 
     /// @notice Thrown when no pending withdrawal exists.
     error OllaCoreNoPendingWithdrawal(address owner);
@@ -173,7 +173,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         }
 
         if (_pendingWithdrawals[owner].shares != 0) {
-            revert OllaCorePendingWithdrawal(owner);
+            revert OllaCorePendingWithdrawalExists(owner);
         }
 
         if (msg.sender != owner) {
