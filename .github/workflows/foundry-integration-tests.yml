@@ -20,4 +20,4 @@ jobs:
         with:
           version: stable
       - name: Forge required tests
-        run: forge test --match-path "test/*.integration.sol"
+        run: forge test --match-path "test/**/*.integration.sol"
