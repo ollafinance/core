@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "@forge-std/Test.sol";
 
-import {ERC20Permit} from "@oz/token/ERC20/extensions/ERC20Permit.sol";
+import {ERC20Permit} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/ERC20Permit.sol";
 import {StAztec} from "src/core/StAztec.sol";
 
 contract StAztecTest is Test {
@@ -11,7 +11,9 @@ contract StAztecTest is Test {
 
     uint256 internal constant DECIMALS = 1e18;
     bytes32 internal constant PERMIT_TYPEHASH =
-        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+        keccak256(
+            "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+        );
 
     StAztec internal token;
     address internal core;
@@ -28,13 +30,24 @@ contract StAztecTest is Test {
         token = new StAztec(core);
     }
 
-    function _buildPermitDigest(address owner, address spender, uint256 value, uint256 nonce, uint256 deadline)
-        internal
-        view
-        returns (bytes32)
-    {
-        bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonce, deadline));
-        return keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
+    function _buildPermitDigest(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 nonce,
+        uint256 deadline
+    ) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonce, deadline)
+        );
+        return
+            keccak256(
+                abi.encodePacked(
+                    "\x19\x01",
+                    token.DOMAIN_SEPARATOR(),
+                    structHash
+                )
+            );
     }
 
     function test_ERC20Compliance() external {
@@ -46,8 +59,16 @@ contract StAztecTest is Test {
         vm.prank(alice);
         token.transfer(bob, 40 * DECIMALS);
 
-        assertEq(token.balanceOf(alice), 60 * DECIMALS, "alice balance after transfer");
-        assertEq(token.balanceOf(bob), 40 * DECIMALS, "bob balance after transfer");
+        assertEq(
+            token.balanceOf(alice),
+            60 * DECIMALS,
+            "alice balance after transfer"
+        );
+        assertEq(
+            token.balanceOf(bob),
+            40 * DECIMALS,
+            "bob balance after transfer"
+        );
 
         vm.prank(alice);
         token.approve(charlie, 30 * DECIMALS);
@@ -55,9 +76,21 @@ contract StAztecTest is Test {
         vm.prank(charlie);
         token.transferFrom(alice, bob, 30 * DECIMALS);
 
-        assertEq(token.balanceOf(alice), 30 * DECIMALS, "alice balance after transferFrom");
-        assertEq(token.balanceOf(bob), 70 * DECIMALS, "bob balance after transferFrom");
-        assertEq(token.allowance(alice, charlie), 0, "allowance after transferFrom");
+        assertEq(
+            token.balanceOf(alice),
+            30 * DECIMALS,
+            "alice balance after transferFrom"
+        );
+        assertEq(
+            token.balanceOf(bob),
+            70 * DECIMALS,
+            "bob balance after transferFrom"
+        );
+        assertEq(
+            token.allowance(alice, charlie),
+            0,
+            "allowance after transferFrom"
+        );
         assertEq(token.decimals(), 18, "decimals");
     }
 
@@ -86,7 +119,12 @@ contract StAztecTest is Test {
         bytes32 digest = _buildPermitDigest(owner, bob, 1, nonce, deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
 
-        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC20Permit.ERC2612ExpiredSignature.selector,
+                deadline
+            )
+        );
         token.permit(owner, bob, 1, deadline, v, r, s);
     }
 
@@ -101,12 +139,20 @@ contract StAztecTest is Test {
         bytes32 digest = _buildPermitDigest(owner, bob, 5, nonce, deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(attackerKey, digest);
 
-        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, attacker, owner));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ERC20Permit.ERC2612InvalidSigner.selector,
+                attacker,
+                owner
+            )
+        );
         token.permit(owner, bob, 5, deadline, v, r, s);
     }
 
     function test_OnlyAuthorizedCanMint() external {
-        vm.expectRevert(abi.encodeWithSelector(StAztec.StAztecUnauthorized.selector, alice));
+        vm.expectRevert(
+            abi.encodeWithSelector(StAztec.StAztecUnauthorized.selector, alice)
+        );
         vm.prank(alice);
         token.mint(alice, 1 * DECIMALS);
 
@@ -123,7 +169,9 @@ contract StAztecTest is Test {
         vm.prank(core);
         token.mint(alice, 10 * DECIMALS);
 
-        vm.expectRevert(abi.encodeWithSelector(StAztec.StAztecUnauthorized.selector, bob));
+        vm.expectRevert(
+            abi.encodeWithSelector(StAztec.StAztecUnauthorized.selector, bob)
+        );
         vm.prank(bob);
         token.burn(alice, 1 * DECIMALS);
 
@@ -152,10 +200,14 @@ contract StAztecTest is Test {
         assertEq(supply, sumBalances, "supply equals balances");
     }
 
-    function testFuzz_PermitUpdatesAllowance(uint96 value, uint32 deadlineOffset) external {
+    function testFuzz_PermitUpdatesAllowance(
+        uint96 value,
+        uint32 deadlineOffset
+    ) external {
         uint256 ownerKey = 0xA11CE;
         address owner = vm.addr(ownerKey);
-        uint256 deadline = block.timestamp + uint256(bound(deadlineOffset, 1, 30 days));
+        uint256 deadline = block.timestamp +
+            uint256(bound(deadlineOffset, 1, 30 days));
 
         value = uint96(bound(value, 0, type(uint96).max));
 
@@ -181,10 +233,17 @@ contract StAztecTest is Test {
         token.transfer(bob, amount / 2);
 
         assertEq(token.totalSupply(), supplyBefore, "total supply unchanged");
-        assertEq(token.balanceOf(alice) + token.balanceOf(bob), supplyBefore, "balances sum to supply");
+        assertEq(
+            token.balanceOf(alice) + token.balanceOf(bob),
+            supplyBefore,
+            "balances sum to supply"
+        );
     }
 
-    function testFuzz_ApproveAndTransferFrom(uint96 mintAmount, uint96 spendAmount) external {
+    function testFuzz_ApproveAndTransferFrom(
+        uint96 mintAmount,
+        uint96 spendAmount
+    ) external {
         mintAmount = uint96(bound(mintAmount, 1, type(uint96).max));
         spendAmount = uint96(bound(spendAmount, 0, mintAmount));
 
@@ -197,23 +256,48 @@ contract StAztecTest is Test {
         vm.prank(charlie);
         token.transferFrom(alice, bob, spendAmount);
 
-        assertEq(token.balanceOf(alice), mintAmount - spendAmount, "alice balance after transferFrom");
-        assertEq(token.balanceOf(bob), spendAmount, "bob balance after transferFrom");
-        assertEq(token.allowance(alice, charlie), 0, "allowance after transferFrom");
+        assertEq(
+            token.balanceOf(alice),
+            mintAmount - spendAmount,
+            "alice balance after transferFrom"
+        );
+        assertEq(
+            token.balanceOf(bob),
+            spendAmount,
+            "bob balance after transferFrom"
+        );
+        assertEq(
+            token.allowance(alice, charlie),
+            0,
+            "allowance after transferFrom"
+        );
     }
 
-    function testFuzz_UnauthorizedMintBurnReverts(address attacker, uint96 amount) external {
+    function testFuzz_UnauthorizedMintBurnReverts(
+        address attacker,
+        uint96 amount
+    ) external {
         vm.assume(attacker != core);
         amount = uint96(bound(amount, 1, type(uint96).max));
 
-        vm.expectRevert(abi.encodeWithSelector(StAztec.StAztecUnauthorized.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                StAztec.StAztecUnauthorized.selector,
+                attacker
+            )
+        );
         vm.prank(attacker);
         token.mint(attacker, amount);
 
         vm.prank(core);
         token.mint(alice, amount);
 
-        vm.expectRevert(abi.encodeWithSelector(StAztec.StAztecUnauthorized.selector, attacker));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                StAztec.StAztecUnauthorized.selector,
+                attacker
+            )
+        );
         vm.prank(attacker);
         token.burn(alice, amount);
     }
