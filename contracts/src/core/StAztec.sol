@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.24;
 
-import {ERC20} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/ERC20.sol";
-import {ERC20Permit} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/ERC20Permit.sol";
-import {
-    IERC20Metadata
-} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/IERC20Metadata.sol";
-import {IERC20Permit} from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/IERC20Permit.sol";
+import {ERC20} from "@oz/token/ERC20/ERC20.sol";
+import {ERC20Permit} from "@oz/token/ERC20/extensions/ERC20Permit.sol";
+import {IERC20Metadata} from "@oz/token/ERC20/extensions/IERC20Metadata.sol";
+import {IERC20Permit} from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 
-import {IStAztec} from "src/interfaces/IStAztec.sol";
+import {IStAztec} from "../interfaces/IStAztec.sol";
 
 /// @title StAztec
 /// @notice ERC-20 token representing staked Aztec shares in OllaCore.
