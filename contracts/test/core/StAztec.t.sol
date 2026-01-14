@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "@forge-std/Test.sol";
 
-import { ERC20Permit } from "dependencies/@openzeppelin-contracts-5.5.0-rc.1/token/ERC20/extensions/ERC20Permit.sol";
+import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
 import { StAztec } from "src/core/StAztec.sol";
 
 contract StAztecTest is Test {
