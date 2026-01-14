@@ -4,11 +4,15 @@ pragma solidity ^0.8.24;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
+import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import { IStAztec } from "src/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/mocks/MockAztec.sol";
+import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 
 contract OllaCoreTest is Test {
     using Math for uint256;
@@ -27,6 +31,7 @@ contract OllaCoreTest is Test {
     MockAztec internal asset;
     OllaCore internal vault;
     StAztec internal stAztec;
+    MockStakingManager internal stakingManager;
     address internal alice;
     address internal bob;
 
@@ -38,7 +43,8 @@ contract OllaCoreTest is Test {
         vault = OllaCore(address(proxy));
 
         stAztec = new StAztec(address(vault));
-        vault.initialize(asset, stAztec);
+        stakingManager = new MockStakingManager();
+        vault.initialize(asset, stAztec, stakingManager);
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
@@ -126,6 +132,23 @@ contract OllaCoreTest is Test {
         vault.claimPendingWithdraw(alice);
     }
 
+    function test_RevertWhen_InitializeZeroAddress() external {
+        OllaCore implementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        OllaCore newVault = OllaCore(address(proxy));
+        StAztec newStAztec = new StAztec(address(newVault));
+        MockStakingManager newStakingManager = new MockStakingManager();
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(IERC20(address(0)), newStAztec, newStakingManager);
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(asset, IStAztec(address(0)), newStakingManager);
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(asset, newStAztec, IStakingManager(address(0)));
+    }
+
     function test_RevertWhen_UnauthorizedRedeem() external {
         _deposit(alice, 15 * DECIMALS);
 
@@ -211,6 +234,7 @@ contract OllaCoreTest is Test {
     function testFuzz_RevertWhen_UnauthorizedRedeem(uint96 assets, uint96 redeemShares, address attacker) external {
         assets = uint96(bound(assets, 1, type(uint96).max));
         vm.assume(attacker != alice);
+        vm.assume(attacker != address(0));
 
         _deposit(alice, assets);
 
