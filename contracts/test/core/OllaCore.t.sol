@@ -50,6 +50,7 @@ contract OllaCoreTest is Test {
         asset.approve(address(vault), assets);
         vm.prank(owner);
         shares = vault.deposit(assets, owner);
+        return shares;
     }
 
     function test_DepositMintsAtExchangeRate() external {

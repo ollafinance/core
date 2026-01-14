@@ -69,6 +69,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         _asset.safeTransferFrom(msg.sender, address(this), assets);
         _stAztec.mint(receiver, shares);
         emit Deposit(msg.sender, receiver, assets, shares);
+        return shares;
     }
 
     /// @notice Requests a redemption in shares.
@@ -85,6 +86,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         assets = _convertToAssetsForRedeem(shares);
         _requestWithdrawal(shares, assets, receiver, owner);
         emit RequestRedeem(owner, receiver, assets, shares);
+        return assets;
     }
 
     /// @notice Claims a pending withdrawal for an owner.
@@ -107,6 +109,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         emit Withdraw(msg.sender, pending.receiver, owner, assets, pending.shares);
 
         emit ClaimRedeem(owner, pending.receiver, assets, pending.shares);
+        return assets;
     }
 
     /// @notice Returns the underlying asset address.
