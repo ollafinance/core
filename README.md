@@ -17,6 +17,7 @@ to grow into an open-source, auditable codebase.
 - `research/` Protocol research and design notes (Obsidian vault).
 
 Key research index:
+
 - `research/technical/technical-architecture.md`
 
 ## Tooling
@@ -31,7 +32,7 @@ From the repo root:
 
 ```bash
 cd contracts
-forge install
+forge soldeer install
 forge build
 forge test
 ```
@@ -67,8 +68,7 @@ yarn husky install
 ## Static analysis
 
 ```bash
-cd contracts
-slither . --config-file slither.config.json
+yarn slither
 ```
 
 For Slytherin, install the plugin and run:

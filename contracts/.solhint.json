@@ -30,6 +30,7 @@
     "comprehensive-interface": "error",
     "no-unused-import": "error",
     "imports-order": "error",
+    "import-path-check": "off",
     "check-send-result": "error",
     "duplicated-imports": "warn",
     "gas-custom-errors": "warn",
