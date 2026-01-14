@@ -13,6 +13,12 @@ checksum = "6e07ffd426a000d3deb27ca4614ea218cc2574c18566331ae18dcd67d41586fa"
 integrity = "0bf0be32c74013d700b537a3d66956ec4ca36c723a5c78659c5e6878769731f1"
 
 [[dependencies]]
+name = "aztec-contracts"
+version = "3.0.1"
+git = "git@github.com:AztecProtocol/l1-contracts.git"
+rev = "d5b51f36ea9efed08e81026dfccf4d7f4625b4cb"
+
+[[dependencies]]
 name = "forge-std"
 version = "1.11.0"
 url = "https://soldeer-revisions.s3.amazonaws.com/forge-std/1_11_0_09-10-2025_06:23:22_forge-std-1.11.zip"
