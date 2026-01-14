@@ -1,0 +1,10 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+
+remappings = [
+    "@oz/=lib/openzeppelin-contracts/contracts/",
+    "@splits/=lib/splits-contracts-monorepo/packages/splits-v2/src/",
+    "@openzeppelin/=lib/openzeppelin-contracts/"
+]
