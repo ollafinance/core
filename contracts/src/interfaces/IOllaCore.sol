@@ -91,7 +91,7 @@ interface IOllaCore {
     /// @notice Claims a pending withdrawal for an owner.
     /// @param owner The owner of the pending withdrawal.
     /// @return assets The assets transferred to the receiver.
-    function claimWithdraw(address owner) external returns (uint256 assets);
+    function claimPendingWithdraw(address owner) external returns (uint256 assets);
 
     /// @notice Returns the underlying asset address.
     /// @return The underlying asset address.

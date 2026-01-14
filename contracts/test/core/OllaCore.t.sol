@@ -107,7 +107,7 @@ contract OllaCoreTest is Test {
         emit ClaimWithdraw(alice, alice, 10 * DECIMALS, 10 * DECIMALS);
 
         vm.prank(bob);
-        vault.claimWithdraw(alice);
+        vault.claimPendingWithdraw(alice);
 
         assertEq(asset.balanceOf(alice), 10 * DECIMALS, "assets received");
     }
@@ -130,7 +130,7 @@ contract OllaCoreTest is Test {
         emit ClaimRedeem(alice, bob, 5 * DECIMALS, 5 * DECIMALS);
 
         vm.prank(bob);
-        vault.claimWithdraw(alice);
+        vault.claimPendingWithdraw(alice);
     }
 
     function test_RequestWithdrawAndClaim() external {
@@ -143,7 +143,7 @@ contract OllaCoreTest is Test {
         assertEq(stAztec.balanceOf(alice), 30 * DECIMALS, "remaining shares");
 
         vm.prank(bob);
-        vault.claimWithdraw(alice);
+        vault.claimPendingWithdraw(alice);
 
         assertEq(asset.balanceOf(alice), 10 * DECIMALS, "assets received");
     }
@@ -161,7 +161,7 @@ contract OllaCoreTest is Test {
 
     function test_RevertWhen_NoPendingWithdrawal() external {
         vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreNoPendingWithdrawal.selector, alice));
-        vault.claimWithdraw(alice);
+        vault.claimPendingWithdraw(alice);
     }
 
     function test_RevertWhen_UnauthorizedRedeem() external {
@@ -213,7 +213,7 @@ contract OllaCoreTest is Test {
         assertEq(stAztec.balanceOf(alice), assets - withdrawAssets, "shares remaining");
 
         vm.prank(bob);
-        uint256 claimed = vault.claimWithdraw(alice);
+        uint256 claimed = vault.claimPendingWithdraw(alice);
 
         assertEq(claimed, withdrawAssets, "claimed assets");
         assertEq(asset.balanceOf(alice), withdrawAssets, "assets received");

@@ -74,14 +74,14 @@ contract OllaCoreHandler is Test {
         vm.stopPrank();
     }
 
-    function claimWithdraw(uint256 actorSeed) external {
+    function claimPendingWithdraw(uint256 actorSeed) external {
         address actor = actors[bound(actorSeed, 0, actors.length - 1)];
         IOllaCore.PendingWithdrawal memory pending = vault.pendingWithdrawal(actor);
         if (pending.shares == 0) {
             return;
         }
 
-        vault.claimWithdraw(actor);
+        vault.claimPendingWithdraw(actor);
     }
 }
 

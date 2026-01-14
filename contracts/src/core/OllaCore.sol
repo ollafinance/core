@@ -65,7 +65,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
             revert OllaCoreZeroAddress();
         }
 
-        shares = _convertToShares(assets, Math.Rounding.Floor);
+        shares = _convertToSharesForDeposit(assets);
         _asset.safeTransferFrom(msg.sender, address(this), assets);
         _stAztec.mint(receiver, shares);
         emit Deposit(msg.sender, receiver, assets, shares);
@@ -82,7 +82,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         nonReentrant
         returns (uint256 shares)
     {
-        shares = _convertToShares(assets, Math.Rounding.Ceil);
+        shares = _convertToSharesForWithdraw(assets);
         _requestWithdrawal(shares, assets, receiver, owner, false);
         emit RequestWithdraw(owner, receiver, assets, shares);
     }
@@ -98,7 +98,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         nonReentrant
         returns (uint256 assets)
     {
-        assets = _convertToAssets(shares, Math.Rounding.Floor);
+        assets = _convertToAssetsForRedeem(shares);
         _requestWithdrawal(shares, assets, receiver, owner, true);
         emit RequestRedeem(owner, receiver, assets, shares);
     }
@@ -106,7 +106,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Claims a pending withdrawal for an owner.
     /// @param owner The owner of the pending withdrawal.
     /// @return assets The assets transferred to the receiver.
-    function claimWithdraw(address owner) external override nonReentrant returns (uint256 assets) {
+    function claimPendingWithdraw(address owner) external override nonReentrant returns (uint256 assets) {
         PendingWithdrawal memory pending = _pendingWithdrawals[owner];
         if (pending.shares == 0) {
             revert OllaCoreNoPendingWithdrawal(owner);
@@ -195,6 +195,14 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         delete _pendingWithdrawals[owner];
     }
 
+    function _convertToSharesForDeposit(uint256 assets) internal view returns (uint256) {
+        return _convertToShares(assets, Math.Rounding.Floor);
+    }
+
+    function _convertToSharesForWithdraw(uint256 assets) internal view returns (uint256) {
+        return _convertToShares(assets, Math.Rounding.Ceil);
+    }
+
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
         IStAztec stAztecToken = _stAztec;
         uint256 supply = stAztecToken.totalSupply();
@@ -202,6 +210,10 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
             return assets;
         }
         return assets.mulDiv(supply, totalAssets(), rounding);
+    }
+
+    function _convertToAssetsForRedeem(uint256 assets) internal view returns (uint256) {
+        return _convertToAssets(assets, Math.Rounding.Ceil);
     }
 
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
