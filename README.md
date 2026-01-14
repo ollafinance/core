@@ -71,8 +71,6 @@ yarn husky install
 yarn slither
 ```
 
-This runs Slither via Docker, cleaning build artifacts before and after to avoid permission issues.
-
 For Slytherin, install the plugin and run:
 
 ```bash
