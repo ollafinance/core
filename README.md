@@ -66,8 +66,7 @@ yarn husky install
 ## Static analysis
 
 ```bash
-cd contracts
-slither . --config-file slither.config.json
+docker run --rm -it -v .:/work trailofbits/eth-security-toolbox slither /work/contracts --config-file /work/contracts/slither.config.json
 ```
 
 For Slytherin, install the plugin and run:
