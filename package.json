@@ -2,6 +2,7 @@
   "name": "olla-core",
   "private": true,
   "devDependencies": {
+    "@types/node": "20.11.30",
     "husky": "8.0.3",
     "solhint": "6.0.2",
     "solhint-plugin-explicit-return": "portal:./solhint-rules",
