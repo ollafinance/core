@@ -13,7 +13,6 @@ interface IOllaCore {
         uint256 shares;
         uint256 assets;
         address receiver;
-        bool isRedeem;
     }
 
     // solhint-disable gas-indexed-events
@@ -48,13 +47,6 @@ interface IOllaCore {
     /// @param shares The shares burned.
     event RequestRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
 
-    /// @notice Emitted when a withdrawal request is claimed.
-    /// @param owner The share owner that requested the withdrawal.
-    /// @param receiver The address receiving the assets.
-    /// @param assets The assets paid out.
-    /// @param shares The shares burned.
-    event ClaimWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
-
     /// @notice Emitted when a redeem request is claimed.
     /// @param owner The share owner that requested the redemption.
     /// @param receiver The address receiving the assets.
@@ -73,13 +65,6 @@ interface IOllaCore {
     /// @param receiver The recipient of the stAztec shares.
     /// @return shares The shares minted to the receiver.
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
-
-    /// @notice Requests a withdrawal in assets.
-    /// @param assets The amount of assets to withdraw.
-    /// @param receiver The receiver of the assets.
-    /// @param owner The owner of the shares.
-    /// @return shares The shares burned to request the withdrawal.
-    function requestWithdraw(uint256 assets, address receiver, address owner) external returns (uint256 shares);
 
     /// @notice Requests a redemption in shares.
     /// @param shares The number of shares to redeem.

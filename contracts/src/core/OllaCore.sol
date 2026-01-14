@@ -71,22 +71,6 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         emit Deposit(msg.sender, receiver, assets, shares);
     }
 
-    /// @notice Requests a withdrawal in assets.
-    /// @param assets The amount of assets to withdraw.
-    /// @param receiver The receiver of the assets.
-    /// @param owner The owner of the shares.
-    /// @return shares The shares burned to request the withdrawal.
-    function requestWithdraw(uint256 assets, address receiver, address owner)
-        external
-        override
-        nonReentrant
-        returns (uint256 shares)
-    {
-        shares = _convertToSharesForWithdraw(assets);
-        _requestWithdrawal(shares, assets, receiver, owner, false);
-        emit RequestWithdraw(owner, receiver, assets, shares);
-    }
-
     /// @notice Requests a redemption in shares.
     /// @param shares The number of shares to redeem.
     /// @param receiver The receiver of the assets.
@@ -99,7 +83,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         returns (uint256 assets)
     {
         assets = _convertToAssetsForRedeem(shares);
-        _requestWithdrawal(shares, assets, receiver, owner, true);
+        _requestWithdrawal(shares, assets, receiver, owner);
         emit RequestRedeem(owner, receiver, assets, shares);
     }
 
@@ -122,11 +106,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         _asset.safeTransfer(pending.receiver, assets);
         emit Withdraw(msg.sender, pending.receiver, owner, assets, pending.shares);
 
-        if (pending.isRedeem) {
-            emit ClaimRedeem(owner, pending.receiver, assets, pending.shares);
-        } else {
-            emit ClaimWithdraw(owner, pending.receiver, assets, pending.shares);
-        }
+        emit ClaimRedeem(owner, pending.receiver, assets, pending.shares);
     }
 
     /// @notice Returns the underlying asset address.
@@ -165,9 +145,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         return _asset.balanceOf(address(this));
     }
 
-    function _requestWithdrawal(uint256 shares, uint256 assets, address receiver, address owner, bool isRedeem)
-        internal
-    {
+    function _requestWithdrawal(uint256 shares, uint256 assets, address receiver, address owner) internal {
         if (receiver == address(0) || owner == address(0)) {
             revert OllaCoreZeroAddress();
         }
@@ -185,8 +163,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
             revert OllaCoreInsufficientLiquidity(assets, availableAssets);
         }
 
-        _pendingWithdrawals[owner] =
-            PendingWithdrawal({ shares: shares, assets: assets, receiver: receiver, isRedeem: isRedeem });
+        _pendingWithdrawals[owner] = PendingWithdrawal({ shares: shares, assets: assets, receiver: receiver });
 
         _stAztec.burn(owner, shares);
     }
@@ -197,10 +174,6 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
 
     function _convertToSharesForDeposit(uint256 assets) internal view returns (uint256) {
         return _convertToShares(assets, Math.Rounding.Floor);
-    }
-
-    function _convertToSharesForWithdraw(uint256 assets) internal view returns (uint256) {
-        return _convertToShares(assets, Math.Rounding.Ceil);
     }
 
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
