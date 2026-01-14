@@ -45,7 +45,7 @@ contract OllaCoreHandler is Test {
         vm.stopPrank();
     }
 
-    function requestWithdraw(uint96 amount, uint256 actorSeed) external {
+    function requestRedeem(uint96 shares, uint256 actorSeed) external {
         address actor = actors[bound(actorSeed, 0, actors.length - 1)];
         uint256 supply = stAztec.totalSupply();
         if (supply == 0) {
@@ -62,15 +62,10 @@ contract OllaCoreHandler is Test {
             return;
         }
 
-        uint256 maxAssets = actorShares.mulDiv(totalAssets, supply, Math.Rounding.Floor);
-        if (maxAssets == 0) {
-            return;
-        }
-
-        uint256 assets = uint256(bound(amount, 1, maxAssets));
+        uint256 redeemShares = uint256(bound(shares, 1, actorShares));
 
         vm.startPrank(actor);
-        vault.requestWithdraw(assets, actor, actor);
+        vault.requestRedeem(redeemShares, actor, actor);
         vm.stopPrank();
     }
 
