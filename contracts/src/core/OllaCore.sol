@@ -189,16 +189,18 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         _stAztec.burn(owner, shares);
     }
 
+    // slither-disable-next-line dead-code
     function _stake(uint256 amount) internal {
         uint256 messageId = ++_stakeMessageId;
-        _stakingManager.stake(amount);
         emit StakeRequested(messageId, amount);
+        _stakingManager.stake(amount);
     }
 
+    // slither-disable-next-line dead-code
     function _unstake(uint256 amount) internal {
         uint256 messageId = ++_unstakeMessageId;
-        _stakingManager.unStake(amount);
         emit UnstakeRequested(messageId, amount);
+        _stakingManager.unStake(amount);
     }
 
     function _clearPendingWithdrawal(address owner) internal {
