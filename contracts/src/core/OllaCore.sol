@@ -7,6 +7,7 @@ import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
+import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
 
 /// @title OllaCore
@@ -20,7 +21,11 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
 
     IERC20 private _asset;
     IStAztec private _stAztec;
+    IStakingManager private _stakingManager;
     uint256 private _unusedReentrancyStatus;
+
+    uint256 private _stakeMessageId;
+    uint256 private _unstakeMessageId;
 
     mapping(address owner => PendingWithdrawal withdrawal) private _pendingWithdrawals;
 
@@ -46,13 +51,20 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Initializes the vault with asset and stAztec addresses.
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
-    function initialize(IERC20 asset_, IStAztec stAztec_) external override initializer {
-        if (address(asset_) == address(0) || address(stAztec_) == address(0)) {
+    /// @param stakingManager_ The staking manager for delegation messaging.
+    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_)
+        external
+        override
+        initializer
+    {
+        if (address(asset_) == address(0) || address(stAztec_) == address(0) || address(stakingManager_) == address(0))
+        {
             revert OllaCoreZeroAddress();
         }
 
         _asset = asset_;
         _stAztec = stAztec_;
+        _stakingManager = stakingManager_;
         _unusedReentrancyStatus = 0;
     }
 
@@ -124,6 +136,12 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         return address(_stAztec);
     }
 
+    /// @notice Returns the staking manager address.
+    /// @return The staking manager address.
+    function stakingManager() external view override returns (address) {
+        return address(_stakingManager);
+    }
+
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
     /// @return The exchange rate scaled by 1e18.
     function exchangeRate() external view override returns (uint256) {
@@ -169,6 +187,18 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         _pendingWithdrawals[owner] = PendingWithdrawal({ shares: shares, assets: assets, receiver: receiver });
 
         _stAztec.burn(owner, shares);
+    }
+
+    function _stake(uint256 amount) internal {
+        uint256 messageId = ++_stakeMessageId;
+        _stakingManager.stake(amount);
+        emit StakeRequested(messageId, amount);
+    }
+
+    function _unstake(uint256 amount) internal {
+        uint256 messageId = ++_unstakeMessageId;
+        _stakingManager.unStake(amount);
+        emit UnstakeRequested(messageId, amount);
     }
 
     function _clearPendingWithdrawal(address owner) internal {
