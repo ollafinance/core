@@ -1,5 +1,6 @@
 {
   "extends": "solhint:recommended",
+  "plugins": ["explicit-return"],
   "rules": {
     "private-vars-leading-underscore": "error",
     "no-global-import": "error",
@@ -20,6 +21,7 @@
         "ignoreConstructors": true
       }
     ],
+    "explicit-return/explicit-return": "error",
     "no-unused-vars": "error",
     "state-visibility": "error",
     "var-name-mixedcase": "error",

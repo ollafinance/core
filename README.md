@@ -23,7 +23,7 @@ Key research index:
 ## Tooling
 
 - Solidity + Foundry for development and testing
-- Solhint for Solidity linting
+- Solhint for Solidity linting (includes a custom rule plugin)
 - Slither + Slytherin for static analysis
 
 ## Quickstart
@@ -50,6 +50,8 @@ forge test --match-path "test/**/*.invariant.sol"
 yarn install
 yarn lint
 ```
+
+The custom Solhint rules live in `solhint-rules/` and are built automatically by the lint script. For more details, see `solhint-rules/README.md`.
 
 To enforce linting on every commit, install dependencies to enable Husky hooks:
 

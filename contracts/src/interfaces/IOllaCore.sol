@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
+import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
 
 /// @title IOllaCore
@@ -53,12 +54,23 @@ interface IOllaCore {
     /// @param assets The assets paid out.
     /// @param shares The shares burned.
     event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+
+    /// @notice Emitted when a stake message is sent to the staking manager.
+    /// @param messageId Monotonic message id.
+    /// @param amount The amount requested to stake.
+    event StakeRequested(uint256 indexed messageId, uint256 amount);
+
+    /// @notice Emitted when an unstake message is sent to the staking manager.
+    /// @param messageId Monotonic message id.
+    /// @param amount The amount requested to unstake.
+    event UnstakeRequested(uint256 indexed messageId, uint256 amount);
     // solhint-enable gas-indexed-events
 
     /// @notice Initializes the vault with the Aztec asset address.
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
-    function initialize(IERC20 asset_, IStAztec stAztec_) external;
+    /// @param stakingManager_ The staking manager for delegation messaging.
+    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_) external;
 
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
@@ -85,6 +97,10 @@ interface IOllaCore {
     /// @notice Returns the stAztec share token address.
     /// @return The stAztec share token address.
     function stAztec() external view returns (address);
+
+    /// @notice Returns the staking manager address.
+    /// @return The staking manager address.
+    function stakingManager() external view returns (address);
 
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.

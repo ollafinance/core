@@ -2,12 +2,16 @@
   "name": "olla-core",
   "private": true,
   "devDependencies": {
+    "@types/node": "20.11.30",
     "husky": "8.0.3",
-    "solhint": "6.0.2"
+    "solhint": "6.0.2",
+    "solhint-plugin-explicit-return": "portal:./solhint-rules",
+    "typescript": "5.4.5"
   },
   "packageManager": "yarn@4.12.0",
   "scripts": {
     "postinstall": "husky install",
+    "solhint:build": "tsc -p solhint-rules/tsconfig.json",
     "lint": "cd contracts && solhint --config .solhint.json \"src/**/*.sol\"",
     "lint:fix": "cd contracts && solhint --config .solhint.json --fix --noPrompt \"src/**/*.sol\"",
     "slither": "cd contracts && forge clean && docker run --rm -v $(pwd)/..:/work trailofbits/eth-security-toolbox slither /work/contracts --config-file /work/contracts/slither.config.json && sudo rm -rf out cache"

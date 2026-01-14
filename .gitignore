@@ -18,3 +18,4 @@ contracts/gas-report/
 contracts/node_modules/
 contracts/.gas-snapshot
 contracts/.forge-snapshots/
+**/dist/
