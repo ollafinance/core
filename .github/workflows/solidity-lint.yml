@@ -42,6 +42,10 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
         working-directory: .
+      - name: Build solhint rules
+        if: steps.sol-files.outputs.found == 'true'
+        run: yarn solhint:build
+        working-directory: .
       - name: Run solhint
         if: steps.sol-files.outputs.found == 'true'
         run: yarn lint

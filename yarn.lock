@@ -87,6 +87,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:20.11.30":
+  version: 20.11.30
+  resolution: "@types/node@npm:20.11.30"
+  dependencies:
+    undici-types: "npm:~5.26.4"
+  checksum: 10c0/867cfaf969c6d8850d8d7304e7ab739898a50ecb1395b61ff2335644f5f48d7a46fbc4a14cee967aed65ec134b61a746edae70d1f32f11321ccf29165e3bc4e6
+  languageName: node
+  linkType: hard
+
 "ajv-errors@npm:^1.0.1":
   version: 1.0.1
   resolution: "ajv-errors@npm:1.0.1"
@@ -646,8 +655,11 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "olla-core@workspace:."
   dependencies:
+    "@types/node": "npm:20.11.30"
     husky: "npm:8.0.3"
     solhint: "npm:6.0.2"
+    solhint-plugin-explicit-return: "portal:./solhint-rules"
+    typescript: "npm:5.4.5"
   languageName: unknown
   linkType: soft
 
@@ -833,6 +845,12 @@ __metadata:
   languageName: node
   linkType: hard
 
+"solhint-plugin-explicit-return@portal:./solhint-rules::locator=olla-core%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "solhint-plugin-explicit-return@portal:./solhint-rules::locator=olla-core%40workspace%3A."
+  languageName: node
+  linkType: soft
+
 "solhint@npm:6.0.2":
   version: 6.0.2
   resolution: "solhint@npm:6.0.2"
@@ -919,6 +937,33 @@ __metadata:
   version: 0.2.0
   resolution: "text-table@npm:0.2.0"
   checksum: 10c0/02805740c12851ea5982686810702e2f14369a5f4c5c40a836821e3eefc65ffeec3131ba324692a37608294b0fd8c1e55a2dd571ffed4909822787668ddbee5c
+  languageName: node
+  linkType: hard
+
+"typescript@npm:5.4.5":
+  version: 5.4.5
+  resolution: "typescript@npm:5.4.5"
+  bin:
+    tsc: bin/tsc
+    tsserver: bin/tsserver
+  checksum: 10c0/2954022ada340fd3d6a9e2b8e534f65d57c92d5f3989a263754a78aba549f7e6529acc1921913560a4b816c46dce7df4a4d29f9f11a3dc0d4213bb76d043251e
+  languageName: node
+  linkType: hard
+
+"typescript@patch:typescript@npm%3A5.4.5#optional!builtin<compat/typescript>":
+  version: 5.4.5
+  resolution: "typescript@patch:typescript@npm%3A5.4.5#optional!builtin<compat/typescript>::version=5.4.5&hash=5adc0c"
+  bin:
+    tsc: bin/tsc
+    tsserver: bin/tsserver
+  checksum: 10c0/db2ad2a16ca829f50427eeb1da155e7a45e598eec7b086d8b4e8ba44e5a235f758e606d681c66992230d3fc3b8995865e5fd0b22a2c95486d0b3200f83072ec9
+  languageName: node
+  linkType: hard
+
+"undici-types@npm:~5.26.4":
+  version: 5.26.5
+  resolution: "undici-types@npm:5.26.5"
+  checksum: 10c0/bb673d7876c2d411b6eb6c560e0c571eef4a01c1c19925175d16e3a30c4c428181fb8d7ae802a261f283e4166a0ac435e2f505743aa9e45d893f9a3df017b501
   languageName: node
   linkType: hard
 
