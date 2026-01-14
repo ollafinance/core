@@ -66,8 +66,10 @@ yarn husky install
 ## Static analysis
 
 ```bash
-docker run --rm -it -v .:/work trailofbits/eth-security-toolbox slither /work/contracts --config-file /work/contracts/slither.config.json
+yarn slither
 ```
+
+This runs Slither via Docker, cleaning build artifacts before and after to avoid permission issues.
 
 For Slytherin, install the plugin and run:
 

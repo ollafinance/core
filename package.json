@@ -9,6 +9,7 @@
   "scripts": {
     "postinstall": "husky install",
     "lint": "cd contracts && solhint --config .solhint.json \"src/**/*.sol\"",
-    "lint:fix": "cd contracts && solhint --config .solhint.json --fix --noPrompt \"src/**/*.sol\""
+    "lint:fix": "cd contracts && solhint --config .solhint.json --fix --noPrompt \"src/**/*.sol\"",
+    "slither": "cd contracts && forge clean && docker run --rm -v $(pwd)/..:/work trailofbits/eth-security-toolbox slither /work/contracts --config-file /work/contracts/slither.config.json && sudo rm -rf out cache"
   }
 }

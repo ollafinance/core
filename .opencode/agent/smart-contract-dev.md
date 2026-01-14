@@ -160,6 +160,7 @@ Invariant Testing:
 
 Static Analysis:
 - Slither and Slytherin run automatically on PRs - review findings before merging
+- Run locally with `yarn slither` (uses Docker, cleans artifacts to avoid permission issues)
 - Configure exclusions in `contracts/slither.config.json` if needed (currently excludes lib, dependencies, test, script, src/mocks)
 </security_practices>
 
@@ -192,7 +193,8 @@ Dependencies & Project Management:
 - `forge soldeer install @openzeppelin-contracts~5.5.0` - Install specific version
 - `forge soldeer update` - Update dependencies
 - `forge remappings` - Display import remappings
-- Current dependencies: `@openzeppelin-contracts@5.5.0-rc.1`, `forge-std@1.11.0`
+- Current dependencies: `@openzeppelin-contracts@5.5.0-rc.1`, `@openzeppelin-contracts-upgradeable@5.5.0-rc.1`, `forge-std@1.11.0`, `aztec-contracts@3.0.1`
+- Import aliases: `@oz/` (OpenZeppelin), `@oz-upgradeable/` (OZ Upgradeable), `@az/` (Aztec), `@forge-std/` (Forge Std)
 
 Deployment & Scripting:
 
@@ -295,7 +297,12 @@ int_types = "long"
 
 [dependencies]
 "@openzeppelin-contracts" = "5.5.0-rc.1"
+"@openzeppelin-contracts-upgradeable" = "5.5.0-rc.1"
 forge-std = "1.11.0"
+aztec-contracts = { version = "3.0.1", git = "git@github.com:AztecProtocol/l1-contracts.git", rev = "d5b51f36ea9efed08e81026dfccf4d7f4625b4cb" }
+
+[soldeer]
+remappings_generate = false  # Manual remappings in remappings.txt
 ```
 
 </configuration_patterns>
@@ -580,11 +587,15 @@ olla-core/
 │   │   ├── interfaces/           # Interface definitions
 │   │   └── libraries/            # Reusable libraries
 │   ├── test/                     # Test files
-│   │   ├── *.t.sol               # Unit tests
+│   │   ├── core/                 # Core contract tests
+│   │   │   ├── *.t.sol           # Unit tests
+│   │   │   └── *.invariant.sol   # Invariant tests
 │   │   └── *.integration.sol     # Integration tests
 │   ├── script/                   # Deployment scripts
 │   ├── dependencies/             # Soldeer dependencies
 │   │   ├── @openzeppelin-contracts-5.5.0-rc.1/
+│   │   ├── @openzeppelin-contracts-upgradeable-5.5.0-rc.1/
+│   │   ├── aztec-contracts-3.0.1/
 │   │   └── forge-std-1.11.0/
 │   └── out/                      # Compiled artifacts
 ├── package.json                  # Node.js config (husky, solhint)
