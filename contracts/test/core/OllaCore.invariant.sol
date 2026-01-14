@@ -10,6 +10,7 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/mocks/MockAztec.sol";
+import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 
 contract OllaCoreHandler is Test {
     using Math for uint256;
@@ -86,6 +87,7 @@ contract OllaCoreInvariantTest is Test {
     OllaCore internal vault;
     StAztec internal stAztec;
     MockAztec internal asset;
+    MockStakingManager internal stakingManager;
     OllaCoreHandler internal handler;
 
     function setUp() external {
@@ -96,7 +98,8 @@ contract OllaCoreInvariantTest is Test {
         vault = OllaCore(address(proxy));
 
         stAztec = new StAztec(address(vault));
-        vault.initialize(asset, stAztec);
+        stakingManager = new MockStakingManager();
+        vault.initialize(asset, stAztec, stakingManager);
 
         handler = new OllaCoreHandler(asset, vault, stAztec);
         targetContract(address(handler));
