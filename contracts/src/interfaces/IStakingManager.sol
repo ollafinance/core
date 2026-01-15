@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.27;
 
 /// @title IStakingManager
 /// @notice Interface for OllaCore stake/unstake messaging.

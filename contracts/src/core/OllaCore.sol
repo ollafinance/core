@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.27;
 
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
