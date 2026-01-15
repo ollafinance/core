@@ -6,6 +6,27 @@ import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 /// @title IAztecStaking
 /// @notice Minimal interface for Aztec rollup staking operations.
 /// @dev Mirrors the IStaking interface from Aztec contracts.
+///
+/// ## MAINTENANCE REQUIREMENTS
+///
+/// This interface MUST be kept in sync with the official Aztec IStaking interface:
+/// - File: `contracts/dependencies/aztec-contracts-*/src/core/interfaces/IStaking.sol`
+/// - Verify compatibility by running: `forge test --match-contract AztecInterfaceCompatibilityTest`
+///
+/// When upgrading Aztec contracts:
+/// 1. Check for breaking changes in the official interface
+/// 2. Update this interface if needed
+/// 3. Verify compatibility tests pass
+///
+/// ## TRADE-OFF
+///
+/// Why use a custom minimal interface instead of official IStaking?
+/// - Reduces attack surface (only 4 functions vs 30+)
+/// - Avoids coupling to Aztec's internal types (StakingQueueConfig, GSE, etc.)
+/// - Simplifies mock implementations for testing
+///
+/// Risk: Breaking changes in Aztec contracts could cause silent failures.
+/// Mitigation: Automated compatibility tests (Phase 1).
 /// @author Olla Core contributors
 interface IAztecStaking {
     /// @notice Deposits stake for a new validator.
