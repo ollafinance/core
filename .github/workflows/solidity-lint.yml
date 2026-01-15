@@ -27,6 +27,9 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+      - name: Setup Soldeer dependencies
+        if: steps.sol-files.outputs.found == 'true'
+        uses: ./.github/actions/setup-soldeer
       - name: Forge fmt check
         if: steps.sol-files.outputs.found == 'true'
         run: forge fmt --check

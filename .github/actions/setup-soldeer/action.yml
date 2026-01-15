@@ -1,0 +1,21 @@
+name: Setup Soldeer
+description: Cache and install Soldeer dependencies
+inputs:
+  workdir:
+    description: Working directory for Soldeer
+    default: contracts
+runs:
+  using: composite
+  steps:
+    - name: Cache Soldeer dependencies
+      id: soldeer-cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.workdir }}/dependencies
+        key: ${{ runner.os }}-soldeer-${{ hashFiles(format('{0}/soldeer.lock', inputs.workdir)) }}
+        restore-keys: |
+          ${{ runner.os }}-soldeer-
+    - name: Install Soldeer dependencies
+      if: steps.soldeer-cache.outputs.cache-hit != 'true'
+      run: forge soldeer install
+      working-directory: ${{ inputs.workdir }}
