@@ -62,3 +62,7 @@ remappings_generate = false
 [invariant]
 runs = 16
 depth = 16
+
+[profile.ci.invariant]
+runs = 256
+depth = 256
