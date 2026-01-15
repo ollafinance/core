@@ -168,12 +168,36 @@ contract OllaCoreInvariantTest is Test {
         assertEq(vault.exchangeRate(), expectedRate, "exchange rate matches totals");
     }
 
-    function invariant_DepositFormulaMatchesSpec() external view {
+    function invariant_ConvertToSharesMatchesSpec() external view {
         uint256 assets = 1e18;
         uint256 supply = stAztec.totalSupply();
         uint256 expectedShares = supply == 0 ? assets : assets.mulDiv(supply, vault.totalAssets(), Math.Rounding.Floor);
 
-        assertEq(vault.depositFormula(assets), expectedShares, "deposit formula matches spec");
+        assertEq(vault.convertToShares(assets), expectedShares, "convertToShares matches spec");
+    }
+
+    function invariant_ConvertToAssetsMatchesSpec() external view {
+        uint256 shares = 1e18;
+        uint256 supply = stAztec.totalSupply();
+        uint256 expectedAssets = supply == 0 ? shares : shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Floor);
+
+        assertEq(vault.convertToAssets(shares), expectedAssets, "convertToAssets matches spec");
+    }
+
+    function invariant_PreviewDepositMatchesSpec() external view {
+        uint256 assets = 1e18;
+        uint256 supply = stAztec.totalSupply();
+        uint256 expectedShares = supply == 0 ? assets : assets.mulDiv(supply, vault.totalAssets(), Math.Rounding.Floor);
+
+        assertEq(vault.previewDeposit(assets), expectedShares, "previewDeposit matches spec");
+    }
+
+    function invariant_PreviewRedeemMatchesSpec() external view {
+        uint256 shares = 1e18;
+        uint256 supply = stAztec.totalSupply();
+        uint256 expectedAssets = supply == 0 ? shares : shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Ceil);
+
+        assertEq(vault.previewRedeem(shares), expectedAssets, "previewRedeem matches spec");
     }
 
     function invariant_ZeroSupplyBehavior() external view {
@@ -183,9 +207,12 @@ contract OllaCoreInvariantTest is Test {
         }
 
         uint256 assets = 1e18;
+        uint256 shares = 1e18;
         assertEq(vault.exchangeRate(), 1e18, "zero supply exchange rate");
-        assertEq(vault.depositFormula(assets), assets, "zero supply deposit formula");
-        assertEq(vault.userValue(address(0xBEEF)), 0, "zero supply user value");
+        assertEq(vault.convertToShares(assets), assets, "zero supply convertToShares");
+        assertEq(vault.convertToAssets(shares), shares, "zero supply convertToAssets");
+        assertEq(vault.previewDeposit(assets), assets, "zero supply previewDeposit");
+        assertEq(vault.previewRedeem(shares), shares, "zero supply previewRedeem");
     }
 }
 
@@ -215,18 +242,5 @@ contract OllaCoreDepositInvariantTest is Test {
 
     function invariant_ExchangeRateMonotonicWithDeposits() external view {
         assertGe(handler.lastExchangeRate(), handler.previousExchangeRate(), "exchange rate monotonic");
-    }
-
-    function invariant_UserValueMatchesFormula() external view {
-        uint256 rate = vault.exchangeRate();
-        uint256 actorCount = handler.actorsLength();
-
-        for (uint256 i = 0; i < actorCount; i++) {
-            address actor = handler.actorAt(i);
-            uint256 shares = stAztec.balanceOf(actor);
-            uint256 expectedValue = shares == 0 ? 0 : shares.mulDiv(rate, 1e18, Math.Rounding.Floor);
-
-            assertEq(vault.userValue(actor), expectedValue, "user value matches formula");
-        }
     }
 }
