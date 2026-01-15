@@ -18,7 +18,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
-                                //test
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Role for OllaCore to call stake/unstake operations.
