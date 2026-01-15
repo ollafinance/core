@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import {Test} from "@forge-std/Test.sol";
 
-import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import {ERC20Permit} from "@oz/token/ERC20/extensions/ERC20Permit.sol";
+import {StAztec} from "src/core/StAztec.sol";
 
 contract StAztecTest is Test {
     event Transfer(address indexed from, address indexed to, uint256 value);

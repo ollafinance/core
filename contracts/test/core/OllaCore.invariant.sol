@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import {Test} from "@forge-std/Test.sol";
 
-import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { Math } from "@oz/utils/math/Math.sol";
+import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import {Math} from "@oz/utils/math/Math.sol";
 
-import { OllaCore } from "src/core/OllaCore.sol";
-import { IOllaCore } from "src/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { MockAztec } from "src/mocks/MockAztec.sol";
-import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
+import {OllaCore} from "src/core/OllaCore.sol";
+import {IOllaCore} from "src/interfaces/IOllaCore.sol";
+import {StAztec} from "src/core/StAztec.sol";
+import {MockAztec} from "src/mocks/MockAztec.sol";
+import {MockStakingManager} from "src/mocks/MockStakingManager.sol";
 
 contract OllaCoreHandler is Test {
     using Math for uint256;

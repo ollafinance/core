@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.27;
 
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import {IStakingManager} from "src/interfaces/IStakingManager.sol";
 
 /// @title MockStakingManager
 /// @notice Minimal staking manager mock for message routing tests.
