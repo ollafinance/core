@@ -18,6 +18,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
+                                //test
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Role for OllaCore to call stake/unstake operations.
@@ -94,7 +95,9 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         address providerRewardsRecipient,
         address defaultAdmin
     ) {
-        if (address(stakingAsset) == address(0)) revert StakingManager__ZeroAddress();
+        if (address(stakingAsset) == address(0)) {
+            revert StakingManager__ZeroAddress();
+        }
         if (rollup == address(0)) revert StakingManager__ZeroAddress();
         if (rewardsVault == address(0)) revert StakingManager__ZeroAddress();
         if (core == address(0)) revert StakingManager__ZeroAddress();
@@ -187,7 +190,9 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         override
         onlyRole(STAKING_PROVIDER_ADMIN_ROLE)
     {
-        if (rewardsRecipient == address(0)) revert StakingManager__ZeroAddress();
+        if (rewardsRecipient == address(0)) {
+            revert StakingManager__ZeroAddress();
+        }
         _provider.rewardsRecipient = rewardsRecipient;
         emit ProviderSet(_provider.admin, rewardsRecipient);
     }
