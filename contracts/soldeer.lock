@@ -15,7 +15,7 @@ integrity = "ede37ded73bb7dff1325cdfcc124d83afff3d92e646a9418d79ac0d6a9721b05"
 [[dependencies]]
 name = "aztec-contracts"
 version = "3.0.1"
-git = "git@github.com:AztecProtocol/l1-contracts.git"
+git = "https://github.com/AztecProtocol/l1-contracts.git"
 rev = "d5b51f36ea9efed08e81026dfccf4d7f4625b4cb"
 
 [[dependencies]]

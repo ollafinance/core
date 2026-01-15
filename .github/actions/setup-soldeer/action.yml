@@ -15,12 +15,6 @@ runs:
         key: ${{ runner.os }}-soldeer-${{ hashFiles(format('{0}/soldeer.lock', inputs.workdir)) }}
         restore-keys: |
           ${{ runner.os }}-soldeer-
-    - name: Configure Git HTTPS for GitHub
-      if: steps.soldeer-cache.outputs.cache-hit != 'true'
-      run: |
-        git config --global url."https://github.com/".insteadOf "git@github.com:"
-        git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
-      shell: bash
     - name: Install Soldeer dependencies
       if: steps.soldeer-cache.outputs.cache-hit != 'true'
       run: forge soldeer install
