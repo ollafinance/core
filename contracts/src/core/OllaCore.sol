@@ -264,37 +264,6 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable,
         return _convertToAssetsForRedeem(shares);
     }
 
-    /// @notice Computes the shares for an asset amount.
-    /// @param assets The asset amount being converted.
-    /// @return shares The shares that would be minted.
-    /// Formula: assets * totalSupply / totalAssets (floor), assets if supply == 0.
-    function convertToShares(uint256 assets) external view override returns (uint256 shares) {
-        return _convertToShares(assets, Math.Rounding.Floor);
-    }
-
-    /// @notice Computes the assets for a share amount.
-    /// @param shares The share amount being converted.
-    /// @return assets The assets that would be returned.
-    /// Formula: shares * totalAssets / totalSupply (floor), shares if supply == 0.
-    function convertToAssets(uint256 shares) external view override returns (uint256 assets) {
-        uint256 rate = _exchangeRate();
-        return shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
-    }
-
-    /// @notice Returns the shares previewed for a deposit.
-    /// @param assets The asset amount being deposited.
-    /// @return shares The shares that would be minted.
-    function previewDeposit(uint256 assets) external view override returns (uint256 shares) {
-        return _convertToSharesForDeposit(assets);
-    }
-
-    /// @notice Returns the assets previewed for a redeem.
-    /// @param shares The shares being redeemed.
-    /// @return assets The assets that would be returned.
-    function previewRedeem(uint256 shares) external view override returns (uint256 assets) {
-        return _convertToAssetsForRedeem(shares);
-    }
-
     /// @notice Returns the pending withdrawal for an owner.
     /// @param owner The owner to query.
     /// @return The pending withdrawal details.
