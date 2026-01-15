@@ -20,4 +20,4 @@ jobs:
         with:
           version: stable
       - name: Forge invariant tests
-        run: forge test --match-path "test/**/*.invariant.sol" --invariant-runs 256 --invariant-depth 256
+        run: forge test --match-path "test/**/*.invariant.sol" -- --invariant-runs 256 --invariant-depth 256
