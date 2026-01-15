@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import {Initializable} from "@oz-upgradeable/proxy/utils/Initializable.sol";
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@oz/token/ERC20/utils/SafeERC20.sol";
-import {Math} from "@oz/utils/math/Math.sol";
-import {ReentrancyGuard} from "@oz/utils/ReentrancyGuard.sol";
-import {IOllaCore} from "src/interfaces/IOllaCore.sol";
-import {IStakingManager} from "src/interfaces/IStakingManager.sol";
-import {IStAztec} from "src/interfaces/IStAztec.sol";
+import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { Math } from "@oz/utils/math/Math.sol";
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { IOllaCore } from "src/interfaces/IOllaCore.sol";
+import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import { IStAztec } from "src/interfaces/IStAztec.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
@@ -184,7 +184,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
             revert OllaCoreInsufficientLiquidity(assets, availableAssets);
         }
 
-        _pendingWithdrawals[owner] = PendingWithdrawal({shares: shares, assets: assets, receiver: receiver});
+        _pendingWithdrawals[owner] = PendingWithdrawal({ shares: shares, assets: assets, receiver: receiver });
 
         _stAztec.burn(owner, shares);
     }

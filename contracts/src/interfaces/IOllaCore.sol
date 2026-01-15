@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-import {IStakingManager} from "src/interfaces/IStakingManager.sol";
-import {IStAztec} from "src/interfaces/IStAztec.sol";
+import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import { IStAztec } from "src/interfaces/IStAztec.sol";
 
 /// @title IOllaCore
 /// @notice Interface for the OllaCore vault with async withdrawals.
