@@ -217,8 +217,40 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         if (supply == 0) {
             return _EXCHANGE_RATE_SCALE;
         }
-        return (totalAssets() * _EXCHANGE_RATE_SCALE) / supply;
+        return totalAssets().mulDiv(_EXCHANGE_RATE_SCALE, supply, Math.Rounding.Floor);
     }
+
+    /* solhint-disable comprehensive-interface */
+    /// @notice Computes deposit shares using the protocol formula.
+    /// @param assets The asset amount being deposited.
+    /// @return shares The shares that would be minted.
+    /// Formula: assets * totalSupply / totalAssets (floor), assets if supply == 0.
+    function depositFormula(uint256 assets) external view returns (uint256 shares) {
+        IStAztec stAztecToken = _stAztec;
+        uint256 supply = stAztecToken.totalSupply();
+        if (supply == 0) {
+            return assets;
+        }
+        return assets.mulDiv(supply, totalAssets(), Math.Rounding.Floor);
+    }
+
+    /// @notice Returns the assets backing a user's shares.
+    /// @param owner The share owner to value.
+    /// @return assets The assets represented by the owner's shares.
+    /// Formula: stAztec.balanceOf(owner) * exchangeRate / 1e18 (floor).
+    function userValue(address owner) external view returns (uint256 assets) {
+        uint256 shares = _stAztec.balanceOf(owner);
+        if (shares == 0) {
+            return 0;
+        }
+        uint256 supply = _stAztec.totalSupply();
+        uint256 rate = supply == 0
+            ? _EXCHANGE_RATE_SCALE
+            : totalAssets().mulDiv(_EXCHANGE_RATE_SCALE, supply, Math.Rounding.Floor);
+        return shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+    }
+
+    /* solhint-enable comprehensive-interface */
 
     /// @notice Returns the pending withdrawal for an owner.
     /// @param owner The owner to query.
