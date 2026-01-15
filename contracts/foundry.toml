@@ -59,3 +59,6 @@ aztec-contracts = { version = "3.0.1", git = "git@github.com:AztecProtocol/l1-co
 remappings_generate = false
 
 # See more config options https://book.getfoundry.sh/reference/config/overview
+[invariant]
+runs = 16
+depth = 16
