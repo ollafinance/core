@@ -212,12 +212,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
     /// @return The exchange rate scaled by 1e18.
     function exchangeRate() external view override returns (uint256) {
-        IStAztec stAztecToken = _stAztec;
-        uint256 supply = stAztecToken.totalSupply();
-        if (supply == 0) {
-            return _EXCHANGE_RATE_SCALE;
-        }
-        return totalAssets().mulDiv(_EXCHANGE_RATE_SCALE, supply, Math.Rounding.Floor);
+        return _exchangeRate();
     }
 
     /// @notice Computes the shares for an asset amount.
@@ -233,7 +228,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @return assets The assets that would be returned.
     /// Formula: shares * totalAssets / totalSupply (floor), shares if supply == 0.
     function convertToAssets(uint256 shares) external view override returns (uint256 assets) {
-        uint256 rate = exchangeRate();
+        uint256 rate = _exchangeRate();
         return shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
     }
 
@@ -390,6 +385,15 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         }
     }
 
+    function _exchangeRate() internal view returns (uint256) {
+        IStAztec stAztecToken = _stAztec;
+        uint256 supply = stAztecToken.totalSupply();
+        if (supply == 0) {
+            return _EXCHANGE_RATE_SCALE;
+        }
+        return totalAssets().mulDiv(_EXCHANGE_RATE_SCALE, supply, Math.Rounding.Floor);
+    }
+
     function _convertToSharesForDeposit(uint256 assets) internal view returns (uint256) {
         return _convertToShares(assets, Math.Rounding.Floor);
     }
@@ -404,7 +408,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     }
 
     function _convertToAssetsForRedeem(uint256 assets) internal view returns (uint256) {
-        return _convertToAssets(assets, Math.Rounding.Floor);
+        return _convertToAssets(assets, Math.Rounding.Ceil);
     }
 
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
