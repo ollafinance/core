@@ -6,6 +6,12 @@ if find contracts/src contracts/test contracts/script -type f -name "*.sol" -pri
   (cd contracts && forge fmt)
   echo "Running solhint before commit..."
   yarn lint:fix
+  echo "Running slither before commit..."
+  yarn slither
+  echo "Running unit tests before commit..."
+  yarn test:unit
+  echo "Running invariant tests before commit..."
+  yarn test:invariant
 else
-  echo "No Solidity files found; skipping forge fmt and solhint."
+  echo "No Solidity files found; skipping forge fmt, solhint, and tests."
 fi
