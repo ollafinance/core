@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.24 <0.9.0;
 
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {Exit, Status} from "src/libraries/AztecTypes.sol";
-import {G1Point, G2Point} from "src/libraries/BN254Lib.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { Exit, Status } from "src/libraries/AztecTypes.sol";
+import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IMockAztecRollup
 /// @notice Interface for MockAztecRollup test helper contract.
@@ -34,19 +34,19 @@ interface IMockAztecRollup {
     /// @param attester The attester address.
     /// @param recipient The recipient address.
     /// @param amount The withdrawal amount.
-    event WithdrawInitiated(address indexed attester, address indexed recipient, uint256 indexed amount);
+    event WithdrawInitiated(address indexed attester, address indexed recipient, uint256 amount);
 
     /// @notice Emitted when a withdrawal is finalized.
     /// @param attester The attester address.
     /// @param recipient The recipient address.
     /// @param amount The withdrawal amount.
-    event WithdrawFinalized(address indexed attester, address indexed recipient, uint256 indexed amount);
+    event WithdrawFinalized(address indexed attester, address indexed recipient, uint256 amount);
 
     /// @notice Emitted when rewards are claimed.
     /// @param sequencer The sequencer address.
     /// @param recipient The recipient address.
     /// @param amount The rewards amount.
-    event RewardsClaimed(address indexed sequencer, address indexed recipient, uint256 indexed amount);
+    event RewardsClaimed(address indexed sequencer, address indexed recipient, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////
                                   ERRORS

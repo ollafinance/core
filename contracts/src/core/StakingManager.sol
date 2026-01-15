@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.24 <0.9.0;
 
-import {AccessControl} from "@oz/access/AccessControl.sol";
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@oz/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@oz/utils/ReentrancyGuard.sol";
-import {IAztecStaking} from "src/interfaces/IAztecStaking.sol";
-import {IStakingManager} from "src/interfaces/IStakingManager.sol";
-import {Queue, QueueLib} from "src/libraries/QueueLib.sol";
+import { AccessControl } from "@oz/access/AccessControl.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { IAztecStaking } from "src/interfaces/IAztecStaking.sol";
+import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import { Queue, QueueLib } from "src/libraries/QueueLib.sol";
 
 /// @title StakingManager
 /// @notice Manages staking delegation, validator keys, and reward harvesting.
@@ -106,7 +106,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         REWARDS_VAULT = rewardsVault;
         CORE = core;
 
-        _provider = ProviderConfig({admin: providerAdmin, rewardsRecipient: providerRewardsRecipient});
+        _provider = ProviderConfig({ admin: providerAdmin, rewardsRecipient: providerRewardsRecipient });
 
         _providerQueue.init();
 
@@ -277,17 +277,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         // Update state before external calls (CEI pattern for principal tracking)
         _totalStakedPrincipal += actualStakeAmount;
 
-        // Perform staking
-        _performStaking(validatorsToStake, activationThreshold);
-
-        // Reset approval
-        STAKING_ASSET.forceApprove(address(ROLLUP), 0);
-    }
-
-    /// @notice Performs the actual staking of validators with the rollup.
-    /// @param validatorsToStake The number of validators to stake.
-    /// @param activationThreshold The activation threshold per validator.
-    function _performStaking(uint256 validatorsToStake, uint256 activationThreshold) internal {
         // Stake each validator (loop over external calls is intentional for batch operations)
         for (uint256 i; i < validatorsToStake; ++i) {
             // Dequeue a key
@@ -308,6 +297,9 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             emit StakedWithProvider(keyStore.attester, activationThreshold);
         }
+
+        // Reset approval
+        STAKING_ASSET.forceApprove(address(ROLLUP), 0);
     }
 
     // slither-disable-end reentrancy-no-eth
@@ -356,7 +348,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             // Track pending unstake
             _pendingUnstakeRequests.push(
-                UnstakeRequest({attester: attester, amount: activationThreshold, initiatedAt: block.timestamp})
+                UnstakeRequest({ attester: attester, amount: activationThreshold, initiatedAt: block.timestamp })
             );
             _isUnstakePending[attester] = true;
 
@@ -421,7 +413,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
-    /// @notice Adds an attester to the active validators list.
     /// @dev Adds an attester to the active validators list.
     /// @param attester The attester address.
     function _addActiveValidator(address attester) internal {
@@ -432,7 +423,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
     }
 
-    /// @notice Removes an attester from the active validators list.
     /// @dev Removes an attester from the active validators list.
     /// @param attester The attester address.
     function _removeActiveValidator(address attester) internal {
