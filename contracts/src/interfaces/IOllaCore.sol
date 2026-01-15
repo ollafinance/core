@@ -137,6 +137,26 @@ interface IOllaCore {
     /// @return The exchange rate scaled by 1e18.
     function exchangeRate() external view returns (uint256);
 
+    /// @notice Computes the shares for an asset amount.
+    /// @param assets The asset amount being converted.
+    /// @return shares The shares that would be minted.
+    function convertToShares(uint256 assets) external view returns (uint256 shares);
+
+    /// @notice Computes the assets for a share amount.
+    /// @param shares The share amount being converted.
+    /// @return assets The assets that would be returned.
+    function convertToAssets(uint256 shares) external view returns (uint256 assets);
+
+    /// @notice Returns the shares previewed for a deposit.
+    /// @param assets The asset amount being deposited.
+    /// @return shares The shares that would be minted.
+    function previewDeposit(uint256 assets) external view returns (uint256 shares);
+
+    /// @notice Returns the assets previewed for a redeem.
+    /// @param shares The shares being redeemed.
+    /// @return assets The assets that would be returned.
+    function previewRedeem(uint256 shares) external view returns (uint256 assets);
+
     /// @notice Returns the pending withdrawal for an owner.
     /// @param owner The owner to query.
     /// @return The pending withdrawal details.
