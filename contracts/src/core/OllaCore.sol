@@ -32,11 +32,13 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     uint8 private constant _BUCKET_REWARDS_DELTA = 3;
     uint8 private constant _BUCKET_SLASHING_DELTA = 4;
 
+    // slither-disable-start unused-state
     bytes32 private constant _REASON_DEPOSIT = "DEPOSIT";
     bytes32 private constant _REASON_CLAIM = "CLAIM";
     bytes32 private constant _REASON_STAKE = "STAKE";
     bytes32 private constant _REASON_UNSTAKE = "UNSTAKE";
     bytes32 private constant _REASON_SLASH = "SLASH";
+    // slither-disable-end unused-state
 
     IERC20 private _asset;
     IStAztec private _stAztec;
