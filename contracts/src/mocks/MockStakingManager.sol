@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity >=0.8.24 <0.9.0;
-
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+pragma solidity >=0.8.27 <0.9.0;
+import {IStakingManager} from "src/interfaces/IStakingManager.sol";
 
 /// @title MockStakingManager
 /// @notice Minimal staking manager mock for message routing tests.
@@ -73,12 +72,22 @@ contract MockStakingManager is IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
-    function getUnstakedFunds() external pure override returns (uint256 received) {
+    function getUnstakedFunds()
+        external
+        pure
+        override
+        returns (uint256 received)
+    {
         return 0;
     }
 
     /// @inheritdoc IStakingManager
-    function harvestRewards() external pure override returns (uint256 harvested) {
+    function harvestRewards()
+        external
+        pure
+        override
+        returns (uint256 harvested)
+    {
         return 0;
     }
 
@@ -93,12 +102,23 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function getProviderConfig() external pure override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+    function getProviderConfig()
+        external
+        pure
+        override
+        returns (ProviderConfig memory)
+    {
+        return
+            ProviderConfig({admin: address(0), rewardsRecipient: address(0)});
     }
 
     /// @inheritdoc IStakingManager
-    function getActiveValidatorCount() external pure override returns (uint256) {
+    function getActiveValidatorCount()
+        external
+        pure
+        override
+        returns (uint256)
+    {
         return 0;
     }
 

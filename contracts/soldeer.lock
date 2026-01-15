@@ -1,16 +1,16 @@
 [[dependencies]]
 name = "@openzeppelin-contracts"
-version = "5.5.0-rc.1"
-url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts/5_5_0-rc_1_15-10-2025_06:15:18_contracts.zip"
-checksum = "c31efe7f5266c6b7033ae25b549c0ca377dbe66bf2cc3d15edc94446b18eed76"
-integrity = "3b205d9c049ca08a875e1c711ed16f5927896482dca336f120fed3119cbc733e"
+version = "5.5.0"
+url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts/5_5_0_01-11-2025_09:56:40_contracts.zip"
+checksum = "2ee78837130cf06b456d9ef7ab70753685d9c1c9c2c5b70f24bd4c16695d0337"
+integrity = "da8336cf949f0e0667ae8360af849681e3a3e76d7e61e7a86b1a3414a158aeea"
 
 [[dependencies]]
 name = "@openzeppelin-contracts-upgradeable"
-version = "5.5.0-rc.1"
-url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts-upgradeable/5_5_0-rc_1_15-10-2025_06:15:24_contracts-upgradeable.zip"
-checksum = "6e07ffd426a000d3deb27ca4614ea218cc2574c18566331ae18dcd67d41586fa"
-integrity = "0bf0be32c74013d700b537a3d66956ec4ca36c723a5c78659c5e6878769731f1"
+version = "5.5.0"
+url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts-upgradeable/5_5_0_01-11-2025_09:56:46_contracts-upgradeable.zip"
+checksum = "6360df12918b82436dfd68a4a7d9b962aa4d4b0b6bf323ecbd400b9eca5e5974"
+integrity = "ede37ded73bb7dff1325cdfcc124d83afff3d92e646a9418d79ac0d6a9721b05"
 
 [[dependencies]]
 name = "aztec-contracts"
