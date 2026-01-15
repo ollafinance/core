@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity >=0.8.24 <0.9.0;
+pragma solidity >=0.8.27 <0.9.0;
 
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 

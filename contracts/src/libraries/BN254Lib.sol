@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity >=0.8.24 <0.9.0;
+pragma solidity >=0.8.27 <0.9.0;
 
 /// @title BN254Lib
 /// @notice BLS key structures for BN254 curve, compatible with Aztec protocol.
