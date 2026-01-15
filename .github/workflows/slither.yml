@@ -42,7 +42,7 @@ jobs:
           solc-select use 0.8.24
       - name: Run Slither
         if: steps.sol-files.outputs.found == 'true'
-        run: slither . --config-file slither.config.json --fail-on high
+        run: slither . --config-file slither.config.json
       - name: Skip analysis (no Solidity files)
         if: steps.sol-files.outputs.found != 'true'
         run: echo "No Solidity files found; skipping Slither/Slytherin."
