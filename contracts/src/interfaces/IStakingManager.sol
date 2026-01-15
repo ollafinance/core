@@ -2,7 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 // Import BN254 types - local definitions compatible with Aztec protocol
-import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
+import {G1Point, G2Point} from "src/libraries/BN254Lib.sol";
 
 /// @title IStakingManager
 /// @notice Interface for staking delegation and validator key management.
@@ -58,20 +58,20 @@ interface IStakingManager {
     /// @notice Emitted when assets are staked with a validator.
     /// @param attester The validator address.
     /// @param amount The amount staked.
-    event StakedWithProvider(address indexed attester, uint256 amount);
+    event StakedWithProvider(address indexed attester, uint256 indexed amount);
 
     /// @notice Emitted when an unstake is initiated.
     /// @param attester The validator address.
     /// @param amount The amount being unstaked.
-    event UnstakeInitiated(address indexed attester, uint256 amount);
+    event UnstakeInitiated(address indexed attester, uint256 indexed amount);
 
     /// @notice Emitted when unstaked funds are claimed back to core.
     /// @param amount The amount claimed.
-    event UnstakedFundsClaimed(uint256 amount);
+    event UnstakedFundsClaimed(uint256 indexed amount);
 
     /// @notice Emitted when rewards are harvested.
     /// @param amount The amount harvested.
-    event RewardsHarvested(uint256 amount);
+    event RewardsHarvested(uint256 indexed amount);
 
     /// @notice Emitted when keys are removed from the queue.
     /// @param attester The attester address of the removed key.

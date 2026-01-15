@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.24 <0.9.0;
 
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import {IStakingManager} from "src/interfaces/IStakingManager.sol";
 
 /// @notice Storage struct for a FIFO queue of validator KeyStores.
 struct Queue {
@@ -58,7 +58,7 @@ library QueueLib {
         }
         keyStore = _self.keyStores[_self.first];
         delete _self.keyStores[_self.first];
-        _self.first += 1;
+        ++_self.first;
         return keyStore;
     }
 
