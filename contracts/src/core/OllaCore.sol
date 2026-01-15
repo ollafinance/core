@@ -2,18 +2,20 @@
 pragma solidity ^0.8.27;
 
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
+import { ReentrancyGuardUpgradeable } from "src/libraries/ReentrancyGuardUpgradeable.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
 /// @author Olla Core contributors
-contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
+contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable, IOllaCore {
     using SafeERC20 for IERC20;
     using Math for uint256;
 
@@ -43,7 +45,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     IERC20 private _asset;
     IStAztec private _stAztec;
     IStakingManager private _stakingManager;
-    uint256 private _unusedReentrancyStatus;
+    address private _governance;
 
     uint256 private _stakeMessageId;
     uint256 private _unstakeMessageId;
@@ -70,6 +72,9 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Thrown when a caller is not the share owner.
     error OllaCoreUnauthorized(address caller, address owner);
 
+    /// @notice Thrown when a caller is not governance.
+    error OllaCoreUnauthorizedGovernance(address caller);
+
     /// @notice Thrown when a bucket update amount is invalid.
     error OllaCoreInvalidAmount();
 
@@ -87,20 +92,25 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
     /// @param stakingManager_ The staking manager for delegation messaging.
-    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_)
+    /// @param governance_ The governance address authorized to upgrade.
+    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_, address governance_)
         external
         override
         initializer
     {
-        if (address(asset_) == address(0) || address(stAztec_) == address(0) || address(stakingManager_) == address(0))
-        {
+        if (
+            address(asset_) == address(0) || address(stAztec_) == address(0) || address(stakingManager_) == address(0)
+                || governance_ == address(0)
+        ) {
             revert OllaCoreZeroAddress();
         }
+
+        __ReentrancyGuard_init();
 
         _asset = asset_;
         _stAztec = stAztec_;
         _stakingManager = stakingManager_;
-        _unusedReentrancyStatus = 0;
+        _governance = governance_;
     }
 
     /// @notice Deposits assets and mints stAztec shares.
@@ -179,6 +189,12 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @return The staking manager address.
     function stakingManager() external view override returns (address) {
         return address(_stakingManager);
+    }
+
+    /// @notice Returns the governance address.
+    /// @return The governance address.
+    function governance() external view override returns (address) {
+        return _governance;
     }
 
     /// @notice Returns the buffered assets held by the vault.
@@ -292,6 +308,15 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         AccountingBuckets storage buckets = _accountingBuckets;
         return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.rewardsDelta
             - buckets.slashingDelta;
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override {
+        if (msg.sender != _governance) {
+            revert OllaCoreUnauthorizedGovernance(msg.sender);
+        }
+        if (newImplementation == address(0)) {
+            revert OllaCoreZeroAddress();
+        }
     }
 
     function _requestWithdrawal(uint256 shares, uint256 assets, address receiver, address owner) internal {
