@@ -2,7 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 // Import BN254 types - local definitions compatible with Aztec protocol
-import {G1Point, G2Point} from "src/libraries/BN254Lib.sol";
+import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IStakingManager
 /// @notice Interface for staking delegation and validator key management.

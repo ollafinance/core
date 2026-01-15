@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.24 <0.9.0;
 
-import {AccessControl} from "@oz/access/AccessControl.sol";
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@oz/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@oz/utils/ReentrancyGuard.sol";
-import {IAztecStaking} from "src/interfaces/IAztecStaking.sol";
-import {IStakingManager} from "src/interfaces/IStakingManager.sol";
-import {Queue, QueueLib} from "src/libraries/QueueLib.sol";
+import { AccessControl } from "@oz/access/AccessControl.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { IAztecStaking } from "src/interfaces/IAztecStaking.sol";
+import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import { Queue, QueueLib } from "src/libraries/QueueLib.sol";
 
 /// @title StakingManager
 /// @notice Manages staking delegation, validator keys, and reward harvesting.
@@ -106,7 +106,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         REWARDS_VAULT = rewardsVault;
         CORE = core;
 
-        _provider = ProviderConfig({admin: providerAdmin, rewardsRecipient: providerRewardsRecipient});
+        _provider = ProviderConfig({ admin: providerAdmin, rewardsRecipient: providerRewardsRecipient });
 
         _providerQueue.init();
 
@@ -356,7 +356,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             // Track pending unstake
             _pendingUnstakeRequests.push(
-                UnstakeRequest({attester: attester, amount: activationThreshold, initiatedAt: block.timestamp})
+                UnstakeRequest({ attester: attester, amount: activationThreshold, initiatedAt: block.timestamp })
             );
             _isUnstakePending[attester] = true;
 

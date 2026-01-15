@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.24 <0.9.0;
 
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {Exit, Status} from "src/libraries/AztecTypes.sol";
-import {G1Point, G2Point} from "src/libraries/BN254Lib.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { Exit, Status } from "src/libraries/AztecTypes.sol";
+import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IMockAztecRollup
 /// @notice Interface for MockAztecRollup test helper contract.

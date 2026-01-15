@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
-import {IStakingManager} from "src/interfaces/IStakingManager.sol";
+import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 
 /// @title MockStakingManager
 /// @notice Minimal staking manager mock for message routing tests.
@@ -93,7 +93,7 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function getProviderConfig() external pure override returns (ProviderConfig memory) {
-        return ProviderConfig({admin: address(0), rewardsRecipient: address(0)});
+        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
     }
 
     /// @inheritdoc IStakingManager
