@@ -4,7 +4,7 @@ test = 'test'
 script = 'script'
 out = 'out'
 libs = ["dependencies"]
-solc = "0.8.24"
+solc = "0.8.27"
 evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
@@ -50,8 +50,8 @@ bracket_spacing = true
 int_types = "long"
 
 [dependencies]
-"@openzeppelin-contracts" = "5.5.0-rc.1"
-"@openzeppelin-contracts-upgradeable" = "5.5.0-rc.1"
+"@openzeppelin-contracts" = "5.5.0"
+"@openzeppelin-contracts-upgradeable" = "5.5.0"
 forge-std = "1.11.0"
 aztec-contracts = { version = "3.0.1", git = "git@github.com:AztecProtocol/l1-contracts.git", rev = "d5b51f36ea9efed08e81026dfccf4d7f4625b4cb" }
 
@@ -59,3 +59,10 @@ aztec-contracts = { version = "3.0.1", git = "git@github.com:AztecProtocol/l1-co
 remappings_generate = false
 
 # See more config options https://book.getfoundry.sh/reference/config/overview
+[invariant]
+runs = 16
+depth = 16
+
+[profile.ci.invariant]
+runs = 256
+depth = 256
