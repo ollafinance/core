@@ -105,6 +105,13 @@ contract OllaCoreInvariantTest is Test {
         targetContract(address(handler));
     }
 
+    function invariant_TotalAssetsEqualBuckets() external view {
+        uint256 expectedTotal = vault.bufferedAssets() + vault.stakedPrincipal() + vault.rewardsVaultBalance()
+            + vault.rewardsDelta() - vault.slashingDelta();
+
+        assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
+    }
+
     function invariant_ExchangeRateMatchesTotals() external view {
         uint256 supply = stAztec.totalSupply();
         uint256 expectedRate = supply == 0 ? 1e18 : vault.totalAssets().mulDiv(1e18, supply, Math.Rounding.Floor);
