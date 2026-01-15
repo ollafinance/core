@@ -17,7 +17,26 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using Math for uint256;
 
+    struct AccountingBuckets {
+        uint256 bufferedAssets;
+        uint256 stakedPrincipal;
+        uint256 rewardsVaultBalance;
+        uint256 rewardsDelta;
+        uint256 slashingDelta;
+    }
+
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
+    uint8 private constant _BUCKET_BUFFERED = 0;
+    uint8 private constant _BUCKET_STAKED_PRINCIPAL = 1;
+    uint8 private constant _BUCKET_REWARDS_VAULT = 2;
+    uint8 private constant _BUCKET_REWARDS_DELTA = 3;
+    uint8 private constant _BUCKET_SLASHING_DELTA = 4;
+
+    bytes32 private constant _REASON_DEPOSIT = "DEPOSIT";
+    bytes32 private constant _REASON_CLAIM = "CLAIM";
+    bytes32 private constant _REASON_STAKE = "STAKE";
+    bytes32 private constant _REASON_UNSTAKE = "UNSTAKE";
+    bytes32 private constant _REASON_SLASH = "SLASH";
 
     IERC20 private _asset;
     IStAztec private _stAztec;
@@ -28,6 +47,9 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     uint256 private _unstakeMessageId;
 
     mapping(address owner => PendingWithdrawal withdrawal) private _pendingWithdrawals;
+    AccountingBuckets private _accountingBuckets;
+    // slither-disable-next-line unused-state
+    uint256[47] private __gap;
 
     /// @notice Thrown when a pending withdrawal already exists.
     error OllaCorePendingWithdrawalExists(address owner);
@@ -43,6 +65,15 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
 
     /// @notice Thrown when a caller is not the share owner.
     error OllaCoreUnauthorized(address caller, address owner);
+
+    /// @notice Thrown when a bucket update amount is invalid.
+    error OllaCoreInvalidAmount();
+
+    /// @notice Thrown when a bucket lacks sufficient balance.
+    error OllaCoreInsufficientBucket(uint8 bucketId, uint256 amount, uint256 available);
+
+    /// @notice Thrown when buffered assets do not match the vault balance.
+    error OllaCoreBufferedBalanceMismatch(uint256 expected, uint256 actual);
 
     constructor() {
         _disableInitializers();
@@ -78,7 +109,9 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         }
 
         shares = _convertToSharesForDeposit(assets);
+        _increaseBuffered(assets, _REASON_DEPOSIT);
         _asset.safeTransferFrom(msg.sender, address(this), assets);
+        _syncBufferedWithBalance();
         _stAztec.mint(receiver, shares);
         emit Deposit(msg.sender, receiver, assets, shares);
         return shares;
@@ -110,14 +143,16 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
             revert OllaCoreNoPendingWithdrawal(owner);
         }
 
-        uint256 availableAssets = totalAssets();
+        uint256 availableAssets = _accountingBuckets.bufferedAssets;
         if (pending.assets > availableAssets) {
             revert OllaCoreInsufficientLiquidity(pending.assets, availableAssets);
         }
 
         assets = pending.assets;
         _clearPendingWithdrawal(owner);
+        _decreaseBuffered(assets, _REASON_CLAIM);
         _asset.safeTransfer(pending.receiver, assets);
+        _syncBufferedWithBalance();
         emit Withdraw(msg.sender, pending.receiver, owner, assets, pending.shares);
 
         emit ClaimRedeem(owner, pending.receiver, assets, pending.shares);
@@ -142,6 +177,36 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         return address(_stakingManager);
     }
 
+    /// @notice Returns the buffered assets held by the vault.
+    /// @return The buffered asset amount.
+    function bufferedAssets() external view override returns (uint256) {
+        return _accountingBuckets.bufferedAssets;
+    }
+
+    /// @notice Returns the staked principal tracked by the vault.
+    /// @return The staked principal amount.
+    function stakedPrincipal() external view override returns (uint256) {
+        return _accountingBuckets.stakedPrincipal;
+    }
+
+    /// @notice Returns the rewards vault balance tracked by the vault.
+    /// @return The rewards vault balance amount.
+    function rewardsVaultBalance() external view override returns (uint256) {
+        return _accountingBuckets.rewardsVaultBalance;
+    }
+
+    /// @notice Returns the claimable rewards delta.
+    /// @return The rewards delta amount.
+    function rewardsDelta() external view override returns (uint256) {
+        return _accountingBuckets.rewardsDelta;
+    }
+
+    /// @notice Returns the slashing delta applied to totals.
+    /// @return The slashing delta amount.
+    function slashingDelta() external view override returns (uint256) {
+        return _accountingBuckets.slashingDelta;
+    }
+
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
     /// @return The exchange rate scaled by 1e18.
     function exchangeRate() external view override returns (uint256) {
@@ -163,7 +228,9 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
-        return _asset.balanceOf(address(this));
+        AccountingBuckets storage buckets = _accountingBuckets;
+        return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.rewardsDelta
+            - buckets.slashingDelta;
     }
 
     function _requestWithdrawal(uint256 shares, uint256 assets, address receiver, address owner) internal {
@@ -194,6 +261,7 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         uint256 messageId = ++_stakeMessageId;
         emit StakeRequested(messageId, amount);
         _stakingManager.stake(amount);
+        _syncBufferedWithBalance();
     }
 
     // slither-disable-next-line dead-code
@@ -201,10 +269,92 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
         uint256 messageId = ++_unstakeMessageId;
         emit UnstakeRequested(messageId, amount);
         _stakingManager.unStake(amount);
+        _syncBufferedWithBalance();
     }
 
     function _clearPendingWithdrawal(address owner) internal {
         delete _pendingWithdrawals[owner];
+    }
+
+    function _increaseBuffered(uint256 amount, bytes32 reason) internal {
+        if (amount == 0) {
+            revert OllaCoreInvalidAmount();
+        }
+        uint256 oldValue = _accountingBuckets.bufferedAssets;
+        uint256 newValue = oldValue + amount;
+        _accountingBuckets.bufferedAssets = newValue;
+        emit BucketUpdated(_BUCKET_BUFFERED, oldValue, newValue, reason);
+    }
+
+    function _decreaseBuffered(uint256 amount, bytes32 reason) internal {
+        if (amount == 0) {
+            revert OllaCoreInvalidAmount();
+        }
+        uint256 oldValue = _accountingBuckets.bufferedAssets;
+        if (amount > oldValue) {
+            revert OllaCoreInsufficientBucket(_BUCKET_BUFFERED, amount, oldValue);
+        }
+        uint256 newValue = oldValue - amount;
+        _accountingBuckets.bufferedAssets = newValue;
+        emit BucketUpdated(_BUCKET_BUFFERED, oldValue, newValue, reason);
+    }
+
+    // slither-disable-next-line dead-code
+    function _increaseStakedPrincipal(uint256 amount, bytes32 reason) internal {
+        if (amount == 0) {
+            revert OllaCoreInvalidAmount();
+        }
+        uint256 oldValue = _accountingBuckets.stakedPrincipal;
+        uint256 newValue = oldValue + amount;
+        _accountingBuckets.stakedPrincipal = newValue;
+        emit BucketUpdated(_BUCKET_STAKED_PRINCIPAL, oldValue, newValue, reason);
+    }
+
+    // slither-disable-next-line dead-code
+    function _decreaseStakedPrincipal(uint256 amount, bytes32 reason) internal {
+        if (amount == 0) {
+            revert OllaCoreInvalidAmount();
+        }
+        uint256 oldValue = _accountingBuckets.stakedPrincipal;
+        if (amount > oldValue) {
+            revert OllaCoreInsufficientBucket(_BUCKET_STAKED_PRINCIPAL, amount, oldValue);
+        }
+        uint256 newValue = oldValue - amount;
+        _accountingBuckets.stakedPrincipal = newValue;
+        emit BucketUpdated(_BUCKET_STAKED_PRINCIPAL, oldValue, newValue, reason);
+    }
+
+    // slither-disable-next-line dead-code
+    function _increaseRewardsVaultBalance(uint256 amount, bytes32 reason) internal {
+        if (amount == 0) {
+            revert OllaCoreInvalidAmount();
+        }
+        uint256 oldValue = _accountingBuckets.rewardsVaultBalance;
+        uint256 newValue = oldValue + amount;
+        _accountingBuckets.rewardsVaultBalance = newValue;
+        emit BucketUpdated(_BUCKET_REWARDS_VAULT, oldValue, newValue, reason);
+    }
+
+    // slither-disable-next-line dead-code
+    function _setRewardsDelta(uint256 newValue, bytes32 reason) internal {
+        uint256 oldValue = _accountingBuckets.rewardsDelta;
+        _accountingBuckets.rewardsDelta = newValue;
+        emit BucketUpdated(_BUCKET_REWARDS_DELTA, oldValue, newValue, reason);
+    }
+
+    // slither-disable-next-line dead-code
+    function _setSlashingDelta(uint256 newValue, bytes32 reason) internal {
+        uint256 oldValue = _accountingBuckets.slashingDelta;
+        _accountingBuckets.slashingDelta = newValue;
+        emit BucketUpdated(_BUCKET_SLASHING_DELTA, oldValue, newValue, reason);
+    }
+
+    function _syncBufferedWithBalance() internal view {
+        uint256 buffered = _accountingBuckets.bufferedAssets;
+        uint256 actual = _asset.balanceOf(address(this));
+        if (buffered != actual) {
+            revert OllaCoreBufferedBalanceMismatch(buffered, actual);
+        }
     }
 
     function _convertToSharesForDeposit(uint256 assets) internal view returns (uint256) {

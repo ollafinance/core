@@ -64,6 +64,13 @@ interface IOllaCore {
     /// @param messageId Monotonic message id.
     /// @param amount The amount requested to unstake.
     event UnstakeRequested(uint256 indexed messageId, uint256 amount);
+
+    /// @notice Emitted when a bucket value changes.
+    /// @param bucketId The bucket identifier.
+    /// @param oldValue The previous bucket value.
+    /// @param newValue The updated bucket value.
+    /// @param reason The reason code for the update.
+    event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
     // solhint-enable gas-indexed-events
 
     /// @notice Initializes the vault with the Aztec asset address.
@@ -101,6 +108,26 @@ interface IOllaCore {
     /// @notice Returns the staking manager address.
     /// @return The staking manager address.
     function stakingManager() external view returns (address);
+
+    /// @notice Returns the buffered assets held by the vault.
+    /// @return The buffered asset amount.
+    function bufferedAssets() external view returns (uint256);
+
+    /// @notice Returns the staked principal tracked by the vault.
+    /// @return The staked principal amount.
+    function stakedPrincipal() external view returns (uint256);
+
+    /// @notice Returns the rewards vault balance tracked by the vault.
+    /// @return The rewards vault balance amount.
+    function rewardsVaultBalance() external view returns (uint256);
+
+    /// @notice Returns the claimable rewards delta.
+    /// @return The rewards delta amount.
+    function rewardsDelta() external view returns (uint256);
+
+    /// @notice Returns the slashing delta applied to totals.
+    /// @return The slashing delta amount.
+    function slashingDelta() external view returns (uint256);
 
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
