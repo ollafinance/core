@@ -64,6 +64,13 @@ interface IOllaCore {
     /// @param messageId Monotonic message id.
     /// @param amount The amount requested to unstake.
     event UnstakeRequested(uint256 indexed messageId, uint256 amount);
+
+    /// @notice Emitted when a bucket value changes.
+    /// @param bucketId The bucket identifier.
+    /// @param oldValue The previous bucket value.
+    /// @param newValue The updated bucket value.
+    /// @param reason The reason code for the update.
+    event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
     // solhint-enable gas-indexed-events
 
     /// @notice Initializes the vault with the Aztec asset address.
@@ -102,6 +109,26 @@ interface IOllaCore {
     /// @return The staking manager address.
     function stakingManager() external view returns (address);
 
+    /// @notice Returns the buffered assets held by the vault.
+    /// @return The buffered asset amount.
+    function bufferedAssets() external view returns (uint256);
+
+    /// @notice Returns the staked principal tracked by the vault.
+    /// @return The staked principal amount.
+    function stakedPrincipal() external view returns (uint256);
+
+    /// @notice Returns the rewards vault balance tracked by the vault.
+    /// @return The rewards vault balance amount.
+    function rewardsVaultBalance() external view returns (uint256);
+
+    /// @notice Returns the claimable rewards delta.
+    /// @return The rewards delta amount.
+    function rewardsDelta() external view returns (uint256);
+
+    /// @notice Returns the slashing delta applied to totals.
+    /// @return The slashing delta amount.
+    function slashingDelta() external view returns (uint256);
+
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() external view returns (uint256);
@@ -109,6 +136,26 @@ interface IOllaCore {
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
     /// @return The exchange rate scaled by 1e18.
     function exchangeRate() external view returns (uint256);
+
+    /// @notice Computes the shares for an asset amount.
+    /// @param assets The asset amount being converted.
+    /// @return shares The shares that would be minted.
+    function convertToShares(uint256 assets) external view returns (uint256 shares);
+
+    /// @notice Computes the assets for a share amount.
+    /// @param shares The share amount being converted.
+    /// @return assets The assets that would be returned.
+    function convertToAssets(uint256 shares) external view returns (uint256 assets);
+
+    /// @notice Returns the shares previewed for a deposit.
+    /// @param assets The asset amount being deposited.
+    /// @return shares The shares that would be minted.
+    function previewDeposit(uint256 assets) external view returns (uint256 shares);
+
+    /// @notice Returns the assets previewed for a redeem.
+    /// @param shares The shares being redeemed.
+    /// @return assets The assets that would be returned.
+    function previewRedeem(uint256 shares) external view returns (uint256 assets);
 
     /// @notice Returns the pending withdrawal for an owner.
     /// @param owner The owner to query.

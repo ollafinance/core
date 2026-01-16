@@ -81,6 +81,55 @@ contract OllaCoreHandler is Test {
     }
 }
 
+contract OllaCoreDepositHandler is Test {
+    using Math for uint256;
+
+    MockAztec public asset;
+    OllaCore public vault;
+    StAztec public stAztec;
+
+    address[] public actors;
+
+    uint256 public previousExchangeRate;
+    uint256 public latestExchangeRate;
+
+    constructor(MockAztec _asset, OllaCore _vault, StAztec _stAztec) {
+        asset = _asset;
+        vault = _vault;
+        stAztec = _stAztec;
+
+        for (uint256 i = 0; i < 5; i++) {
+            actors.push(makeAddr(string(abi.encode("actor", i))));
+        }
+
+        latestExchangeRate = vault.exchangeRate();
+        previousExchangeRate = latestExchangeRate;
+    }
+
+    function actorsLength() external view returns (uint256) {
+        return actors.length;
+    }
+
+    function actorAt(uint256 index) external view returns (address) {
+        return actors[index];
+    }
+
+    function deposit(uint96 amount, uint256 actorSeed) external {
+        previousExchangeRate = latestExchangeRate;
+
+        uint256 assets = uint256(bound(amount, 1, type(uint96).max));
+        address actor = actors[bound(actorSeed, 0, actors.length - 1)];
+
+        asset.mint(actor, assets);
+        vm.startPrank(actor);
+        asset.approve(address(vault), assets);
+        vault.deposit(assets, actor);
+        vm.stopPrank();
+
+        latestExchangeRate = vault.exchangeRate();
+    }
+}
+
 contract OllaCoreInvariantTest is Test {
     using Math for uint256;
 
@@ -105,10 +154,100 @@ contract OllaCoreInvariantTest is Test {
         targetContract(address(handler));
     }
 
+    function invariant_TotalAssetsEqualBuckets() external view {
+        uint256 expectedTotal = vault.bufferedAssets() + vault.stakedPrincipal() + vault.rewardsVaultBalance()
+            + vault.rewardsDelta() - vault.slashingDelta();
+
+        assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
+    }
+
     function invariant_ExchangeRateMatchesTotals() external view {
         uint256 supply = stAztec.totalSupply();
         uint256 expectedRate = supply == 0 ? 1e18 : vault.totalAssets().mulDiv(1e18, supply, Math.Rounding.Floor);
 
         assertEq(vault.exchangeRate(), expectedRate, "exchange rate matches totals");
+    }
+
+    function _expectedShares(uint256 assets) internal view returns (uint256) {
+        uint256 supply = stAztec.totalSupply();
+        if (supply == 0) {
+            return assets;
+        }
+
+        return assets.mulDiv(supply, vault.totalAssets(), Math.Rounding.Floor);
+    }
+
+    function invariant_ConvertToSharesMatchesSpec() external view {
+        uint256 assets = 1e18;
+
+        assertEq(vault.convertToShares(assets), _expectedShares(assets), "convertToShares matches spec");
+    }
+
+    function invariant_ConvertToAssetsMatchesSpec() external view {
+        uint256 shares = 1e18;
+        uint256 supply = stAztec.totalSupply();
+        uint256 expectedAssets = supply == 0 ? shares : shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Floor);
+
+        assertEq(vault.convertToAssets(shares), expectedAssets, "convertToAssets matches spec");
+    }
+
+    function invariant_PreviewDepositMatchesSpec() external view {
+        uint256 assets = 1e18;
+
+        assertEq(vault.previewDeposit(assets), _expectedShares(assets), "previewDeposit matches spec");
+    }
+
+    function invariant_PreviewRedeemMatchesSpec() external view {
+        uint256 shares = 1e18;
+        uint256 supply = stAztec.totalSupply();
+        uint256 expectedAssets = supply == 0 ? shares : shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Ceil);
+
+        assertEq(vault.previewRedeem(shares), expectedAssets, "previewRedeem matches spec");
+    }
+
+    function invariant_ZeroSupplyBehavior() external view {
+        uint256 supply = stAztec.totalSupply();
+        if (supply != 0) {
+            return;
+        }
+
+        uint256 assets = 1e18;
+        uint256 shares = 1e18;
+        assertEq(vault.exchangeRate(), 1e18, "zero supply: exchangeRate should be 1e18");
+        assertEq(vault.convertToShares(assets), assets, "zero supply: convertToShares equals assets");
+        assertEq(vault.convertToAssets(shares), shares, "zero supply: convertToAssets equals shares");
+        assertEq(vault.previewDeposit(assets), assets, "zero supply: previewDeposit equals assets");
+        assertEq(vault.previewRedeem(shares), shares, "zero supply: previewRedeem equals shares");
+    }
+}
+
+contract OllaCoreDepositInvariantTest is Test {
+    using Math for uint256;
+
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockAztec internal asset;
+    MockStakingManager internal stakingManager;
+    OllaCoreDepositHandler internal handler;
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCore implementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        vault = OllaCore(address(proxy));
+
+        stAztec = new StAztec(address(vault));
+        stakingManager = new MockStakingManager();
+        vault.initialize(asset, stAztec, stakingManager);
+
+        handler = new OllaCoreDepositHandler(asset, vault, stAztec);
+        targetContract(address(handler));
+    }
+
+    function invariant_ExchangeRateNonDecreasingAfterDeposits() external view {
+        assertGe(
+            handler.latestExchangeRate(), handler.previousExchangeRate(), "deposit should never decrease exchange rate"
+        );
     }
 }
