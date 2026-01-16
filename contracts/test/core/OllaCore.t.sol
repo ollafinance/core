@@ -184,11 +184,11 @@ contract OllaCoreTest is Test {
         emit BucketUpdated(4, 0, amount, EXPECTED_REASON_SLASH);
         vault.exposedSetSlashingDelta(amount, EXPECTED_REASON_SLASH);
 
-        assertEq(vault.bufferedAssets(), 0, "buffered cleared");
-        assertEq(vault.stakedPrincipal(), amount, "staked credited");
-        assertEq(vault.rewardsVaultBalance(), amount, "rewards vault credited");
-        assertEq(vault.rewardsDelta(), amount, "rewards delta set");
-        assertEq(vault.slashingDelta(), amount, "slashing delta set");
+        assertEq(vault.bufferedAssets(), 0, "bufferedAssets cleared after decrease");
+        assertEq(vault.stakedPrincipal(), amount, "stakedPrincipal increased by amount");
+        assertEq(vault.rewardsVaultBalance(), amount, "rewardsVaultBalance increased by amount");
+        assertEq(vault.rewardsDelta(), amount, "rewardsDelta set to amount");
+        assertEq(vault.slashingDelta(), amount, "slashingDelta set to amount");
     }
 
     function test_SyncBufferedWithBalanceAfterDepositAndClaim() external {
@@ -247,7 +247,7 @@ contract OllaCoreTest is Test {
         rewardsVault = uint96(bound(rewardsVault, 1, type(uint96).max));
         rewardsDelta = uint96(bound(rewardsDelta, 0, type(uint96).max));
 
-        uint256 positiveTotal = uint256(buffered) + staked + rewardsVault + rewardsDelta;
+        uint256 positiveTotal = uint256(buffered) + uint256(staked) + uint256(rewardsVault) + uint256(rewardsDelta);
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
         asset.mint(address(vault), buffered);
