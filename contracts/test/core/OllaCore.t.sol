@@ -75,6 +75,7 @@ contract OllaCoreTest is Test {
     event ClaimWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
+    event Upgraded(address indexed implementation);
 
     uint256 internal constant DECIMALS = 1e18;
     uint8 internal constant BUCKET_ID_BUFFERED = 0;
@@ -149,6 +150,9 @@ contract OllaCoreTest is Test {
 
     function test_GovernanceCanUpgrade() external {
         OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
+
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit Upgraded(address(newImplementation));
 
         vm.prank(governance);
         vault.upgradeToAndCall(address(newImplementation), "");

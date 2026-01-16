@@ -78,6 +78,23 @@ cd contracts
 slytherin .
 ```
 
+## Storage layout checks
+
+Run storage layout checks whenever upgradeable contracts change storage (new variables, reordered fields, or updated inheritance), and before preparing an upgrade or release.
+
+Check the current layout against the fixture:
+
+```bash
+node contracts/script/check-storage-layout.ts --contract OllaCore --fixture contracts/upgrade/fixtures/OllaCore.storage.json
+```
+
+If the change is intentional, refresh the fixture from the Foundry output:
+
+```bash
+cd contracts
+forge inspect OllaCore storageLayout > upgrade/fixtures/OllaCore.storage.json
+```
+
 ## Contributing
 
 See `CONTRIBUTING.md`.
