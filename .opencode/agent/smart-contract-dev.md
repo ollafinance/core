@@ -166,8 +166,36 @@ Invariant Testing:
 Static Analysis:
 
 - Slither and Slytherin run automatically on PRs - review findings before merging
-- Run locally with `yarn slither`
+- Run locally with `yarn slither` or `slither . --config-file slither.config.json` in contracts/
 - Configure exclusions in `contracts/slither.config.json` if needed (currently excludes lib, dependencies, test, script, src/mocks)
+- **All Slither findings must be addressed** - either fix the issue or add appropriate disable comments with justification
+
+Slither Disable Comments:
+
+Use these comment patterns to suppress false positives or intentional patterns:
+
+```solidity
+// Single line disable (place directly above the line)
+// slither-disable-next-line arbitrary-send-erc20
+STAKING_ASSET.safeTransferFrom(CORE, address(this), amount);
+
+// Block disable (wrap function or code section)
+// slither-disable-start divide-before-multiply
+// slither-disable-start reentrancy-benign
+function _myFunction() internal {
+    // ... code ...
+}
+// slither-disable-end reentrancy-benign
+// slither-disable-end divide-before-multiply
+```
+
+Common detectors to disable with justification:
+
+- `arbitrary-send-erc20` - When transferring from a trusted immutable address (e.g., CORE)
+- `divide-before-multiply` - When intentional truncation to whole units is desired
+- `reentrancy-benign` / `reentrancy-no-eth` - When state updates after external calls are safe (protected by nonReentrant or benign)
+- `calls-loop` - When batch operations over multiple items are intentional
+- `unused-return` - When return value is intentionally ignored (tracked separately)
   </security_practices>
 
 <forge_commands>
