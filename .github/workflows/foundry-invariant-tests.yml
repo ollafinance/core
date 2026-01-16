@@ -19,6 +19,8 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+      - name: Setup Soldeer dependencies
+        uses: ./.github/actions/setup-soldeer
       - name: Forge invariant tests
         run: forge test --match-path "test/**/*.invariant.sol"
         env:
