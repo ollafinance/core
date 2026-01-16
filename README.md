@@ -67,7 +67,10 @@ yarn husky install
 
 ## Static analysis
 
+Slither is pinned in CI to `0.11.4` (see `.github/workflows/slither.yml`). To match CI locally:
+
 ```bash
+python -m pip install -U slither-analyzer==0.11.4
 yarn slither
 ```
 
@@ -76,6 +79,23 @@ For Slytherin, install the plugin and run:
 ```bash
 cd contracts
 slytherin .
+```
+
+## Storage layout checks
+
+Run storage layout checks whenever upgradeable contracts change storage (new variables, reordered fields, or updated inheritance), and before preparing an upgrade or release.
+
+Check the current layout against the fixture:
+
+```bash
+node contracts/script/check-storage-layout.ts --contract OllaCore --fixture contracts/upgrade/fixtures/OllaCore.storage.json
+```
+
+If the change is intentional, refresh the fixture from the Foundry output:
+
+```bash
+cd contracts
+forge inspect OllaCore storageLayout > upgrade/fixtures/OllaCore.storage.json
 ```
 
 ## Contributing

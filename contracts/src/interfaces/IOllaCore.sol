@@ -73,11 +73,14 @@ interface IOllaCore {
     event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
     // solhint-enable gas-indexed-events
 
+    // solhint-disable max-line-length
     /// @notice Initializes the vault with the Aztec asset address.
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
     /// @param stakingManager_ The staking manager for delegation messaging.
-    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_) external;
+    /// @param governance_ The governance address authorized to upgrade.
+    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_, address governance_) external;
+    // solhint-enable max-line-length
 
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
@@ -108,6 +111,10 @@ interface IOllaCore {
     /// @notice Returns the staking manager address.
     /// @return The staking manager address.
     function stakingManager() external view returns (address);
+
+    /// @notice Returns the governance address.
+    /// @return The governance address.
+    function governance() external view returns (address);
 
     /// @notice Returns the buffered assets held by the vault.
     /// @return The buffered asset amount.

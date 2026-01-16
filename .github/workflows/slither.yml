@@ -34,7 +34,7 @@ jobs:
           version: stable
       - name: Install Slither, Slytherin, and solc-select
         if: steps.sol-files.outputs.found == 'true'
-        run: pip install slither-analyzer slytherin solc-select
+        run: pip install slither-analyzer==0.11.4 slytherin solc-select
       - name: Install solc
         if: steps.sol-files.outputs.found == 'true'
         run: |
