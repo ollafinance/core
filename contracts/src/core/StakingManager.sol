@@ -5,6 +5,7 @@ import { AccessControl } from "@oz/access/AccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { IAztecRollupRegistry } from "src/interfaces/IAztecRollupRegistry.sol";
 import { IAztecStaking } from "src/interfaces/IAztecStaking.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { Queue, QueueLib } from "src/libraries/QueueLib.sol";
@@ -33,8 +34,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @notice The staking asset (AZTEC token).
     IERC20 public immutable STAKING_ASSET;
 
-    /// @notice The Aztec rollup staking contract.
-    IAztecStaking public immutable ROLLUP;
+    /// @notice The Aztec rollup registry contract.
+    IAztecRollupRegistry public immutable ROLLUP_REGISTRY;
 
     /// @notice The rewards vault address.
     address public immutable REWARDS_VAULT;
@@ -79,7 +80,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
     /// @notice Constructs the StakingManager.
     /// @param stakingAsset The staking asset token.
-    /// @param rollup The Aztec rollup staking contract.
+    /// @param rollupRegistry The Aztec rollup registry contract.
     /// @param rewardsVault The rewards vault address.
     /// @param core The OllaCore contract address.
     /// @param providerAdmin The provider admin address.
@@ -87,7 +88,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @param defaultAdmin The default admin for role management.
     constructor(
         IERC20 stakingAsset,
-        address rollup,
+        address rollupRegistry,
         address rewardsVault,
         address core,
         address providerAdmin,
@@ -97,14 +98,14 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         if (address(stakingAsset) == address(0)) {
             revert StakingManager__ZeroAddress();
         }
-        if (rollup == address(0)) revert StakingManager__ZeroAddress();
+        if (rollupRegistry == address(0)) revert StakingManager__ZeroAddress();
         if (rewardsVault == address(0)) revert StakingManager__ZeroAddress();
         if (core == address(0)) revert StakingManager__ZeroAddress();
         if (providerAdmin == address(0)) revert StakingManager__ZeroAddress();
         if (defaultAdmin == address(0)) revert StakingManager__ZeroAddress();
 
         STAKING_ASSET = stakingAsset;
-        ROLLUP = IAztecStaking(rollup);
+        ROLLUP_REGISTRY = IAztecRollupRegistry(rollupRegistry);
         REWARDS_VAULT = rewardsVault;
         CORE = core;
 
@@ -246,8 +247,12 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
     function _stakeInternal(uint256 amount) internal {
+        // Get canonical rollup from registry
+        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
+        IAztecStaking rollup = IAztecStaking(rollupAddress);
+
         // Get activation threshold from rollup
-        uint256 activationThreshold = ROLLUP.getActivationThreshold();
+        uint256 activationThreshold = rollup.getActivationThreshold();
 
         // Calculate how many attesters we can stake to
         // Note: Division before multiplication is intentional - we want to truncate to whole attesters
@@ -275,7 +280,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         STAKING_ASSET.safeTransferFrom(CORE, address(this), actualStakeAmount);
 
         // Approve rollup to spend
-        STAKING_ASSET.forceApprove(address(ROLLUP), actualStakeAmount);
+        STAKING_ASSET.forceApprove(rollupAddress, actualStakeAmount);
 
         // Update state before external calls (CEI pattern for principal tracking)
         _totalStakedPrincipal += actualStakeAmount;
@@ -286,7 +291,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             KeyStore memory keyStore = _providerQueue.dequeue();
 
             // Deposit to rollup
-            ROLLUP.deposit(
+            rollup.deposit(
                 keyStore.attester,
                 address(this), // StakingManager is the withdrawer
                 keyStore.publicKeyG1,
@@ -302,7 +307,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
 
         // Reset approval
-        STAKING_ASSET.forceApprove(address(ROLLUP), 0);
+        STAKING_ASSET.forceApprove(rollupAddress, 0);
     }
 
     // slither-disable-end reentrancy-no-eth
@@ -323,7 +328,11 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             revert StakingManager__InsufficientStake();
         }
 
-        uint256 activationThreshold = ROLLUP.getActivationThreshold();
+        // Get canonical rollup from registry
+        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
+        IAztecStaking rollup = IAztecStaking(rollupAddress);
+
+        uint256 activationThreshold = rollup.getActivationThreshold();
         // Round up to get number of attesters to unstake from
         uint256 attestersToUnstake = (amount + activationThreshold - 1) / activationThreshold;
 
@@ -347,7 +356,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             // Initiate withdrawal on rollup (return value intentionally ignored - we track state ourselves)
             // slither-disable-next-line unused-return
-            ROLLUP.initiateWithdraw(attester, address(this));
+            rollup.initiateWithdraw(attester, address(this));
 
             // Track pending unstake
             _pendingUnstakeRequests.push(
@@ -375,6 +384,10 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
     function _claimUnstakedFunds() internal returns (uint256 claimed) {
+        // Get canonical rollup from registry
+        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
+        IAztecStaking rollup = IAztecStaking(rollupAddress);
+
         uint256 i = 0;
         claimed = 0;
 
@@ -384,7 +397,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             // Try to finalize this withdrawal
             // solhint-disable-next-line no-empty-blocks
-            try ROLLUP.finalizeWithdraw(request.attester) {
+            try rollup.finalizeWithdraw(request.attester) {
                 claimed += request.amount;
                 _isUnstakePending[request.attester] = false;
 

@@ -10,6 +10,7 @@ import { StakingManager } from "src/core/StakingManager.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/mocks/MockAztecRollup.sol";
+import { MockAztecRollupRegistry } from "src/mocks/MockAztecRollupRegistry.sol";
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 contract StakingManagerTest is Test {
@@ -25,6 +26,7 @@ contract StakingManagerTest is Test {
 
     MockAztec internal aztec;
     MockAztecRollup internal rollup;
+    MockAztecRollupRegistry internal rollupRegistry;
     StakingManager internal stakingManager;
 
     address internal core;
@@ -60,10 +62,11 @@ contract StakingManagerTest is Test {
 
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
+        rollupRegistry = new MockAztecRollupRegistry(address(rollup));
 
         stakingManager = new StakingManager(
             IERC20(address(aztec)),
-            address(rollup),
+            address(rollupRegistry),
             rewardsVault,
             core,
             providerAdmin,
@@ -122,7 +125,7 @@ contract StakingManagerTest is Test {
 
     function test_Constructor_SetsImmutables() external view {
         assertEq(address(stakingManager.STAKING_ASSET()), address(aztec));
-        assertEq(address(stakingManager.ROLLUP()), address(rollup));
+        assertEq(address(stakingManager.ROLLUP_REGISTRY()), address(rollupRegistry));
         assertEq(stakingManager.REWARDS_VAULT(), rewardsVault);
         assertEq(stakingManager.CORE(), core);
     }
@@ -144,14 +147,20 @@ contract StakingManagerTest is Test {
         emit ProviderSet(providerAdmin, providerAdmin);
 
         new StakingManager(
-            IERC20(address(aztec)), address(rollup), rewardsVault, core, providerAdmin, providerAdmin, defaultAdmin
+            IERC20(address(aztec)),
+            address(rollupRegistry),
+            rewardsVault,
+            core,
+            providerAdmin,
+            providerAdmin,
+            defaultAdmin
         );
     }
 
     function test_RevertWhen_ConstructorZeroAddress() external {
         vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
         new StakingManager(
-            IERC20(address(0)), address(rollup), rewardsVault, core, providerAdmin, providerAdmin, defaultAdmin
+            IERC20(address(0)), address(rollupRegistry), rewardsVault, core, providerAdmin, providerAdmin, defaultAdmin
         );
 
         vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
@@ -161,13 +170,19 @@ contract StakingManagerTest is Test {
 
         vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
         new StakingManager(
-            IERC20(address(aztec)), address(rollup), address(0), core, providerAdmin, providerAdmin, defaultAdmin
+            IERC20(address(aztec)),
+            address(rollupRegistry),
+            address(0),
+            core,
+            providerAdmin,
+            providerAdmin,
+            defaultAdmin
         );
 
         vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
         new StakingManager(
             IERC20(address(aztec)),
-            address(rollup),
+            address(rollupRegistry),
             rewardsVault,
             address(0),
             providerAdmin,
@@ -177,12 +192,18 @@ contract StakingManagerTest is Test {
 
         vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
         new StakingManager(
-            IERC20(address(aztec)), address(rollup), rewardsVault, core, address(0), providerAdmin, defaultAdmin
+            IERC20(address(aztec)), address(rollupRegistry), rewardsVault, core, address(0), providerAdmin, defaultAdmin
         );
 
         vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
         new StakingManager(
-            IERC20(address(aztec)), address(rollup), rewardsVault, core, providerAdmin, providerAdmin, address(0)
+            IERC20(address(aztec)),
+            address(rollupRegistry),
+            rewardsVault,
+            core,
+            providerAdmin,
+            providerAdmin,
+            address(0)
         );
     }
 

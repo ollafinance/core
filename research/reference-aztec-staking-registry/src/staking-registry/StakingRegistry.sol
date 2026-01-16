@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@oz/token/ERC20/utils/SafeERC20.sol";
-import {SplitV2Lib} from "@splits/libraries/SplitV2.sol";
-import {PullSplitFactory} from "@splits/splitters/pull/PullSplitFactory.sol";
-import {Constants} from "src/constants.sol";
-import {IRegistry} from "src/staking/rollup-system-interfaces/IRegistry.sol";
-import {IStaking} from "src/staking/rollup-system-interfaces/IStaking.sol";
-import {BN254Lib} from "./libs/BN254.sol";
-import {QueueLib, Queue} from "./libs/QueueLib.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { SplitV2Lib } from "@splits/libraries/SplitV2.sol";
+import { PullSplitFactory } from "@splits/splitters/pull/PullSplitFactory.sol";
+import { Constants } from "src/constants.sol";
+import { IRegistry } from "src/staking/rollup-system-interfaces/IRegistry.sol";
+import { IStaking } from "src/staking/rollup-system-interfaces/IStaking.sol";
+import { BN254Lib } from "./libs/BN254.sol";
+import { QueueLib, Queue } from "./libs/QueueLib.sol";
 
 interface IStakingRegistry {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
