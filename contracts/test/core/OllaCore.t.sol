@@ -126,7 +126,7 @@ contract OllaCoreTest is Test {
         vm.expectEmit(true, true, true, true, address(vault));
         emit BucketUpdated(bucketId, oldValue, newValue, reason);
     }
-    
+
     function test_InitializeSetsCoreAddresses() external {
         assertEq(vault.asset(), address(asset), "asset set");
         assertEq(vault.stAztec(), address(stAztec), "stAztec set");
