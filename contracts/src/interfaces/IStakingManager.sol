@@ -5,15 +5,15 @@ pragma solidity >=0.8.27 <0.9.0;
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IStakingManager
-/// @notice Interface for staking delegation and validator key management.
+/// @notice Interface for staking delegation and attester key management.
 /// @author Olla Core contributors
 interface IStakingManager {
     /*//////////////////////////////////////////////////////////////
                                  STRUCTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Validator key information for staking.
-    /// @param attester The address that will act as the validator.
+    /// @notice Attester key information for staking.
+    /// @param attester The address that will act as the attester.
     /// @param publicKeyG1 The G1 point of the BLS public key.
     /// @param publicKeyG2 The G2 point of the BLS public key.
     /// @param proofOfPossession Proof that G1 and G2 keys share the same secret.
@@ -33,7 +33,7 @@ interface IStakingManager {
     }
 
     /// @notice Tracks a pending unstake request.
-    /// @param attester The validator address being unstaked.
+    /// @param attester The attester address being unstaked.
     /// @param amount The amount being unstaked.
     /// @param initiatedAt The timestamp when unstake was initiated.
     struct UnstakeRequest {
@@ -51,17 +51,17 @@ interface IStakingManager {
     /// @param rewardsRecipient The rewards recipient address.
     event ProviderSet(address indexed admin, address indexed rewardsRecipient);
 
-    /// @notice Emitted when validator keys are added to the queue.
+    /// @notice Emitted when attester keys are added to the queue.
     /// @param attesters The attester addresses of the added keys.
     event KeysAddedToProvider(address[] attesters);
 
-    /// @notice Emitted when assets are staked with a validator.
-    /// @param attester The validator address.
+    /// @notice Emitted when assets are staked with a attester.
+    /// @param attester The attester address.
     /// @param amount The amount staked.
     event StakedWithProvider(address indexed attester, uint256 amount);
 
     /// @notice Emitted when an unstake is initiated.
-    /// @param attester The validator address.
+    /// @param attester The attester address.
     /// @param amount The amount being unstaked.
     event UnstakeInitiated(address indexed attester, uint256 amount);
 
@@ -126,8 +126,8 @@ interface IStakingManager {
                         PROVIDER ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Adds validator keys to the provider queue.
-    /// @param keyStores The validator key stores to add.
+    /// @notice Adds attester keys to the provider queue.
+    /// @param keyStores The attester key stores to add.
     function addKeysToProvider(KeyStore[] calldata keyStores) external;
 
     /// @notice Removes keys from the front of the queue.
@@ -158,9 +158,9 @@ interface IStakingManager {
     /// @return The provider config struct.
     function getProviderConfig() external view returns (ProviderConfig memory);
 
-    /// @notice Returns the number of active validators.
-    /// @return The count of active validators.
-    function getActiveValidatorCount() external view returns (uint256);
+    /// @notice Returns the number of active attesters.
+    /// @return The count of active attesters.
+    function getActiveAttesterCount() external view returns (uint256);
 
     /// @notice Returns the number of pending unstake requests.
     /// @return The count of pending requests.

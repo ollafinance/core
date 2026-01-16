@@ -10,7 +10,7 @@ import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { Queue, QueueLib } from "src/libraries/QueueLib.sol";
 
 /// @title StakingManager
-/// @notice Manages staking delegation, validator keys, and reward harvesting.
+/// @notice Manages staking delegation, attester keys, and reward harvesting.
 /// @author Olla Core contributors
 contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -49,7 +49,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @dev Provider configuration.
     ProviderConfig private _provider;
 
-    /// @dev FIFO queue of validator keys.
+    /// @dev FIFO queue of attester keys.
     Queue private _providerQueue;
 
     /// @dev Total staked principal amount.
@@ -58,14 +58,14 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @dev Amount pending in unstake requests.
     uint256 private _pendingUnstakes;
 
-    /// @dev List of active validator attesters.
-    address[] private _activeValidators;
+    /// @dev List of active attester attesters.
+    address[] private _activeAttesters;
 
-    /// @dev Mapping from attester to index in _activeValidators.
-    mapping(address attester => uint256 index) private _validatorIndex;
+    /// @dev Mapping from attester to index in _activeAttesters.
+    mapping(address attester => uint256 index) private _attesterIndex;
 
     /// @dev Mapping to check if an attester is active.
-    mapping(address attester => bool isActive) private _isActiveValidator;
+    mapping(address attester => bool isActive) private _isActiveAttester;
 
     /// @dev List of pending unstake requests.
     UnstakeRequest[] private _pendingUnstakeRequests;
@@ -221,8 +221,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /// @inheritdoc IStakingManager
-    function getActiveValidatorCount() external view override returns (uint256) {
-        return _activeValidators.length;
+    function getActiveAttesterCount() external view override returns (uint256) {
+        return _activeAttesters.length;
     }
 
     /// @inheritdoc IStakingManager
@@ -249,10 +249,10 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         // Get activation threshold from rollup
         uint256 activationThreshold = ROLLUP.getActivationThreshold();
 
-        // Calculate how many validators we can stake
-        // Note: Division before multiplication is intentional - we want to truncate to whole validators
-        uint256 validatorsToStake = amount / activationThreshold;
-        if (validatorsToStake == 0) {
+        // Calculate how many attesters we can stake to
+        // Note: Division before multiplication is intentional - we want to truncate to whole attesters
+        uint256 attestersToStakeTo = amount / activationThreshold;
+        if (attestersToStakeTo == 0) {
             revert StakingManager__InsufficientAmount();
         }
 
@@ -262,14 +262,13 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             revert StakingManager__InsufficientKeys();
         }
 
-        // Limit validators to available keys
-        if (validatorsToStake > availableKeys) {
-            validatorsToStake = availableKeys;
+        // Limit attesters to available keys
+        if (attestersToStakeTo > availableKeys) {
+            attestersToStakeTo = availableKeys;
         }
 
-        // Calculate actual stake amount (intentional truncation to whole validators)
-        uint256 actualStakeAmount = validatorsToStake * activationThreshold;
-
+        // Calculate actual stake amount (intentional truncation to whole attesters)
+        uint256 actualStakeAmount = attestersToStakeTo * activationThreshold;
         // Transfer assets from core to this contract
         // Note: CORE is an immutable trusted address set at construction, not arbitrary
         // slither-disable-next-line arbitrary-send-erc20
@@ -281,8 +280,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         // Update state before external calls (CEI pattern for principal tracking)
         _totalStakedPrincipal += actualStakeAmount;
 
-        // Stake each validator (loop over external calls is intentional for batch operations)
-        for (uint256 i; i < validatorsToStake; ++i) {
+        // Stake each attester (loop over external calls is intentional for batch operations)
+        for (uint256 i; i < attestersToStakeTo; ++i) {
             // Dequeue a key
             KeyStore memory keyStore = _providerQueue.dequeue();
 
@@ -296,8 +295,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                 true // moveWithLatestRollup
             );
 
-            // Track active validator
-            _addActiveValidator(keyStore.attester);
+            // Track active attester
+            _addActiveAttester(keyStore.attester);
 
             emit StakedWithProvider(keyStore.attester, activationThreshold);
         }
@@ -325,26 +324,26 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
 
         uint256 activationThreshold = ROLLUP.getActivationThreshold();
-        // Round up to get number of validators to unstake
-        uint256 validatorsToUnstake = (amount + activationThreshold - 1) / activationThreshold;
+        // Round up to get number of attesters to unstake from
+        uint256 attestersToUnstake = (amount + activationThreshold - 1) / activationThreshold;
 
-        // Limit to available active validators
-        uint256 availableValidators = _activeValidators.length;
-        if (validatorsToUnstake > availableValidators) {
-            validatorsToUnstake = availableValidators;
+        // Limit to available active attesters
+        uint256 availableAttesters = _activeAttesters.length;
+        if (attestersToUnstake > availableAttesters) {
+            attestersToUnstake = availableAttesters;
         }
 
         uint256 actualUnstakeAmount = 0;
 
         // Update principal state before external calls (CEI pattern)
-        uint256 expectedUnstakeAmount = validatorsToUnstake * activationThreshold;
+        uint256 expectedUnstakeAmount = attestersToUnstake * activationThreshold;
         _totalStakedPrincipal -= expectedUnstakeAmount;
         _pendingUnstakes += expectedUnstakeAmount;
 
-        // Loop over validators to unstake (intentional batch operation)
-        for (uint256 i; i < validatorsToUnstake; ++i) {
-            // Get last active validator (more efficient removal)
-            address attester = _activeValidators[_activeValidators.length - 1];
+        // Loop over attesters to unstake (intentional batch operation)
+        for (uint256 i; i < attestersToUnstake; ++i) {
+            // Get last active attester (more efficient removal)
+            address attester = _activeAttesters[_activeAttesters.length - 1];
 
             // Initiate withdrawal on rollup (return value intentionally ignored - we track state ourselves)
             // slither-disable-next-line unused-return
@@ -356,8 +355,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             );
             _isUnstakePending[attester] = true;
 
-            // Remove from active validators
-            _removeActiveValidator(attester);
+            // Remove from active attesters
+            _removeActiveAttester(attester);
 
             actualUnstakeAmount += activationThreshold;
 
@@ -417,32 +416,32 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
-    /// @dev Adds an attester to the active validators list.
+    /// @dev Adds an attester to the active attesters list.
     /// @param attester The attester address.
-    function _addActiveValidator(address attester) internal {
-        if (!_isActiveValidator[attester]) {
-            _validatorIndex[attester] = _activeValidators.length;
-            _activeValidators.push(attester);
-            _isActiveValidator[attester] = true;
+    function _addActiveAttester(address attester) internal {
+        if (!_isActiveAttester[attester]) {
+            _attesterIndex[attester] = _activeAttesters.length;
+            _activeAttesters.push(attester);
+            _isActiveAttester[attester] = true;
         }
     }
 
-    /// @dev Removes an attester from the active validators list.
+    /// @dev Removes an attester from the active attesters list.
     /// @param attester The attester address.
-    function _removeActiveValidator(address attester) internal {
-        if (_isActiveValidator[attester]) {
-            uint256 index = _validatorIndex[attester];
-            uint256 lastIndex = _activeValidators.length - 1;
+    function _removeActiveAttester(address attester) internal {
+        if (_isActiveAttester[attester]) {
+            uint256 index = _attesterIndex[attester];
+            uint256 lastIndex = _activeAttesters.length - 1;
 
             if (index != lastIndex) {
-                address lastValidator = _activeValidators[lastIndex];
-                _activeValidators[index] = lastValidator;
-                _validatorIndex[lastValidator] = index;
+                address lastAttester = _activeAttesters[lastIndex];
+                _activeAttesters[index] = lastAttester;
+                _attesterIndex[lastAttester] = index;
             }
 
-            _activeValidators.pop();
-            delete _validatorIndex[attester];
-            _isActiveValidator[attester] = false;
+            _activeAttesters.pop();
+            delete _attesterIndex[attester];
+            _isActiveAttester[attester] = false;
         }
     }
 }

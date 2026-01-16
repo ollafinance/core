@@ -9,7 +9,7 @@ pragma solidity >=0.8.27 <0.9.0;
 /// @notice Wrapper type for timestamps.
 type Timestamp is uint256;
 
-/// @notice Validator status in the staking system.
+/// @notice Attester status in the staking system.
 enum Status {
     NONE, // Not registered
     VALIDATING, // Active validator

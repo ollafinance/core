@@ -89,7 +89,7 @@ contract StakingManagerTest is Test {
         return keys;
     }
 
-    function _setupStakedValidator() internal {
+    function _setupStakedAttester() internal {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
         stakingManager.addKeysToProvider(keys);
@@ -102,7 +102,7 @@ contract StakingManagerTest is Test {
         vm.stopPrank();
     }
 
-    function _setupMultipleStakedValidators(uint256 count) internal {
+    function _setupMultipleStakedAttesters(uint256 count) internal {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
         vm.prank(providerAdmin);
         stakingManager.addKeysToProvider(keys);
@@ -302,7 +302,7 @@ contract StakingManagerTest is Test {
 
         assertEq(stakingManager.totalStaked(), stakeAmount);
         assertEq(stakingManager.getQueueLength(), 0);
-        assertEq(stakingManager.getActiveValidatorCount(), 2);
+        assertEq(stakingManager.getActiveAttesterCount(), 2);
         assertEq(aztec.balanceOf(address(rollup)), stakeAmount);
     }
 
@@ -324,7 +324,7 @@ contract StakingManagerTest is Test {
 
         // Only 1 validator should be staked
         assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD);
-        assertEq(stakingManager.getActiveValidatorCount(), 1);
+        assertEq(stakingManager.getActiveAttesterCount(), 1);
         // Remaining funds stay with core (weren't transferred)
         assertEq(aztec.balanceOf(core), coreBalanceBefore - ACTIVATION_THRESHOLD);
     }
@@ -393,7 +393,7 @@ contract StakingManagerTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Unstake_InitiatesWithdrawal() external {
-        _setupStakedValidator();
+        _setupStakedAttester();
 
         uint256 totalStakedBefore = stakingManager.totalStaked();
 
@@ -402,7 +402,7 @@ contract StakingManagerTest is Test {
 
         assertEq(stakingManager.totalStaked(), totalStakedBefore - ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getPendingUnstakes(), ACTIVATION_THRESHOLD);
-        assertEq(stakingManager.getActiveValidatorCount(), 0);
+        assertEq(stakingManager.getActiveAttesterCount(), 0);
         assertEq(stakingManager.getPendingUnstakeCount(), 1);
     }
 
@@ -445,15 +445,15 @@ contract StakingManagerTest is Test {
         stakingManager.unStake(ACTIVATION_THRESHOLD);
     }
 
-    function test_Unstake_MultipleValidators() external {
-        _setupMultipleStakedValidators(3);
+    function test_Unstake_MultipleAttesters() external {
+        _setupMultipleStakedAttesters(3);
 
         vm.prank(core);
         stakingManager.unStake(ACTIVATION_THRESHOLD * 2);
 
         assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getPendingUnstakes(), ACTIVATION_THRESHOLD * 2);
-        assertEq(stakingManager.getActiveValidatorCount(), 1);
+        assertEq(stakingManager.getActiveAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
     }
 
@@ -480,7 +480,7 @@ contract StakingManagerTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_GetUnstakedFunds_ClaimsMaturedWithdrawals() external {
-        _setupStakedValidator();
+        _setupStakedAttester();
 
         vm.prank(core);
         stakingManager.unStake(ACTIVATION_THRESHOLD);
@@ -497,7 +497,7 @@ contract StakingManagerTest is Test {
     }
 
     function test_GetUnstakedFunds_EmitsEvent() external {
-        _setupStakedValidator();
+        _setupStakedAttester();
 
         vm.prank(core);
         stakingManager.unStake(ACTIVATION_THRESHOLD);
@@ -515,8 +515,8 @@ contract StakingManagerTest is Test {
         assertEq(claimed, 0);
     }
 
-    function test_GetUnstakedFunds_MultipleValidators() external {
-        _setupMultipleStakedValidators(3);
+    function test_GetUnstakedFunds_MultipleAttesters() external {
+        _setupMultipleStakedAttesters(3);
 
         vm.prank(core);
         stakingManager.unStake(ACTIVATION_THRESHOLD * 3);
@@ -577,8 +577,8 @@ contract StakingManagerTest is Test {
         assertEq(stakingManager.getQueueLength(), 0);
     }
 
-    function test_GetActiveValidatorCount_InitiallyZero() external view {
-        assertEq(stakingManager.getActiveValidatorCount(), 0);
+    function test_GetActiveAttesterCount_InitiallyZero() external view {
+        assertEq(stakingManager.getActiveAttesterCount(), 0);
     }
 
     function test_GetPendingUnstakeCount_InitiallyZero() external view {
@@ -605,14 +605,14 @@ contract StakingManagerTest is Test {
         vm.stopPrank();
 
         assertEq(stakingManager.totalStaked(), stakeAmount);
-        assertEq(stakingManager.getActiveValidatorCount(), validatorCount);
+        assertEq(stakingManager.getActiveAttesterCount(), validatorCount);
     }
 
     function testFuzz_UnstakeAfterStake(uint8 stakeCount, uint8 unstakeCount) external {
         stakeCount = uint8(bound(stakeCount, 1, 10));
         unstakeCount = uint8(bound(unstakeCount, 1, stakeCount));
 
-        _setupMultipleStakedValidators(stakeCount);
+        _setupMultipleStakedAttesters(stakeCount);
 
         uint256 unstakeAmount = ACTIVATION_THRESHOLD * unstakeCount;
 
@@ -621,6 +621,6 @@ contract StakingManagerTest is Test {
 
         assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD * (stakeCount - unstakeCount));
         assertEq(stakingManager.getPendingUnstakes(), unstakeAmount);
-        assertEq(stakingManager.getActiveValidatorCount(), stakeCount - unstakeCount);
+        assertEq(stakingManager.getActiveAttesterCount(), stakeCount - unstakeCount);
     }
 }
