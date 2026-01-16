@@ -91,7 +91,7 @@ contract OllaCoreDepositHandler is Test {
     address[] public actors;
 
     uint256 public previousExchangeRate;
-    uint256 public lastExchangeRate;
+    uint256 public latestExchangeRate;
 
     constructor(MockAztec _asset, OllaCore _vault, StAztec _stAztec) {
         asset = _asset;
@@ -102,8 +102,8 @@ contract OllaCoreDepositHandler is Test {
             actors.push(makeAddr(string(abi.encode("actor", i))));
         }
 
-        lastExchangeRate = vault.exchangeRate();
-        previousExchangeRate = lastExchangeRate;
+        latestExchangeRate = vault.exchangeRate();
+        previousExchangeRate = latestExchangeRate;
     }
 
     function actorsLength() external view returns (uint256) {
@@ -115,7 +115,7 @@ contract OllaCoreDepositHandler is Test {
     }
 
     function deposit(uint96 amount, uint256 actorSeed) external {
-        previousExchangeRate = lastExchangeRate;
+        previousExchangeRate = latestExchangeRate;
 
         uint256 assets = uint256(bound(amount, 1, type(uint96).max));
         address actor = actors[bound(actorSeed, 0, actors.length - 1)];
@@ -126,7 +126,7 @@ contract OllaCoreDepositHandler is Test {
         vault.deposit(assets, actor);
         vm.stopPrank();
 
-        lastExchangeRate = vault.exchangeRate();
+        latestExchangeRate = vault.exchangeRate();
     }
 }
 
@@ -168,12 +168,19 @@ contract OllaCoreInvariantTest is Test {
         assertEq(vault.exchangeRate(), expectedRate, "exchange rate matches totals");
     }
 
+    function _expectedShares(uint256 assets) internal view returns (uint256) {
+        uint256 supply = stAztec.totalSupply();
+        if (supply == 0) {
+            return assets;
+        }
+
+        return assets.mulDiv(supply, vault.totalAssets(), Math.Rounding.Floor);
+    }
+
     function invariant_ConvertToSharesMatchesSpec() external view {
         uint256 assets = 1e18;
-        uint256 supply = stAztec.totalSupply();
-        uint256 expectedShares = supply == 0 ? assets : assets.mulDiv(supply, vault.totalAssets(), Math.Rounding.Floor);
 
-        assertEq(vault.convertToShares(assets), expectedShares, "convertToShares matches spec");
+        assertEq(vault.convertToShares(assets), _expectedShares(assets), "convertToShares matches spec");
     }
 
     function invariant_ConvertToAssetsMatchesSpec() external view {
@@ -186,10 +193,8 @@ contract OllaCoreInvariantTest is Test {
 
     function invariant_PreviewDepositMatchesSpec() external view {
         uint256 assets = 1e18;
-        uint256 supply = stAztec.totalSupply();
-        uint256 expectedShares = supply == 0 ? assets : assets.mulDiv(supply, vault.totalAssets(), Math.Rounding.Floor);
 
-        assertEq(vault.previewDeposit(assets), expectedShares, "previewDeposit matches spec");
+        assertEq(vault.previewDeposit(assets), _expectedShares(assets), "previewDeposit matches spec");
     }
 
     function invariant_PreviewRedeemMatchesSpec() external view {
@@ -208,11 +213,11 @@ contract OllaCoreInvariantTest is Test {
 
         uint256 assets = 1e18;
         uint256 shares = 1e18;
-        assertEq(vault.exchangeRate(), 1e18, "zero supply exchange rate");
-        assertEq(vault.convertToShares(assets), assets, "zero supply convertToShares");
-        assertEq(vault.convertToAssets(shares), shares, "zero supply convertToAssets");
-        assertEq(vault.previewDeposit(assets), assets, "zero supply previewDeposit");
-        assertEq(vault.previewRedeem(shares), shares, "zero supply previewRedeem");
+        assertEq(vault.exchangeRate(), 1e18, "zero supply: exchangeRate should be 1e18");
+        assertEq(vault.convertToShares(assets), assets, "zero supply: convertToShares equals assets");
+        assertEq(vault.convertToAssets(shares), shares, "zero supply: convertToAssets equals shares");
+        assertEq(vault.previewDeposit(assets), assets, "zero supply: previewDeposit equals assets");
+        assertEq(vault.previewRedeem(shares), shares, "zero supply: previewRedeem equals shares");
     }
 }
 
@@ -240,7 +245,9 @@ contract OllaCoreDepositInvariantTest is Test {
         targetContract(address(handler));
     }
 
-    function invariant_ExchangeRateMonotonicWithDeposits() external view {
-        assertGe(handler.lastExchangeRate(), handler.previousExchangeRate(), "exchange rate monotonic");
+    function invariant_ExchangeRateNonDecreasingAfterDeposits() external view {
+        assertGe(
+            handler.latestExchangeRate(), handler.previousExchangeRate(), "deposit should never decrease exchange rate"
+        );
     }
 }
