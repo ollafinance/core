@@ -70,6 +70,11 @@ contract OllaCoreTest is Test {
     event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
 
     uint256 internal constant DECIMALS = 1e18;
+    uint8 internal constant BUCKET_ID_BUFFERED = 0;
+    uint8 internal constant BUCKET_ID_STAKED_PRINCIPAL = 1;
+    uint8 internal constant BUCKET_ID_REWARDS_VAULT = 2;
+    uint8 internal constant BUCKET_ID_REWARDS_DELTA = 3;
+    uint8 internal constant BUCKET_ID_SLASHING_DELTA = 4;
     bytes32 internal constant EXPECTED_REASON_DEPOSIT = "DEPOSIT";
     bytes32 internal constant EXPECTED_REASON_CLAIM = "CLAIM";
     bytes32 internal constant EXPECTED_REASON_STAKE = "STAKE";
@@ -105,6 +110,11 @@ contract OllaCoreTest is Test {
         vm.prank(owner);
         shares = vault.deposit(assets, owner);
         return shares;
+    }
+
+    function _expectBucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason) internal {
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit BucketUpdated(bucketId, oldValue, newValue, reason);
     }
 
     function test_DepositMintsAtExchangeRate() external {
@@ -160,28 +170,22 @@ contract OllaCoreTest is Test {
     function test_BucketHelpersEmitEvents() external {
         uint256 amount = 5 * DECIMALS;
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(0, 0, amount, EXPECTED_REASON_DEPOSIT);
+        _expectBucketUpdated(BUCKET_ID_BUFFERED, 0, amount, EXPECTED_REASON_DEPOSIT);
         vault.exposedIncreaseBuffered(amount, EXPECTED_REASON_DEPOSIT);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(0, amount, 0, EXPECTED_REASON_CLAIM);
+        _expectBucketUpdated(BUCKET_ID_BUFFERED, amount, 0, EXPECTED_REASON_CLAIM);
         vault.exposedDecreaseBuffered(amount, EXPECTED_REASON_CLAIM);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(1, 0, amount, EXPECTED_REASON_STAKE);
+        _expectBucketUpdated(BUCKET_ID_STAKED_PRINCIPAL, 0, amount, EXPECTED_REASON_STAKE);
         vault.exposedIncreaseStakedPrincipal(amount, EXPECTED_REASON_STAKE);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(2, 0, amount, EXPECTED_REASON_REWARD);
+        _expectBucketUpdated(BUCKET_ID_REWARDS_VAULT, 0, amount, EXPECTED_REASON_REWARD);
         vault.exposedIncreaseRewardsVaultBalance(amount, EXPECTED_REASON_REWARD);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(3, 0, amount, EXPECTED_REASON_REWARD);
+        _expectBucketUpdated(BUCKET_ID_REWARDS_DELTA, 0, amount, EXPECTED_REASON_REWARD);
         vault.exposedSetRewardsDelta(amount, EXPECTED_REASON_REWARD);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(4, 0, amount, EXPECTED_REASON_SLASH);
+        _expectBucketUpdated(BUCKET_ID_SLASHING_DELTA, 0, amount, EXPECTED_REASON_SLASH);
         vault.exposedSetSlashingDelta(amount, EXPECTED_REASON_SLASH);
 
         assertEq(vault.bufferedAssets(), 0, "bufferedAssets cleared after decrease");
