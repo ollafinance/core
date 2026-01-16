@@ -19,3 +19,6 @@ contracts/node_modules/
 contracts/.gas-snapshot
 contracts/.forge-snapshots/
 **/dist/
+
+# Solidity compiler artifacts (downloaded by forge)
+soljson-*.js
