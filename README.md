@@ -67,7 +67,10 @@ yarn husky install
 
 ## Static analysis
 
+Slither is pinned in CI to `0.11.4` (see `.github/workflows/slither.yml`). To match CI locally:
+
 ```bash
+python -m pip install -U slither-analyzer==0.11.4
 yarn slither
 ```
 

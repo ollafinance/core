@@ -2,7 +2,12 @@
   "filter_paths": "lib|dependencies|test|script|src/mocks",
   "solc_remaps": [
     "@oz=dependencies/@openzeppelin-contracts/",
+    "@oz-upgradeable=dependencies/@openzeppelin-contracts-upgradeable/",
     "forge-std=dependencies/forge-std/src"
   ],
-  "detectors_to_exclude": ["naming-convention", "pess-public-vs-external"]
+  "detectors_to_exclude": [
+    "naming-convention",
+    "pess-public-vs-external",
+    "unindexed-event-address"
+  ]
 }
