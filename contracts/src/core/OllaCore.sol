@@ -6,16 +6,15 @@ import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
-
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
-import { ReentrancyGuardUpgradeable } from "src/libraries/ReentrancyGuardUpgradeable.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
 /// @author Olla Core contributors
-contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable, IOllaCore {
+contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore {
     using SafeERC20 for IERC20;
     using Math for uint256;
 
@@ -104,8 +103,6 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuardUpgradeable,
         ) {
             revert OllaCoreZeroAddress();
         }
-
-        __ReentrancyGuard_init();
 
         _asset = asset_;
         _stAztec = stAztec_;
