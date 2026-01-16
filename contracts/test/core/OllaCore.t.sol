@@ -70,11 +70,11 @@ contract OllaCoreTest is Test {
     event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
 
     uint256 internal constant DECIMALS = 1e18;
-    bytes32 internal constant REASON_DEPOSIT = "DEPOSIT";
-    bytes32 internal constant REASON_CLAIM = "CLAIM";
-    bytes32 internal constant REASON_STAKE = "STAKE";
-    bytes32 internal constant REASON_SLASH = "SLASH";
-    bytes32 internal constant REASON_REWARD = "REWARD";
+    bytes32 internal constant EXPECTED_REASON_DEPOSIT = "DEPOSIT";
+    bytes32 internal constant EXPECTED_REASON_CLAIM = "CLAIM";
+    bytes32 internal constant EXPECTED_REASON_STAKE = "STAKE";
+    bytes32 internal constant EXPECTED_REASON_SLASH = "SLASH";
+    bytes32 internal constant EXPECTED_REASON_REWARD = "REWARD";
 
     MockAztec internal asset;
     OllaCoreHarness internal vault;
@@ -86,8 +86,8 @@ contract OllaCoreTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreHarness implementation = new OllaCoreHarness();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        OllaCoreHarness coreImplementation = new OllaCoreHarness();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCoreHarness(address(proxy));
 
         stAztec = new StAztec(address(vault));
@@ -98,7 +98,7 @@ contract OllaCoreTest is Test {
         bob = makeAddr("bob");
     }
 
-    function _deposit(address owner, uint256 assets) internal returns (uint256 shares) {
+    function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
         asset.mint(owner, assets);
         vm.prank(owner);
         asset.approve(address(vault), assets);
@@ -108,22 +108,25 @@ contract OllaCoreTest is Test {
     }
 
     function test_DepositMintsAtExchangeRate() external {
-        uint256 firstShares = _deposit(alice, 100 * DECIMALS);
-        assertEq(firstShares, 100 * DECIMALS, "initial shares");
+        uint256 depositAssetAmountAlice = 100 * DECIMALS;
+        uint256 firstShares = _performDeposit(alice, depositAssetAmountAlice);
+        assertEq(firstShares, depositAssetAmountAlice, "first deposit: 1:1 shares at zero supply");
 
-        vault.exposedIncreaseRewardsVaultBalance(50 * DECIMALS, REASON_REWARD);
+        vault.exposedIncreaseRewardsVaultBalance(50 * DECIMALS, EXPECTED_REASON_REWARD);
 
-        uint256 totalAssetsBefore = vault.totalAssets();
-        uint256 totalSharesBefore = stAztec.totalSupply();
+        uint256 totalAssetsBeforeSecondDeposit = vault.totalAssets();
+        uint256 totalSharesBeforeSecondDeposit = stAztec.totalSupply();
 
-        uint256 expectedShares = (50 * DECIMALS).mulDiv(totalSharesBefore, totalAssetsBefore, Math.Rounding.Floor);
-        uint256 secondShares = _deposit(bob, 50 * DECIMALS);
+        uint256 depositAssetAmountBob = 50 * DECIMALS;
+        uint256 expectedShares = (depositAssetAmountBob)
+        .mulDiv(totalSharesBeforeSecondDeposit, totalAssetsBeforeSecondDeposit, Math.Rounding.Floor);
+        uint256 secondShares = _performDeposit(bob, depositAssetAmountBob);
 
-        assertEq(secondShares, expectedShares, "shares at exchange rate");
+        assertEq(secondShares, expectedShares, "second deposit: shares follow exchange rate");
     }
 
     function test_DepositsAreInstant() external {
-        uint256 shares = _deposit(alice, 10 * DECIMALS);
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
 
         assertEq(stAztec.balanceOf(alice), shares, "shares minted");
         assertEq(vault.totalAssets(), 10 * DECIMALS, "assets buffered");
@@ -136,46 +139,50 @@ contract OllaCoreTest is Test {
         uint256 rewardsDelta = 2 * DECIMALS;
         uint256 slashingDelta = 1 * DECIMALS;
 
-        _deposit(alice, assets);
-        vault.exposedIncreaseStakedPrincipal(staked, REASON_STAKE);
-        vault.exposedIncreaseRewardsVaultBalance(rewardsVault, REASON_REWARD);
-        vault.exposedSetRewardsDelta(rewardsDelta, REASON_REWARD);
-        vault.exposedSetSlashingDelta(slashingDelta, REASON_SLASH);
+        _performDeposit(alice, assets);
+        vault.exposedIncreaseStakedPrincipal(staked, EXPECTED_REASON_STAKE);
+        vault.exposedIncreaseRewardsVaultBalance(rewardsVault, EXPECTED_REASON_REWARD);
+        vault.exposedSetRewardsDelta(rewardsDelta, EXPECTED_REASON_REWARD);
+        vault.exposedSetSlashingDelta(slashingDelta, EXPECTED_REASON_SLASH);
 
-        assertEq(vault.bufferedAssets(), assets, "buffered assets");
-        assertEq(vault.stakedPrincipal(), staked, "staked principal");
-        assertEq(vault.rewardsVaultBalance(), rewardsVault, "rewards vault balance");
-        assertEq(vault.rewardsDelta(), rewardsDelta, "rewards delta");
-        assertEq(vault.slashingDelta(), slashingDelta, "slashing delta");
-        assertEq(vault.totalAssets(), assets + staked + rewardsVault + rewardsDelta - slashingDelta, "total assets sum");
+        assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
+        assertEq(vault.stakedPrincipal(), staked, "stakedPrincipal matches staked amount");
+        assertEq(vault.rewardsVaultBalance(), rewardsVault, "rewardsVaultBalance matches rewards vault");
+        assertEq(vault.rewardsDelta(), rewardsDelta, "rewardsDelta matches rewards delta");
+        assertEq(vault.slashingDelta(), slashingDelta, "slashingDelta matches slashing delta");
+        assertEq(
+            vault.totalAssets(),
+            assets + staked + rewardsVault + rewardsDelta - slashingDelta,
+            "totalAssets sums buckets"
+        );
     }
 
     function test_BucketHelpersEmitEvents() external {
         uint256 amount = 5 * DECIMALS;
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(0, 0, amount, REASON_DEPOSIT);
-        vault.exposedIncreaseBuffered(amount, REASON_DEPOSIT);
+        emit BucketUpdated(0, 0, amount, EXPECTED_REASON_DEPOSIT);
+        vault.exposedIncreaseBuffered(amount, EXPECTED_REASON_DEPOSIT);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(0, amount, 0, REASON_CLAIM);
-        vault.exposedDecreaseBuffered(amount, REASON_CLAIM);
+        emit BucketUpdated(0, amount, 0, EXPECTED_REASON_CLAIM);
+        vault.exposedDecreaseBuffered(amount, EXPECTED_REASON_CLAIM);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(1, 0, amount, REASON_STAKE);
-        vault.exposedIncreaseStakedPrincipal(amount, REASON_STAKE);
+        emit BucketUpdated(1, 0, amount, EXPECTED_REASON_STAKE);
+        vault.exposedIncreaseStakedPrincipal(amount, EXPECTED_REASON_STAKE);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(2, 0, amount, REASON_REWARD);
-        vault.exposedIncreaseRewardsVaultBalance(amount, REASON_REWARD);
+        emit BucketUpdated(2, 0, amount, EXPECTED_REASON_REWARD);
+        vault.exposedIncreaseRewardsVaultBalance(amount, EXPECTED_REASON_REWARD);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(3, 0, amount, REASON_REWARD);
-        vault.exposedSetRewardsDelta(amount, REASON_REWARD);
+        emit BucketUpdated(3, 0, amount, EXPECTED_REASON_REWARD);
+        vault.exposedSetRewardsDelta(amount, EXPECTED_REASON_REWARD);
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(4, 0, amount, REASON_SLASH);
-        vault.exposedSetSlashingDelta(amount, REASON_SLASH);
+        emit BucketUpdated(4, 0, amount, EXPECTED_REASON_SLASH);
+        vault.exposedSetSlashingDelta(amount, EXPECTED_REASON_SLASH);
 
         assertEq(vault.bufferedAssets(), 0, "buffered cleared");
         assertEq(vault.stakedPrincipal(), amount, "staked credited");
@@ -186,22 +193,31 @@ contract OllaCoreTest is Test {
 
     function test_SyncBufferedWithBalanceAfterDepositAndClaim() external {
         uint256 assets = 10 * DECIMALS;
+        uint256 claimAssets = 5 * DECIMALS;
 
-        _deposit(alice, assets);
+        _performDeposit(alice, assets);
         vault.exposedSyncBufferedWithBalance();
 
+        assertEq(vault.bufferedAssets(), assets, "buffered matches vault balance after deposit");
+        assertEq(asset.balanceOf(address(vault)), assets, "vault balance matches deposit");
+
         vm.prank(alice);
-        vault.requestRedeem(5 * DECIMALS, alice, alice);
+        vault.requestRedeem(claimAssets, alice, alice);
 
         vm.prank(bob);
         vault.claimPendingWithdraw(alice);
         vault.exposedSyncBufferedWithBalance();
+
+        uint256 expectedRemaining = assets - claimAssets;
+        assertEq(vault.bufferedAssets(), expectedRemaining, "buffered matches vault balance after claim");
+        assertEq(asset.balanceOf(address(vault)), expectedRemaining, "vault balance matches claim");
+        assertEq(asset.balanceOf(alice), claimAssets, "claim transfers assets to receiver");
     }
 
-    function test_StakeDoesNotChangeBuckets() external {
+    function test_StakingAndUnstakingDoesNotAffectBucketBalances() external {
         uint256 assets = 12 * DECIMALS;
 
-        _deposit(alice, assets);
+        _performDeposit(alice, assets);
 
         uint256 bufferedBefore = vault.bufferedAssets();
         uint256 stakedBefore = vault.stakedPrincipal();
@@ -235,20 +251,20 @@ contract OllaCoreTest is Test {
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
         asset.mint(address(vault), buffered);
-        vault.exposedIncreaseBuffered(buffered, REASON_DEPOSIT);
-        vault.exposedIncreaseStakedPrincipal(staked, REASON_STAKE);
-        vault.exposedIncreaseRewardsVaultBalance(rewardsVault, REASON_REWARD);
-        vault.exposedSetRewardsDelta(rewardsDelta, REASON_REWARD);
-        vault.exposedSetSlashingDelta(slashingDelta, REASON_SLASH);
+        vault.exposedIncreaseBuffered(buffered, EXPECTED_REASON_DEPOSIT);
+        vault.exposedIncreaseStakedPrincipal(staked, EXPECTED_REASON_STAKE);
+        vault.exposedIncreaseRewardsVaultBalance(rewardsVault, EXPECTED_REASON_REWARD);
+        vault.exposedSetRewardsDelta(rewardsDelta, EXPECTED_REASON_REWARD);
+        vault.exposedSetSlashingDelta(slashingDelta, EXPECTED_REASON_SLASH);
 
-        assertEq(vault.totalAssets(), positiveTotal - slashingDelta, "total assets sum");
+        assertEq(vault.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
     }
 
     function test_RevertWhen_BufferedBalanceMismatch() external {
         uint256 assets = 10 * DECIMALS;
         uint256 bonus = 2 * DECIMALS;
 
-        _deposit(alice, assets);
+        _performDeposit(alice, assets);
         asset.mint(address(vault), bonus);
 
         vm.expectRevert(
@@ -272,7 +288,7 @@ contract OllaCoreTest is Test {
     }
 
     function test_EmitRequestRedeemAndClaimEvents() external {
-        _deposit(alice, 25 * DECIMALS);
+        _performDeposit(alice, 25 * DECIMALS);
 
         vm.expectEmit(true, true, true, true, address(vault));
         emit RequestRedeem(alice, bob, 5 * DECIMALS, 5 * DECIMALS);
@@ -293,7 +309,7 @@ contract OllaCoreTest is Test {
     }
 
     function test_RevertWhen_PendingWithdrawalExists() external {
-        _deposit(alice, 20 * DECIMALS);
+        _performDeposit(alice, 20 * DECIMALS);
 
         vm.prank(alice);
         vault.requestRedeem(5 * DECIMALS, alice, alice);
@@ -309,8 +325,8 @@ contract OllaCoreTest is Test {
     }
 
     function test_RevertWhen_InitializeZeroAddress() external {
-        OllaCore implementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         OllaCore newVault = OllaCore(address(proxy));
         StAztec newStAztec = new StAztec(address(newVault));
         MockStakingManager newStakingManager = new MockStakingManager();
@@ -326,7 +342,7 @@ contract OllaCoreTest is Test {
     }
 
     function test_RevertWhen_UnauthorizedRedeem() external {
-        _deposit(alice, 15 * DECIMALS);
+        _performDeposit(alice, 15 * DECIMALS);
 
         vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreUnauthorized.selector, bob, alice));
         vm.prank(bob);
@@ -334,7 +350,7 @@ contract OllaCoreTest is Test {
     }
 
     function test_RequestRedeemByOwner() external {
-        _deposit(alice, 25 * DECIMALS);
+        _performDeposit(alice, 25 * DECIMALS);
 
         vm.prank(alice);
         uint256 assets = vault.requestRedeem(5 * DECIMALS, bob, alice);
@@ -346,7 +362,7 @@ contract OllaCoreTest is Test {
     function testFuzz_DepositMintsShares(uint96 assets) external {
         assets = uint96(bound(assets, 1, type(uint96).max));
 
-        uint256 shares = _deposit(alice, assets);
+        uint256 shares = _performDeposit(alice, assets);
 
         assertEq(shares, assets, "shares minted at 1:1");
         assertEq(stAztec.balanceOf(alice), shares, "shares balance");
@@ -357,7 +373,7 @@ contract OllaCoreTest is Test {
         assets = uint96(bound(assets, 1, type(uint96).max));
         redeemShares = uint96(bound(redeemShares, 1, assets));
 
-        _deposit(alice, assets);
+        _performDeposit(alice, assets);
 
         vm.prank(alice);
         uint256 assetsOut = vault.requestRedeem(redeemShares, alice, alice);
@@ -375,7 +391,7 @@ contract OllaCoreTest is Test {
     function testFuzz_RequestRedeemByOwner(uint96 assets, uint96 redeemShares) external {
         assets = uint96(bound(assets, 1, type(uint96).max));
 
-        _deposit(alice, assets);
+        _performDeposit(alice, assets);
 
         redeemShares = uint96(bound(redeemShares, 1, assets));
 
@@ -393,8 +409,8 @@ contract OllaCoreTest is Test {
         assets = uint96(bound(assets, 1, type(uint96).max));
         bonus = uint96(bound(bonus, 1, type(uint96).max));
 
-        _deposit(alice, assets);
-        vault.exposedIncreaseRewardsVaultBalance(bonus, REASON_REWARD);
+        _performDeposit(alice, assets);
+        vault.exposedIncreaseRewardsVaultBalance(bonus, EXPECTED_REASON_REWARD);
 
         redeemShares = uint96(bound(redeemShares, 1, assets));
 
@@ -412,7 +428,7 @@ contract OllaCoreTest is Test {
         vm.assume(attacker != alice);
         vm.assume(attacker != address(0));
 
-        _deposit(alice, assets);
+        _performDeposit(alice, assets);
 
         redeemShares = uint96(bound(redeemShares, 1, assets));
 
@@ -424,7 +440,7 @@ contract OllaCoreTest is Test {
     function testFuzz_RevertWhen_ClaimInsufficientLiquidity(uint96 assets, uint96 redeemShares) external {
         assets = uint96(bound(assets, 1, type(uint96).max));
 
-        _deposit(alice, assets);
+        _performDeposit(alice, assets);
 
         redeemShares = uint96(bound(redeemShares, 1, assets));
 
@@ -433,8 +449,8 @@ contract OllaCoreTest is Test {
 
         uint256 availableAssets = vault.bufferedAssets();
 
-        vault.exposedDecreaseBuffered(availableAssets, REASON_STAKE);
-        vault.exposedIncreaseStakedPrincipal(availableAssets, REASON_STAKE);
+        vault.exposedDecreaseBuffered(availableAssets, EXPECTED_REASON_STAKE);
+        vault.exposedIncreaseStakedPrincipal(availableAssets, EXPECTED_REASON_STAKE);
 
         vm.prank(address(vault));
         asset.transfer(bob, availableAssets);
