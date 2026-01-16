@@ -50,8 +50,8 @@ contract OllaCore is Initializable, IOllaCore, ReentrancyGuard {
 
     mapping(address owner => PendingWithdrawal withdrawal) private _pendingWithdrawals;
     AccountingBuckets private _accountingBuckets;
-    
-    // @notice Storage gap for upgradability
+
+    /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
     uint256[47] private __gap;
 
