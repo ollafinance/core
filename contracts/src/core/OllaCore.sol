@@ -254,53 +254,31 @@ contract OllaCore is
     // slither-disable-start pess-multiple-storage-read
     /// @notice Updates accounting snapshots and publishes the latest exchange rate data.
     function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
-        FlowCounters storage flows = _flowCounters;
-        uint256 currentCumulativeDeposits = flows.cumulativeDeposits;
-        uint256 currentCumulativeWithdrawals = flows.cumulativeWithdrawals;
-        uint256 currentLastReportDeposits = flows.lastReportDeposits;
-        uint256 currentLastReportWithdrawals = flows.lastReportWithdrawals;
-
-        // Net flows since the last accounting snapshot.
-        uint256 netDeposits = currentCumulativeDeposits > currentLastReportDeposits
-            ? currentCumulativeDeposits - currentLastReportDeposits
-            : 0;
-        uint256 netWithdrawals = currentCumulativeWithdrawals > currentLastReportWithdrawals
-            ? currentCumulativeWithdrawals - currentLastReportWithdrawals
-            : 0;
-        uint256 netFlows = netDeposits > netWithdrawals ? netDeposits - netWithdrawals : 0;
+        FlowCounters memory flowsSnapshot = _flowCounters;
+        (uint256 netFlows,,) = _computeNetFlows(flowsSnapshot);
 
         uint256 oldTotalAssets = _latestReport.totalAssets;
 
         AccountingState storage buckets = _accountingState;
-        uint256 currentStakedPrincipal = buckets.stakedPrincipal;
-        uint256 currentRewardsVaultBalance = buckets.rewardsVaultBalance;
-        uint256 currentRewardsDelta = buckets.rewardsDelta;
-        uint256 currentSlashingDelta = buckets.slashingDelta;
-
-        // Apply operator-supplied bucket values before computing totals.
         _applyAccountingUpdates(
-            currentStakedPrincipal, currentRewardsVaultBalance, currentRewardsDelta, currentSlashingDelta
+            buckets.stakedPrincipal, buckets.rewardsVaultBalance, buckets.rewardsDelta, buckets.slashingDelta
         );
 
-        buckets = _accountingState;
-        uint256 newTotalAssets = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
-            + buckets.rewardsDelta - buckets.slashingDelta;
+        AccountingState memory updatedBuckets = _accountingState;
+        uint256 newTotalAssets = _computeTotalAssets(updatedBuckets);
+        uint256 grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        uint256 rate = _exchangeRate();
 
-        // Gross rewards are asset changes excluding net flows.
-        uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
-        uint256 grossRewards = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
-
-        uint256 supply = _stAztec.totalSupply();
-        uint256 rate = supply == 0
-            ? _EXCHANGE_RATE_SCALE
-            : newTotalAssets.mulDiv(_EXCHANGE_RATE_SCALE, supply, Math.Rounding.Floor);
-
-        // Persist the new snapshot for share conversion and reporting.
         _updateReportingSnapshots(
-            newTotalAssets, rate, grossRewards, netFlows, currentCumulativeDeposits, currentCumulativeWithdrawals
+            newTotalAssets,
+            rate,
+            grossRewards,
+            netFlows,
+            flowsSnapshot.cumulativeDeposits,
+            flowsSnapshot.cumulativeWithdrawals
         );
 
-        emit ValidatorStateRead(buckets.rewardsDelta, buckets.slashingDelta, _latestReport.timestamp);
+        emit ValidatorStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
         emit AccountingUpdated(newTotalAssets, rate, grossRewards, netFlows, 0, 0, 0, _latestReport.timestamp);
     }
 
@@ -594,7 +572,6 @@ contract OllaCore is
         uint256 oldValue = _accountingState.bufferedAssets;
         uint256 newValue = oldValue + amount;
         _accountingState.bufferedAssets = newValue;
-        emit BucketUpdated(oldValue, newValue);
     }
 
     function _decreaseBuffered(uint256 amount) internal {
@@ -607,7 +584,6 @@ contract OllaCore is
         }
         uint256 newValue = oldValue - amount;
         _accountingState.bufferedAssets = newValue;
-        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
@@ -618,7 +594,6 @@ contract OllaCore is
         uint256 oldValue = _accountingState.stakedPrincipal;
         uint256 newValue = oldValue + amount;
         _accountingState.stakedPrincipal = newValue;
-        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
@@ -632,7 +607,6 @@ contract OllaCore is
         }
         uint256 newValue = oldValue - amount;
         _accountingState.stakedPrincipal = newValue;
-        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
@@ -643,7 +617,6 @@ contract OllaCore is
         uint256 oldValue = _accountingState.rewardsVaultBalance;
         uint256 newValue = oldValue + amount;
         _accountingState.rewardsVaultBalance = newValue;
-        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
@@ -657,21 +630,16 @@ contract OllaCore is
         }
         uint256 newValue = oldValue - amount;
         _accountingState.rewardsVaultBalance = newValue;
-        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
     function _setRewardsDelta(uint256 newValue) internal onlyRole(OPERATOR_ROLE) {
-        uint256 oldValue = _accountingState.rewardsDelta;
         _accountingState.rewardsDelta = newValue;
-        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
     function _setSlashingDelta(uint256 newValue) internal onlyRole(OPERATOR_ROLE) {
-        uint256 oldValue = _accountingState.slashingDelta;
         _accountingState.slashingDelta = newValue;
-        emit BucketUpdated(oldValue, newValue);
     }
 
     function _syncBufferedWithBalance() internal view {
@@ -724,5 +692,36 @@ contract OllaCore is
         if (newImplementation == address(0)) {
             revert OllaCoreZeroAddress();
         }
+    }
+
+    function _computeNetFlows(FlowCounters memory flows)
+        internal
+        pure
+        returns (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
+    {
+        netDeposits = flows.cumulativeDeposits > flows.lastReportDeposits
+            ? flows.cumulativeDeposits - flows.lastReportDeposits
+            : 0;
+        netWithdrawals = flows.cumulativeWithdrawals > flows.lastReportWithdrawals
+            ? flows.cumulativeWithdrawals - flows.lastReportWithdrawals
+            : 0;
+        netFlows = netDeposits > netWithdrawals ? netDeposits - netWithdrawals : 0;
+        return (netFlows, netDeposits, netWithdrawals);
+    }
+
+    function _computeTotalAssets(AccountingState memory buckets) internal pure returns (uint256 totalAssets_) {
+        totalAssets_ = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
+            + buckets.rewardsDelta - buckets.slashingDelta;
+        return totalAssets_;
+    }
+
+    function _computeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, uint256 netFlows)
+        internal
+        pure
+        returns (uint256 grossRewards)
+    {
+        uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
+        grossRewards = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
+        return grossRewards;
     }
 }

@@ -65,11 +65,6 @@ interface IOllaCore {
     /// @param amount The amount requested to unstake.
     event UnstakeRequested(uint256 indexed messageId, uint256 amount);
 
-    /// @notice Emitted when a bucket value changes.
-    /// @param oldValue The previous bucket value.
-    /// @param newValue The updated bucket value.
-    event BucketUpdated(uint256 oldValue, uint256 newValue);
-
     /// @notice Emitted when accounting is updated.
     /// @param totalAssets Total assets snapshot.
     /// @param exchangeRate Stored exchange rate snapshot.

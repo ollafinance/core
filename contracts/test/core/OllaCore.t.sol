@@ -74,7 +74,6 @@ contract OllaCoreTest is Test {
     event RequestRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event ClaimWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
-    event BucketUpdated(uint256 oldValue, uint256 newValue);
     event Paused();
     event Unpaused();
     event Rebalanced(
@@ -141,11 +140,6 @@ contract OllaCoreTest is Test {
         vm.prank(owner);
         shares = vault.deposit(assets, owner);
         return shares;
-    }
-
-    function _expectBucketUpdated(uint256 oldValue, uint256 newValue) internal {
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(oldValue, newValue);
     }
 
     function test_InitializeSetsCoreAddresses() external view {
@@ -293,38 +287,6 @@ contract OllaCoreTest is Test {
             assets + staked + rewardsVaultAmount + rewardsDelta - slashingDelta,
             "totalAssets sums buckets"
         );
-    }
-
-    function test_BucketHelpersEmitEvents() external {
-        uint256 amount = 5 * DECIMALS;
-
-        _expectBucketUpdated(0, amount);
-        vault.exposedIncreaseBuffered(amount);
-
-        _expectBucketUpdated(amount, 0);
-        vault.exposedDecreaseBuffered(amount);
-
-        _expectBucketUpdated(0, amount);
-        vm.prank(operator);
-        vault.exposedIncreaseStakedPrincipal(amount);
-
-        _expectBucketUpdated(0, amount);
-        vm.prank(operator);
-        vault.exposedIncreaseRewardsVaultBalance(amount);
-
-        _expectBucketUpdated(0, amount);
-        vm.prank(operator);
-        vault.exposedSetRewardsDelta(amount);
-
-        _expectBucketUpdated(0, amount);
-        vm.prank(operator);
-        vault.exposedSetSlashingDelta(amount);
-
-        assertEq(vault.bufferedAssets(), 0, "bufferedAssets cleared after decrease");
-        assertEq(vault.stakedPrincipal(), amount, "stakedPrincipal increased by amount");
-        assertEq(vault.rewardsVaultBalance(), amount, "rewardsVaultBalance increased by amount");
-        assertEq(vault.rewardsDelta(), amount, "rewardsDelta set to amount");
-        assertEq(vault.slashingDelta(), amount, "slashingDelta set to amount");
     }
 
     function test_SyncBufferedWithBalanceAfterDepositAndClaim() external {
