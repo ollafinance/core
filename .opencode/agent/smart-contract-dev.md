@@ -168,7 +168,7 @@ Static Analysis:
 - Slither and Slytherin run automatically on PRs - review findings before merging
 - Run locally with `yarn slither` or `slither . --config-file slither.config.json` in contracts/
 - Configure exclusions in `contracts/slither.config.json` if needed (currently excludes lib, dependencies, test, script, src/mocks)
-- **All Slither findings must be addressed** - either fix the issue or add appropriate disable comments with justification
+- **All Slither findings must be addressed** - First attempt to remediate the underlying issue. Disable comments may only be used if the finding is demonstrably false-positive or non-actionable, and a technical justification for why it cannot be fixed must be provided.
 
 Slither Disable Comments:
 
