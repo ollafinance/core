@@ -75,10 +75,21 @@ interface IOllaCore {
     /// @notice Emitted when accounting is updated.
     /// @param totalAssets Total assets snapshot.
     /// @param exchangeRate Stored exchange rate snapshot.
-    /// @param cumulativeDeposits Lifetime deposits.
-    /// @param cumulativeWithdrawals Lifetime withdrawals.
+    /// @param grossRewards Gross rewards since last report.
+    /// @param netFlows Net deposits minus withdrawals since last report.
+    /// @param protocolFeeAssets Protocol fee amount in assets.
+    /// @param treasuryShares Treasury fee shares minted.
+    /// @param providerShares Provider fee shares minted.
+    /// @param timestamp Timestamp of the report.
     event AccountingUpdated(
-        uint256 totalAssets, uint256 exchangeRate, uint256 cumulativeDeposits, uint256 cumulativeWithdrawals
+        uint256 totalAssets,
+        uint256 exchangeRate,
+        uint256 grossRewards,
+        uint256 netFlows,
+        uint256 protocolFeeAssets,
+        uint256 treasuryShares,
+        uint256 providerShares,
+        uint256 timestamp
     );
 
     /// @notice Emitted when validator state is read.
@@ -208,6 +219,10 @@ interface IOllaCore {
     /// @notice Returns the last total assets snapshot.
     /// @return The last total assets value.
     function lastTotalAssets() external view returns (uint256);
+
+    /// @notice Returns the last report timestamp.
+    /// @return The last report timestamp value.
+    function lastReportTimestamp() external view returns (uint256);
 
     /// @notice Returns cumulative deposits.
     /// @return The cumulative deposits value.

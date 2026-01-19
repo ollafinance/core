@@ -16,16 +16,18 @@
 |---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------|
 | _safetyModule       | address                                                | 6    | 0      | 20    | src/core/OllaCore.sol:OllaCore |
 |---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------|
-| _reporting          | struct OllaCore.ReportingState                         | 7    | 0      | 192   | src/core/OllaCore.sol:OllaCore |
+| _accountingState    | struct OllaCore.AccountingState                        | 7    | 0      | 160   | src/core/OllaCore.sol:OllaCore |
 |---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------|
-| _stakeMessageId     | uint256                                                | 13   | 0      | 32    | src/core/OllaCore.sol:OllaCore |
+| _flowCounters       | struct OllaCore.FlowCounters                           | 12   | 0      | 128   | src/core/OllaCore.sol:OllaCore |
 |---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------|
-| _unstakeMessageId   | uint256                                                | 14   | 0      | 32    | src/core/OllaCore.sol:OllaCore |
+| _latestReport       | struct OllaCore.LatestReport                           | 16   | 0      | 160   | src/core/OllaCore.sol:OllaCore |
 |---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------|
-| _pendingWithdrawals | mapping(address => struct IOllaCore.PendingWithdrawal) | 15   | 0      | 32    | src/core/OllaCore.sol:OllaCore |
+| _stakeMessageId     | uint256                                                | 21   | 0      | 32    | src/core/OllaCore.sol:OllaCore |
 |---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------|
-| _accountingBuckets  | struct OllaCore.AccountingBuckets                      | 16   | 0      | 160   | src/core/OllaCore.sol:OllaCore |
+| _unstakeMessageId   | uint256                                                | 22   | 0      | 32    | src/core/OllaCore.sol:OllaCore |
 |---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------|
-| __gap               | uint256[36]                                            | 21   | 0      | 1152  | src/core/OllaCore.sol:OllaCore |
+| _pendingWithdrawals | mapping(address => struct IOllaCore.PendingWithdrawal) | 23   | 0      | 32    | src/core/OllaCore.sol:OllaCore |
+|---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------|
+| __gap               | uint256[36]                                            | 24   | 0      | 1152  | src/core/OllaCore.sol:OllaCore |
 ╰---------------------+--------------------------------------------------------+------+--------+-------+--------------------------------╯
 

@@ -27,7 +27,7 @@ contract OllaCore is
     using SafeERC20 for IERC20;
     using Math for uint256;
 
-    struct AccountingBuckets {
+    struct AccountingState {
         uint256 bufferedAssets;
         uint256 stakedPrincipal;
         uint256 rewardsVaultBalance;
@@ -35,13 +35,19 @@ contract OllaCore is
         uint256 slashingDelta;
     }
 
-    struct ReportingState {
-        uint256 exchangeRateStored;
-        uint256 lastTotalAssets;
+    struct FlowCounters {
         uint256 cumulativeDeposits;
         uint256 cumulativeWithdrawals;
         uint256 lastReportDeposits;
         uint256 lastReportWithdrawals;
+    }
+
+    struct LatestReport {
+        uint256 totalAssets;
+        uint256 exchangeRate;
+        uint256 grossRewards;
+        uint256 netFlows;
+        uint256 timestamp;
     }
 
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
@@ -76,13 +82,14 @@ contract OllaCore is
     address private _safetyModule;
 
     /// @notice Accounting and reporting values
-    ReportingState private _reporting;
+    AccountingState private _accountingState;
+    FlowCounters private _flowCounters;
+    LatestReport private _latestReport;
 
     uint256 private _stakeMessageId;
     uint256 private _unstakeMessageId;
 
     mapping(address owner => PendingWithdrawal withdrawal) private _pendingWithdrawals;
-    AccountingBuckets private _accountingBuckets;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
@@ -154,7 +161,8 @@ contract OllaCore is
         _withdrawalQueue = withdrawalQueue_;
         _rewardsVault = rewardsVault_;
         _safetyModule = safetyModule_;
-        _reporting.exchangeRateStored = _EXCHANGE_RATE_SCALE;
+        _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
+        _latestReport.timestamp = block.timestamp;
 
         _grantRole(DEFAULT_ADMIN_ROLE, governance_);
         _grantRole(GUARDIAN_ROLE, governance_);
@@ -215,7 +223,7 @@ contract OllaCore is
             revert OllaCoreNoPendingWithdrawal(owner);
         }
 
-        uint256 availableAssets = _accountingBuckets.bufferedAssets;
+        uint256 availableAssets = _accountingState.bufferedAssets;
         if (pending.assets > availableAssets) {
             revert OllaCoreInsufficientLiquidity(pending.assets, availableAssets);
         }
@@ -248,16 +256,53 @@ contract OllaCore is
         emit Rebalanced(0, 0, 0, 0);
     }
 
-    /// @notice Stubbed operator accounting update hook.
+    /// @notice Operator accounting update hook.
+    // slither-disable-next-line pess-multiple-storage-read
     function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
-        _applyAccountingUpdates(0, 0, 0, 0);
-        _updateReportingSnapshots();
-        emit AccountingUpdated(
-            _reporting.lastTotalAssets,
-            _reporting.exchangeRateStored,
-            _reporting.cumulativeDeposits,
-            _reporting.cumulativeWithdrawals
+        FlowCounters storage flows = _flowCounters;
+        uint256 currentCumulativeDeposits = flows.cumulativeDeposits;
+        uint256 currentCumulativeWithdrawals = flows.cumulativeWithdrawals;
+        uint256 currentLastReportDeposits = flows.lastReportDeposits;
+        uint256 currentLastReportWithdrawals = flows.lastReportWithdrawals;
+
+        uint256 netDeposits = currentCumulativeDeposits > currentLastReportDeposits
+            ? currentCumulativeDeposits - currentLastReportDeposits
+            : 0;
+        uint256 netWithdrawals = currentCumulativeWithdrawals > currentLastReportWithdrawals
+            ? currentCumulativeWithdrawals - currentLastReportWithdrawals
+            : 0;
+        uint256 netFlows = netDeposits > netWithdrawals ? netDeposits - netWithdrawals : 0;
+
+        uint256 oldTotalAssets = _latestReport.totalAssets;
+
+        AccountingState storage buckets = _accountingState;
+        uint256 currentStakedPrincipal = buckets.stakedPrincipal;
+        uint256 currentRewardsVaultBalance = buckets.rewardsVaultBalance;
+        uint256 currentRewardsDelta = buckets.rewardsDelta;
+        uint256 currentSlashingDelta = buckets.slashingDelta;
+
+        _applyAccountingUpdates(
+            currentStakedPrincipal, currentRewardsVaultBalance, currentRewardsDelta, currentSlashingDelta
         );
+
+        buckets = _accountingState;
+        uint256 newTotalAssets = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
+            + buckets.rewardsDelta - buckets.slashingDelta;
+
+        uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
+        uint256 grossRewards = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
+
+        uint256 supply = _stAztec.totalSupply();
+        uint256 rate = supply == 0
+            ? _EXCHANGE_RATE_SCALE
+            : newTotalAssets.mulDiv(_EXCHANGE_RATE_SCALE, supply, Math.Rounding.Floor);
+
+        _updateReportingSnapshots(
+            newTotalAssets, rate, grossRewards, netFlows, currentCumulativeDeposits, currentCumulativeWithdrawals
+        );
+
+        emit ValidatorStateRead(buckets.rewardsDelta, buckets.slashingDelta, _latestReport.timestamp);
+        emit AccountingUpdated(newTotalAssets, rate, grossRewards, netFlows, 0, 0, 0, _latestReport.timestamp);
     }
 
     /// @notice Stubbed operator withdrawal finalization hook.
@@ -313,67 +358,73 @@ contract OllaCore is
     /// @notice Returns the stored exchange rate.
     /// @return The stored exchange rate.
     function storedExchangeRate() external view override returns (uint256) {
-        return _reporting.exchangeRateStored;
+        return _latestReport.exchangeRate;
     }
 
     /// @notice Returns the last total assets snapshot.
     /// @return The last total assets value.
     function lastTotalAssets() external view override returns (uint256) {
-        return _reporting.lastTotalAssets;
+        return _latestReport.totalAssets;
+    }
+
+    /// @notice Returns the last report timestamp.
+    /// @return The last report timestamp.
+    function lastReportTimestamp() external view override returns (uint256) {
+        return _latestReport.timestamp;
     }
 
     /// @notice Returns cumulative deposits.
     /// @return The cumulative deposits value.
     function cumulativeDeposits() external view override returns (uint256) {
-        return _reporting.cumulativeDeposits;
+        return _flowCounters.cumulativeDeposits;
     }
 
     /// @notice Returns cumulative withdrawals.
     /// @return The cumulative withdrawals value.
     function cumulativeWithdrawals() external view override returns (uint256) {
-        return _reporting.cumulativeWithdrawals;
+        return _flowCounters.cumulativeWithdrawals;
     }
 
     /// @notice Returns last report deposits snapshot.
     /// @return The last report deposits.
     function lastReportDeposits() external view override returns (uint256) {
-        return _reporting.lastReportDeposits;
+        return _flowCounters.lastReportDeposits;
     }
 
     /// @notice Returns last report withdrawals snapshot.
     /// @return The last report withdrawals.
     function lastReportWithdrawals() external view override returns (uint256) {
-        return _reporting.lastReportWithdrawals;
+        return _flowCounters.lastReportWithdrawals;
     }
 
     /// @notice Returns the buffered assets held by the vault.
     /// @return The buffered asset amount.
     function bufferedAssets() external view override returns (uint256) {
-        return _accountingBuckets.bufferedAssets;
+        return _accountingState.bufferedAssets;
     }
 
     /// @notice Returns the staked principal tracked by the vault.
     /// @return The staked principal amount.
     function stakedPrincipal() external view override returns (uint256) {
-        return _accountingBuckets.stakedPrincipal;
+        return _accountingState.stakedPrincipal;
     }
 
     /// @notice Returns the rewards vault balance tracked by the vault.
     /// @return The rewards vault balance amount.
     function rewardsVaultBalance() external view override returns (uint256) {
-        return _accountingBuckets.rewardsVaultBalance;
+        return _accountingState.rewardsVaultBalance;
     }
 
     /// @notice Returns the claimable rewards delta.
     /// @return The rewards delta amount.
     function rewardsDelta() external view override returns (uint256) {
-        return _accountingBuckets.rewardsDelta;
+        return _accountingState.rewardsDelta;
     }
 
     /// @notice Returns the slashing delta applied to totals.
     /// @return The slashing delta amount.
     function slashingDelta() external view override returns (uint256) {
-        return _accountingBuckets.slashingDelta;
+        return _accountingState.slashingDelta;
     }
 
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
@@ -432,7 +483,7 @@ contract OllaCore is
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
-        AccountingBuckets storage buckets = _accountingBuckets;
+        AccountingState storage buckets = _accountingState;
         return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.rewardsDelta
             - buckets.slashingDelta;
     }
@@ -462,15 +513,6 @@ contract OllaCore is
         _stAztec.burn(owner, shares);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != _governance) {
-            revert OllaCoreUnauthorizedGovernance(msg.sender);
-        }
-        if (newImplementation == address(0)) {
-            revert OllaCoreZeroAddress();
-        }
-    }
-
     // slither-disable-next-line dead-code
     function _stake(uint256 amount) internal {
         uint256 messageId = ++_stakeMessageId;
@@ -492,21 +534,32 @@ contract OllaCore is
     }
 
     function _increaseCumulativeDeposits(uint256 amount) internal {
-        _reporting.cumulativeDeposits += amount;
+        _flowCounters.cumulativeDeposits += amount;
     }
 
     function _increaseCumulativeWithdrawals(uint256 amount) internal {
-        _reporting.cumulativeWithdrawals += amount;
+        _flowCounters.cumulativeWithdrawals += amount;
     }
 
-    // slither-disable-start pess-multiple-storage-read
-    function _updateReportingSnapshots() internal {
-        uint256 total = totalAssets();
-        uint256 rate = _exchangeRate();
+    // slither-disable-next-line pess-multiple-storage-read
+    function _updateReportingSnapshots(
+        uint256 total,
+        uint256 rate,
+        uint256 grossRewards,
+        uint256 netFlows,
+        uint256 updatedCumulativeDeposits,
+        uint256 updatedCumulativeWithdrawals
+    ) internal {
+        LatestReport storage latestReport = _latestReport;
+        latestReport.totalAssets = total;
+        latestReport.exchangeRate = rate;
+        latestReport.grossRewards = grossRewards;
+        latestReport.netFlows = netFlows;
+        latestReport.timestamp = block.timestamp;
 
-        ReportingState storage reporting = _reporting;
-        reporting.lastTotalAssets = total;
-        reporting.exchangeRateStored = rate;
+        FlowCounters storage flows = _flowCounters;
+        flows.lastReportDeposits = updatedCumulativeDeposits;
+        flows.lastReportWithdrawals = updatedCumulativeWithdrawals;
     }
 
     function _applyAccountingUpdates(
@@ -518,14 +571,14 @@ contract OllaCore is
         bytes32 stakeReason = _BUCKET_UPDATE_REASON_STAKE;
         bytes32 unstakeReason = _BUCKET_UPDATE_REASON_UNSTAKE;
 
-        uint256 currentStaked = _accountingBuckets.stakedPrincipal;
+        uint256 currentStaked = _accountingState.stakedPrincipal;
         if (newStakedPrincipal > currentStaked) {
             _increaseStakedPrincipal(newStakedPrincipal - currentStaked, stakeReason);
         } else if (newStakedPrincipal < currentStaked) {
             _decreaseStakedPrincipal(currentStaked - newStakedPrincipal, unstakeReason);
         }
 
-        uint256 currentRewardsVault = _accountingBuckets.rewardsVaultBalance;
+        uint256 currentRewardsVault = _accountingState.rewardsVaultBalance;
         if (newRewardsVaultBalance > currentRewardsVault) {
             _increaseRewardsVaultBalance(newRewardsVaultBalance - currentRewardsVault, stakeReason);
         } else if (newRewardsVaultBalance < currentRewardsVault) {
@@ -540,9 +593,9 @@ contract OllaCore is
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
-        uint256 oldValue = _accountingBuckets.bufferedAssets;
+        uint256 oldValue = _accountingState.bufferedAssets;
         uint256 newValue = oldValue + amount;
-        _accountingBuckets.bufferedAssets = newValue;
+        _accountingState.bufferedAssets = newValue;
         emit BucketUpdated(_BUCKET_ID_BUFFERED, oldValue, newValue, reason);
     }
 
@@ -550,12 +603,12 @@ contract OllaCore is
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
-        uint256 oldValue = _accountingBuckets.bufferedAssets;
+        uint256 oldValue = _accountingState.bufferedAssets;
         if (amount > oldValue) {
             revert OllaCoreInsufficientBucketBalance(_BUCKET_ID_BUFFERED, amount, oldValue);
         }
         uint256 newValue = oldValue - amount;
-        _accountingBuckets.bufferedAssets = newValue;
+        _accountingState.bufferedAssets = newValue;
         emit BucketUpdated(_BUCKET_ID_BUFFERED, oldValue, newValue, reason);
     }
 
@@ -564,9 +617,9 @@ contract OllaCore is
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
-        uint256 oldValue = _accountingBuckets.stakedPrincipal;
+        uint256 oldValue = _accountingState.stakedPrincipal;
         uint256 newValue = oldValue + amount;
-        _accountingBuckets.stakedPrincipal = newValue;
+        _accountingState.stakedPrincipal = newValue;
         emit BucketUpdated(_BUCKET_ID_STAKED_PRINCIPAL, oldValue, newValue, reason);
     }
 
@@ -575,12 +628,12 @@ contract OllaCore is
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
-        uint256 oldValue = _accountingBuckets.stakedPrincipal;
+        uint256 oldValue = _accountingState.stakedPrincipal;
         if (amount > oldValue) {
             revert OllaCoreInsufficientBucketBalance(_BUCKET_ID_STAKED_PRINCIPAL, amount, oldValue);
         }
         uint256 newValue = oldValue - amount;
-        _accountingBuckets.stakedPrincipal = newValue;
+        _accountingState.stakedPrincipal = newValue;
         emit BucketUpdated(_BUCKET_ID_STAKED_PRINCIPAL, oldValue, newValue, reason);
     }
 
@@ -589,9 +642,9 @@ contract OllaCore is
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
-        uint256 oldValue = _accountingBuckets.rewardsVaultBalance;
+        uint256 oldValue = _accountingState.rewardsVaultBalance;
         uint256 newValue = oldValue + amount;
-        _accountingBuckets.rewardsVaultBalance = newValue;
+        _accountingState.rewardsVaultBalance = newValue;
         emit BucketUpdated(_BUCKET_ID_REWARDS_VAULT, oldValue, newValue, reason);
     }
 
@@ -600,31 +653,31 @@ contract OllaCore is
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
-        uint256 oldValue = _accountingBuckets.rewardsVaultBalance;
+        uint256 oldValue = _accountingState.rewardsVaultBalance;
         if (amount > oldValue) {
             revert OllaCoreInsufficientBucketBalance(_BUCKET_ID_REWARDS_VAULT, amount, oldValue);
         }
         uint256 newValue = oldValue - amount;
-        _accountingBuckets.rewardsVaultBalance = newValue;
+        _accountingState.rewardsVaultBalance = newValue;
         emit BucketUpdated(_BUCKET_ID_REWARDS_VAULT, oldValue, newValue, reason);
     }
 
     // slither-disable-next-line dead-code
     function _setRewardsDelta(uint256 newValue, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
-        uint256 oldValue = _accountingBuckets.rewardsDelta;
-        _accountingBuckets.rewardsDelta = newValue;
+        uint256 oldValue = _accountingState.rewardsDelta;
+        _accountingState.rewardsDelta = newValue;
         emit BucketUpdated(_BUCKET_ID_REWARDS_DELTA, oldValue, newValue, reason);
     }
 
     // slither-disable-next-line dead-code
     function _setSlashingDelta(uint256 newValue, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
-        uint256 oldValue = _accountingBuckets.slashingDelta;
-        _accountingBuckets.slashingDelta = newValue;
+        uint256 oldValue = _accountingState.slashingDelta;
+        _accountingState.slashingDelta = newValue;
         emit BucketUpdated(_BUCKET_ID_SLASHING_DELTA, oldValue, newValue, reason);
     }
 
     function _syncBufferedWithBalance() internal view {
-        uint256 buffered = _accountingBuckets.bufferedAssets;
+        uint256 buffered = _accountingState.bufferedAssets;
         uint256 actual = _asset.balanceOf(address(this));
         if (buffered != actual) {
             revert OllaCoreBufferedBalanceMismatch(buffered, actual);
@@ -664,5 +717,14 @@ contract OllaCore is
             return shares;
         }
         return shares.mulDiv(totalAssets(), supply, rounding);
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (msg.sender != _governance) {
+            revert OllaCoreUnauthorizedGovernance(msg.sender);
+        }
+        if (newImplementation == address(0)) {
+            revert OllaCoreZeroAddress();
+        }
     }
 }
