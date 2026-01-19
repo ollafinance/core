@@ -16,6 +16,29 @@ interface IOllaCore {
         address receiver;
     }
 
+    struct AccountingState {
+        uint256 bufferedAssets;
+        uint256 stakedPrincipal;
+        uint256 rewardsVaultBalance;
+        uint256 rewardsDelta;
+        uint256 slashingDelta;
+    }
+
+    struct FlowCounters {
+        uint256 cumulativeDeposits;
+        uint256 cumulativeWithdrawals;
+        uint256 lastReportDeposits;
+        uint256 lastReportWithdrawals;
+    }
+
+    struct LatestReport {
+        uint256 totalAssets;
+        uint256 exchangeRate;
+        uint256 grossRewards;
+        uint256 netFlows;
+        uint256 timestamp;
+    }
+
     // solhint-disable gas-indexed-events
     /// @notice Emitted when a deposit is completed.
     /// @param caller The address that initiated the deposit.
@@ -205,53 +228,17 @@ interface IOllaCore {
     /// @return The safety module address.
     function safetyModule() external view returns (address);
 
-    /// @notice Returns the stored exchange rate snapshot.
-    /// @return The stored exchange rate.
-    function storedExchangeRate() external view returns (uint256);
+    /// @notice Returns the latest accounting report snapshot.
+    /// @return The latest report struct.
+    function latestReport() external view returns (LatestReport memory);
 
-    /// @notice Returns the last total assets snapshot.
-    /// @return The last total assets value.
-    function lastTotalAssets() external view returns (uint256);
+    /// @notice Returns the flow counter snapshots.
+    /// @return The flow counters struct.
+    function flowCounters() external view returns (FlowCounters memory);
 
-    /// @notice Returns the last report timestamp.
-    /// @return The last report timestamp value.
-    function lastReportTimestamp() external view returns (uint256);
-
-    /// @notice Returns cumulative deposits.
-    /// @return The cumulative deposits value.
-    function cumulativeDeposits() external view returns (uint256);
-
-    /// @notice Returns cumulative withdrawals.
-    /// @return The cumulative withdrawals value.
-    function cumulativeWithdrawals() external view returns (uint256);
-
-    /// @notice Returns last report deposits snapshot.
-    /// @return The last report deposits value.
-    function lastReportDeposits() external view returns (uint256);
-
-    /// @notice Returns last report withdrawals snapshot.
-    /// @return The last report withdrawals value.
-    function lastReportWithdrawals() external view returns (uint256);
-
-    /// @notice Returns the buffered assets held by the vault.
-    /// @return The buffered asset amount.
-    function bufferedAssets() external view returns (uint256);
-
-    /// @notice Returns the staked principal tracked by the vault.
-    /// @return The staked principal amount.
-    function stakedPrincipal() external view returns (uint256);
-
-    /// @notice Returns the rewards vault balance tracked by the vault.
-    /// @return The rewards vault balance amount.
-    function rewardsVaultBalance() external view returns (uint256);
-
-    /// @notice Returns the claimable rewards delta.
-    /// @return The rewards delta amount.
-    function rewardsDelta() external view returns (uint256);
-
-    /// @notice Returns the slashing delta applied to totals.
-    /// @return The slashing delta amount.
-    function slashingDelta() external view returns (uint256);
+    /// @notice Returns the accounting buckets snapshot.
+    /// @return The accounting state struct.
+    function accountingState() external view returns (AccountingState memory);
 
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.

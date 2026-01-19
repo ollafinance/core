@@ -35,29 +35,6 @@ contract OllaCore is
         SlashingDelta
     }
 
-    struct AccountingState {
-        uint256 bufferedAssets;
-        uint256 stakedPrincipal;
-        uint256 rewardsVaultBalance;
-        uint256 rewardsDelta;
-        uint256 slashingDelta;
-    }
-
-    struct FlowCounters {
-        uint256 cumulativeDeposits;
-        uint256 cumulativeWithdrawals;
-        uint256 lastReportDeposits;
-        uint256 lastReportWithdrawals;
-    }
-
-    struct LatestReport {
-        uint256 totalAssets;
-        uint256 exchangeRate;
-        uint256 grossRewards;
-        uint256 netFlows;
-        uint256 timestamp;
-    }
-
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
 
     /// @notice Role for guardian pause/unpause actions.
@@ -77,9 +54,9 @@ contract OllaCore is
     address private _safetyModule;
 
     /// @notice Accounting and reporting values
-    AccountingState private _accountingState;
-    FlowCounters private _flowCounters;
-    LatestReport private _latestReport;
+    IOllaCore.AccountingState private _accountingState;
+    IOllaCore.FlowCounters private _flowCounters;
+    IOllaCore.LatestReport private _latestReport;
 
     uint256 private _stakeMessageId;
     uint256 private _unstakeMessageId;
@@ -254,17 +231,17 @@ contract OllaCore is
     // slither-disable-start pess-multiple-storage-read
     /// @notice Updates accounting snapshots and publishes the latest exchange rate data.
     function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
-        FlowCounters memory flowsSnapshot = _flowCounters;
+        IOllaCore.FlowCounters memory flowsSnapshot = _flowCounters;
         (uint256 netFlows,,) = _computeNetFlows(flowsSnapshot);
 
         uint256 oldTotalAssets = _latestReport.totalAssets;
 
-        AccountingState storage buckets = _accountingState;
+        IOllaCore.AccountingState storage buckets = _accountingState;
         _applyAccountingUpdates(
             buckets.stakedPrincipal, buckets.rewardsVaultBalance, buckets.rewardsDelta, buckets.slashingDelta
         );
 
-        AccountingState memory updatedBuckets = _accountingState;
+        IOllaCore.AccountingState memory updatedBuckets = _accountingState;
         uint256 newTotalAssets = _computeTotalAssets(updatedBuckets);
         uint256 grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         uint256 rate = _exchangeRate();
@@ -334,76 +311,22 @@ contract OllaCore is
         return _safetyModule;
     }
 
-    /// @notice Returns the stored exchange rate.
-    /// @return The stored exchange rate.
-    function storedExchangeRate() external view override returns (uint256) {
-        return _latestReport.exchangeRate;
+    /// @notice Returns the latest accounting report snapshot.
+    /// @return The latest report struct.
+    function latestReport() external view override returns (IOllaCore.LatestReport memory) {
+        return _latestReport;
     }
 
-    /// @notice Returns the last total assets snapshot.
-    /// @return The last total assets value.
-    function lastTotalAssets() external view override returns (uint256) {
-        return _latestReport.totalAssets;
+    /// @notice Returns the flow counter snapshots.
+    /// @return The flow counters struct.
+    function flowCounters() external view override returns (IOllaCore.FlowCounters memory) {
+        return _flowCounters;
     }
 
-    /// @notice Returns the last report timestamp.
-    /// @return The last report timestamp.
-    function lastReportTimestamp() external view override returns (uint256) {
-        return _latestReport.timestamp;
-    }
-
-    /// @notice Returns cumulative deposits.
-    /// @return The cumulative deposits value.
-    function cumulativeDeposits() external view override returns (uint256) {
-        return _flowCounters.cumulativeDeposits;
-    }
-
-    /// @notice Returns cumulative withdrawals.
-    /// @return The cumulative withdrawals value.
-    function cumulativeWithdrawals() external view override returns (uint256) {
-        return _flowCounters.cumulativeWithdrawals;
-    }
-
-    /// @notice Returns last report deposits snapshot.
-    /// @return The last report deposits.
-    function lastReportDeposits() external view override returns (uint256) {
-        return _flowCounters.lastReportDeposits;
-    }
-
-    /// @notice Returns last report withdrawals snapshot.
-    /// @return The last report withdrawals.
-    function lastReportWithdrawals() external view override returns (uint256) {
-        return _flowCounters.lastReportWithdrawals;
-    }
-
-    /// @notice Returns the buffered assets held by the vault.
-    /// @return The buffered asset amount.
-    function bufferedAssets() external view override returns (uint256) {
-        return _accountingState.bufferedAssets;
-    }
-
-    /// @notice Returns the staked principal tracked by the vault.
-    /// @return The staked principal amount.
-    function stakedPrincipal() external view override returns (uint256) {
-        return _accountingState.stakedPrincipal;
-    }
-
-    /// @notice Returns the rewards vault balance tracked by the vault.
-    /// @return The rewards vault balance amount.
-    function rewardsVaultBalance() external view override returns (uint256) {
-        return _accountingState.rewardsVaultBalance;
-    }
-
-    /// @notice Returns the claimable rewards delta.
-    /// @return The rewards delta amount.
-    function rewardsDelta() external view override returns (uint256) {
-        return _accountingState.rewardsDelta;
-    }
-
-    /// @notice Returns the slashing delta applied to totals.
-    /// @return The slashing delta amount.
-    function slashingDelta() external view override returns (uint256) {
-        return _accountingState.slashingDelta;
+    /// @notice Returns the accounting buckets snapshot.
+    /// @return The accounting state struct.
+    function accountingState() external view override returns (IOllaCore.AccountingState memory) {
+        return _accountingState;
     }
 
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
@@ -462,7 +385,7 @@ contract OllaCore is
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
-        AccountingState storage buckets = _accountingState;
+        IOllaCore.AccountingState storage buckets = _accountingState;
         return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.rewardsDelta
             - buckets.slashingDelta;
     }
@@ -529,14 +452,14 @@ contract OllaCore is
         uint256 updatedCumulativeDeposits,
         uint256 updatedCumulativeWithdrawals
     ) internal {
-        LatestReport storage latestReport = _latestReport;
-        latestReport.totalAssets = total;
-        latestReport.exchangeRate = rate;
-        latestReport.grossRewards = grossRewards;
-        latestReport.netFlows = netFlows;
-        latestReport.timestamp = block.timestamp;
+        IOllaCore.LatestReport storage report = _latestReport;
+        report.totalAssets = total;
+        report.exchangeRate = rate;
+        report.grossRewards = grossRewards;
+        report.netFlows = netFlows;
+        report.timestamp = block.timestamp;
 
-        FlowCounters storage flows = _flowCounters;
+        IOllaCore.FlowCounters storage flows = _flowCounters;
         flows.lastReportDeposits = updatedCumulativeDeposits;
         flows.lastReportWithdrawals = updatedCumulativeWithdrawals;
     }
@@ -694,7 +617,7 @@ contract OllaCore is
         }
     }
 
-    function _computeNetFlows(FlowCounters memory flows)
+    function _computeNetFlows(IOllaCore.FlowCounters memory flows)
         internal
         pure
         returns (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
@@ -709,7 +632,11 @@ contract OllaCore is
         return (netFlows, netDeposits, netWithdrawals);
     }
 
-    function _computeTotalAssets(AccountingState memory buckets) internal pure returns (uint256 totalAssets_) {
+    function _computeTotalAssets(IOllaCore.AccountingState memory buckets)
+        internal
+        pure
+        returns (uint256 totalAssets_)
+    {
         totalAssets_ = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
             + buckets.rewardsDelta - buckets.slashingDelta;
         return totalAssets_;

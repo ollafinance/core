@@ -167,8 +167,9 @@ contract OllaCoreInvariantTest is Test {
     }
 
     function invariant_TotalAssetsEqualBuckets() external view {
-        uint256 expectedTotal = vault.bufferedAssets() + vault.stakedPrincipal() + vault.rewardsVaultBalance()
-            + vault.rewardsDelta() - vault.slashingDelta();
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        uint256 expectedTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
+            + accounting.rewardsDelta - accounting.slashingDelta;
 
         assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
     }
@@ -185,16 +186,16 @@ contract OllaCoreInvariantTest is Test {
         vault.updateAccounting();
 
         uint256 supply = stAztec.totalSupply();
-        uint256 expectedRate = supply == 0 ? 1e18 : vault.lastTotalAssets().mulDiv(1e18, supply, Math.Rounding.Floor);
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        uint256 expectedRate = supply == 0 ? 1e18 : report.totalAssets.mulDiv(1e18, supply, Math.Rounding.Floor);
 
-        assertEq(vault.storedExchangeRate(), expectedRate, "stored exchange rate matches snapshot");
-        assertEq(vault.lastTotalAssets(), vault.totalAssets(), "snapshot total assets matches total assets");
+        assertEq(report.exchangeRate, expectedRate, "stored exchange rate matches snapshot");
+        assertEq(report.totalAssets, vault.totalAssets(), "snapshot total assets matches total assets");
+        assertEq(flows.lastReportDeposits, flows.cumulativeDeposits, "last report deposits equals cumulative deposits");
         assertEq(
-            vault.lastReportDeposits(), vault.cumulativeDeposits(), "last report deposits equals cumulative deposits"
-        );
-        assertEq(
-            vault.lastReportWithdrawals(),
-            vault.cumulativeWithdrawals(),
+            flows.lastReportWithdrawals,
+            flows.cumulativeWithdrawals,
             "last report withdrawals equals cumulative withdrawals"
         );
     }
@@ -204,7 +205,8 @@ contract OllaCoreInvariantTest is Test {
         vm.prank(operator);
         vault.updateAccounting();
 
-        uint256 latestTimestamp = vault.lastReportTimestamp();
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        uint256 latestTimestamp = report.timestamp;
         assertLe(latestTimestamp, block.timestamp, "report timestamp should not exceed block time");
     }
 

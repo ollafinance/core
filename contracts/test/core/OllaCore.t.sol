@@ -9,6 +9,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
+import { IOllaCore } from "src/interfaces/IOllaCore.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
@@ -56,7 +57,7 @@ contract OllaCoreHarness is OllaCore {
         _syncBufferedWithBalance();
     }
 
-    function exposedComputeNetFlows(FlowCounters memory flows)
+    function exposedComputeNetFlows(IOllaCore.FlowCounters memory flows)
         external
         pure
         returns (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
@@ -64,7 +65,11 @@ contract OllaCoreHarness is OllaCore {
         return _computeNetFlows(flows);
     }
 
-    function exposedComputeTotalAssets(AccountingState memory buckets) external pure returns (uint256 totalAssets_) {
+    function exposedComputeTotalAssets(IOllaCore.AccountingState memory buckets)
+        external
+        pure
+        returns (uint256 totalAssets_)
+    {
         return _computeTotalAssets(buckets);
     }
 
@@ -170,8 +175,9 @@ contract OllaCoreTest is Test {
         assertEq(vault.withdrawalQueue(), withdrawalQueue, "withdrawal queue set");
         assertEq(vault.rewardsVault(), rewardsVault, "rewards vault set");
         assertEq(vault.safetyModule(), safetyModule, "safety module set");
-        assertEq(vault.storedExchangeRate(), 1e18, "exchange rate init");
-        assertEq(vault.lastTotalAssets(), 0, "lastTotalAssets init");
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        assertEq(report.exchangeRate, 1e18, "exchange rate init");
+        assertEq(report.totalAssets, 0, "lastTotalAssets init");
     }
 
     function test_RevertWhen_Reinitialize() external {
@@ -277,7 +283,8 @@ contract OllaCoreTest is Test {
 
         assertEq(stAztec.balanceOf(alice), shares, "shares minted");
         assertEq(vault.totalAssets(), 10 * DECIMALS, "assets buffered");
-        assertEq(vault.cumulativeDeposits(), 10 * DECIMALS, "cumulative deposits updated");
+        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        assertEq(flows.cumulativeDeposits, 10 * DECIMALS, "cumulative deposits updated");
     }
 
     function test_BucketGettersReflectState() external {
@@ -297,11 +304,12 @@ contract OllaCoreTest is Test {
         vm.prank(operator);
         vault.exposedSetSlashingDelta(slashingDelta);
 
-        assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
-        assertEq(vault.stakedPrincipal(), staked, "stakedPrincipal matches staked amount");
-        assertEq(vault.rewardsVaultBalance(), rewardsVaultAmount, "rewardsVaultBalance matches rewards vault");
-        assertEq(vault.rewardsDelta(), rewardsDelta, "rewardsDelta matches rewards delta");
-        assertEq(vault.slashingDelta(), slashingDelta, "slashingDelta matches slashing delta");
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        assertEq(accounting.bufferedAssets, assets, "bufferedAssets matches deposited assets");
+        assertEq(accounting.stakedPrincipal, staked, "stakedPrincipal matches staked amount");
+        assertEq(accounting.rewardsVaultBalance, rewardsVaultAmount, "rewardsVaultBalance matches rewards vault");
+        assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
+        assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
         assertEq(
             vault.totalAssets(),
             assets + staked + rewardsVaultAmount + rewardsDelta - slashingDelta,
@@ -316,7 +324,8 @@ contract OllaCoreTest is Test {
         _performDeposit(alice, assets);
         vault.exposedSyncBufferedWithBalance();
 
-        assertEq(vault.bufferedAssets(), assets, "buffered matches vault balance after deposit");
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        assertEq(accounting.bufferedAssets, assets, "buffered matches vault balance after deposit");
         assertEq(asset.balanceOf(address(vault)), assets, "vault balance matches deposit");
 
         vm.prank(alice);
@@ -326,8 +335,9 @@ contract OllaCoreTest is Test {
         vault.claimPendingWithdraw(alice);
         vault.exposedSyncBufferedWithBalance();
 
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
         uint256 expectedRemaining = assets - claimAssets;
-        assertEq(vault.bufferedAssets(), expectedRemaining, "buffered matches vault balance after claim");
+        assertEq(accountingAfter.bufferedAssets, expectedRemaining, "buffered matches vault balance after claim");
         assertEq(asset.balanceOf(address(vault)), expectedRemaining, "vault balance matches claim");
         assertEq(asset.balanceOf(alice), claimAssets, "claim transfers assets to receiver");
     }
@@ -337,20 +347,22 @@ contract OllaCoreTest is Test {
 
         _performDeposit(alice, assets);
 
-        uint256 bufferedBefore = vault.bufferedAssets();
-        uint256 stakedBefore = vault.stakedPrincipal();
-        uint256 rewardsVaultBefore = vault.rewardsVaultBalance();
-        uint256 rewardsDeltaBefore = vault.rewardsDelta();
-        uint256 slashingDeltaBefore = vault.slashingDelta();
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 bufferedBefore = accountingBefore.bufferedAssets;
+        uint256 stakedBefore = accountingBefore.stakedPrincipal;
+        uint256 rewardsVaultBefore = accountingBefore.rewardsVaultBalance;
+        uint256 rewardsDeltaBefore = accountingBefore.rewardsDelta;
+        uint256 slashingDeltaBefore = accountingBefore.slashingDelta;
 
         vault.exposedStake(assets / 2);
         vault.exposedUnstake(assets / 2);
 
-        assertEq(vault.bufferedAssets(), bufferedBefore, "buffered unchanged");
-        assertEq(vault.stakedPrincipal(), stakedBefore, "staked unchanged");
-        assertEq(vault.rewardsVaultBalance(), rewardsVaultBefore, "rewards vault unchanged");
-        assertEq(vault.rewardsDelta(), rewardsDeltaBefore, "rewards delta unchanged");
-        assertEq(vault.slashingDelta(), slashingDeltaBefore, "slashing delta unchanged");
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(accountingAfter.bufferedAssets, bufferedBefore, "buffered unchanged");
+        assertEq(accountingAfter.stakedPrincipal, stakedBefore, "staked unchanged");
+        assertEq(accountingAfter.rewardsVaultBalance, rewardsVaultBefore, "rewards vault unchanged");
+        assertEq(accountingAfter.rewardsDelta, rewardsDeltaBefore, "rewards delta unchanged");
+        assertEq(accountingAfter.slashingDelta, slashingDeltaBefore, "slashing delta unchanged");
     }
 
     function testFuzz_TotalAssetsComposition(
@@ -385,7 +397,7 @@ contract OllaCoreTest is Test {
         uint96 lastReportDeposits,
         uint96 lastReportWithdrawals
     ) external {
-        OllaCore.FlowCounters memory flows = OllaCore.FlowCounters({
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: cumulativeDeposits,
             cumulativeWithdrawals: cumulativeWithdrawals,
             lastReportDeposits: lastReportDeposits,
@@ -419,9 +431,11 @@ contract OllaCoreTest is Test {
 
         _performDeposit(alice, depositAmount);
 
-        assertEq(vault.lastTotalAssets(), 0, "lastTotalAssets before update");
-        assertEq(vault.lastReportDeposits(), 0, "lastReportDeposits before update");
-        assertEq(vault.lastReportWithdrawals(), 0, "lastReportWithdrawals before update");
+        IOllaCore.LatestReport memory reportBefore = vault.latestReport();
+        IOllaCore.FlowCounters memory flowsBefore = vault.flowCounters();
+        assertEq(reportBefore.totalAssets, 0, "lastTotalAssets before update");
+        assertEq(flowsBefore.lastReportDeposits, 0, "lastReportDeposits before update");
+        assertEq(flowsBefore.lastReportWithdrawals, 0, "lastReportWithdrawals before update");
 
         uint256 expectedRate = vault.exchangeRate();
         uint256 expectedTimestamp = block.timestamp;
@@ -432,17 +446,19 @@ contract OllaCoreTest is Test {
         vm.prank(operator);
         vault.updateAccounting();
 
-        assertEq(vault.lastTotalAssets(), depositAmount, "lastTotalAssets updated");
-        assertEq(vault.storedExchangeRate(), expectedRate, "stored exchange rate updated");
-        assertEq(vault.lastReportDeposits(), depositAmount, "lastReportDeposits updated");
-        assertEq(vault.lastReportWithdrawals(), 0, "lastReportWithdrawals updated");
-        assertEq(vault.cumulativeDeposits(), depositAmount, "cumulative deposits tracked");
-        assertEq(vault.storedExchangeRate(), expectedRate, "latest report exchange rate stored");
-        assertEq(vault.lastReportTimestamp(), expectedTimestamp, "report timestamp updated");
+        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
+        assertEq(reportAfter.totalAssets, depositAmount, "lastTotalAssets updated");
+        assertEq(reportAfter.exchangeRate, expectedRate, "stored exchange rate updated");
+        assertEq(flowsAfter.lastReportDeposits, depositAmount, "lastReportDeposits updated");
+        assertEq(flowsAfter.lastReportWithdrawals, 0, "lastReportWithdrawals updated");
+        assertEq(flowsAfter.cumulativeDeposits, depositAmount, "cumulative deposits tracked");
+        assertEq(reportAfter.exchangeRate, expectedRate, "latest report exchange rate stored");
+        assertEq(reportAfter.timestamp, expectedTimestamp, "report timestamp updated");
     }
 
     function test_ComputeNetFlows() external {
-        OllaCore.FlowCounters memory flows = OllaCore.FlowCounters({
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: 12 * DECIMALS,
             cumulativeWithdrawals: 4 * DECIMALS,
             lastReportDeposits: 5 * DECIMALS,
@@ -457,7 +473,7 @@ contract OllaCoreTest is Test {
     }
 
     function test_ComputeTotalAssets() external {
-        OllaCore.AccountingState memory buckets = OllaCore.AccountingState({
+        IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             bufferedAssets: 3 * DECIMALS,
             stakedPrincipal: 4 * DECIMALS,
             rewardsVaultBalance: 2 * DECIMALS,
@@ -481,13 +497,15 @@ contract OllaCoreTest is Test {
 
         vm.prank(operator);
         vault.updateAccounting();
-        uint256 firstTimestamp = vault.lastReportTimestamp();
+        IOllaCore.LatestReport memory firstReport = vault.latestReport();
+        uint256 firstTimestamp = firstReport.timestamp;
 
         vm.warp(firstTimestamp + 1);
         vm.prank(operator);
         vault.updateAccounting();
 
-        uint256 secondTimestamp = vault.lastReportTimestamp();
+        IOllaCore.LatestReport memory secondReport = vault.latestReport();
+        uint256 secondTimestamp = secondReport.timestamp;
         assertGt(secondTimestamp, firstTimestamp, "report timestamp should increase");
     }
 
@@ -516,10 +534,12 @@ contract OllaCoreTest is Test {
         vm.prank(operator);
         vault.updateAccounting();
 
-        assertEq(vault.lastTotalAssets(), expectedTotalAssets, "lastTotalAssets updated");
-        assertEq(vault.storedExchangeRate(), expectedRate, "stored exchange rate updated");
-        assertEq(vault.lastReportDeposits(), depositAmount, "lastReportDeposits updated");
-        assertEq(vault.lastReportWithdrawals(), 0, "lastReportWithdrawals updated");
+        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
+        assertEq(reportAfter.totalAssets, expectedTotalAssets, "lastTotalAssets updated");
+        assertEq(reportAfter.exchangeRate, expectedRate, "stored exchange rate updated");
+        assertEq(flowsAfter.lastReportDeposits, depositAmount, "lastReportDeposits updated");
+        assertEq(flowsAfter.lastReportWithdrawals, 0, "lastReportWithdrawals updated");
     }
 
     function test_RevertWhen_BufferedBalanceMismatch() external {
@@ -669,7 +689,8 @@ contract OllaCoreTest is Test {
 
         assertEq(assets, 5 * DECIMALS, "assets expected");
         assertEq(stAztec.balanceOf(alice), 20 * DECIMALS, "shares reduced");
-        assertEq(vault.cumulativeWithdrawals(), 5 * DECIMALS, "cumulative withdrawals updated");
+        IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
+        assertEq(flowsAfter.cumulativeWithdrawals, 5 * DECIMALS, "cumulative withdrawals updated");
     }
 
     function testFuzz_DepositMintsShares(uint96 assets) external {
@@ -760,7 +781,8 @@ contract OllaCoreTest is Test {
         vm.prank(alice);
         uint256 assetsOut = vault.requestRedeem(redeemShares, alice, alice);
 
-        uint256 availableAssets = vault.bufferedAssets();
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        uint256 availableAssets = accounting.bufferedAssets;
 
         vault.exposedDecreaseBuffered(availableAssets);
         vault.exposedIncreaseStakedPrincipal(availableAssets);
