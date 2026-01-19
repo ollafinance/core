@@ -188,6 +188,15 @@ contract OllaCoreInvariantTest is Test {
         uint256 expectedRate = supply == 0 ? 1e18 : vault.lastTotalAssets().mulDiv(1e18, supply, Math.Rounding.Floor);
 
         assertEq(vault.storedExchangeRate(), expectedRate, "stored exchange rate matches snapshot");
+        assertEq(vault.lastTotalAssets(), vault.totalAssets(), "snapshot total assets matches total assets");
+        assertEq(
+            vault.lastReportDeposits(), vault.cumulativeDeposits(), "last report deposits equals cumulative deposits"
+        );
+        assertEq(
+            vault.lastReportWithdrawals(),
+            vault.cumulativeWithdrawals(),
+            "last report withdrawals equals cumulative withdrawals"
+        );
     }
 
     function invariant_LatestReportTimestampMonotonic() external {

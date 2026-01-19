@@ -55,6 +55,26 @@ contract OllaCoreHarness is OllaCore {
     function exposedSyncBufferedWithBalance() external view {
         _syncBufferedWithBalance();
     }
+
+    function exposedComputeNetFlows(FlowCounters memory flows)
+        external
+        pure
+        returns (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
+    {
+        return _computeNetFlows(flows);
+    }
+
+    function exposedComputeTotalAssets(AccountingState memory buckets) external pure returns (uint256 totalAssets_) {
+        return _computeTotalAssets(buckets);
+    }
+
+    function exposedComputeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, uint256 netFlows)
+        external
+        pure
+        returns (uint256 grossRewards)
+    {
+        return _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+    }
 }
 
 contract OllaCoreUpgradeMock is OllaCore {
@@ -359,6 +379,41 @@ contract OllaCoreTest is Test {
         assertEq(vault.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
     }
 
+    function testFuzz_ComputeNetFlows(
+        uint96 cumulativeDeposits,
+        uint96 cumulativeWithdrawals,
+        uint96 lastReportDeposits,
+        uint96 lastReportWithdrawals
+    ) external {
+        OllaCore.FlowCounters memory flows = OllaCore.FlowCounters({
+            cumulativeDeposits: cumulativeDeposits,
+            cumulativeWithdrawals: cumulativeWithdrawals,
+            lastReportDeposits: lastReportDeposits,
+            lastReportWithdrawals: lastReportWithdrawals
+        });
+
+        (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
+
+        uint256 expectedNetDeposits =
+            cumulativeDeposits > lastReportDeposits ? cumulativeDeposits - lastReportDeposits : 0;
+        uint256 expectedNetWithdrawals =
+            cumulativeWithdrawals > lastReportWithdrawals ? cumulativeWithdrawals - lastReportWithdrawals : 0;
+        uint256 expectedNetFlows =
+            expectedNetDeposits > expectedNetWithdrawals ? expectedNetDeposits - expectedNetWithdrawals : 0;
+
+        assertEq(netDeposits, expectedNetDeposits, "net deposits fuzz");
+        assertEq(netWithdrawals, expectedNetWithdrawals, "net withdrawals fuzz");
+        assertEq(netFlows, expectedNetFlows, "net flows fuzz");
+    }
+
+    function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, uint96 netFlows) external {
+        uint256 grossRewards = vault.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
+        uint256 expectedGross = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
+
+        assertEq(grossRewards, expectedGross, "gross rewards fuzz");
+    }
+
     function test_UpdateAccountingSnapshots() external {
         uint256 depositAmount = 25 * DECIMALS;
 
@@ -384,6 +439,41 @@ contract OllaCoreTest is Test {
         assertEq(vault.cumulativeDeposits(), depositAmount, "cumulative deposits tracked");
         assertEq(vault.storedExchangeRate(), expectedRate, "latest report exchange rate stored");
         assertEq(vault.lastReportTimestamp(), expectedTimestamp, "report timestamp updated");
+    }
+
+    function test_ComputeNetFlows() external {
+        OllaCore.FlowCounters memory flows = OllaCore.FlowCounters({
+            cumulativeDeposits: 12 * DECIMALS,
+            cumulativeWithdrawals: 4 * DECIMALS,
+            lastReportDeposits: 5 * DECIMALS,
+            lastReportWithdrawals: 1 * DECIMALS
+        });
+
+        (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
+
+        assertEq(netDeposits, 7 * DECIMALS, "net deposits");
+        assertEq(netWithdrawals, 3 * DECIMALS, "net withdrawals");
+        assertEq(netFlows, 4 * DECIMALS, "net flows");
+    }
+
+    function test_ComputeTotalAssets() external {
+        OllaCore.AccountingState memory buckets = OllaCore.AccountingState({
+            bufferedAssets: 3 * DECIMALS,
+            stakedPrincipal: 4 * DECIMALS,
+            rewardsVaultBalance: 2 * DECIMALS,
+            rewardsDelta: 1 * DECIMALS,
+            slashingDelta: 5 * DECIMALS
+        });
+
+        uint256 totalAssets = vault.exposedComputeTotalAssets(buckets);
+
+        assertEq(totalAssets, 5 * DECIMALS, "total assets computed");
+    }
+
+    function test_ComputeGrossRewards() external {
+        uint256 grossRewards = vault.exposedComputeGrossRewards(100 * DECIMALS, 130 * DECIMALS, 20 * DECIMALS);
+
+        assertEq(grossRewards, 10 * DECIMALS, "gross rewards computed");
     }
 
     function test_UpdateAccountingTimestampMonotonic() external {
