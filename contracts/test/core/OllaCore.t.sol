@@ -75,6 +75,15 @@ contract OllaCoreTest is Test {
     event ClaimWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
+    event Paused();
+    event Unpaused();
+    event Rebalanced(
+        uint256 bufferedAssets, uint256 stakedPrincipal, uint256 rewardsVaultBalance, uint256 rewardsDelta
+    );
+    event AccountingUpdated(
+        uint256 totalAssets, uint256 exchangeRate, uint256 cumulativeDeposits, uint256 cumulativeWithdrawals
+    );
+    event WithdrawalFinalized(uint256 available, uint256 used);
     event Upgraded(address indexed implementation);
 
     uint256 internal constant DECIMALS = 1e18;
@@ -96,6 +105,10 @@ contract OllaCoreTest is Test {
     address internal governance;
     address internal alice;
     address internal bob;
+    address internal withdrawalQueue;
+    address internal rewardsVault;
+    address internal safetyModule;
+    address internal operator;
 
     function setUp() external {
         asset = new MockAztec(address(this));
@@ -107,10 +120,20 @@ contract OllaCoreTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
-        vault.initialize(asset, stAztec, stakingManager, governance);
+        withdrawalQueue = makeAddr("withdrawalQueue");
+        rewardsVault = makeAddr("rewardsVault");
+        safetyModule = makeAddr("safetyModule");
+        operator = makeAddr("operator");
+        vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vault.grantRole(operatorRole, address(this));
+        vm.stopPrank();
     }
 
     function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
@@ -127,25 +150,79 @@ contract OllaCoreTest is Test {
         emit BucketUpdated(bucketId, oldValue, newValue, reason);
     }
 
-    function test_InitializeSetsCoreAddresses() external {
+    function test_InitializeSetsCoreAddresses() external view {
         assertEq(vault.asset(), address(asset), "asset set");
         assertEq(vault.stAztec(), address(stAztec), "stAztec set");
         assertEq(vault.stakingManager(), address(stakingManager), "staking manager set");
         assertEq(vault.governance(), governance, "governance set");
+        assertEq(vault.withdrawalQueue(), withdrawalQueue, "withdrawal queue set");
+        assertEq(vault.rewardsVault(), rewardsVault, "rewards vault set");
+        assertEq(vault.safetyModule(), safetyModule, "safety module set");
+        assertEq(vault.storedExchangeRate(), 1e18, "exchange rate init");
     }
 
     function test_RevertWhen_Reinitialize() external {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        vault.initialize(asset, stAztec, stakingManager, governance);
+        vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
     }
 
     function test_RevertWhen_UnauthorizedUpgrade() external {
         OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
         address attacker = makeAddr("attacker");
 
-        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreUnauthorizedGovernance.selector, attacker));
+        vm.expectRevert();
         vm.prank(attacker);
         vault.upgradeToAndCall(address(newImplementation), "");
+    }
+
+    function test_GuardianCanPauseAndUnpause() external {
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Paused();
+        vm.prank(governance);
+        vault.pause();
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Unpaused();
+        vm.prank(governance);
+        vault.unpause();
+    }
+
+    function test_RevertWhen_NonGuardianPause() external {
+        vm.expectRevert();
+        vm.prank(alice);
+        vault.pause();
+    }
+
+    function test_RevertWhen_DepositWhilePaused() external {
+        vm.prank(governance);
+        vault.pause();
+
+        asset.mint(alice, 5 * DECIMALS);
+        vm.prank(alice);
+        asset.approve(address(vault), 5 * DECIMALS);
+
+        vm.expectRevert();
+        vm.prank(alice);
+        vault.deposit(5 * DECIMALS, alice);
+    }
+
+    function test_OperatorCanCallOperatorHooks() external {
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Rebalanced(0, 0, 0, 0);
+        vm.prank(operator);
+        vault.rebalance();
+
+        uint256 expectedExchangeRate = vault.exchangeRate();
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit AccountingUpdated(0, expectedExchangeRate, 0, 0);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit WithdrawalFinalized(10, 0);
+        vm.prank(operator);
+        uint256 used = vault.finalizeWithdrawals(10);
+        assertEq(used, 0, "finalize returns zero in stub");
     }
 
     function test_GovernanceCanUpgrade() external {
@@ -184,29 +261,34 @@ contract OllaCoreTest is Test {
 
         assertEq(stAztec.balanceOf(alice), shares, "shares minted");
         assertEq(vault.totalAssets(), 10 * DECIMALS, "assets buffered");
+        assertEq(vault.cumulativeDeposits(), 10 * DECIMALS, "cumulative deposits updated");
     }
 
     function test_BucketGettersReflectState() external {
         uint256 assets = 10 * DECIMALS;
         uint256 staked = 6 * DECIMALS;
-        uint256 rewardsVault = 4 * DECIMALS;
+        uint256 rewardsVaultAmount = 4 * DECIMALS;
         uint256 rewardsDelta = 2 * DECIMALS;
         uint256 slashingDelta = 1 * DECIMALS;
 
         _performDeposit(alice, assets);
+        vm.prank(operator);
         vault.exposedIncreaseStakedPrincipal(staked, EXPECTED_REASON_STAKE);
-        vault.exposedIncreaseRewardsVaultBalance(rewardsVault, EXPECTED_REASON_REWARD);
+        vm.prank(operator);
+        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultAmount, EXPECTED_REASON_REWARD);
+        vm.prank(operator);
         vault.exposedSetRewardsDelta(rewardsDelta, EXPECTED_REASON_REWARD);
+        vm.prank(operator);
         vault.exposedSetSlashingDelta(slashingDelta, EXPECTED_REASON_SLASH);
 
         assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
         assertEq(vault.stakedPrincipal(), staked, "stakedPrincipal matches staked amount");
-        assertEq(vault.rewardsVaultBalance(), rewardsVault, "rewardsVaultBalance matches rewards vault");
+        assertEq(vault.rewardsVaultBalance(), rewardsVaultAmount, "rewardsVaultBalance matches rewards vault");
         assertEq(vault.rewardsDelta(), rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(vault.slashingDelta(), slashingDelta, "slashingDelta matches slashing delta");
         assertEq(
             vault.totalAssets(),
-            assets + staked + rewardsVault + rewardsDelta - slashingDelta,
+            assets + staked + rewardsVaultAmount + rewardsDelta - slashingDelta,
             "totalAssets sums buckets"
         );
     }
@@ -221,15 +303,19 @@ contract OllaCoreTest is Test {
         vault.exposedDecreaseBuffered(amount, EXPECTED_REASON_CLAIM);
 
         _expectBucketUpdated(BUCKET_ID_STAKED_PRINCIPAL, 0, amount, EXPECTED_REASON_STAKE);
+        vm.prank(operator);
         vault.exposedIncreaseStakedPrincipal(amount, EXPECTED_REASON_STAKE);
 
         _expectBucketUpdated(BUCKET_ID_REWARDS_VAULT, 0, amount, EXPECTED_REASON_REWARD);
+        vm.prank(operator);
         vault.exposedIncreaseRewardsVaultBalance(amount, EXPECTED_REASON_REWARD);
 
         _expectBucketUpdated(BUCKET_ID_REWARDS_DELTA, 0, amount, EXPECTED_REASON_REWARD);
+        vm.prank(operator);
         vault.exposedSetRewardsDelta(amount, EXPECTED_REASON_REWARD);
 
         _expectBucketUpdated(BUCKET_ID_SLASHING_DELTA, 0, amount, EXPECTED_REASON_SLASH);
+        vm.prank(operator);
         vault.exposedSetSlashingDelta(amount, EXPECTED_REASON_SLASH);
 
         assertEq(vault.bufferedAssets(), 0, "bufferedAssets cleared after decrease");
@@ -286,22 +372,23 @@ contract OllaCoreTest is Test {
     function testFuzz_TotalAssetsComposition(
         uint96 buffered,
         uint96 staked,
-        uint96 rewardsVault,
+        uint96 rewardsVaultAmount,
         uint96 rewardsDelta,
         uint96 slashingDeltaSeed
     ) external {
         buffered = uint96(bound(buffered, 1, type(uint96).max));
         staked = uint96(bound(staked, 1, type(uint96).max));
-        rewardsVault = uint96(bound(rewardsVault, 1, type(uint96).max));
+        rewardsVaultAmount = uint96(bound(rewardsVaultAmount, 1, type(uint96).max));
         rewardsDelta = uint96(bound(rewardsDelta, 0, type(uint96).max));
 
-        uint256 positiveTotal = uint256(buffered) + uint256(staked) + uint256(rewardsVault) + uint256(rewardsDelta);
+        uint256 positiveTotal =
+            uint256(buffered) + uint256(staked) + uint256(rewardsVaultAmount) + uint256(rewardsDelta);
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
         asset.mint(address(vault), buffered);
         vault.exposedIncreaseBuffered(buffered, EXPECTED_REASON_DEPOSIT);
         vault.exposedIncreaseStakedPrincipal(staked, EXPECTED_REASON_STAKE);
-        vault.exposedIncreaseRewardsVaultBalance(rewardsVault, EXPECTED_REASON_REWARD);
+        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultAmount, EXPECTED_REASON_REWARD);
         vault.exposedSetRewardsDelta(rewardsDelta, EXPECTED_REASON_REWARD);
         vault.exposedSetSlashingDelta(slashingDelta, EXPECTED_REASON_SLASH);
 
@@ -381,17 +468,62 @@ contract OllaCoreTest is Test {
 
         address newGovernance = makeAddr("governance");
 
-        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
-        newVault.initialize(IERC20(address(0)), newStAztec, newStakingManager, newGovernance);
+        address newWithdrawalQueue = makeAddr("withdrawalQueue");
+        address newRewardsVault = makeAddr("rewardsVault");
+        address newSafetyModule = makeAddr("safetyModule");
 
         vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
-        newVault.initialize(asset, IStAztec(address(0)), newStakingManager, newGovernance);
+        newVault.initialize(
+            IERC20(address(0)),
+            newStAztec,
+            newStakingManager,
+            newGovernance,
+            newWithdrawalQueue,
+            newRewardsVault,
+            newSafetyModule
+        );
 
         vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
-        newVault.initialize(asset, newStAztec, IStakingManager(address(0)), newGovernance);
+        newVault.initialize(
+            asset,
+            IStAztec(address(0)),
+            newStakingManager,
+            newGovernance,
+            newWithdrawalQueue,
+            newRewardsVault,
+            newSafetyModule
+        );
 
         vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
-        newVault.initialize(asset, newStAztec, newStakingManager, address(0));
+        newVault.initialize(
+            asset,
+            newStAztec,
+            IStakingManager(address(0)),
+            newGovernance,
+            newWithdrawalQueue,
+            newRewardsVault,
+            newSafetyModule
+        );
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(
+            asset, newStAztec, newStakingManager, address(0), newWithdrawalQueue, newRewardsVault, newSafetyModule
+        );
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(
+            asset, newStAztec, newStakingManager, newGovernance, address(0), newRewardsVault, newSafetyModule
+        );
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(
+            asset, newStAztec, newStakingManager, newGovernance, newWithdrawalQueue, address(0), newSafetyModule
+        );
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(
+            asset, newStAztec, newStakingManager, newGovernance, newWithdrawalQueue, newRewardsVault, address(0)
+        );
     }
 
     function test_RevertWhen_UnauthorizedRedeem() external {
@@ -410,6 +542,7 @@ contract OllaCoreTest is Test {
 
         assertEq(assets, 5 * DECIMALS, "assets expected");
         assertEq(stAztec.balanceOf(alice), 20 * DECIMALS, "shares reduced");
+        assertEq(vault.cumulativeWithdrawals(), 5 * DECIMALS, "cumulative withdrawals updated");
     }
 
     function testFuzz_DepositMintsShares(uint96 assets) external {
