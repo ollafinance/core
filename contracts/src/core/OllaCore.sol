@@ -27,6 +27,14 @@ contract OllaCore is
     using SafeERC20 for IERC20;
     using Math for uint256;
 
+    enum Bucket {
+        Buffered,
+        StakedPrincipal,
+        RewardsVault,
+        RewardsDelta,
+        SlashingDelta
+    }
+
     struct AccountingState {
         uint256 bufferedAssets;
         uint256 stakedPrincipal;
@@ -51,11 +59,6 @@ contract OllaCore is
     }
 
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
-    uint8 private constant _BUCKET_ID_BUFFERED = 0;
-    uint8 private constant _BUCKET_ID_STAKED_PRINCIPAL = 1;
-    uint8 private constant _BUCKET_ID_REWARDS_VAULT = 2;
-    uint8 private constant _BUCKET_ID_REWARDS_DELTA = 3;
-    uint8 private constant _BUCKET_ID_SLASHING_DELTA = 4;
 
     /// @notice Role for guardian pause/unpause actions.
     bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
@@ -63,14 +66,6 @@ contract OllaCore is
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     /// @notice Role for core module callbacks.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
-
-    // slither-disable-start unused-state
-    bytes32 private constant _BUCKET_UPDATE_REASON_DEPOSIT = "DEPOSIT";
-    bytes32 private constant _BUCKET_UPDATE_REASON_CLAIM = "CLAIM";
-    bytes32 private constant _BUCKET_UPDATE_REASON_STAKE = "STAKE";
-    bytes32 private constant _BUCKET_UPDATE_REASON_UNSTAKE = "UNSTAKE";
-    bytes32 private constant _BUCKET_UPDATE_REASON_SLASH = "SLASH";
-    // slither-disable-end unused-state
 
     /// @notice Contract related interfaces and addresses
     IERC20 private _asset;
@@ -117,7 +112,7 @@ contract OllaCore is
     error OllaCoreInvalidAmount();
 
     /// @notice Thrown when a bucket lacks sufficient balance.
-    error OllaCoreInsufficientBucketBalance(uint8 bucketId, uint256 amount, uint256 available);
+    error OllaCoreInsufficientBucketBalance(Bucket bucket, uint256 amount, uint256 available);
 
     /// @notice Thrown when buffered assets do not match the vault balance.
     error OllaCoreBufferedBalanceMismatch(uint256 expected, uint256 actual);
@@ -186,7 +181,7 @@ contract OllaCore is
         }
 
         shares = _convertToSharesForDeposit(assets);
-        _increaseBuffered(assets, _BUCKET_UPDATE_REASON_DEPOSIT);
+        _increaseBuffered(assets);
         _asset.safeTransferFrom(msg.sender, address(this), assets);
         _syncBufferedWithBalance();
         _increaseCumulativeDeposits(assets);
@@ -230,7 +225,7 @@ contract OllaCore is
 
         assets = pending.assets;
         _clearPendingWithdrawal(owner);
-        _decreaseBuffered(assets, _BUCKET_UPDATE_REASON_CLAIM);
+        _decreaseBuffered(assets);
         _asset.safeTransfer(pending.receiver, assets);
         _syncBufferedWithBalance();
         emit Withdraw(msg.sender, pending.receiver, owner, assets, pending.shares);
@@ -256,8 +251,8 @@ contract OllaCore is
         emit Rebalanced(0, 0, 0, 0);
     }
 
-    /// @notice Operator accounting update hook.
-    // slither-disable-next-line pess-multiple-storage-read
+    // slither-disable-start pess-multiple-storage-read
+    /// @notice Updates accounting snapshots and publishes the latest exchange rate data.
     function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
         FlowCounters storage flows = _flowCounters;
         uint256 currentCumulativeDeposits = flows.cumulativeDeposits;
@@ -265,6 +260,7 @@ contract OllaCore is
         uint256 currentLastReportDeposits = flows.lastReportDeposits;
         uint256 currentLastReportWithdrawals = flows.lastReportWithdrawals;
 
+        // Net flows since the last accounting snapshot.
         uint256 netDeposits = currentCumulativeDeposits > currentLastReportDeposits
             ? currentCumulativeDeposits - currentLastReportDeposits
             : 0;
@@ -281,6 +277,7 @@ contract OllaCore is
         uint256 currentRewardsDelta = buckets.rewardsDelta;
         uint256 currentSlashingDelta = buckets.slashingDelta;
 
+        // Apply operator-supplied bucket values before computing totals.
         _applyAccountingUpdates(
             currentStakedPrincipal, currentRewardsVaultBalance, currentRewardsDelta, currentSlashingDelta
         );
@@ -289,6 +286,7 @@ contract OllaCore is
         uint256 newTotalAssets = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
             + buckets.rewardsDelta - buckets.slashingDelta;
 
+        // Gross rewards are asset changes excluding net flows.
         uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
         uint256 grossRewards = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
 
@@ -297,6 +295,7 @@ contract OllaCore is
             ? _EXCHANGE_RATE_SCALE
             : newTotalAssets.mulDiv(_EXCHANGE_RATE_SCALE, supply, Math.Rounding.Floor);
 
+        // Persist the new snapshot for share conversion and reporting.
         _updateReportingSnapshots(
             newTotalAssets, rate, grossRewards, netFlows, currentCumulativeDeposits, currentCumulativeWithdrawals
         );
@@ -304,6 +303,8 @@ contract OllaCore is
         emit ValidatorStateRead(buckets.rewardsDelta, buckets.slashingDelta, _latestReport.timestamp);
         emit AccountingUpdated(newTotalAssets, rate, grossRewards, netFlows, 0, 0, 0, _latestReport.timestamp);
     }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /// @notice Stubbed operator withdrawal finalization hook.
     /// @param available The available assets for withdrawals.
@@ -568,112 +569,109 @@ contract OllaCore is
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) internal {
-        bytes32 stakeReason = _BUCKET_UPDATE_REASON_STAKE;
-        bytes32 unstakeReason = _BUCKET_UPDATE_REASON_UNSTAKE;
-
         uint256 currentStaked = _accountingState.stakedPrincipal;
         if (newStakedPrincipal > currentStaked) {
-            _increaseStakedPrincipal(newStakedPrincipal - currentStaked, stakeReason);
+            _increaseStakedPrincipal(newStakedPrincipal - currentStaked);
         } else if (newStakedPrincipal < currentStaked) {
-            _decreaseStakedPrincipal(currentStaked - newStakedPrincipal, unstakeReason);
+            _decreaseStakedPrincipal(currentStaked - newStakedPrincipal);
         }
 
         uint256 currentRewardsVault = _accountingState.rewardsVaultBalance;
         if (newRewardsVaultBalance > currentRewardsVault) {
-            _increaseRewardsVaultBalance(newRewardsVaultBalance - currentRewardsVault, stakeReason);
+            _increaseRewardsVaultBalance(newRewardsVaultBalance - currentRewardsVault);
         } else if (newRewardsVaultBalance < currentRewardsVault) {
-            _decreaseRewardsVaultBalance(currentRewardsVault - newRewardsVaultBalance, unstakeReason);
+            _decreaseRewardsVaultBalance(currentRewardsVault - newRewardsVaultBalance);
         }
 
-        _setRewardsDelta(newRewardsDelta, stakeReason);
-        _setSlashingDelta(newSlashingDelta, _BUCKET_UPDATE_REASON_SLASH);
+        _setRewardsDelta(newRewardsDelta);
+        _setSlashingDelta(newSlashingDelta);
     }
 
-    function _increaseBuffered(uint256 amount, bytes32 reason) internal {
+    function _increaseBuffered(uint256 amount) internal {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
         uint256 oldValue = _accountingState.bufferedAssets;
         uint256 newValue = oldValue + amount;
         _accountingState.bufferedAssets = newValue;
-        emit BucketUpdated(_BUCKET_ID_BUFFERED, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
-    function _decreaseBuffered(uint256 amount, bytes32 reason) internal {
+    function _decreaseBuffered(uint256 amount) internal {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
         uint256 oldValue = _accountingState.bufferedAssets;
         if (amount > oldValue) {
-            revert OllaCoreInsufficientBucketBalance(_BUCKET_ID_BUFFERED, amount, oldValue);
+            revert OllaCoreInsufficientBucketBalance(Bucket.Buffered, amount, oldValue);
         }
         uint256 newValue = oldValue - amount;
         _accountingState.bufferedAssets = newValue;
-        emit BucketUpdated(_BUCKET_ID_BUFFERED, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
-    function _increaseStakedPrincipal(uint256 amount, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
+    function _increaseStakedPrincipal(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
         uint256 oldValue = _accountingState.stakedPrincipal;
         uint256 newValue = oldValue + amount;
         _accountingState.stakedPrincipal = newValue;
-        emit BucketUpdated(_BUCKET_ID_STAKED_PRINCIPAL, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
-    function _decreaseStakedPrincipal(uint256 amount, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
+    function _decreaseStakedPrincipal(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
         uint256 oldValue = _accountingState.stakedPrincipal;
         if (amount > oldValue) {
-            revert OllaCoreInsufficientBucketBalance(_BUCKET_ID_STAKED_PRINCIPAL, amount, oldValue);
+            revert OllaCoreInsufficientBucketBalance(Bucket.StakedPrincipal, amount, oldValue);
         }
         uint256 newValue = oldValue - amount;
         _accountingState.stakedPrincipal = newValue;
-        emit BucketUpdated(_BUCKET_ID_STAKED_PRINCIPAL, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
-    function _increaseRewardsVaultBalance(uint256 amount, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
+    function _increaseRewardsVaultBalance(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
         uint256 oldValue = _accountingState.rewardsVaultBalance;
         uint256 newValue = oldValue + amount;
         _accountingState.rewardsVaultBalance = newValue;
-        emit BucketUpdated(_BUCKET_ID_REWARDS_VAULT, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
-    function _decreaseRewardsVaultBalance(uint256 amount, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
+    function _decreaseRewardsVaultBalance(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
         uint256 oldValue = _accountingState.rewardsVaultBalance;
         if (amount > oldValue) {
-            revert OllaCoreInsufficientBucketBalance(_BUCKET_ID_REWARDS_VAULT, amount, oldValue);
+            revert OllaCoreInsufficientBucketBalance(Bucket.RewardsVault, amount, oldValue);
         }
         uint256 newValue = oldValue - amount;
         _accountingState.rewardsVaultBalance = newValue;
-        emit BucketUpdated(_BUCKET_ID_REWARDS_VAULT, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
-    function _setRewardsDelta(uint256 newValue, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
+    function _setRewardsDelta(uint256 newValue) internal onlyRole(OPERATOR_ROLE) {
         uint256 oldValue = _accountingState.rewardsDelta;
         _accountingState.rewardsDelta = newValue;
-        emit BucketUpdated(_BUCKET_ID_REWARDS_DELTA, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
     // slither-disable-next-line dead-code
-    function _setSlashingDelta(uint256 newValue, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
+    function _setSlashingDelta(uint256 newValue) internal onlyRole(OPERATOR_ROLE) {
         uint256 oldValue = _accountingState.slashingDelta;
         _accountingState.slashingDelta = newValue;
-        emit BucketUpdated(_BUCKET_ID_SLASHING_DELTA, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
     function _syncBufferedWithBalance() internal view {

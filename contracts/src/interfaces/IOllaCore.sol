@@ -66,11 +66,9 @@ interface IOllaCore {
     event UnstakeRequested(uint256 indexed messageId, uint256 amount);
 
     /// @notice Emitted when a bucket value changes.
-    /// @param bucketId The bucket identifier.
     /// @param oldValue The previous bucket value.
     /// @param newValue The updated bucket value.
-    /// @param reason The reason code for the update.
-    event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
+    event BucketUpdated(uint256 oldValue, uint256 newValue);
 
     /// @notice Emitted when accounting is updated.
     /// @param totalAssets Total assets snapshot.

@@ -16,32 +16,32 @@ import { MockAztec } from "src/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 
 contract OllaCoreHarness is OllaCore {
-    function exposedIncreaseBuffered(uint256 amount, bytes32 reason) external {
-        _increaseBuffered(amount, reason);
+    function exposedIncreaseBuffered(uint256 amount) external {
+        _increaseBuffered(amount);
     }
 
-    function exposedDecreaseBuffered(uint256 amount, bytes32 reason) external {
-        _decreaseBuffered(amount, reason);
+    function exposedDecreaseBuffered(uint256 amount) external {
+        _decreaseBuffered(amount);
     }
 
-    function exposedIncreaseStakedPrincipal(uint256 amount, bytes32 reason) external {
-        _increaseStakedPrincipal(amount, reason);
+    function exposedIncreaseStakedPrincipal(uint256 amount) external {
+        _increaseStakedPrincipal(amount);
     }
 
-    function exposedDecreaseStakedPrincipal(uint256 amount, bytes32 reason) external {
-        _decreaseStakedPrincipal(amount, reason);
+    function exposedDecreaseStakedPrincipal(uint256 amount) external {
+        _decreaseStakedPrincipal(amount);
     }
 
-    function exposedIncreaseRewardsVaultBalance(uint256 amount, bytes32 reason) external {
-        _increaseRewardsVaultBalance(amount, reason);
+    function exposedIncreaseRewardsVaultBalance(uint256 amount) external {
+        _increaseRewardsVaultBalance(amount);
     }
 
-    function exposedSetRewardsDelta(uint256 newValue, bytes32 reason) external {
-        _setRewardsDelta(newValue, reason);
+    function exposedSetRewardsDelta(uint256 newValue) external {
+        _setRewardsDelta(newValue);
     }
 
-    function exposedSetSlashingDelta(uint256 newValue, bytes32 reason) external {
-        _setSlashingDelta(newValue, reason);
+    function exposedSetSlashingDelta(uint256 newValue) external {
+        _setSlashingDelta(newValue);
     }
 
     function exposedStake(uint256 amount) external {
@@ -74,7 +74,7 @@ contract OllaCoreTest is Test {
     event RequestRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event ClaimWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
-    event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
+    event BucketUpdated(uint256 oldValue, uint256 newValue);
     event Paused();
     event Unpaused();
     event Rebalanced(
@@ -95,16 +95,6 @@ contract OllaCoreTest is Test {
     event Upgraded(address indexed implementation);
 
     uint256 internal constant DECIMALS = 1e18;
-    uint8 internal constant BUCKET_ID_BUFFERED = 0;
-    uint8 internal constant BUCKET_ID_STAKED_PRINCIPAL = 1;
-    uint8 internal constant BUCKET_ID_REWARDS_VAULT = 2;
-    uint8 internal constant BUCKET_ID_REWARDS_DELTA = 3;
-    uint8 internal constant BUCKET_ID_SLASHING_DELTA = 4;
-    bytes32 internal constant EXPECTED_REASON_DEPOSIT = "DEPOSIT";
-    bytes32 internal constant EXPECTED_REASON_CLAIM = "CLAIM";
-    bytes32 internal constant EXPECTED_REASON_STAKE = "STAKE";
-    bytes32 internal constant EXPECTED_REASON_SLASH = "SLASH";
-    bytes32 internal constant EXPECTED_REASON_REWARD = "REWARD";
 
     MockAztec internal asset;
     OllaCoreHarness internal vault;
@@ -153,9 +143,9 @@ contract OllaCoreTest is Test {
         return shares;
     }
 
-    function _expectBucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason) internal {
+    function _expectBucketUpdated(uint256 oldValue, uint256 newValue) internal {
         vm.expectEmit(true, true, true, true, address(vault));
-        emit BucketUpdated(bucketId, oldValue, newValue, reason);
+        emit BucketUpdated(oldValue, newValue);
     }
 
     function test_InitializeSetsCoreAddresses() external view {
@@ -255,7 +245,7 @@ contract OllaCoreTest is Test {
         uint256 firstShares = _performDeposit(alice, depositAssetAmountAlice);
         assertEq(firstShares, depositAssetAmountAlice, "first deposit: 1:1 shares at zero supply");
 
-        vault.exposedIncreaseRewardsVaultBalance(50 * DECIMALS, EXPECTED_REASON_REWARD);
+        vault.exposedIncreaseRewardsVaultBalance(50 * DECIMALS);
 
         uint256 totalAssetsBeforeSecondDeposit = vault.totalAssets();
         uint256 totalSharesBeforeSecondDeposit = stAztec.totalSupply();
@@ -285,13 +275,13 @@ contract OllaCoreTest is Test {
 
         _performDeposit(alice, assets);
         vm.prank(operator);
-        vault.exposedIncreaseStakedPrincipal(staked, EXPECTED_REASON_STAKE);
+        vault.exposedIncreaseStakedPrincipal(staked);
         vm.prank(operator);
-        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultAmount, EXPECTED_REASON_REWARD);
+        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultAmount);
         vm.prank(operator);
-        vault.exposedSetRewardsDelta(rewardsDelta, EXPECTED_REASON_REWARD);
+        vault.exposedSetRewardsDelta(rewardsDelta);
         vm.prank(operator);
-        vault.exposedSetSlashingDelta(slashingDelta, EXPECTED_REASON_SLASH);
+        vault.exposedSetSlashingDelta(slashingDelta);
 
         assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
         assertEq(vault.stakedPrincipal(), staked, "stakedPrincipal matches staked amount");
@@ -308,27 +298,27 @@ contract OllaCoreTest is Test {
     function test_BucketHelpersEmitEvents() external {
         uint256 amount = 5 * DECIMALS;
 
-        _expectBucketUpdated(BUCKET_ID_BUFFERED, 0, amount, EXPECTED_REASON_DEPOSIT);
-        vault.exposedIncreaseBuffered(amount, EXPECTED_REASON_DEPOSIT);
+        _expectBucketUpdated(0, amount);
+        vault.exposedIncreaseBuffered(amount);
 
-        _expectBucketUpdated(BUCKET_ID_BUFFERED, amount, 0, EXPECTED_REASON_CLAIM);
-        vault.exposedDecreaseBuffered(amount, EXPECTED_REASON_CLAIM);
+        _expectBucketUpdated(amount, 0);
+        vault.exposedDecreaseBuffered(amount);
 
-        _expectBucketUpdated(BUCKET_ID_STAKED_PRINCIPAL, 0, amount, EXPECTED_REASON_STAKE);
+        _expectBucketUpdated(0, amount);
         vm.prank(operator);
-        vault.exposedIncreaseStakedPrincipal(amount, EXPECTED_REASON_STAKE);
+        vault.exposedIncreaseStakedPrincipal(amount);
 
-        _expectBucketUpdated(BUCKET_ID_REWARDS_VAULT, 0, amount, EXPECTED_REASON_REWARD);
+        _expectBucketUpdated(0, amount);
         vm.prank(operator);
-        vault.exposedIncreaseRewardsVaultBalance(amount, EXPECTED_REASON_REWARD);
+        vault.exposedIncreaseRewardsVaultBalance(amount);
 
-        _expectBucketUpdated(BUCKET_ID_REWARDS_DELTA, 0, amount, EXPECTED_REASON_REWARD);
+        _expectBucketUpdated(0, amount);
         vm.prank(operator);
-        vault.exposedSetRewardsDelta(amount, EXPECTED_REASON_REWARD);
+        vault.exposedSetRewardsDelta(amount);
 
-        _expectBucketUpdated(BUCKET_ID_SLASHING_DELTA, 0, amount, EXPECTED_REASON_SLASH);
+        _expectBucketUpdated(0, amount);
         vm.prank(operator);
-        vault.exposedSetSlashingDelta(amount, EXPECTED_REASON_SLASH);
+        vault.exposedSetSlashingDelta(amount);
 
         assertEq(vault.bufferedAssets(), 0, "bufferedAssets cleared after decrease");
         assertEq(vault.stakedPrincipal(), amount, "stakedPrincipal increased by amount");
@@ -398,11 +388,11 @@ contract OllaCoreTest is Test {
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
         asset.mint(address(vault), buffered);
-        vault.exposedIncreaseBuffered(buffered, EXPECTED_REASON_DEPOSIT);
-        vault.exposedIncreaseStakedPrincipal(staked, EXPECTED_REASON_STAKE);
-        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultAmount, EXPECTED_REASON_REWARD);
-        vault.exposedSetRewardsDelta(rewardsDelta, EXPECTED_REASON_REWARD);
-        vault.exposedSetSlashingDelta(slashingDelta, EXPECTED_REASON_SLASH);
+        vault.exposedIncreaseBuffered(buffered);
+        vault.exposedIncreaseStakedPrincipal(staked);
+        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultAmount);
+        vault.exposedSetRewardsDelta(rewardsDelta);
+        vault.exposedSetSlashingDelta(slashingDelta);
 
         assertEq(vault.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
     }
@@ -456,9 +446,9 @@ contract OllaCoreTest is Test {
 
         _performDeposit(alice, depositAmount);
         vm.prank(operator);
-        vault.exposedSetRewardsDelta(rewards, EXPECTED_REASON_REWARD);
+        vault.exposedSetRewardsDelta(rewards);
         vm.prank(operator);
-        vault.exposedSetSlashingDelta(slashing, EXPECTED_REASON_SLASH);
+        vault.exposedSetSlashingDelta(slashing);
 
         uint256 expectedTotalAssets = depositAmount + rewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
@@ -681,7 +671,7 @@ contract OllaCoreTest is Test {
         bonus = uint96(bound(bonus, 1, type(uint96).max));
 
         _performDeposit(alice, assets);
-        vault.exposedIncreaseRewardsVaultBalance(bonus, EXPECTED_REASON_REWARD);
+        vault.exposedIncreaseRewardsVaultBalance(bonus);
 
         redeemShares = uint96(bound(redeemShares, 1, assets));
 
@@ -720,8 +710,8 @@ contract OllaCoreTest is Test {
 
         uint256 availableAssets = vault.bufferedAssets();
 
-        vault.exposedDecreaseBuffered(availableAssets, EXPECTED_REASON_STAKE);
-        vault.exposedIncreaseStakedPrincipal(availableAssets, EXPECTED_REASON_STAKE);
+        vault.exposedDecreaseBuffered(availableAssets);
+        vault.exposedIncreaseStakedPrincipal(availableAssets);
 
         vm.prank(address(vault));
         asset.transfer(bob, availableAssets);
