@@ -148,7 +148,8 @@ contract OllaCoreInvariantTest is Test {
 
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        vault.initialize(asset, stAztec, stakingManager);
+        address governance = makeAddr("governance");
+        vault.initialize(asset, stAztec, stakingManager, governance);
 
         handler = new OllaCoreHandler(asset, vault, stAztec);
         targetContract(address(handler));
@@ -239,7 +240,8 @@ contract OllaCoreDepositInvariantTest is Test {
 
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        vault.initialize(asset, stAztec, stakingManager);
+        address governance = makeAddr("governance");
+        vault.initialize(asset, stAztec, stakingManager, governance);
 
         handler = new OllaCoreDepositHandler(asset, vault, stAztec);
         targetContract(address(handler));

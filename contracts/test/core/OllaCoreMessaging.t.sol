@@ -38,7 +38,8 @@ contract OllaCoreMessagingTest is Test {
 
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        vault.initialize(asset, stAztec, stakingManager);
+        address governance = makeAddr("governance");
+        vault.initialize(asset, stAztec, stakingManager, governance);
     }
 
     function test_StakeMessageRoutesToStakingManager() external {

@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import { Test } from "@forge-std/Test.sol";
 
+import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
@@ -56,6 +57,12 @@ contract OllaCoreHarness is OllaCore {
     }
 }
 
+contract OllaCoreUpgradeMock is OllaCore {
+    function version() external pure returns (uint256) {
+        return 2;
+    }
+}
+
 contract OllaCoreTest is Test {
     using Math for uint256;
 
@@ -68,6 +75,7 @@ contract OllaCoreTest is Test {
     event ClaimWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
     event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
+    event Upgraded(address indexed implementation);
 
     uint256 internal constant DECIMALS = 1e18;
     uint8 internal constant BUCKET_ID_BUFFERED = 0;
@@ -85,6 +93,7 @@ contract OllaCoreTest is Test {
     OllaCoreHarness internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
+    address internal governance;
     address internal alice;
     address internal bob;
 
@@ -97,7 +106,8 @@ contract OllaCoreTest is Test {
 
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        vault.initialize(asset, stAztec, stakingManager);
+        governance = makeAddr("governance");
+        vault.initialize(asset, stAztec, stakingManager, governance);
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
@@ -115,6 +125,40 @@ contract OllaCoreTest is Test {
     function _expectBucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason) internal {
         vm.expectEmit(true, true, true, true, address(vault));
         emit BucketUpdated(bucketId, oldValue, newValue, reason);
+    }
+
+    function test_InitializeSetsCoreAddresses() external {
+        assertEq(vault.asset(), address(asset), "asset set");
+        assertEq(vault.stAztec(), address(stAztec), "stAztec set");
+        assertEq(vault.stakingManager(), address(stakingManager), "staking manager set");
+        assertEq(vault.governance(), governance, "governance set");
+    }
+
+    function test_RevertWhen_Reinitialize() external {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        vault.initialize(asset, stAztec, stakingManager, governance);
+    }
+
+    function test_RevertWhen_UnauthorizedUpgrade() external {
+        OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
+        address attacker = makeAddr("attacker");
+
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCoreUnauthorizedGovernance.selector, attacker));
+        vm.prank(attacker);
+        vault.upgradeToAndCall(address(newImplementation), "");
+    }
+
+    function test_GovernanceCanUpgrade() external {
+        OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
+
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit Upgraded(address(newImplementation));
+
+        vm.prank(governance);
+        vault.upgradeToAndCall(address(newImplementation), "");
+
+        uint256 version = OllaCoreUpgradeMock(address(vault)).version();
+        assertEq(version, 2, "upgrade applied");
     }
 
     function test_DepositMintsAtExchangeRate() external {
@@ -335,14 +379,19 @@ contract OllaCoreTest is Test {
         StAztec newStAztec = new StAztec(address(newVault));
         MockStakingManager newStakingManager = new MockStakingManager();
 
-        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
-        newVault.initialize(IERC20(address(0)), newStAztec, newStakingManager);
+        address newGovernance = makeAddr("governance");
 
         vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
-        newVault.initialize(asset, IStAztec(address(0)), newStakingManager);
+        newVault.initialize(IERC20(address(0)), newStAztec, newStakingManager, newGovernance);
 
         vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
-        newVault.initialize(asset, newStAztec, IStakingManager(address(0)));
+        newVault.initialize(asset, IStAztec(address(0)), newStakingManager, newGovernance);
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(asset, newStAztec, IStakingManager(address(0)), newGovernance);
+
+        vm.expectRevert(OllaCore.OllaCoreZeroAddress.selector);
+        newVault.initialize(asset, newStAztec, newStakingManager, address(0));
     }
 
     function test_RevertWhen_UnauthorizedRedeem() external {
