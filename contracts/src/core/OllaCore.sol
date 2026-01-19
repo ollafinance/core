@@ -375,13 +375,6 @@ contract OllaCore is
         return pending;
     }
 
-    /// @notice Returns true if the interface is supported.
-    /// @param interfaceId The interface identifier.
-    /// @return True if supported.
-    function supportsInterface(bytes4 interfaceId) public view override(AccessControlUpgradeable) returns (bool) {
-        return super.supportsInterface(interfaceId);
-    }
-
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
