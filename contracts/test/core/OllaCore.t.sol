@@ -290,7 +290,7 @@ contract OllaCoreTest is Test {
     function test_BucketGettersReflectState() external {
         uint256 assets = 10 * DECIMALS;
         uint256 staked = 6 * DECIMALS;
-        uint256 rewardsVaultAmount = 4 * DECIMALS;
+        uint256 rewardsVaultBalance = 4 * DECIMALS;
         uint256 rewardsDelta = 2 * DECIMALS;
         uint256 slashingDelta = 1 * DECIMALS;
 
@@ -298,7 +298,7 @@ contract OllaCoreTest is Test {
         vm.prank(operator);
         vault.exposedIncreaseStakedPrincipal(staked);
         vm.prank(operator);
-        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultAmount);
+        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultBalance);
         vm.prank(operator);
         vault.exposedSetRewardsDelta(rewardsDelta);
         vm.prank(operator);
@@ -307,12 +307,12 @@ contract OllaCoreTest is Test {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
         assertEq(accounting.bufferedAssets, assets, "bufferedAssets matches deposited assets");
         assertEq(accounting.stakedPrincipal, staked, "stakedPrincipal matches staked amount");
-        assertEq(accounting.rewardsVaultBalance, rewardsVaultAmount, "rewardsVaultBalance matches rewards vault");
+        assertEq(accounting.rewardsVaultBalance, rewardsVaultBalance, "rewardsVaultBalance matches rewards vault");
         assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
         assertEq(
             vault.totalAssets(),
-            assets + staked + rewardsVaultAmount + rewardsDelta - slashingDelta,
+            assets + staked + rewardsVaultBalance + rewardsDelta - slashingDelta,
             "totalAssets sums buckets"
         );
     }
@@ -368,23 +368,23 @@ contract OllaCoreTest is Test {
     function testFuzz_TotalAssetsComposition(
         uint96 buffered,
         uint96 staked,
-        uint96 rewardsVaultAmount,
+        uint96 rewardsVaultBalance,
         uint96 rewardsDelta,
         uint96 slashingDeltaSeed
     ) external {
         buffered = uint96(bound(buffered, 1, type(uint96).max));
         staked = uint96(bound(staked, 1, type(uint96).max));
-        rewardsVaultAmount = uint96(bound(rewardsVaultAmount, 1, type(uint96).max));
+        rewardsVaultBalance = uint96(bound(rewardsVaultBalance, 1, type(uint96).max));
         rewardsDelta = uint96(bound(rewardsDelta, 0, type(uint96).max));
 
         uint256 positiveTotal =
-            uint256(buffered) + uint256(staked) + uint256(rewardsVaultAmount) + uint256(rewardsDelta);
+            uint256(buffered) + uint256(staked) + uint256(rewardsVaultBalance) + uint256(rewardsDelta);
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
         asset.mint(address(vault), buffered);
         vault.exposedIncreaseBuffered(buffered);
         vault.exposedIncreaseStakedPrincipal(staked);
-        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultAmount);
+        vault.exposedIncreaseRewardsVaultBalance(rewardsVaultBalance);
         vault.exposedSetRewardsDelta(rewardsDelta);
         vault.exposedSetSlashingDelta(slashingDelta);
 
