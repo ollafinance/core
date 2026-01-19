@@ -192,9 +192,11 @@ contract OllaCoreInvariantTest is Test {
 
         assertEq(report.exchangeRate, expectedRate, "stored exchange rate matches snapshot");
         assertEq(report.totalAssets, vault.totalAssets(), "snapshot total assets matches total assets");
-        assertEq(flows.lastReportDeposits, flows.cumulativeDeposits, "last report deposits equals cumulative deposits");
         assertEq(
-            flows.lastReportWithdrawals,
+            flows.latestReportDeposits, flows.cumulativeDeposits, "last report deposits equals cumulative deposits"
+        );
+        assertEq(
+            flows.latestReportWithdrawals,
             flows.cumulativeWithdrawals,
             "last report withdrawals equals cumulative withdrawals"
         );

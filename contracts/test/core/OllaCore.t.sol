@@ -394,22 +394,22 @@ contract OllaCoreTest is Test {
     function testFuzz_ComputeNetFlows(
         uint96 cumulativeDeposits,
         uint96 cumulativeWithdrawals,
-        uint96 lastReportDeposits,
-        uint96 lastReportWithdrawals
+        uint96 latestReportDeposits,
+        uint96 latestReportWithdrawals
     ) external {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: cumulativeDeposits,
             cumulativeWithdrawals: cumulativeWithdrawals,
-            lastReportDeposits: lastReportDeposits,
-            lastReportWithdrawals: lastReportWithdrawals
+            latestReportDeposits: latestReportDeposits,
+            latestReportWithdrawals: latestReportWithdrawals
         });
 
         (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
 
         uint256 expectedNetDeposits =
-            cumulativeDeposits > lastReportDeposits ? cumulativeDeposits - lastReportDeposits : 0;
+            cumulativeDeposits > latestReportDeposits ? cumulativeDeposits - latestReportDeposits : 0;
         uint256 expectedNetWithdrawals =
-            cumulativeWithdrawals > lastReportWithdrawals ? cumulativeWithdrawals - lastReportWithdrawals : 0;
+            cumulativeWithdrawals > latestReportWithdrawals ? cumulativeWithdrawals - latestReportWithdrawals : 0;
         uint256 expectedNetFlows =
             expectedNetDeposits > expectedNetWithdrawals ? expectedNetDeposits - expectedNetWithdrawals : 0;
 
@@ -434,8 +434,8 @@ contract OllaCoreTest is Test {
         IOllaCore.LatestReport memory reportBefore = vault.latestReport();
         IOllaCore.FlowCounters memory flowsBefore = vault.flowCounters();
         assertEq(reportBefore.totalAssets, 0, "lastTotalAssets before update");
-        assertEq(flowsBefore.lastReportDeposits, 0, "lastReportDeposits before update");
-        assertEq(flowsBefore.lastReportWithdrawals, 0, "lastReportWithdrawals before update");
+        assertEq(flowsBefore.latestReportDeposits, 0, "latestReportDeposits before update");
+        assertEq(flowsBefore.latestReportWithdrawals, 0, "latestReportWithdrawals before update");
 
         uint256 expectedRate = vault.exchangeRate();
         uint256 expectedTimestamp = block.timestamp;
@@ -450,8 +450,8 @@ contract OllaCoreTest is Test {
         IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
         assertEq(reportAfter.totalAssets, depositAmount, "lastTotalAssets updated");
         assertEq(reportAfter.exchangeRate, expectedRate, "stored exchange rate updated");
-        assertEq(flowsAfter.lastReportDeposits, depositAmount, "lastReportDeposits updated");
-        assertEq(flowsAfter.lastReportWithdrawals, 0, "lastReportWithdrawals updated");
+        assertEq(flowsAfter.latestReportDeposits, depositAmount, "latestReportDeposits updated");
+        assertEq(flowsAfter.latestReportWithdrawals, 0, "latestReportWithdrawals updated");
         assertEq(flowsAfter.cumulativeDeposits, depositAmount, "cumulative deposits tracked");
         assertEq(reportAfter.exchangeRate, expectedRate, "latest report exchange rate stored");
         assertEq(reportAfter.timestamp, expectedTimestamp, "report timestamp updated");
@@ -461,8 +461,8 @@ contract OllaCoreTest is Test {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: 12 * DECIMALS,
             cumulativeWithdrawals: 4 * DECIMALS,
-            lastReportDeposits: 5 * DECIMALS,
-            lastReportWithdrawals: 1 * DECIMALS
+            latestReportDeposits: 5 * DECIMALS,
+            latestReportWithdrawals: 1 * DECIMALS
         });
 
         (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
@@ -538,8 +538,8 @@ contract OllaCoreTest is Test {
         IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
         assertEq(reportAfter.totalAssets, expectedTotalAssets, "lastTotalAssets updated");
         assertEq(reportAfter.exchangeRate, expectedRate, "stored exchange rate updated");
-        assertEq(flowsAfter.lastReportDeposits, depositAmount, "lastReportDeposits updated");
-        assertEq(flowsAfter.lastReportWithdrawals, 0, "lastReportWithdrawals updated");
+        assertEq(flowsAfter.latestReportDeposits, depositAmount, "latestReportDeposits updated");
+        assertEq(flowsAfter.latestReportWithdrawals, 0, "latestReportWithdrawals updated");
     }
 
     function test_RevertWhen_BufferedBalanceMismatch() external {

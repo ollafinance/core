@@ -27,8 +27,8 @@ interface IOllaCore {
     struct FlowCounters {
         uint256 cumulativeDeposits;
         uint256 cumulativeWithdrawals;
-        uint256 lastReportDeposits;
-        uint256 lastReportWithdrawals;
+        uint256 latestReportDeposits;
+        uint256 latestReportWithdrawals;
     }
 
     struct LatestReport {
