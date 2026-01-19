@@ -394,22 +394,24 @@ contract OllaCoreTest is Test {
     function testFuzz_ComputeNetFlows(
         uint96 cumulativeDeposits,
         uint96 cumulativeWithdrawals,
-        uint96 latestReportDeposits,
-        uint96 latestReportWithdrawals
+        uint96 latestReportCumulativeDeposits,
+        uint96 latestReportCumulativeWithdrawals
     ) external {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: cumulativeDeposits,
             cumulativeWithdrawals: cumulativeWithdrawals,
-            latestReportDeposits: latestReportDeposits,
-            latestReportWithdrawals: latestReportWithdrawals
+            latestReportCumulativeDeposits: latestReportCumulativeDeposits,
+            latestReportCumulativeWithdrawals: latestReportCumulativeWithdrawals
         });
 
         (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
 
-        uint256 expectedNetDeposits =
-            cumulativeDeposits > latestReportDeposits ? cumulativeDeposits - latestReportDeposits : 0;
-        uint256 expectedNetWithdrawals =
-            cumulativeWithdrawals > latestReportWithdrawals ? cumulativeWithdrawals - latestReportWithdrawals : 0;
+        uint256 expectedNetDeposits = cumulativeDeposits > latestReportCumulativeDeposits
+            ? cumulativeDeposits - latestReportCumulativeDeposits
+            : 0;
+        uint256 expectedNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals
+            ? cumulativeWithdrawals - latestReportCumulativeWithdrawals
+            : 0;
         uint256 expectedNetFlows =
             expectedNetDeposits > expectedNetWithdrawals ? expectedNetDeposits - expectedNetWithdrawals : 0;
 
@@ -434,8 +436,8 @@ contract OllaCoreTest is Test {
         IOllaCore.LatestReport memory reportBefore = vault.latestReport();
         IOllaCore.FlowCounters memory flowsBefore = vault.flowCounters();
         assertEq(reportBefore.totalAssets, 0, "lastTotalAssets before update");
-        assertEq(flowsBefore.latestReportDeposits, 0, "latestReportDeposits before update");
-        assertEq(flowsBefore.latestReportWithdrawals, 0, "latestReportWithdrawals before update");
+        assertEq(flowsBefore.latestReportCumulativeDeposits, 0, "latestReportCumulativeDeposits before update");
+        assertEq(flowsBefore.latestReportCumulativeWithdrawals, 0, "latestReportCumulativeWithdrawals before update");
 
         uint256 expectedRate = vault.exchangeRate();
         uint256 expectedTimestamp = block.timestamp;
@@ -450,8 +452,8 @@ contract OllaCoreTest is Test {
         IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
         assertEq(reportAfter.totalAssets, depositAmount, "lastTotalAssets updated");
         assertEq(reportAfter.exchangeRate, expectedRate, "stored exchange rate updated");
-        assertEq(flowsAfter.latestReportDeposits, depositAmount, "latestReportDeposits updated");
-        assertEq(flowsAfter.latestReportWithdrawals, 0, "latestReportWithdrawals updated");
+        assertEq(flowsAfter.latestReportCumulativeDeposits, depositAmount, "latestReportCumulativeDeposits updated");
+        assertEq(flowsAfter.latestReportCumulativeWithdrawals, 0, "latestReportCumulativeWithdrawals updated");
         assertEq(flowsAfter.cumulativeDeposits, depositAmount, "cumulative deposits tracked");
         assertEq(reportAfter.exchangeRate, expectedRate, "latest report exchange rate stored");
         assertEq(reportAfter.timestamp, expectedTimestamp, "report timestamp updated");
@@ -461,8 +463,8 @@ contract OllaCoreTest is Test {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: 12 * DECIMALS,
             cumulativeWithdrawals: 4 * DECIMALS,
-            latestReportDeposits: 5 * DECIMALS,
-            latestReportWithdrawals: 1 * DECIMALS
+            latestReportCumulativeDeposits: 5 * DECIMALS,
+            latestReportCumulativeWithdrawals: 1 * DECIMALS
         });
 
         (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
@@ -538,8 +540,8 @@ contract OllaCoreTest is Test {
         IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
         assertEq(reportAfter.totalAssets, expectedTotalAssets, "lastTotalAssets updated");
         assertEq(reportAfter.exchangeRate, expectedRate, "stored exchange rate updated");
-        assertEq(flowsAfter.latestReportDeposits, depositAmount, "latestReportDeposits updated");
-        assertEq(flowsAfter.latestReportWithdrawals, 0, "latestReportWithdrawals updated");
+        assertEq(flowsAfter.latestReportCumulativeDeposits, depositAmount, "latestReportCumulativeDeposits updated");
+        assertEq(flowsAfter.latestReportCumulativeWithdrawals, 0, "latestReportCumulativeWithdrawals updated");
     }
 
     function test_RevertWhen_BufferedBalanceMismatch() external {

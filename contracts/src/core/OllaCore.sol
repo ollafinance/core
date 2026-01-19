@@ -460,8 +460,8 @@ contract OllaCore is
         report.timestamp = block.timestamp;
 
         IOllaCore.FlowCounters storage flows = _flowCounters;
-        flows.latestReportDeposits = updatedCumulativeDeposits;
-        flows.latestReportWithdrawals = updatedCumulativeWithdrawals;
+        flows.latestReportCumulativeDeposits = updatedCumulativeDeposits;
+        flows.latestReportCumulativeWithdrawals = updatedCumulativeWithdrawals;
     }
 
     function _applyAccountingUpdates(
@@ -622,11 +622,11 @@ contract OllaCore is
         pure
         returns (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
     {
-        netDeposits = flows.cumulativeDeposits > flows.latestReportDeposits
-            ? flows.cumulativeDeposits - flows.latestReportDeposits
+        netDeposits = flows.cumulativeDeposits > flows.latestReportCumulativeDeposits
+            ? flows.cumulativeDeposits - flows.latestReportCumulativeDeposits
             : 0;
-        netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportWithdrawals
-            ? flows.cumulativeWithdrawals - flows.latestReportWithdrawals
+        netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
+            ? flows.cumulativeWithdrawals - flows.latestReportCumulativeWithdrawals
             : 0;
         netFlows = netDeposits > netWithdrawals ? netDeposits - netWithdrawals : 0;
         return (netFlows, netDeposits, netWithdrawals);
