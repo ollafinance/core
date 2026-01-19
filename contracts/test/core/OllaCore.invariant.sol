@@ -138,6 +138,7 @@ contract OllaCoreInvariantTest is Test {
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
     OllaCoreHandler internal handler;
+    address internal operator;
 
     function setUp() external {
         asset = new MockAztec(address(this));
@@ -155,8 +156,11 @@ contract OllaCoreInvariantTest is Test {
         vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
-        vm.prank(governance);
+        operator = makeAddr("operator");
+        vm.startPrank(governance);
         vault.grantRole(operatorRole, address(this));
+        vault.grantRole(operatorRole, operator);
+        vm.stopPrank();
 
         handler = new OllaCoreHandler(asset, vault, stAztec);
         targetContract(address(handler));
@@ -174,6 +178,25 @@ contract OllaCoreInvariantTest is Test {
         uint256 expectedRate = supply == 0 ? 1e18 : vault.totalAssets().mulDiv(1e18, supply, Math.Rounding.Floor);
 
         assertEq(vault.exchangeRate(), expectedRate, "exchange rate matches totals");
+    }
+
+    function invariant_StoredExchangeRateMatchesSnapshot() external {
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        uint256 supply = stAztec.totalSupply();
+        uint256 expectedRate = supply == 0 ? 1e18 : vault.lastTotalAssets().mulDiv(1e18, supply, Math.Rounding.Floor);
+
+        assertEq(vault.storedExchangeRate(), expectedRate, "stored exchange rate matches snapshot");
+    }
+
+    function invariant_LatestReportTimestampMonotonic() external {
+        vm.warp(block.timestamp + 1);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        uint256 latestTimestamp = vault.lastReportTimestamp();
+        assertLe(latestTimestamp, block.timestamp, "report timestamp should not exceed block time");
     }
 
     function _expectedShares(uint256 assets) internal view returns (uint256) {

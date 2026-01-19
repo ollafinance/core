@@ -81,8 +81,16 @@ contract OllaCoreTest is Test {
         uint256 bufferedAssets, uint256 stakedPrincipal, uint256 rewardsVaultBalance, uint256 rewardsDelta
     );
     event AccountingUpdated(
-        uint256 totalAssets, uint256 exchangeRate, uint256 cumulativeDeposits, uint256 cumulativeWithdrawals
+        uint256 totalAssets,
+        uint256 exchangeRate,
+        uint256 grossRewards,
+        uint256 netFlows,
+        uint256 protocolFeeAssets,
+        uint256 treasuryShares,
+        uint256 providerShares,
+        uint256 timestamp
     );
+    event ValidatorStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
     event WithdrawalFinalized(uint256 available, uint256 used);
     event Upgraded(address indexed implementation);
 
@@ -159,6 +167,7 @@ contract OllaCoreTest is Test {
         assertEq(vault.rewardsVault(), rewardsVault, "rewards vault set");
         assertEq(vault.safetyModule(), safetyModule, "safety module set");
         assertEq(vault.storedExchangeRate(), 1e18, "exchange rate init");
+        assertEq(vault.lastTotalAssets(), 0, "lastTotalAssets init");
     }
 
     function test_RevertWhen_Reinitialize() external {
@@ -213,8 +222,11 @@ contract OllaCoreTest is Test {
         vault.rebalance();
 
         uint256 expectedExchangeRate = vault.exchangeRate();
+        uint256 expectedTimestamp = block.timestamp;
         vm.expectEmit(true, true, true, true, address(vault));
-        emit AccountingUpdated(0, expectedExchangeRate, 0, 0);
+        emit ValidatorStateRead(0, 0, expectedTimestamp);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit AccountingUpdated(0, expectedExchangeRate, 0, 0, 0, 0, 0, expectedTimestamp);
         vm.prank(operator);
         vault.updateAccounting();
 
@@ -393,6 +405,79 @@ contract OllaCoreTest is Test {
         vault.exposedSetSlashingDelta(slashingDelta, EXPECTED_REASON_SLASH);
 
         assertEq(vault.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
+    }
+
+    function test_UpdateAccountingSnapshots() external {
+        uint256 depositAmount = 25 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        assertEq(vault.lastTotalAssets(), 0, "lastTotalAssets before update");
+        assertEq(vault.lastReportDeposits(), 0, "lastReportDeposits before update");
+        assertEq(vault.lastReportWithdrawals(), 0, "lastReportWithdrawals before update");
+
+        uint256 expectedRate = vault.exchangeRate();
+        uint256 expectedTimestamp = block.timestamp;
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit ValidatorStateRead(0, 0, expectedTimestamp);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit AccountingUpdated(depositAmount, expectedRate, 0, depositAmount, 0, 0, 0, expectedTimestamp);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        assertEq(vault.lastTotalAssets(), depositAmount, "lastTotalAssets updated");
+        assertEq(vault.storedExchangeRate(), expectedRate, "stored exchange rate updated");
+        assertEq(vault.lastReportDeposits(), depositAmount, "lastReportDeposits updated");
+        assertEq(vault.lastReportWithdrawals(), 0, "lastReportWithdrawals updated");
+        assertEq(vault.cumulativeDeposits(), depositAmount, "cumulative deposits tracked");
+        assertEq(vault.storedExchangeRate(), expectedRate, "latest report exchange rate stored");
+        assertEq(vault.lastReportTimestamp(), expectedTimestamp, "report timestamp updated");
+    }
+
+    function test_UpdateAccountingTimestampMonotonic() external {
+        _performDeposit(alice, 5 * DECIMALS);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+        uint256 firstTimestamp = vault.lastReportTimestamp();
+
+        vm.warp(firstTimestamp + 1);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        uint256 secondTimestamp = vault.lastReportTimestamp();
+        assertGt(secondTimestamp, firstTimestamp, "report timestamp should increase");
+    }
+
+    function test_UpdateAccountingIncludesRewardsAndSlashing() external {
+        uint256 depositAmount = 20 * DECIMALS;
+        uint256 rewards = 5 * DECIMALS;
+        uint256 slashing = 2 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+        vm.prank(operator);
+        vault.exposedSetRewardsDelta(rewards, EXPECTED_REASON_REWARD);
+        vm.prank(operator);
+        vault.exposedSetSlashingDelta(slashing, EXPECTED_REASON_SLASH);
+
+        uint256 expectedTotalAssets = depositAmount + rewards - slashing;
+        uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
+        uint256 expectedGrossRewards = rewards > slashing ? rewards - slashing : 0;
+
+        uint256 expectedTimestamp = block.timestamp;
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit ValidatorStateRead(rewards, slashing, expectedTimestamp);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit AccountingUpdated(
+            expectedTotalAssets, expectedRate, expectedGrossRewards, depositAmount, 0, 0, 0, expectedTimestamp
+        );
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        assertEq(vault.lastTotalAssets(), expectedTotalAssets, "lastTotalAssets updated");
+        assertEq(vault.storedExchangeRate(), expectedRate, "stored exchange rate updated");
+        assertEq(vault.lastReportDeposits(), depositAmount, "lastReportDeposits updated");
+        assertEq(vault.lastReportWithdrawals(), 0, "lastReportWithdrawals updated");
     }
 
     function test_RevertWhen_BufferedBalanceMismatch() external {
