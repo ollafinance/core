@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
+import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
@@ -14,7 +16,14 @@ import { IStAztec } from "src/interfaces/IStAztec.sol";
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
 /// @author Olla Core contributors
-contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore {
+contract OllaCore is
+    Initializable,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    IOllaCore
+{
     using SafeERC20 for IERC20;
     using Math for uint256;
 
@@ -26,12 +35,28 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
         uint256 slashingDelta;
     }
 
+    struct ReportingState {
+        uint256 exchangeRateStored;
+        uint256 lastTotalAssets;
+        uint256 cumulativeDeposits;
+        uint256 cumulativeWithdrawals;
+        uint256 lastReportDeposits;
+        uint256 lastReportWithdrawals;
+    }
+
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
     uint8 private constant _BUCKET_ID_BUFFERED = 0;
     uint8 private constant _BUCKET_ID_STAKED_PRINCIPAL = 1;
     uint8 private constant _BUCKET_ID_REWARDS_VAULT = 2;
     uint8 private constant _BUCKET_ID_REWARDS_DELTA = 3;
     uint8 private constant _BUCKET_ID_SLASHING_DELTA = 4;
+
+    /// @notice Role for guardian pause/unpause actions.
+    bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
+    /// @notice Role for operator accounting actions.
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
+    /// @notice Role for core module callbacks.
+    bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
 
     // slither-disable-start unused-state
     bytes32 private constant _BUCKET_UPDATE_REASON_DEPOSIT = "DEPOSIT";
@@ -41,10 +66,17 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
     bytes32 private constant _BUCKET_UPDATE_REASON_SLASH = "SLASH";
     // slither-disable-end unused-state
 
+    /// @notice Contract related interfaces and addresses
     IERC20 private _asset;
     IStAztec private _stAztec;
     IStakingManager private _stakingManager;
     address private _governance;
+    address private _withdrawalQueue;
+    address private _rewardsVault;
+    address private _safetyModule;
+
+    /// @notice Accounting and reporting values
+    ReportingState private _reporting;
 
     uint256 private _stakeMessageId;
     uint256 private _unstakeMessageId;
@@ -54,7 +86,7 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[47] private __gap;
+    uint256[36] private __gap;
 
     /// @notice Thrown when a pending withdrawal already exists.
     error OllaCorePendingWithdrawalExists(address owner);
@@ -87,34 +119,60 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
         _disableInitializers();
     }
 
-    /// @notice Initializes the vault with asset and stAztec addresses.
+    /// @notice Initializes the vault with asset and module addresses.
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
     /// @param stakingManager_ The staking manager for delegation messaging.
     /// @param governance_ The governance address authorized to upgrade.
-    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_, address governance_)
-        external
-        override
-        initializer
-    {
+    /// @param withdrawalQueue_ The withdrawal queue module address.
+    /// @param rewardsVault_ The rewards vault module address.
+    /// @param safetyModule_ The safety module address.
+    function initialize(
+        IERC20 asset_,
+        IStAztec stAztec_,
+        IStakingManager stakingManager_,
+        address governance_,
+        address withdrawalQueue_,
+        address rewardsVault_,
+        address safetyModule_
+    ) external override initializer {
         if (
             address(asset_) == address(0) || address(stAztec_) == address(0) || address(stakingManager_) == address(0)
-                || governance_ == address(0)
+                || governance_ == address(0) || withdrawalQueue_ == address(0) || rewardsVault_ == address(0)
+                || safetyModule_ == address(0)
         ) {
             revert OllaCoreZeroAddress();
         }
+
+        __AccessControl_init();
+        __Pausable_init();
 
         _asset = asset_;
         _stAztec = stAztec_;
         _stakingManager = stakingManager_;
         _governance = governance_;
+        _withdrawalQueue = withdrawalQueue_;
+        _rewardsVault = rewardsVault_;
+        _safetyModule = safetyModule_;
+        _reporting.exchangeRateStored = _EXCHANGE_RATE_SCALE;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, governance_);
+        _grantRole(GUARDIAN_ROLE, governance_);
+        _grantRole(CORE_ROLE, address(this));
+        _grantRole(OPERATOR_ROLE, governance_);
     }
 
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param receiver The recipient of the stAztec shares.
     /// @return shares The shares minted to the receiver.
-    function deposit(uint256 assets, address receiver) external override nonReentrant returns (uint256 shares) {
+    function deposit(uint256 assets, address receiver)
+        external
+        override
+        nonReentrant
+        whenNotPaused
+        returns (uint256 shares)
+    {
         if (receiver == address(0)) {
             revert OllaCoreZeroAddress();
         }
@@ -123,6 +181,8 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
         _increaseBuffered(assets, _BUCKET_UPDATE_REASON_DEPOSIT);
         _asset.safeTransferFrom(msg.sender, address(this), assets);
         _syncBufferedWithBalance();
+        _increaseCumulativeDeposits(assets);
+
         _stAztec.mint(receiver, shares);
         emit Deposit(msg.sender, receiver, assets, shares);
         return shares;
@@ -137,6 +197,7 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
         external
         override
         nonReentrant
+        whenNotPaused
         returns (uint256 assets)
     {
         assets = _convertToAssetsForRedeem(shares);
@@ -148,7 +209,7 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
     /// @notice Claims a pending withdrawal for an owner.
     /// @param owner The owner of the pending withdrawal.
     /// @return assets The assets transferred to the receiver.
-    function claimPendingWithdraw(address owner) external override nonReentrant returns (uint256 assets) {
+    function claimPendingWithdraw(address owner) external override nonReentrant whenNotPaused returns (uint256 assets) {
         PendingWithdrawal memory pending = _pendingWithdrawals[owner];
         if (pending.shares == 0) {
             revert OllaCoreNoPendingWithdrawal(owner);
@@ -168,6 +229,43 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
 
         emit ClaimRedeem(owner, pending.receiver, assets, pending.shares);
         return assets;
+    }
+
+    /// @notice Pauses deposits and withdrawals.
+    function pause() external override onlyRole(GUARDIAN_ROLE) {
+        _pause();
+        emit Paused();
+    }
+
+    /// @notice Unpauses deposits and withdrawals.
+    function unpause() external override onlyRole(GUARDIAN_ROLE) {
+        _unpause();
+        emit Unpaused();
+    }
+
+    /// @notice Stubbed operator rebalance hook.
+    function rebalance() external override onlyRole(OPERATOR_ROLE) {
+        emit Rebalanced(0, 0, 0, 0);
+    }
+
+    /// @notice Stubbed operator accounting update hook.
+    function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
+        _applyAccountingUpdates(0, 0, 0, 0);
+        _updateReportingSnapshots();
+        emit AccountingUpdated(
+            _reporting.lastTotalAssets,
+            _reporting.exchangeRateStored,
+            _reporting.cumulativeDeposits,
+            _reporting.cumulativeWithdrawals
+        );
+    }
+
+    /// @notice Stubbed operator withdrawal finalization hook.
+    /// @param available The available assets for withdrawals.
+    /// @return used The assets used for finalization.
+    function finalizeWithdrawals(uint256 available) external override onlyRole(OPERATOR_ROLE) returns (uint256 used) {
+        emit WithdrawalFinalized(available, 0);
+        return 0;
     }
 
     /// @notice Returns the underlying asset address.
@@ -192,6 +290,60 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
     /// @return The governance address.
     function governance() external view override returns (address) {
         return _governance;
+    }
+
+    /// @notice Returns the withdrawal queue module address.
+    /// @return The withdrawal queue address.
+    function withdrawalQueue() external view override returns (address) {
+        return _withdrawalQueue;
+    }
+
+    /// @notice Returns the rewards vault module address.
+    /// @return The rewards vault address.
+    function rewardsVault() external view override returns (address) {
+        return _rewardsVault;
+    }
+
+    /// @notice Returns the safety module address.
+    /// @return The safety module address.
+    function safetyModule() external view override returns (address) {
+        return _safetyModule;
+    }
+
+    /// @notice Returns the stored exchange rate.
+    /// @return The stored exchange rate.
+    function storedExchangeRate() external view override returns (uint256) {
+        return _reporting.exchangeRateStored;
+    }
+
+    /// @notice Returns the last total assets snapshot.
+    /// @return The last total assets value.
+    function lastTotalAssets() external view override returns (uint256) {
+        return _reporting.lastTotalAssets;
+    }
+
+    /// @notice Returns cumulative deposits.
+    /// @return The cumulative deposits value.
+    function cumulativeDeposits() external view override returns (uint256) {
+        return _reporting.cumulativeDeposits;
+    }
+
+    /// @notice Returns cumulative withdrawals.
+    /// @return The cumulative withdrawals value.
+    function cumulativeWithdrawals() external view override returns (uint256) {
+        return _reporting.cumulativeWithdrawals;
+    }
+
+    /// @notice Returns last report deposits snapshot.
+    /// @return The last report deposits.
+    function lastReportDeposits() external view override returns (uint256) {
+        return _reporting.lastReportDeposits;
+    }
+
+    /// @notice Returns last report withdrawals snapshot.
+    /// @return The last report withdrawals.
+    function lastReportWithdrawals() external view override returns (uint256) {
+        return _reporting.lastReportWithdrawals;
     }
 
     /// @notice Returns the buffered assets held by the vault.
@@ -244,7 +396,8 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
     /// Formula: shares * totalAssets / totalSupply (floor), shares if supply == 0.
     function convertToAssets(uint256 shares) external view override returns (uint256 assets) {
         uint256 rate = _exchangeRate();
-        return shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        assets = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        return assets;
     }
 
     /// @notice Returns the shares previewed for a deposit.
@@ -263,9 +416,17 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
 
     /// @notice Returns the pending withdrawal for an owner.
     /// @param owner The owner to query.
-    /// @return The pending withdrawal details.
-    function pendingWithdrawal(address owner) external view override returns (PendingWithdrawal memory) {
-        return _pendingWithdrawals[owner];
+    /// @return pending The pending withdrawal details.
+    function pendingWithdrawal(address owner) external view override returns (PendingWithdrawal memory pending) {
+        pending = _pendingWithdrawals[owner];
+        return pending;
+    }
+
+    /// @notice Returns true if the interface is supported.
+    /// @param interfaceId The interface identifier.
+    /// @return True if supported.
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControlUpgradeable) returns (bool) {
+        return super.supportsInterface(interfaceId);
     }
 
     /// @notice Returns the current total assets held by the vault.
@@ -274,15 +435,6 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
         AccountingBuckets storage buckets = _accountingBuckets;
         return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.rewardsDelta
             - buckets.slashingDelta;
-    }
-
-    function _authorizeUpgrade(address newImplementation) internal override {
-        if (msg.sender != _governance) {
-            revert OllaCoreUnauthorizedGovernance(msg.sender);
-        }
-        if (newImplementation == address(0)) {
-            revert OllaCoreZeroAddress();
-        }
     }
 
     function _requestWithdrawal(uint256 shares, uint256 assets, address receiver, address owner) internal {
@@ -305,7 +457,18 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
 
         _pendingWithdrawals[owner] = PendingWithdrawal({ shares: shares, assets: assets, receiver: receiver });
 
+        _increaseCumulativeWithdrawals(assets);
+
         _stAztec.burn(owner, shares);
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (msg.sender != _governance) {
+            revert OllaCoreUnauthorizedGovernance(msg.sender);
+        }
+        if (newImplementation == address(0)) {
+            revert OllaCoreZeroAddress();
+        }
     }
 
     // slither-disable-next-line dead-code
@@ -326,6 +489,51 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
 
     function _clearPendingWithdrawal(address owner) internal {
         delete _pendingWithdrawals[owner];
+    }
+
+    function _increaseCumulativeDeposits(uint256 amount) internal {
+        _reporting.cumulativeDeposits += amount;
+    }
+
+    function _increaseCumulativeWithdrawals(uint256 amount) internal {
+        _reporting.cumulativeWithdrawals += amount;
+    }
+
+    // slither-disable-start pess-multiple-storage-read
+    function _updateReportingSnapshots() internal {
+        uint256 total = totalAssets();
+        uint256 rate = _exchangeRate();
+
+        ReportingState storage reporting = _reporting;
+        reporting.lastTotalAssets = total;
+        reporting.exchangeRateStored = rate;
+    }
+
+    function _applyAccountingUpdates(
+        uint256 newStakedPrincipal,
+        uint256 newRewardsVaultBalance,
+        uint256 newRewardsDelta,
+        uint256 newSlashingDelta
+    ) internal {
+        bytes32 stakeReason = _BUCKET_UPDATE_REASON_STAKE;
+        bytes32 unstakeReason = _BUCKET_UPDATE_REASON_UNSTAKE;
+
+        uint256 currentStaked = _accountingBuckets.stakedPrincipal;
+        if (newStakedPrincipal > currentStaked) {
+            _increaseStakedPrincipal(newStakedPrincipal - currentStaked, stakeReason);
+        } else if (newStakedPrincipal < currentStaked) {
+            _decreaseStakedPrincipal(currentStaked - newStakedPrincipal, unstakeReason);
+        }
+
+        uint256 currentRewardsVault = _accountingBuckets.rewardsVaultBalance;
+        if (newRewardsVaultBalance > currentRewardsVault) {
+            _increaseRewardsVaultBalance(newRewardsVaultBalance - currentRewardsVault, stakeReason);
+        } else if (newRewardsVaultBalance < currentRewardsVault) {
+            _decreaseRewardsVaultBalance(currentRewardsVault - newRewardsVaultBalance, unstakeReason);
+        }
+
+        _setRewardsDelta(newRewardsDelta, stakeReason);
+        _setSlashingDelta(newSlashingDelta, _BUCKET_UPDATE_REASON_SLASH);
     }
 
     function _increaseBuffered(uint256 amount, bytes32 reason) internal {
@@ -352,7 +560,7 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
     }
 
     // slither-disable-next-line dead-code
-    function _increaseStakedPrincipal(uint256 amount, bytes32 reason) internal {
+    function _increaseStakedPrincipal(uint256 amount, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
@@ -363,7 +571,7 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
     }
 
     // slither-disable-next-line dead-code
-    function _decreaseStakedPrincipal(uint256 amount, bytes32 reason) internal {
+    function _decreaseStakedPrincipal(uint256 amount, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
@@ -377,7 +585,7 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
     }
 
     // slither-disable-next-line dead-code
-    function _increaseRewardsVaultBalance(uint256 amount, bytes32 reason) internal {
+    function _increaseRewardsVaultBalance(uint256 amount, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
             revert OllaCoreInvalidAmount();
         }
@@ -388,14 +596,28 @@ contract OllaCore is Initializable, UUPSUpgradeable, ReentrancyGuard, IOllaCore 
     }
 
     // slither-disable-next-line dead-code
-    function _setRewardsDelta(uint256 newValue, bytes32 reason) internal {
+    function _decreaseRewardsVaultBalance(uint256 amount, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
+        if (amount == 0) {
+            revert OllaCoreInvalidAmount();
+        }
+        uint256 oldValue = _accountingBuckets.rewardsVaultBalance;
+        if (amount > oldValue) {
+            revert OllaCoreInsufficientBucketBalance(_BUCKET_ID_REWARDS_VAULT, amount, oldValue);
+        }
+        uint256 newValue = oldValue - amount;
+        _accountingBuckets.rewardsVaultBalance = newValue;
+        emit BucketUpdated(_BUCKET_ID_REWARDS_VAULT, oldValue, newValue, reason);
+    }
+
+    // slither-disable-next-line dead-code
+    function _setRewardsDelta(uint256 newValue, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
         uint256 oldValue = _accountingBuckets.rewardsDelta;
         _accountingBuckets.rewardsDelta = newValue;
         emit BucketUpdated(_BUCKET_ID_REWARDS_DELTA, oldValue, newValue, reason);
     }
 
     // slither-disable-next-line dead-code
-    function _setSlashingDelta(uint256 newValue, bytes32 reason) internal {
+    function _setSlashingDelta(uint256 newValue, bytes32 reason) internal onlyRole(OPERATOR_ROLE) {
         uint256 oldValue = _accountingBuckets.slashingDelta;
         _accountingBuckets.slashingDelta = newValue;
         emit BucketUpdated(_BUCKET_ID_SLASHING_DELTA, oldValue, newValue, reason);

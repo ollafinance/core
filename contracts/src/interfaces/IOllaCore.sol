@@ -71,6 +71,51 @@ interface IOllaCore {
     /// @param newValue The updated bucket value.
     /// @param reason The reason code for the update.
     event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
+
+    /// @notice Emitted when accounting is updated.
+    /// @param totalAssets Total assets snapshot.
+    /// @param exchangeRate Stored exchange rate snapshot.
+    /// @param cumulativeDeposits Lifetime deposits.
+    /// @param cumulativeWithdrawals Lifetime withdrawals.
+    event AccountingUpdated(
+        uint256 totalAssets, uint256 exchangeRate, uint256 cumulativeDeposits, uint256 cumulativeWithdrawals
+    );
+
+    /// @notice Emitted when validator state is read.
+    /// @param rewardsDelta Rewards delta snapshot.
+    /// @param slashingDelta Slashing delta snapshot.
+    /// @param timestamp Timestamp of the read.
+    event ValidatorStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
+
+    /// @notice Emitted when a rebalance occurs.
+    /// @param bufferedAssets Buffered asset snapshot.
+    /// @param stakedPrincipal Staked principal snapshot.
+    /// @param rewardsVaultBalance Rewards vault balance snapshot.
+    /// @param rewardsDelta Rewards delta snapshot.
+    event Rebalanced(
+        uint256 bufferedAssets, uint256 stakedPrincipal, uint256 rewardsVaultBalance, uint256 rewardsDelta
+    );
+
+    /// @notice Emitted when withdrawals are finalized.
+    /// @param available Available assets.
+    /// @param used Used assets.
+    event WithdrawalFinalized(uint256 available, uint256 used);
+
+    /// @notice Emitted when a withdrawal is claimed via queue.
+    /// @param requestId Withdrawal request id.
+    /// @param receiver Receiver address.
+    /// @param assets Assets claimed.
+    event WithdrawalClaimed(uint256 requestId, address receiver, uint256 assets);
+
+    /// @notice Emitted when rewards are harvested.
+    /// @param harvested Harvested reward amount.
+    event RewardsHarvested(uint256 harvested);
+
+    /// @notice Emitted when the core is paused.
+    event Paused();
+
+    /// @notice Emitted when the core is unpaused.
+    event Unpaused();
     // solhint-enable gas-indexed-events
 
     // solhint-disable max-line-length
@@ -79,7 +124,18 @@ interface IOllaCore {
     /// @param stAztec_ The stAztec share token.
     /// @param stakingManager_ The staking manager for delegation messaging.
     /// @param governance_ The governance address authorized to upgrade.
-    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_, address governance_) external;
+    /// @param withdrawalQueue_ The withdrawal queue module address.
+    /// @param rewardsVault_ The rewards vault module address.
+    /// @param safetyModule_ The safety module address.
+    function initialize(
+        IERC20 asset_,
+        IStAztec stAztec_,
+        IStakingManager stakingManager_,
+        address governance_,
+        address withdrawalQueue_,
+        address rewardsVault_,
+        address safetyModule_
+    ) external;
     // solhint-enable max-line-length
 
     /// @notice Deposits assets and mints stAztec shares.
@@ -100,6 +156,23 @@ interface IOllaCore {
     /// @return assets The assets transferred to the receiver.
     function claimPendingWithdraw(address owner) external returns (uint256 assets);
 
+    /// @notice Pauses deposits and withdrawals.
+    function pause() external;
+
+    /// @notice Unpauses deposits and withdrawals.
+    function unpause() external;
+
+    /// @notice Operator-triggered rebalance hook.
+    function rebalance() external;
+
+    /// @notice Operator-triggered accounting update hook.
+    function updateAccounting() external;
+
+    /// @notice Operator-triggered withdrawal finalization hook.
+    /// @param available The available assets for withdrawals.
+    /// @return used The assets used for finalization.
+    function finalizeWithdrawals(uint256 available) external returns (uint256 used);
+
     /// @notice Returns the underlying asset address.
     /// @return The underlying asset address.
     function asset() external view returns (address);
@@ -115,6 +188,42 @@ interface IOllaCore {
     /// @notice Returns the governance address.
     /// @return The governance address.
     function governance() external view returns (address);
+
+    /// @notice Returns the withdrawal queue module address.
+    /// @return The withdrawal queue address.
+    function withdrawalQueue() external view returns (address);
+
+    /// @notice Returns the rewards vault module address.
+    /// @return The rewards vault address.
+    function rewardsVault() external view returns (address);
+
+    /// @notice Returns the safety module address.
+    /// @return The safety module address.
+    function safetyModule() external view returns (address);
+
+    /// @notice Returns the stored exchange rate snapshot.
+    /// @return The stored exchange rate.
+    function storedExchangeRate() external view returns (uint256);
+
+    /// @notice Returns the last total assets snapshot.
+    /// @return The last total assets value.
+    function lastTotalAssets() external view returns (uint256);
+
+    /// @notice Returns cumulative deposits.
+    /// @return The cumulative deposits value.
+    function cumulativeDeposits() external view returns (uint256);
+
+    /// @notice Returns cumulative withdrawals.
+    /// @return The cumulative withdrawals value.
+    function cumulativeWithdrawals() external view returns (uint256);
+
+    /// @notice Returns last report deposits snapshot.
+    /// @return The last report deposits value.
+    function lastReportDeposits() external view returns (uint256);
+
+    /// @notice Returns last report withdrawals snapshot.
+    /// @return The last report withdrawals value.
+    function lastReportWithdrawals() external view returns (uint256);
 
     /// @notice Returns the buffered assets held by the vault.
     /// @return The buffered asset amount.
