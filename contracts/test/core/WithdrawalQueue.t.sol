@@ -89,7 +89,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 10, 100, 1e18);
 
         vm.expectRevert(abi.encodeWithSelector(WithdrawalQueue.WithdrawalQueueNotFinalized.selector, 1));
-        queue.claim(1);
+        queue.claimWithdrawal(1);
     }
 
     function test_Claim_RevertWhen_AlreadyClaimed() public {
@@ -99,10 +99,10 @@ contract WithdrawalQueueTest is Test {
         vm.prank(core);
         queue.finalizeWithdrawals(200);
 
-        queue.claim(1);
+        queue.claimWithdrawal(1);
 
         vm.expectRevert(abi.encodeWithSelector(WithdrawalQueue.WithdrawalQueueAlreadyClaimed.selector, 1));
-        queue.claim(1);
+        queue.claimWithdrawal(1);
     }
 
     function test_Claim_ReturnsAssetsExpected() public {
@@ -117,7 +117,7 @@ contract WithdrawalQueueTest is Test {
         emit WithdrawalClaimed(1, alice, 150);
 
         vm.prank(caller);
-        uint256 assets = queue.claim(1);
+        uint256 assets = queue.claimWithdrawal(1);
 
         assertEq(assets, 150, "claim should return the expected assets");
         assertEq(queue.totalPendingAssets(), 0, "claim should not change pending totals");
