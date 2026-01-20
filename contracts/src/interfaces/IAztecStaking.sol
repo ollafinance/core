@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
+import { AttesterView } from "src/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IAztecStaking
@@ -58,4 +59,6 @@ interface IAztecStaking {
     /// @notice Returns the activation threshold amount.
     /// @return The stake amount required per attester.
     function getActivationThreshold() external view returns (uint256);
+
+    function getAttesterView(address _attester) external view returns (AttesterView memory);
 }

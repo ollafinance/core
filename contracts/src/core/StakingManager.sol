@@ -354,7 +354,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             // Get last activated attester (more efficient removal)
             address attester = _activatedAttesters[_activatedAttesters.length - 1];
 
-            // Initiate withdrawal on rollup (return value intentionally ignored - we track state ourselves)
+            // Initiate withdrawal on rollup
+            // WARNING: With Aztec version 3.0.1 only true is returned, so we ignore it here. It might be that we need to change this in the future.
             // slither-disable-next-line unused-return
             rollup.initiateWithdraw(attester, address(this));
 
@@ -383,31 +384,29 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
+
     function _claimUnstakedFunds() internal returns (uint256 claimed) {
         // Get canonical rollup from registry
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
 
-        uint256 i = 0;
-        claimed = 0;
+        // Snapshot balance before the loop
+        uint256 balanceBefore = STAKING_ASSET.balanceOf(address(this));
 
+        uint256 i = 0;
         // Loop over pending requests to claim matured withdrawals (intentional batch operation)
         while (i < _pendingUnstakeRequests.length) {
             UnstakeRequest memory request = _pendingUnstakeRequests[i];
-
             // Try to finalize this withdrawal
             // solhint-disable-next-line no-empty-blocks
             try rollup.finalizeWithdraw(request.attester) {
-                claimed += request.amount;
                 _isUnstakePending[request.attester] = false;
-
                 // Remove from pending list (swap and pop)
                 uint256 lastIndex = _pendingUnstakeRequests.length - 1;
                 if (i != lastIndex) {
                     _pendingUnstakeRequests[i] = _pendingUnstakeRequests[lastIndex];
                 }
                 _pendingUnstakeRequests.pop();
-
                 // Don't increment i, we moved a new element to this position
             } catch {
                 // Withdrawal not ready yet, skip
@@ -415,13 +414,16 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             }
         }
 
+        // Compute total claimed after the loop
+        uint256 balanceAfter = STAKING_ASSET.balanceOf(address(this));
+        claimed = balanceAfter - balanceBefore;
+
         if (claimed > 0) {
             _pendingUnstakes -= claimed;
             // Transfer claimed funds to core
             STAKING_ASSET.safeTransfer(CORE, claimed);
             emit UnstakedFundsClaimed(claimed);
         }
-
         return claimed;
     }
 
