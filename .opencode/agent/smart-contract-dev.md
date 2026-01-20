@@ -113,6 +113,11 @@ Test Naming:
 - `testFork_Scenario` for fork tests
   </naming_conventions>
 
+<solidity_optimization>
+
+- Use `++variableName`/`--variableName` when incrementing/decrementing by 1
+  </solidity_optimization>
+
 <testing_requirements>
 Unit Testing:
 
