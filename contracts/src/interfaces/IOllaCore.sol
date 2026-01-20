@@ -95,11 +95,11 @@ interface IOllaCore {
         uint256 timestamp
     );
 
-    /// @notice Emitted when validator state is read.
+    /// @notice Emitted when attester state is read.
     /// @param rewardsDelta Rewards delta snapshot.
     /// @param slashingDelta Slashing delta snapshot.
     /// @param timestamp Timestamp of the read.
-    event ValidatorStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
+    event AttestersStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
 
     /// @notice Emitted when a rebalance occurs.
     /// @param bufferedAssets Buffered asset snapshot.

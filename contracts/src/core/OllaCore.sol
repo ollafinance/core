@@ -260,7 +260,7 @@ contract OllaCore is
             flowsSnapshot.cumulativeWithdrawals
         );
 
-        emit ValidatorStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
+        emit AttestersStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
         emit AccountingUpdated(newTotalAssets, rate, grossRewards, netFlows, 0, 0, 0, _latestReport.timestamp);
     }
 
