@@ -18,6 +18,8 @@
     "test": "yarn test:unit && yarn test:invariant && yarn test:integration",
     "test:unit": "cd contracts && forge test --match-path \"test/**/*.t.sol\" --no-match-path \"test/**/*.integration.sol\"",
     "test:invariant": "cd contracts && forge test --match-path \"test/**/*.invariant.sol\"",
-    "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.sol\""
+    "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.sol\"",
+    "dev:chain": "docker-compose up -d && echo 'Waiting for Anvil...' && sleep 3 && cd contracts && forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 && cd .. && node scripts/sync-frontend.js",
+    "stop:chain": "docker-compose down"
   }
 }
