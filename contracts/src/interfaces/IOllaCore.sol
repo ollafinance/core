@@ -112,7 +112,7 @@ interface IOllaCore {
     /// @param rewardsDelta Rewards delta snapshot.
     /// @param slashingDelta Slashing delta snapshot.
     /// @param timestamp Timestamp of the read.
-    event AttesterStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
+    event AttestersStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
 
     /// @notice Emitted when a rebalance occurs.
     /// @param bufferedAssets Buffered asset snapshot.
