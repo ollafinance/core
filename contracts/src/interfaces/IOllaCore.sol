@@ -16,6 +16,29 @@ interface IOllaCore {
         address receiver;
     }
 
+    struct AccountingState {
+        uint256 bufferedAssets;
+        uint256 stakedPrincipal;
+        uint256 rewardsVaultBalance;
+        uint256 rewardsDelta;
+        uint256 slashingDelta;
+    }
+
+    struct FlowCounters {
+        uint256 cumulativeDeposits;
+        uint256 cumulativeWithdrawals;
+        uint256 latestReportCumulativeDeposits;
+        uint256 latestReportCumulativeWithdrawals;
+    }
+
+    struct LatestReport {
+        uint256 totalAssets;
+        uint256 exchangeRate;
+        uint256 grossRewards;
+        uint256 netFlows;
+        uint256 timestamp;
+    }
+
     // solhint-disable gas-indexed-events
     /// @notice Emitted when a deposit is completed.
     /// @param caller The address that initiated the deposit.
@@ -65,12 +88,61 @@ interface IOllaCore {
     /// @param amount The amount requested to unstake.
     event UnstakeRequested(uint256 indexed messageId, uint256 amount);
 
-    /// @notice Emitted when a bucket value changes.
-    /// @param bucketId The bucket identifier.
-    /// @param oldValue The previous bucket value.
-    /// @param newValue The updated bucket value.
-    /// @param reason The reason code for the update.
-    event BucketUpdated(uint8 bucketId, uint256 oldValue, uint256 newValue, bytes32 reason);
+    /// @notice Emitted when accounting is updated.
+    /// @param totalAssets Total assets snapshot.
+    /// @param exchangeRate Stored exchange rate snapshot.
+    /// @param grossRewards Gross rewards since last report.
+    /// @param netFlows Net deposits minus withdrawals since last report.
+    /// @param protocolFeeAssets Protocol fee amount in assets.
+    /// @param treasuryShares Treasury fee shares minted.
+    /// @param providerShares Provider fee shares minted.
+    /// @param timestamp Timestamp of the report.
+    event AccountingUpdated(
+        uint256 totalAssets,
+        uint256 exchangeRate,
+        uint256 grossRewards,
+        uint256 netFlows,
+        uint256 protocolFeeAssets,
+        uint256 treasuryShares,
+        uint256 providerShares,
+        uint256 timestamp
+    );
+
+    /// @notice Emitted when validator state is read.
+    /// @param rewardsDelta Rewards delta snapshot.
+    /// @param slashingDelta Slashing delta snapshot.
+    /// @param timestamp Timestamp of the read.
+    event ValidatorStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
+
+    /// @notice Emitted when a rebalance occurs.
+    /// @param bufferedAssets Buffered asset snapshot.
+    /// @param stakedPrincipal Staked principal snapshot.
+    /// @param rewardsVaultBalance Rewards vault balance snapshot.
+    /// @param rewardsDelta Rewards delta snapshot.
+    event Rebalanced(
+        uint256 bufferedAssets, uint256 stakedPrincipal, uint256 rewardsVaultBalance, uint256 rewardsDelta
+    );
+
+    /// @notice Emitted when withdrawals are finalized.
+    /// @param available Available assets.
+    /// @param used Used assets.
+    event WithdrawalFinalized(uint256 available, uint256 used);
+
+    /// @notice Emitted when a withdrawal is claimed via queue.
+    /// @param requestId Withdrawal request id.
+    /// @param receiver Receiver address.
+    /// @param assets Assets claimed.
+    event WithdrawalClaimed(uint256 requestId, address receiver, uint256 assets);
+
+    /// @notice Emitted when rewards are harvested.
+    /// @param harvested Harvested reward amount.
+    event RewardsHarvested(uint256 harvested);
+
+    /// @notice Emitted when the core is paused.
+    event Paused();
+
+    /// @notice Emitted when the core is unpaused.
+    event Unpaused();
     // solhint-enable gas-indexed-events
 
     // solhint-disable max-line-length
@@ -79,7 +151,18 @@ interface IOllaCore {
     /// @param stAztec_ The stAztec share token.
     /// @param stakingManager_ The staking manager for delegation messaging.
     /// @param governance_ The governance address authorized to upgrade.
-    function initialize(IERC20 asset_, IStAztec stAztec_, IStakingManager stakingManager_, address governance_) external;
+    /// @param withdrawalQueue_ The withdrawal queue module address.
+    /// @param rewardsVault_ The rewards vault module address.
+    /// @param safetyModule_ The safety module address.
+    function initialize(
+        IERC20 asset_,
+        IStAztec stAztec_,
+        IStakingManager stakingManager_,
+        address governance_,
+        address withdrawalQueue_,
+        address rewardsVault_,
+        address safetyModule_
+    ) external;
     // solhint-enable max-line-length
 
     /// @notice Deposits assets and mints stAztec shares.
@@ -100,6 +183,23 @@ interface IOllaCore {
     /// @return assets The assets transferred to the receiver.
     function claimPendingWithdraw(address owner) external returns (uint256 assets);
 
+    /// @notice Pauses deposits and withdrawals.
+    function pause() external;
+
+    /// @notice Unpauses deposits and withdrawals.
+    function unpause() external;
+
+    /// @notice Operator-triggered rebalance hook.
+    function rebalance() external;
+
+    /// @notice Operator-triggered accounting update hook.
+    function updateAccounting() external;
+
+    /// @notice Operator-triggered withdrawal finalization hook.
+    /// @param available The available assets for withdrawals.
+    /// @return used The assets used for finalization.
+    function finalizeWithdrawals(uint256 available) external returns (uint256 used);
+
     /// @notice Returns the underlying asset address.
     /// @return The underlying asset address.
     function asset() external view returns (address);
@@ -116,25 +216,29 @@ interface IOllaCore {
     /// @return The governance address.
     function governance() external view returns (address);
 
-    /// @notice Returns the buffered assets held by the vault.
-    /// @return The buffered asset amount.
-    function bufferedAssets() external view returns (uint256);
+    /// @notice Returns the withdrawal queue module address.
+    /// @return The withdrawal queue address.
+    function withdrawalQueue() external view returns (address);
 
-    /// @notice Returns the staked principal tracked by the vault.
-    /// @return The staked principal amount.
-    function stakedPrincipal() external view returns (uint256);
+    /// @notice Returns the rewards vault module address.
+    /// @return The rewards vault address.
+    function rewardsVault() external view returns (address);
 
-    /// @notice Returns the rewards vault balance tracked by the vault.
-    /// @return The rewards vault balance amount.
-    function rewardsVaultBalance() external view returns (uint256);
+    /// @notice Returns the safety module address.
+    /// @return The safety module address.
+    function safetyModule() external view returns (address);
 
-    /// @notice Returns the claimable rewards delta.
-    /// @return The rewards delta amount.
-    function rewardsDelta() external view returns (uint256);
+    /// @notice Returns the latest accounting report snapshot.
+    /// @return The latest report struct.
+    function latestReport() external view returns (LatestReport memory);
 
-    /// @notice Returns the slashing delta applied to totals.
-    /// @return The slashing delta amount.
-    function slashingDelta() external view returns (uint256);
+    /// @notice Returns the flow counter snapshots.
+    /// @return The flow counters struct.
+    function flowCounters() external view returns (FlowCounters memory);
+
+    /// @notice Returns the accounting buckets snapshot.
+    /// @return The accounting state struct.
+    function accountingState() external view returns (AccountingState memory);
 
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
