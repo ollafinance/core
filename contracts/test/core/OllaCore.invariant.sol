@@ -45,40 +45,6 @@ contract OllaCoreHandler is Test {
         vault.deposit(assets, actor);
         vm.stopPrank();
     }
-
-    function requestRedeem(uint96 shares, uint256 actorSeed) external {
-        address actor = actors[bound(actorSeed, 0, actors.length - 1)];
-        uint256 supply = stAztec.totalSupply();
-        if (supply == 0) {
-            return;
-        }
-
-        uint256 totalAssets = vault.totalAssets();
-        if (totalAssets == 0) {
-            return;
-        }
-
-        uint256 actorShares = stAztec.balanceOf(actor);
-        if (actorShares == 0) {
-            return;
-        }
-
-        uint256 redeemShares = uint256(bound(shares, 1, actorShares));
-
-        vm.startPrank(actor);
-        vault.requestRedeem(redeemShares, actor, actor);
-        vm.stopPrank();
-    }
-
-    function claimPendingWithdraw(uint256 actorSeed) external {
-        address actor = actors[bound(actorSeed, 0, actors.length - 1)];
-        IOllaCore.PendingWithdrawal memory pending = vault.pendingWithdrawal(actor);
-        if (pending.shares == 0) {
-            return;
-        }
-
-        vault.claimPendingWithdraw(actor);
-    }
 }
 
 contract OllaCoreDepositHandler is Test {
@@ -245,11 +211,6 @@ contract OllaCoreInvariantTest is Test {
         assertEq(vault.previewDeposit(assets), _expectedShares(assets), "previewDeposit matches spec");
     }
 
-    function invariant_PreviewRedeemMatchesSpec() external view {
-        uint256 shares = bound(uint256(block.number), 1, type(uint96).max);
-        assertEq(vault.previewRedeem(shares), _expectedAssets(shares), "previewRedeem matches spec");
-    }
-
     function invariant_ZeroSupplyBehavior() external view {
         uint256 supply = stAztec.totalSupply();
         if (supply != 0) {
@@ -262,7 +223,6 @@ contract OllaCoreInvariantTest is Test {
         assertEq(vault.convertToShares(assets), assets, "zero supply: convertToShares equals assets");
         assertEq(vault.convertToAssets(shares), shares, "zero supply: convertToAssets equals shares");
         assertEq(vault.previewDeposit(assets), assets, "zero supply: previewDeposit equals assets");
-        assertEq(vault.previewRedeem(shares), shares, "zero supply: previewRedeem equals shares");
     }
 }
 
