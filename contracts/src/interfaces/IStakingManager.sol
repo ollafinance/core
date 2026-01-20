@@ -36,10 +36,21 @@ interface IStakingManager {
     /// @param attester The attester address being unstaked.
     /// @param amount The amount being unstaked.
     /// @param initiatedAt The timestamp when unstake was initiated.
+    /// @dev Kept for interface compatibility but not used in _pendingUnstakeRequests.
     struct UnstakeRequest {
         address attester;
         uint256 amount;
         uint256 initiatedAt;
+    }
+
+    /// @notice Aggregated staking state from on-chain queries.
+    /// @param stakedAmount Total amount in VALIDATING status with effectiveBalance > 0.
+    /// @param pendingUnstakeAmount Total amount in exit state, not yet exitable.
+    /// @param withdrawableAmount Total amount in exit state, now exitable.
+    struct StakingState {
+        uint256 stakedAmount;
+        uint256 pendingUnstakeAmount;
+        uint256 withdrawableAmount;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -99,6 +110,9 @@ interface IStakingManager {
     /// @notice Thrown when there are not enough keys for the stake amount.
     error StakingManager__InsufficientKeys();
 
+    /// @notice Thrown when claimed amount doesn't match expected exit amounts.
+    error StakingManager__ClaimAmountMismatch();
+
     /// @notice Thrown when stake amount is below activation threshold.
     error StakingManager__InsufficientAmount();
 
@@ -142,13 +156,15 @@ interface IStakingManager {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the current total staked principal.
-    /// @return The total staked amount.
-    function totalStaked() external view returns (uint256);
+    /// @notice Returns the estimated pending unstakes amount.
+    /// @dev This is an estimate that may differ from actual due to slashing.
+    /// @return The estimated pending unstakes.
+    function getEstimatedPendingUnstakes() external view returns (uint256);
 
-    /// @notice Returns the pending unstakes amount.
-    /// @return The pending unstakes.
-    function getPendingUnstakes() external view returns (uint256);
+    /// @notice Returns the current staking state by querying the rollup.
+    /// @dev Iterates through all attesters and queries getAttesterView for each.
+    /// @return state The aggregated staking state.
+    function getStakingState() external view returns (StakingState memory state);
 
     /// @notice Returns the provider queue length.
     /// @return The number of keys in the queue.

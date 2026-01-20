@@ -2,7 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { Exit, Status } from "src/libraries/AztecTypes.sol";
+import { AttesterView, Exit, Status } from "src/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IMockAztecRollup
@@ -157,6 +157,11 @@ interface IMockAztecRollup {
     /// @param sequencer The sequencer address.
     /// @return The sequencer rewards amount.
     function getSequencerRewards(address sequencer) external view returns (uint256);
+
+    /// @notice Returns the full attester view for an attester.
+    /// @param attester The attester address.
+    /// @return The attester view containing status, effectiveBalance, exit, and config.
+    function getAttesterView(address attester) external view returns (AttesterView memory);
 
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL PURE FUNCTIONS

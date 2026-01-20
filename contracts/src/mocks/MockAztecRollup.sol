@@ -3,7 +3,7 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-import { Exit, Status, Timestamp } from "src/libraries/AztecTypes.sol";
+import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 import { IMockAztecRollup } from "src/mocks/IMockAztecRollup.sol";
 
@@ -27,6 +27,7 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     mapping(address attester => address withdrawer) public withdrawers;
     mapping(address attester => Exit exit) private _exits;
+    mapping(address attester => G1Point publicKey) private _publicKeys;
     /// @inheritdoc IMockAztecRollup
     mapping(address sequencer => uint256 rewards) public pendingRewards;
 
@@ -55,6 +56,7 @@ contract MockAztecRollup is IMockAztecRollup {
         STAKING_ASSET.safeTransferFrom(msg.sender, address(this), _activationThreshold);
         stakes[_attester] = _activationThreshold;
         withdrawers[_attester] = _withdrawer;
+        _publicKeys[_attester] = _publicKeyInG1;
         emit Deposit(_attester, _withdrawer, _publicKeyInG1, _publicKeyInG2, _proofOfPossession, _activationThreshold);
     }
 
@@ -159,6 +161,31 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     function getSequencerRewards(address _sequencer) external view override returns (uint256) {
         return pendingRewards[_sequencer];
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function getAttesterView(address _attester) external view override returns (AttesterView memory) {
+        Exit memory exit = _exits[_attester];
+        Status status;
+        uint256 effectiveBalance;
+
+        if (exit.exists) {
+            status = exit.isRecipient ? Status.EXITING : Status.ZOMBIE;
+            effectiveBalance = 0; // Funds are in exit.amount when exiting
+        } else if (stakes[_attester] > 0) {
+            status = Status.VALIDATING;
+            effectiveBalance = stakes[_attester];
+        } else {
+            status = Status.NONE;
+            effectiveBalance = 0;
+        }
+
+        return AttesterView({
+            status: status,
+            effectiveBalance: effectiveBalance,
+            exit: exit,
+            config: AttesterConfig({ publicKey: _publicKeys[_attester], withdrawer: withdrawers[_attester] })
+        });
     }
 
     /// @inheritdoc IMockAztecRollup

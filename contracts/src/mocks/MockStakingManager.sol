@@ -18,8 +18,8 @@ contract MockStakingManager is IStakingManager {
     /// @notice Number of unstake calls received.
     uint256 public unstakeCalls;
 
-    /// @notice Simulated total staked amount.
-    uint256 private _totalStaked;
+    /// @notice Simulated staked amount for getStakingState.
+    uint256 private _stakedAmount;
 
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL FUNCTIONS
@@ -29,7 +29,7 @@ contract MockStakingManager is IStakingManager {
     /// @param amount The amount to stake.
     function stake(uint256 amount) external override {
         lastStakeAmount = amount;
-        _totalStaked += amount;
+        _stakedAmount += amount;
         ++stakeCalls;
     }
 
@@ -37,8 +37,8 @@ contract MockStakingManager is IStakingManager {
     /// @param amount The amount to unstake.
     function unStake(uint256 amount) external override {
         lastUnstakeAmount = amount;
-        if (_totalStaked >= amount) {
-            _totalStaked -= amount;
+        if (_stakedAmount >= amount) {
+            _stakedAmount -= amount;
         }
         ++unstakeCalls;
     }
@@ -63,8 +63,8 @@ contract MockStakingManager is IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
-    function totalStaked() external view override returns (uint256) {
-        return _totalStaked;
+    function getStakingState() external view override returns (StakingState memory) {
+        return StakingState({ stakedAmount: _stakedAmount, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -82,7 +82,7 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function getPendingUnstakes() external pure override returns (uint256) {
+    function getEstimatedPendingUnstakes() external pure override returns (uint256) {
         return 0;
     }
 
