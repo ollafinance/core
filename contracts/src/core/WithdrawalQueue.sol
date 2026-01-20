@@ -149,7 +149,6 @@ contract WithdrawalQueue is
         nextPendingId = requestId;
         return usedAssets;
     }
-
     // slither-disable-end pess-multiple-storage-read
 
     // slither-disable-start pess-multiple-storage-read
@@ -173,7 +172,6 @@ contract WithdrawalQueue is
         emit WithdrawalClaimed(id, request.user, assetsExpected);
         return assetsExpected;
     }
-
     // slither-disable-end pess-multiple-storage-read
 
     /// @notice Returns the request struct for a given id.
