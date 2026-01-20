@@ -138,6 +138,7 @@ contract OllaCoreInvariantTest is Test {
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
     OllaCoreHandler internal handler;
+    address internal operator;
 
     function setUp() external {
         asset = new MockAztec(address(this));
@@ -149,15 +150,26 @@ contract OllaCoreInvariantTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         address governance = makeAddr("governance");
-        vault.initialize(asset, stAztec, stakingManager, governance);
+        address withdrawalQueue = makeAddr("withdrawalQueue");
+        address rewardsVault = makeAddr("rewardsVault");
+        address safetyModule = makeAddr("safetyModule");
+        vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        operator = makeAddr("operator");
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, address(this));
+        vault.grantRole(operatorRole, operator);
+        vm.stopPrank();
 
         handler = new OllaCoreHandler(asset, vault, stAztec);
         targetContract(address(handler));
     }
 
     function invariant_TotalAssetsEqualBuckets() external view {
-        uint256 expectedTotal = vault.bufferedAssets() + vault.stakedPrincipal() + vault.rewardsVaultBalance()
-            + vault.rewardsDelta() - vault.slashingDelta();
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        uint256 expectedTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
+            + accounting.rewardsDelta - accounting.slashingDelta;
 
         assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
     }
@@ -169,41 +181,73 @@ contract OllaCoreInvariantTest is Test {
         assertEq(vault.exchangeRate(), expectedRate, "exchange rate matches totals");
     }
 
+    function invariant_StoredExchangeRateMatchesSnapshot() external {
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        uint256 supply = stAztec.totalSupply();
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        uint256 expectedRate = supply == 0 ? 1e18 : report.totalAssets.mulDiv(1e18, supply, Math.Rounding.Floor);
+
+        assertEq(report.exchangeRate, expectedRate, "stored exchange rate matches snapshot");
+        assertEq(report.totalAssets, vault.totalAssets(), "snapshot total assets matches total assets");
+        assertEq(
+            flows.latestReportCumulativeDeposits,
+            flows.cumulativeDeposits,
+            "last report deposits equals cumulative deposits"
+        );
+        assertEq(
+            flows.latestReportCumulativeWithdrawals,
+            flows.cumulativeWithdrawals,
+            "last report withdrawals equals cumulative withdrawals"
+        );
+    }
+
+    function invariant_LatestReportTimestampMonotonic() external {
+        vm.warp(block.timestamp + 1);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        uint256 latestTimestamp = report.timestamp;
+        assertLe(latestTimestamp, block.timestamp, "report timestamp should not exceed block time");
+    }
+
     function _expectedShares(uint256 assets) internal view returns (uint256) {
         uint256 supply = stAztec.totalSupply();
         if (supply == 0) {
             return assets;
         }
-
         return assets.mulDiv(supply, vault.totalAssets(), Math.Rounding.Floor);
     }
 
-    function invariant_ConvertToSharesMatchesSpec() external view {
-        uint256 assets = 1e18;
+    function _expectedAssets(uint256 shares) internal view returns (uint256) {
+        uint256 supply = stAztec.totalSupply();
+        if (supply == 0) {
+            return shares;
+        }
+        return shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Floor);
+    }
 
+    function invariant_ConvertToSharesMatchesSpec() external view {
+        uint256 assets = bound(uint256(block.timestamp), 1, type(uint96).max);
         assertEq(vault.convertToShares(assets), _expectedShares(assets), "convertToShares matches spec");
     }
 
     function invariant_ConvertToAssetsMatchesSpec() external view {
-        uint256 shares = 1e18;
-        uint256 supply = stAztec.totalSupply();
-        uint256 expectedAssets = supply == 0 ? shares : shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Floor);
-
-        assertEq(vault.convertToAssets(shares), expectedAssets, "convertToAssets matches spec");
+        uint256 shares = bound(uint256(block.number), 1, type(uint96).max);
+        assertEq(vault.convertToAssets(shares), _expectedAssets(shares), "convertToAssets matches spec");
     }
 
     function invariant_PreviewDepositMatchesSpec() external view {
-        uint256 assets = 1e18;
-
+        uint256 assets = bound(uint256(block.timestamp), 1, type(uint96).max);
         assertEq(vault.previewDeposit(assets), _expectedShares(assets), "previewDeposit matches spec");
     }
 
     function invariant_PreviewRedeemMatchesSpec() external view {
-        uint256 shares = 1e18;
-        uint256 supply = stAztec.totalSupply();
-        uint256 expectedAssets = supply == 0 ? shares : shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Ceil);
-
-        assertEq(vault.previewRedeem(shares), expectedAssets, "previewRedeem matches spec");
+        uint256 shares = bound(uint256(block.number), 1, type(uint96).max);
+        assertEq(vault.previewRedeem(shares), _expectedAssets(shares), "previewRedeem matches spec");
     }
 
     function invariant_ZeroSupplyBehavior() external view {
@@ -241,7 +285,14 @@ contract OllaCoreDepositInvariantTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         address governance = makeAddr("governance");
-        vault.initialize(asset, stAztec, stakingManager, governance);
+        address withdrawalQueue = makeAddr("withdrawalQueue");
+        address rewardsVault = makeAddr("rewardsVault");
+        address safetyModule = makeAddr("safetyModule");
+        vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.prank(governance);
+        vault.grantRole(operatorRole, address(this));
 
         handler = new OllaCoreDepositHandler(asset, vault, stAztec);
         targetContract(address(handler));
