@@ -3,7 +3,7 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 
-/// @notice Storage struct for a FIFO queue of validator KeyStores.
+/// @notice Storage struct for a FIFO queue of attester KeyStores.
 struct Queue {
     mapping(uint256 index => IStakingManager.KeyStore keyStore) keyStores;
     uint128 first;
@@ -11,7 +11,7 @@ struct Queue {
 }
 
 /// @title QueueLib
-/// @notice FIFO queue implementation for validator key management.
+/// @notice FIFO queue implementation for attester key management.
 /// @author Olla Core contributors
 library QueueLib {
     /*//////////////////////////////////////////////////////////////

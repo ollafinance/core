@@ -14,7 +14,7 @@ interface IMockAztecRollup {
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Emitted when a validator deposits stake.
+    /// @notice Emitted when a attester deposits stake.
     /// @param attester The attester address.
     /// @param withdrawer The withdrawer address.
     /// @param publicKeyInG1 The public key in G1.
@@ -71,7 +71,7 @@ interface IMockAztecRollup {
                          EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deposits stake for a new validator.
+    /// @notice Deposits stake for a new attester.
     /// @param attester The attester address.
     /// @param withdrawer The withdrawer address.
     /// @param publicKeyInG1 The public key in G1.
@@ -87,13 +87,13 @@ interface IMockAztecRollup {
         bool onCanonical
     ) external;
 
-    /// @notice Initiates withdrawal for a validator.
+    /// @notice Initiates withdrawal for a attester.
     /// @param attester The attester address.
     /// @param recipient The recipient address.
     /// @return success Whether the withdrawal was initiated.
     function initiateWithdraw(address attester, address recipient) external returns (bool success);
 
-    /// @notice Finalizes withdrawal for a validator.
+    /// @notice Finalizes withdrawal for a attester.
     /// @param attester The attester address.
     function finalizeWithdraw(address attester) external;
 
@@ -162,7 +162,7 @@ interface IMockAztecRollup {
                         EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the active attester count.
-    /// @return The count of active attesters.
-    function getActiveAttesterCount() external pure returns (uint256);
+    /// @notice Returns the activated attester count.
+    /// @return The count of activated attesters.
+    function getActivatedAttesterCount() external pure returns (uint256);
 }

@@ -114,7 +114,7 @@ contract OllaCoreTest is Test {
         uint256 providerShares,
         uint256 timestamp
     );
-    event ValidatorStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
+    event AttesterStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
     event WithdrawalFinalized(uint256 available, uint256 used);
     event Upgraded(address indexed implementation);
 
@@ -234,7 +234,7 @@ contract OllaCoreTest is Test {
         uint256 expectedExchangeRate = vault.exchangeRate();
         uint256 expectedTimestamp = block.timestamp;
         vm.expectEmit(true, true, true, true, address(vault));
-        emit ValidatorStateRead(0, 0, expectedTimestamp);
+        emit AttesterStateRead(0, 0, expectedTimestamp);
         vm.expectEmit(true, true, true, true, address(vault));
         emit AccountingUpdated(0, expectedExchangeRate, 0, 0, 0, 0, 0, expectedTimestamp);
         vm.prank(operator);
@@ -442,7 +442,7 @@ contract OllaCoreTest is Test {
         uint256 expectedRate = vault.exchangeRate();
         uint256 expectedTimestamp = block.timestamp;
         vm.expectEmit(true, true, true, true, address(vault));
-        emit ValidatorStateRead(0, 0, expectedTimestamp);
+        emit AttesterStateRead(0, 0, expectedTimestamp);
         vm.expectEmit(true, true, true, true, address(vault));
         emit AccountingUpdated(depositAmount, expectedRate, 0, depositAmount, 0, 0, 0, expectedTimestamp);
         vm.prank(operator);
@@ -528,7 +528,7 @@ contract OllaCoreTest is Test {
 
         uint256 expectedTimestamp = block.timestamp;
         vm.expectEmit(true, true, true, true, address(vault));
-        emit ValidatorStateRead(rewards, slashing, expectedTimestamp);
+        emit AttesterStateRead(rewards, slashing, expectedTimestamp);
         vm.expectEmit(true, true, true, true, address(vault));
         emit AccountingUpdated(
             expectedTotalAssets, expectedRate, expectedGrossRewards, depositAmount, 0, 0, 0, expectedTimestamp

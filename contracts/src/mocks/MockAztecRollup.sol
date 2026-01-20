@@ -162,7 +162,7 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
-    function getActiveAttesterCount() external pure override returns (uint256) {
+    function getActivatedAttesterCount() external pure override returns (uint256) {
         return 0;
     }
 }

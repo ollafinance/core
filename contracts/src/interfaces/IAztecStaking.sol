@@ -29,8 +29,8 @@ import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 /// Mitigation: Automated compatibility tests (Phase 1).
 /// @author Olla Core contributors
 interface IAztecStaking {
-    /// @notice Deposits stake for a new validator.
-    /// @param _attester The address that will act as the validator.
+    /// @notice Deposits stake for a new attester.
+    /// @param _attester The address that will act as the attester.
     /// @param _withdrawer The address that can withdraw the stake.
     /// @param _publicKeyInG1 The G1 point of the BLS public key.
     /// @param _publicKeyInG2 The G2 point of the BLS public key.
@@ -45,17 +45,17 @@ interface IAztecStaking {
         bool _moveWithLatestRollup
     ) external;
 
-    /// @notice Initiates withdrawal for a validator.
-    /// @param _attester The validator address to withdraw stake for.
+    /// @notice Initiates withdrawal for a attester.
+    /// @param _attester The attester address to withdraw stake for.
     /// @param _recipient The address that will receive the stake.
     /// @return True if withdrawal was successfully initiated.
     function initiateWithdraw(address _attester, address _recipient) external returns (bool);
 
-    /// @notice Finalizes withdrawal for a validator.
-    /// @param _attester The validator address completing withdrawal.
+    /// @notice Finalizes withdrawal for a attester.
+    /// @param _attester The attester address completing withdrawal.
     function finalizeWithdraw(address _attester) external;
 
     /// @notice Returns the activation threshold amount.
-    /// @return The stake amount required per validator.
+    /// @return The stake amount required per attester.
     function getActivationThreshold() external view returns (uint256);
 }

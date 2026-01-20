@@ -59,14 +59,14 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @dev Amount pending in unstake requests.
     uint256 private _pendingUnstakes;
 
-    /// @dev List of active attester attesters.
-    address[] private _activeAttesters;
+    /// @dev List of activated attester addresses.
+    address[] private _activatedAttesters;
 
-    /// @dev Mapping from attester to index in _activeAttesters.
+    /// @dev Mapping from attester to index in _activatedAttesters.
     mapping(address attester => uint256 index) private _attesterIndex;
 
-    /// @dev Mapping to check if an attester is active.
-    mapping(address attester => bool isActive) private _isActiveAttester;
+    /// @dev Mapping to check if an attester is activated.
+    mapping(address attester => bool isActivated) private _isActivatedAttester;
 
     /// @dev List of pending unstake requests.
     UnstakeRequest[] private _pendingUnstakeRequests;
@@ -144,7 +144,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
         // Placeholder: RewardsVault integration deferred to Milestone 5
-        // In production, this would call rollup.claimSequencerRewards for each active validator
+        // In production, this would call rollup.claimSequencerRewards for each activated attester
         // and forward the rewards to REWARDS_VAULT
         harvested = 0;
         emit RewardsHarvested(harvested);
@@ -222,8 +222,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /// @inheritdoc IStakingManager
-    function getActiveAttesterCount() external view override returns (uint256) {
-        return _activeAttesters.length;
+    function getActivatedAttesterCount() external view override returns (uint256) {
+        return _activatedAttesters.length;
     }
 
     /// @inheritdoc IStakingManager
@@ -300,8 +300,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                 true // moveWithLatestRollup
             );
 
-            // Track active attester
-            _addActiveAttester(keyStore.attester);
+            // Track activated attester
+            _addActivatedAttester(keyStore.attester);
 
             emit StakedWithProvider(keyStore.attester, activationThreshold);
         }
@@ -336,8 +336,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         // Round up to get number of attesters to unstake from
         uint256 attestersToUnstake = (amount + activationThreshold - 1) / activationThreshold;
 
-        // Limit to available active attesters
-        uint256 availableAttesters = _activeAttesters.length;
+        // Limit to available activated attesters
+        uint256 availableAttesters = _activatedAttesters.length;
         if (attestersToUnstake > availableAttesters) {
             attestersToUnstake = availableAttesters;
         }
@@ -351,8 +351,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
         // Loop over attesters to unstake (intentional batch operation)
         for (uint256 i; i < attestersToUnstake; ++i) {
-            // Get last active attester (more efficient removal)
-            address attester = _activeAttesters[_activeAttesters.length - 1];
+            // Get last activated attester (more efficient removal)
+            address attester = _activatedAttesters[_activatedAttesters.length - 1];
 
             // Initiate withdrawal on rollup (return value intentionally ignored - we track state ourselves)
             // slither-disable-next-line unused-return
@@ -364,8 +364,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             );
             _isUnstakePending[attester] = true;
 
-            // Remove from active attesters
-            _removeActiveAttester(attester);
+            // Remove from activated attesters
+            _removeActivatedAttester(attester);
 
             actualUnstakeAmount += activationThreshold;
 
@@ -429,32 +429,32 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
-    /// @dev Adds an attester to the active attesters list.
+    /// @dev Adds an attester to the activated attesters list.
     /// @param attester The attester address.
-    function _addActiveAttester(address attester) internal {
-        if (!_isActiveAttester[attester]) {
-            _attesterIndex[attester] = _activeAttesters.length;
-            _activeAttesters.push(attester);
-            _isActiveAttester[attester] = true;
+    function _addActivatedAttester(address attester) internal {
+        if (!_isActivatedAttester[attester]) {
+            _attesterIndex[attester] = _activatedAttesters.length;
+            _activatedAttesters.push(attester);
+            _isActivatedAttester[attester] = true;
         }
     }
 
-    /// @dev Removes an attester from the active attesters list.
+    /// @dev Removes an attester from the activated attesters list.
     /// @param attester The attester address.
-    function _removeActiveAttester(address attester) internal {
-        if (_isActiveAttester[attester]) {
+    function _removeActivatedAttester(address attester) internal {
+        if (_isActivatedAttester[attester]) {
             uint256 index = _attesterIndex[attester];
-            uint256 lastIndex = _activeAttesters.length - 1;
+            uint256 lastIndex = _activatedAttesters.length - 1;
 
             if (index != lastIndex) {
-                address lastAttester = _activeAttesters[lastIndex];
-                _activeAttesters[index] = lastAttester;
+                address lastAttester = _activatedAttesters[lastIndex];
+                _activatedAttesters[index] = lastAttester;
                 _attesterIndex[lastAttester] = index;
             }
 
-            _activeAttesters.pop();
+            _activatedAttesters.pop();
             delete _attesterIndex[attester];
-            _isActiveAttester[attester] = false;
+            _isActivatedAttester[attester] = false;
         }
     }
 }

@@ -158,9 +158,9 @@ interface IStakingManager {
     /// @return The provider config struct.
     function getProviderConfig() external view returns (ProviderConfig memory);
 
-    /// @notice Returns the number of active attesters.
-    /// @return The count of active attesters.
-    function getActiveAttesterCount() external view returns (uint256);
+    /// @notice Returns the number of activated attesters.
+    /// @return The count of activated attesters.
+    function getActivatedAttesterCount() external view returns (uint256);
 
     /// @notice Returns the number of pending unstake requests.
     /// @return The count of pending requests.
