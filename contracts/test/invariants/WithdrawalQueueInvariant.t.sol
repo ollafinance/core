@@ -41,7 +41,7 @@ contract WithdrawalQueueHandler is Test {
         queue.finalizeWithdrawals(available);
     }
 
-    function claim(uint256 idSeed) external {
+    function claimWithdrawal(uint256 idSeed) external {
         uint256 nextRequestId = queue.nextRequestId();
         if (nextRequestId <= 1) {
             return;
@@ -53,7 +53,7 @@ contract WithdrawalQueueHandler is Test {
             return;
         }
 
-        queue.claim(id);
+        queue.claimWithdrawal(id);
     }
 }
 

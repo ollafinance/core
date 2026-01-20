@@ -60,7 +60,7 @@ interface IWithdrawalQueue {
     /// @notice Marks a finalized request as claimed.
     /// @param id The request id.
     /// @return assetsExpected The assets expected for the request.
-    function claim(uint256 id) external returns (uint256 assetsExpected);
+    function claimWithdrawal(uint256 id) external returns (uint256 assetsExpected);
 
     /// @notice Returns the OllaCore address.
     /// @return coreAddress The core address.

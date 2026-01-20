@@ -156,7 +156,7 @@ contract WithdrawalQueue is
     /// @notice Marks a finalized request as claimed.
     /// @param id The request id.
     /// @return assetsExpected The assets expected for the request.
-    function claim(uint256 id) external override nonReentrant returns (uint256 assetsExpected) {
+    function claimWithdrawal(uint256 id) external override nonReentrant returns (uint256 assetsExpected) {
         WithdrawalRequest storage request = _requests[id];
         if (request.user == address(0)) {
             revert WithdrawalQueueInvalidRequest(id);
