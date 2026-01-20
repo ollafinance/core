@@ -54,10 +54,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @dev FIFO queue of attester keys.
     Queue private _providerQueue;
 
-    /// @dev Estimated amount pending in unstake requests.
-    /// @dev This is an estimate that may differ from actual due to slashing.
-    uint256 private _estimatedPendingUnstakes;
-
     /// @dev List of activated attester addresses.
     address[] private _activatedAttesters;
 
@@ -200,11 +196,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IStakingManager
-    function getEstimatedPendingUnstakes() external view override returns (uint256) {
-        return _estimatedPendingUnstakes;
-    }
 
     /// @inheritdoc IStakingManager
     // slither-disable-next-line calls-loop,timestamp
@@ -391,7 +382,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             // Update tracking
             totalUnstakedAmount += exitAmount;
-            _estimatedPendingUnstakes += exitAmount;
 
             // Move attester from activated to pending (swap-and-pop, don't increment i)
             _removeActivatedAttester(attester);
@@ -483,7 +473,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
 
         if (claimed > 0) {
-            _estimatedPendingUnstakes -= claimed;
             // Transfer claimed funds to core
             STAKING_ASSET.safeTransfer(CORE, claimed);
             emit UnstakedFundsClaimed(claimed);

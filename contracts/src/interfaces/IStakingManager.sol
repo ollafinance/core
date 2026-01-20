@@ -156,11 +156,6 @@ interface IStakingManager {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the estimated pending unstakes amount.
-    /// @dev This is an estimate that may differ from actual due to slashing.
-    /// @return The estimated pending unstakes.
-    function getEstimatedPendingUnstakes() external view returns (uint256);
-
     /// @notice Returns the current staking state by querying the rollup.
     /// @dev Iterates through all attesters and queries getAttesterView for each.
     /// @return state The aggregated staking state.

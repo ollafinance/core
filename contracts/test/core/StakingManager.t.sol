@@ -425,7 +425,6 @@ contract StakingManagerTest is Test {
 
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount - ACTIVATION_THRESHOLD);
-        assertEq(stakingManager.getEstimatedPendingUnstakes(), ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getActivatedAttesterCount(), 0);
         assertEq(stakingManager.getPendingUnstakeCount(), 1);
     }
@@ -477,7 +476,6 @@ contract StakingManagerTest is Test {
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
-        assertEq(stakingManager.getEstimatedPendingUnstakes(), ACTIVATION_THRESHOLD * 2);
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
     }
@@ -517,7 +515,6 @@ contract StakingManagerTest is Test {
 
         assertEq(claimed, ACTIVATION_THRESHOLD);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
-        assertEq(stakingManager.getEstimatedPendingUnstakes(), 0);
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
     }
 
@@ -553,7 +550,6 @@ contract StakingManagerTest is Test {
 
         assertEq(claimed, ACTIVATION_THRESHOLD * 3);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD * 3);
-        assertEq(stakingManager.getEstimatedPendingUnstakes(), 0);
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
     }
 
@@ -595,10 +591,6 @@ contract StakingManagerTest is Test {
         assertEq(state.stakedAmount, 0);
         assertEq(state.pendingUnstakeAmount, 0);
         assertEq(state.withdrawableAmount, 0);
-    }
-
-    function test_GetEstimatedPendingUnstakes_InitiallyZero() external view {
-        assertEq(stakingManager.getEstimatedPendingUnstakes(), 0);
     }
 
     function test_GetQueueLength_InitiallyZero() external view {
@@ -650,7 +642,6 @@ contract StakingManagerTest is Test {
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * (stakeCount - unstakeCount));
-        assertEq(stakingManager.getEstimatedPendingUnstakes(), unstakeAmount);
         assertEq(stakingManager.getActivatedAttesterCount(), stakeCount - unstakeCount);
     }
 

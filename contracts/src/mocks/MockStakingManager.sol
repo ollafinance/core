@@ -82,11 +82,6 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function getEstimatedPendingUnstakes() external pure override returns (uint256) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
     function getQueueLength() external pure override returns (uint256) {
         return 0;
     }
