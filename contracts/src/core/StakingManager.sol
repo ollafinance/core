@@ -223,6 +223,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             }
 
             // Handle attesters that may have been externally exited
+            //   likely only ZOMBIE, EXITING "should" not happen externally
             if (view_.exit.exists) {
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                     state.pendingUnstakeAmount += view_.exit.amount;
@@ -238,7 +239,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             address attester = _pendingUnstakeRequests[i];
             AttesterView memory view_ = rollup.getAttesterView(attester);
 
-            // Skip if exit doesn't exist (already finalized externally)
+            // NOTE: this should not be needed, because we will always claim matured exits and remove from _pendingUnstakeRequests atomically
             if (view_.exit.exists) {
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                     state.pendingUnstakeAmount += view_.exit.amount;
@@ -374,6 +375,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             // Skip if not validating or zero balance (could be slashed to zero)
             if (view_.status != Status.VALIDATING || view_.effectiveBalance == 0) {
                 ++i;
+                // TODO: Consider removing from activated list if not validating? (and potentially adding to _pendingUnstakeRequests)
                 continue;
             }
 
@@ -382,6 +384,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             // slither-disable-next-line unused-return
             rollup.initiateWithdraw(attester, address(this));
 
+            // TODO: evaluate if this is needed, or if we could just use view_.effectiveBalance directly
             // Query again to get actual exit.amount (should match effectiveBalance at time of initiation)
             view_ = rollup.getAttesterView(attester);
             uint256 exitAmount = view_.exit.amount;
@@ -404,7 +407,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             // Note: Don't increment i since _removeActivatedAttester uses swap-and-pop
         }
 
-        // Verify we unstaked enough (could fail due to slashing reducing balances)
+        // Verify we unstaked enough
         if (totalUnstakedAmount < amount) {
             revert StakingManager__InsufficientStake();
         }
