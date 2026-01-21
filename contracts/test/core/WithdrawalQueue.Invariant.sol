@@ -9,9 +9,17 @@ import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
 
 contract WithdrawalQueueHandler is Test {
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     WithdrawalQueue public queue;
     address public core;
     address[] public actors;
+
+    /*//////////////////////////////////////////////////////////////
+                             CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(WithdrawalQueue _queue, address _core) {
         queue = _queue;
@@ -21,6 +29,10 @@ contract WithdrawalQueueHandler is Test {
             actors.push(makeAddr(string(abi.encode("actor", i))));
         }
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             QUEUE ACTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function requestWithdrawal(uint96 sharesRaw, uint96 assetsRaw, uint256 actorSeed) external {
         if (queue.nextRequestId() > 50) {
@@ -58,10 +70,18 @@ contract WithdrawalQueueHandler is Test {
 }
 
 contract WithdrawalQueueInvariantTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     WithdrawalQueue internal queue;
     WithdrawalQueueHandler internal handler;
     address internal core;
     address internal admin;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
         core = makeAddr("core");
@@ -75,6 +95,10 @@ contract WithdrawalQueueInvariantTest is Test {
         handler = new WithdrawalQueueHandler(queue, core);
         targetContract(address(handler));
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        INVARIANT CHECKS
+    //////////////////////////////////////////////////////////////*/
 
     function invariant_TotalPendingAssetsMatchesSum() external view {
         uint256 nextRequestId = queue.nextRequestId();

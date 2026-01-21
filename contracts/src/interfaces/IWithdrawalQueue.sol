@@ -5,6 +5,10 @@ pragma solidity ^0.8.27;
 /// @notice Interface for the FIFO withdrawal queue.
 /// @author Olla Core contributors
 interface IWithdrawalQueue {
+    /*//////////////////////////////////////////////////////////////
+                                STRUCTS
+    //////////////////////////////////////////////////////////////*/
+
     struct WithdrawalRequest {
         address user;
         bool finalized;
@@ -13,6 +17,10 @@ interface IWithdrawalQueue {
         uint256 assetsExpected;
         uint256 rate;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
 
     // solhint-disable gas-indexed-events
     /// @notice Emitted when a withdrawal request is enqueued.
@@ -36,6 +44,29 @@ interface IWithdrawalQueue {
     /// @param assetsExpected The assets claimed for the request.
     event WithdrawalClaimed(uint256 indexed id, address indexed user, uint256 assetsExpected);
     // solhint-enable gas-indexed-events
+
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when a zero address is provided.
+    error WithdrawalQueue__ZeroAddress(string param);
+
+    /// @notice Thrown when a zero amount is provided.
+    error WithdrawalQueue__ZeroAmount(string param);
+
+    /// @notice Thrown when a request is not finalized.
+    error WithdrawalQueue__NotFinalized(uint256 id);
+
+    /// @notice Thrown when a request is already claimed.
+    error WithdrawalQueue__AlreadyClaimed(uint256 id);
+
+    /// @notice Thrown when a request id is invalid.
+    error WithdrawalQueue__InvalidRequest(uint256 id);
+
+    /*//////////////////////////////////////////////////////////////
+                              CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the queue.
     /// @param core_ OllaCore address.
@@ -62,6 +93,14 @@ interface IWithdrawalQueue {
     /// @return assetsExpected The assets expected for the request.
     function claimWithdrawal(uint256 id) external returns (uint256 assetsExpected);
 
+    /*//////////////////////////////////////////////////////////////
+                      PROVIDER ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /*//////////////////////////////////////////////////////////////
+                             VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Returns the OllaCore address.
     /// @return coreAddress The core address.
     function core() external view returns (address coreAddress);
@@ -86,4 +125,9 @@ interface IWithdrawalQueue {
     /// @notice Returns the next unfinalized request id.
     /// @return requestId The next unfinalized request id.
     function nextUnfinalized() external view returns (uint256 requestId);
+
+    /// @notice Previews assets used for withdrawal finalization.
+    /// @param available The available assets to finalize.
+    /// @return used The assets that would be used.
+    function previewFinalizeWithdrawals(uint256 available) external view returns (uint256 used);
 }

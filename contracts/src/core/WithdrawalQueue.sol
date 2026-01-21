@@ -18,8 +18,16 @@ contract WithdrawalQueue is
     ReentrancyGuard,
     IWithdrawalQueue
 {
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Role assigned to OllaCore for queue operations.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
+
+    /*//////////////////////////////////////////////////////////////
+                                 STATE
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice OllaCore address.
     address public override core;
@@ -40,31 +48,27 @@ contract WithdrawalQueue is
     // slither-disable-next-line unused-state
     uint256[45] private __gap;
 
-    /// @notice Thrown when a zero address is provided.
-    error WithdrawalQueueZeroAddress();
-
-    /// @notice Thrown when a request amount is invalid.
-    error WithdrawalQueueInvalidAmount();
-
-    /// @notice Thrown when a request is not finalized.
-    error WithdrawalQueueNotFinalized(uint256 id);
-
-    /// @notice Thrown when a request is already claimed.
-    error WithdrawalQueueAlreadyClaimed(uint256 id);
-
-    /// @notice Thrown when a request id is invalid.
-    error WithdrawalQueueInvalidRequest(uint256 id);
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor() {
         _disableInitializers();
     }
 
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Initializes the queue and roles.
     /// @param core_ OllaCore address.
     /// @param admin_ Default admin role address.
     function initialize(address core_, address admin_) external override initializer {
-        if (core_ == address(0) || admin_ == address(0)) {
-            revert WithdrawalQueueZeroAddress();
+        if (core_ == address(0)) {
+            revert WithdrawalQueue__ZeroAddress("core_");
+        }
+        if (admin_ == address(0)) {
+            revert WithdrawalQueue__ZeroAddress("admin_");
         }
 
         __AccessControl_init();
@@ -90,10 +94,13 @@ contract WithdrawalQueue is
         returns (uint256 requestId)
     {
         if (user == address(0)) {
-            revert WithdrawalQueueZeroAddress();
+            revert WithdrawalQueue__ZeroAddress("user");
         }
-        if (shares == 0 || assetsExpected == 0) {
-            revert WithdrawalQueueInvalidAmount();
+        if (shares == 0) {
+            revert WithdrawalQueue__ZeroAmount("shares");
+        }
+        if (assetsExpected == 0) {
+            revert WithdrawalQueue__ZeroAmount("assetsExpected");
         }
 
         requestId = nextRequestId;
@@ -119,35 +126,24 @@ contract WithdrawalQueue is
         nonReentrant
         returns (uint256 used)
     {
-        uint256 requestId = nextPendingId;
-        uint256 upperBound = nextRequestId;
-        uint256 usedAssets = 0;
-        uint256 pendingAssets = totalPendingAssets;
+        uint256 requestId;
+        uint256 pendingAssets;
+        (used, requestId, pendingAssets) = _previewFinalize(available);
 
-        while (requestId < upperBound) {
-            WithdrawalRequest storage request = _requests[requestId];
-
-            uint256 assetsExpected = request.assetsExpected;
-
+        uint256 upperBound = requestId;
+        uint256 currentId = nextPendingId;
+        while (currentId < upperBound) {
+            WithdrawalRequest storage request = _requests[currentId];
             if (!request.finalized) {
-                if (available < assetsExpected) {
-                    break;
-                }
-
                 request.finalized = true;
-                pendingAssets -= assetsExpected;
-                available -= assetsExpected;
-                usedAssets += assetsExpected;
-
-                emit WithdrawalFinalized(requestId, assetsExpected);
+                emit WithdrawalFinalized(currentId, request.assetsExpected);
             }
-
-            ++requestId;
+            ++currentId;
         }
 
         totalPendingAssets = pendingAssets;
         nextPendingId = requestId;
-        return usedAssets;
+        return used;
     }
 
     // slither-disable-end pess-multiple-storage-read
@@ -159,13 +155,13 @@ contract WithdrawalQueue is
     function claimWithdrawal(uint256 id) external override nonReentrant returns (uint256 assetsExpected) {
         WithdrawalRequest storage request = _requests[id];
         if (request.user == address(0)) {
-            revert WithdrawalQueueInvalidRequest(id);
+            revert WithdrawalQueue__InvalidRequest(id);
         }
         if (!request.finalized) {
-            revert WithdrawalQueueNotFinalized(id);
+            revert WithdrawalQueue__NotFinalized(id);
         }
         if (request.claimed) {
-            revert WithdrawalQueueAlreadyClaimed(id);
+            revert WithdrawalQueue__AlreadyClaimed(id);
         }
 
         request.claimed = true;
@@ -176,13 +172,17 @@ contract WithdrawalQueue is
 
     // slither-disable-end pess-multiple-storage-read
 
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Returns the request struct for a given id.
     /// @param id The request id.
     /// @return request The request struct.
     function getRequest(uint256 id) external view override returns (WithdrawalRequest memory request) {
         request = _requests[id];
         if (request.user == address(0)) {
-            revert WithdrawalQueueInvalidRequest(id);
+            revert WithdrawalQueue__InvalidRequest(id);
         }
         return request;
     }
@@ -193,9 +193,53 @@ contract WithdrawalQueue is
         return nextPendingId;
     }
 
+    /// @notice Previews assets used for withdrawal finalization.
+    /// @param available The available assets to finalize.
+    /// @return usedAssets The assets that would be used.
+    function previewFinalizeWithdrawals(uint256 available) external view override returns (uint256 usedAssets) {
+        (usedAssets,,) = _previewFinalize(available);
+        return usedAssets;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    // slither-disable-start pess-multiple-storage-read
+    function _previewFinalize(uint256 available)
+        internal
+        view
+        returns (uint256 usedAssets, uint256 nextPendingId_, uint256 pendingAssets)
+    {
+        nextPendingId_ = nextPendingId;
+        uint256 upperBound = nextRequestId;
+        pendingAssets = totalPendingAssets;
+
+        while (nextPendingId_ < upperBound) {
+            WithdrawalRequest storage request = _requests[nextPendingId_];
+            uint256 assetsExpected = request.assetsExpected;
+
+            if (!request.finalized) {
+                if (available < assetsExpected) {
+                    break;
+                }
+
+                available -= assetsExpected;
+                usedAssets += assetsExpected;
+                pendingAssets -= assetsExpected;
+            }
+
+            ++nextPendingId_;
+        }
+
+        return (usedAssets, nextPendingId_, pendingAssets);
+    }
+
+    // slither-disable-end pess-multiple-storage-read
+
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newImplementation == address(0)) {
-            revert WithdrawalQueueZeroAddress();
+            revert WithdrawalQueue__ZeroAddress("newImplementation");
         }
     }
 }

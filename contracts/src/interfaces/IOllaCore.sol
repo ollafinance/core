@@ -10,11 +10,9 @@ import { IStAztec } from "src/interfaces/IStAztec.sol";
 /// @notice Interface for the OllaCore vault with async withdrawals.
 /// @author Olla Core contributors
 interface IOllaCore {
-    struct PendingWithdrawal {
-        uint256 shares;
-        uint256 assets;
-        address receiver;
-    }
+    /*//////////////////////////////////////////////////////////////
+                                STRUCTS
+    //////////////////////////////////////////////////////////////*/
 
     struct AccountingState {
         uint256 bufferedAssets;
@@ -39,44 +37,41 @@ interface IOllaCore {
         uint256 timestamp;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     // solhint-disable gas-indexed-events
     /// @notice Emitted when a deposit is completed.
     /// @param caller The address that initiated the deposit.
-    /// @param receiver The address receiving the shares.
+    /// @param recipient The address receiving the shares.
     /// @param assets The assets deposited.
     /// @param shares The shares minted.
-    event Deposit(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
+    event Deposit(address indexed caller, address indexed recipient, uint256 assets, uint256 shares);
 
     /// @notice Emitted when a withdrawal is completed.
     /// @param caller The address that initiated the withdrawal.
-    /// @param receiver The address receiving the assets.
+    /// @param recipient The address receiving the assets.
     /// @param owner The share owner.
     /// @param assets The assets withdrawn.
     /// @param shares The shares burned.
     event Withdraw(
-        address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares
+        address indexed caller, address indexed recipient, address indexed owner, uint256 assets, uint256 shares
     );
 
     /// @notice Emitted when a withdrawal request is created.
-    /// @param owner The share owner that requested the withdrawal.
-    /// @param receiver The address receiving the assets.
-    /// @param assets The assets requested.
+    /// @param requestId The withdrawal request id.
+    /// @param recipient The address receiving the assets.
     /// @param shares The shares burned.
-    event RequestWithdraw(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
-
-    /// @notice Emitted when a redeem request is created.
-    /// @param owner The share owner that requested the redemption.
-    /// @param receiver The address receiving the assets.
-    /// @param assets The assets requested.
-    /// @param shares The shares burned.
-    event RequestRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
-
-    /// @notice Emitted when a redeem request is claimed.
-    /// @param owner The share owner that requested the redemption.
-    /// @param receiver The address receiving the assets.
-    /// @param assets The assets paid out.
-    /// @param shares The shares burned.
-    event ClaimRedeem(address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+    /// @param assetsExpected The assets expected at request time.
+    /// @param exchangeRate The exchange rate locked at request time.
+    event WithdrawalRequested(
+        uint256 indexed requestId,
+        address indexed recipient,
+        uint256 shares,
+        uint256 assetsExpected,
+        uint256 exchangeRate
+    );
 
     /// @notice Emitted when a stake message is sent to the staking manager.
     /// @param messageId Monotonic message id.
@@ -130,9 +125,9 @@ interface IOllaCore {
 
     /// @notice Emitted when a withdrawal is claimed via queue.
     /// @param requestId Withdrawal request id.
-    /// @param receiver Receiver address.
+    /// @param recipient Recipient address.
     /// @param assets Assets claimed.
-    event WithdrawalClaimed(uint256 requestId, address receiver, uint256 assets);
+    event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
 
     /// @notice Emitted when rewards are harvested.
     /// @param harvested Harvested reward amount.
@@ -144,6 +139,26 @@ interface IOllaCore {
     /// @notice Emitted when the core is unpaused.
     event Unpaused();
     // solhint-enable gas-indexed-events
+
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when a pending withdrawal already exists.
+    error OllaCore__PendingWithdrawalExists(address owner);
+
+    /// @notice Thrown when a zero address is provided.
+    error OllaCore__ZeroAddress(string param);
+
+    /// @notice Thrown when queue request ids are inconsistent.
+    error OllaCore__UnexpectedRequestId(uint256 expected, uint256 actual);
+
+    /// @notice Thrown when previewed and finalized amounts mismatch.
+    error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
+
+    /*//////////////////////////////////////////////////////////////
+                              CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     // solhint-disable max-line-length
     /// @notice Initializes the vault with the Aztec asset address.
@@ -167,21 +182,19 @@ interface IOllaCore {
 
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
-    /// @param receiver The recipient of the stAztec shares.
-    /// @return shares The shares minted to the receiver.
-    function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+    /// @param recipient The recipient of the stAztec shares.
+    /// @return shares The shares minted to the recipient.
+    function deposit(uint256 assets, address recipient) external returns (uint256 shares);
 
     /// @notice Requests a redemption in shares.
     /// @param shares The number of shares to redeem.
-    /// @param receiver The receiver of the assets.
-    /// @param owner The owner of the shares.
-    /// @return assets The assets expected from the redemption.
-    function requestRedeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
+    /// @param recipient The recipient of the assets.
+    /// @return requestId The withdrawal request id.
+    function requestRedeem(uint256 shares, address recipient) external returns (uint256 requestId);
 
-    /// @notice Claims a pending withdrawal for an owner.
-    /// @param owner The owner of the pending withdrawal.
-    /// @return assets The assets transferred to the receiver.
-    function claimPendingWithdraw(address owner) external returns (uint256 assets);
+    /*//////////////////////////////////////////////////////////////
+                      PROVIDER ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Pauses deposits and withdrawals.
     function pause() external;
@@ -199,6 +212,10 @@ interface IOllaCore {
     /// @param available The available assets for withdrawals.
     /// @return used The assets used for finalization.
     function finalizeWithdrawals(uint256 available) external returns (uint256 used);
+
+    /*//////////////////////////////////////////////////////////////
+                             VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the underlying asset address.
     /// @return The underlying asset address.
@@ -262,14 +279,4 @@ interface IOllaCore {
     /// @param assets The asset amount being deposited.
     /// @return shares The shares that would be minted.
     function previewDeposit(uint256 assets) external view returns (uint256 shares);
-
-    /// @notice Returns the assets previewed for a redeem.
-    /// @param shares The shares being redeemed.
-    /// @return assets The assets that would be returned.
-    function previewRedeem(uint256 shares) external view returns (uint256 assets);
-
-    /// @notice Returns the pending withdrawal for an owner.
-    /// @param owner The owner to query.
-    /// @return The pending withdrawal details.
-    function pendingWithdrawal(address owner) external view returns (PendingWithdrawal memory);
 }

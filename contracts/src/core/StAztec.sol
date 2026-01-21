@@ -12,16 +12,22 @@ import { IStAztec } from "src/interfaces/IStAztec.sol";
 /// @notice ERC-20 token representing staked Aztec shares in OllaCore.
 /// @author Olla Core contributors
 contract StAztec is ERC20Permit, IStAztec {
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
     uint8 private constant _DECIMALS = 18;
+
+    /*//////////////////////////////////////////////////////////////
+                               IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice OllaCore contract allowed to mint and burn.
     address public immutable OLLA_CORE;
 
-    /// @notice Thrown when a caller is not authorized to mint/burn.
-    error StAztecUnauthorized(address caller);
-
-    /// @notice Thrown when a zero address is provided.
-    error StAztecZeroAddress();
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Sets the OllaCore address and token metadata.
     /// @param ollaCore Address of OllaCore authorized to mint/burn.
@@ -32,6 +38,10 @@ contract StAztec is ERC20Permit, IStAztec {
 
         OLLA_CORE = ollaCore;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Mints stAztec shares to an account.
     /// @param to The recipient address.
@@ -49,6 +59,10 @@ contract StAztec is ERC20Permit, IStAztec {
         _burn(from, amount);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Returns the current permit nonce for an owner.
     /// @param owner The address to query.
     /// @return The current permit nonce.
@@ -61,6 +75,10 @@ contract StAztec is ERC20Permit, IStAztec {
     function decimals() public pure override(ERC20, IERC20Metadata) returns (uint8) {
         return _DECIMALS;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function _requireAuthorized() internal view {
         if (msg.sender != OLLA_CORE) {

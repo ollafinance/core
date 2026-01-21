@@ -12,6 +12,7 @@ import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
+import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
@@ -26,6 +27,10 @@ contract OllaCore is
 {
     using SafeERC20 for IERC20;
     using Math for uint256;
+
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
 
     enum Bucket {
         Buffered,
@@ -44,12 +49,16 @@ contract OllaCore is
     /// @notice Role for core module callbacks.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
 
+    /*//////////////////////////////////////////////////////////////
+                                 STATE
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Contract related interfaces and addresses
     IERC20 private _asset;
     IStAztec private _stAztec;
     IStakingManager private _stakingManager;
     address private _governance;
-    address private _withdrawalQueue;
+    IWithdrawalQueue private _withdrawalQueue;
     address private _rewardsVault;
     address private _safetyModule;
 
@@ -61,42 +70,39 @@ contract OllaCore is
     uint256 private _stakeMessageId;
     uint256 private _unstakeMessageId;
 
-    mapping(address owner => PendingWithdrawal withdrawal) private _pendingWithdrawals;
+    mapping(address owner => uint256 requestId) private _activeRequestIds;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
     uint256[36] private __gap;
 
-    /// @notice Thrown when a pending withdrawal already exists.
-    error OllaCorePendingWithdrawalExists(address owner);
-
-    /// @notice Thrown when no pending withdrawal exists.
-    error OllaCoreNoPendingWithdrawal(address owner);
-
-    /// @notice Thrown when a zero address is provided.
-    error OllaCoreZeroAddress();
-
-    /// @notice Thrown when assets are unavailable for claiming.
-    error OllaCoreInsufficientLiquidity(uint256 assets, uint256 available);
-
-    /// @notice Thrown when a caller is not the share owner.
-    error OllaCoreUnauthorized(address caller, address owner);
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a caller is not governance.
-    error OllaCoreUnauthorizedGovernance(address caller);
+    error OllaCore__UnauthorizedGovernance(address caller);
 
     /// @notice Thrown when a bucket update amount is invalid.
-    error OllaCoreInvalidAmount();
+    error OllaCore__InvalidAmount();
 
     /// @notice Thrown when a bucket lacks sufficient balance.
-    error OllaCoreInsufficientBucketBalance(Bucket bucket, uint256 amount, uint256 available);
+    error OllaCore__InsufficientBucketBalance(Bucket bucket, uint256 amount, uint256 available);
 
     /// @notice Thrown when buffered assets do not match the vault balance.
-    error OllaCoreBufferedBalanceMismatch(uint256 expected, uint256 actual);
+    error OllaCore__BufferedBalanceMismatch(uint256 expected, uint256 actual);
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor() {
         _disableInitializers();
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the vault with asset and module addresses.
     /// @param asset_ The underlying Aztec asset.
@@ -115,12 +121,26 @@ contract OllaCore is
         address rewardsVault_,
         address safetyModule_
     ) external override initializer {
-        if (
-            address(asset_) == address(0) || address(stAztec_) == address(0) || address(stakingManager_) == address(0)
-                || governance_ == address(0) || withdrawalQueue_ == address(0) || rewardsVault_ == address(0)
-                || safetyModule_ == address(0)
-        ) {
-            revert OllaCoreZeroAddress();
+        if (address(asset_) == address(0)) {
+            revert OllaCore__ZeroAddress("asset_");
+        }
+        if (address(stAztec_) == address(0)) {
+            revert OllaCore__ZeroAddress("stAztec_");
+        }
+        if (address(stakingManager_) == address(0)) {
+            revert OllaCore__ZeroAddress("stakingManager_");
+        }
+        if (governance_ == address(0)) {
+            revert OllaCore__ZeroAddress("governance_");
+        }
+        if (withdrawalQueue_ == address(0)) {
+            revert OllaCore__ZeroAddress("withdrawalQueue_");
+        }
+        if (rewardsVault_ == address(0)) {
+            revert OllaCore__ZeroAddress("rewardsVault_");
+        }
+        if (safetyModule_ == address(0)) {
+            revert OllaCore__ZeroAddress("safetyModule_");
         }
 
         __AccessControl_init();
@@ -130,7 +150,7 @@ contract OllaCore is
         _stAztec = stAztec_;
         _stakingManager = stakingManager_;
         _governance = governance_;
-        _withdrawalQueue = withdrawalQueue_;
+        _withdrawalQueue = IWithdrawalQueue(withdrawalQueue_);
         _rewardsVault = rewardsVault_;
         _safetyModule = safetyModule_;
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
@@ -144,17 +164,17 @@ contract OllaCore is
 
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
-    /// @param receiver The recipient of the stAztec shares.
-    /// @return shares The shares minted to the receiver.
-    function deposit(uint256 assets, address receiver)
+    /// @param recipient The recipient of the stAztec shares.
+    /// @return shares The shares minted to the recipient.
+    function deposit(uint256 assets, address recipient)
         external
         override
         nonReentrant
         whenNotPaused
         returns (uint256 shares)
     {
-        if (receiver == address(0)) {
-            revert OllaCoreZeroAddress();
+        if (recipient == address(0)) {
+            revert OllaCore__ZeroAddress("recipient");
         }
 
         shares = _convertToSharesForDeposit(assets);
@@ -163,53 +183,50 @@ contract OllaCore is
         _syncBufferedWithBalance();
         _increaseCumulativeDeposits(assets);
 
-        _stAztec.mint(receiver, shares);
-        emit Deposit(msg.sender, receiver, assets, shares);
+        _stAztec.mint(recipient, shares);
+        emit Deposit(msg.sender, recipient, assets, shares);
         return shares;
     }
 
     /// @notice Requests a redemption in shares.
     /// @param shares The number of shares to redeem.
-    /// @param receiver The receiver of the assets.
-    /// @param owner The owner of the shares.
-    /// @return assets The assets expected from the redemption.
-    function requestRedeem(uint256 shares, address receiver, address owner)
+    /// @param recipient The recipient of the assets.
+    /// @return requestId The withdrawal request id.
+    function requestRedeem(uint256 shares, address recipient)
         external
         override
         nonReentrant
-        whenNotPaused
-        returns (uint256 assets)
+        returns (uint256 requestId)
     {
-        assets = _convertToAssetsForRedeem(shares);
-        _requestWithdrawal(shares, assets, receiver, owner);
-        emit RequestRedeem(owner, receiver, assets, shares);
-        return assets;
-    }
-
-    /// @notice Claims a pending withdrawal for an owner.
-    /// @param owner The owner of the pending withdrawal.
-    /// @return assets The assets transferred to the receiver.
-    function claimPendingWithdraw(address owner) external override nonReentrant whenNotPaused returns (uint256 assets) {
-        PendingWithdrawal memory pending = _pendingWithdrawals[owner];
-        if (pending.shares == 0) {
-            revert OllaCoreNoPendingWithdrawal(owner);
+        address owner = msg.sender;
+        if (recipient == address(0)) {
+            revert OllaCore__ZeroAddress("recipient");
         }
 
-        uint256 availableAssets = _accountingState.bufferedAssets;
-        if (pending.assets > availableAssets) {
-            revert OllaCoreInsufficientLiquidity(pending.assets, availableAssets);
+        if (_activeRequestIds[owner] != 0) {
+            revert OllaCore__PendingWithdrawalExists(owner);
         }
 
-        assets = pending.assets;
-        _clearPendingWithdrawal(owner);
-        _decreaseBuffered(assets);
-        _asset.safeTransfer(pending.receiver, assets);
-        _syncBufferedWithBalance();
-        emit Withdraw(msg.sender, pending.receiver, owner, assets, pending.shares);
+        uint256 rate = _exchangeRate();
+        uint256 assetsExpected = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        uint256 expectedRequestId = _withdrawalQueue.nextRequestId();
 
-        emit ClaimRedeem(owner, pending.receiver, assets, pending.shares);
-        return assets;
+        _activeRequestIds[owner] = expectedRequestId;
+        _increaseCumulativeWithdrawals(assetsExpected);
+        _stAztec.burn(owner, shares);
+
+        requestId = _withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
+        if (requestId != expectedRequestId) {
+            revert OllaCore__UnexpectedRequestId(expectedRequestId, requestId);
+        }
+
+        emit WithdrawalRequested(requestId, recipient, shares, assetsExpected, rate);
+        return requestId;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                      PROVIDER AND ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Pauses deposits and withdrawals.
     function pause() external override onlyRole(GUARDIAN_ROLE) {
@@ -261,13 +278,39 @@ contract OllaCore is
 
     // slither-disable-end pess-multiple-storage-read
 
-    /// @notice Stubbed operator withdrawal finalization hook.
+    /// @notice Operator-triggered withdrawal finalization hook.
     /// @param available The available assets for withdrawals.
     /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available) external override onlyRole(OPERATOR_ROLE) returns (uint256 used) {
-        emit WithdrawalFinalized(available, 0);
-        return 0;
+    function finalizeWithdrawals(uint256 available)
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 used)
+    {
+        _syncBufferedWithBalance();
+
+        uint256 bufferedAssets = _accountingState.bufferedAssets;
+        if (available > bufferedAssets) {
+            revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, available, bufferedAssets);
+        }
+
+        used = _withdrawalQueue.previewFinalizeWithdrawals(available);
+        _accountingState.bufferedAssets = bufferedAssets - used;
+
+        uint256 finalized = _withdrawalQueue.finalizeWithdrawals(available);
+        if (finalized != used) {
+            revert OllaCore__FinalizeAmountMismatch(used, finalized);
+        }
+
+        emit WithdrawalFinalized(available, used);
+        return used;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the underlying asset address.
     /// @return The underlying asset address.
@@ -296,7 +339,7 @@ contract OllaCore is
     /// @notice Returns the withdrawal queue module address.
     /// @return The withdrawal queue address.
     function withdrawalQueue() external view override returns (address) {
-        return _withdrawalQueue;
+        return address(_withdrawalQueue);
     }
 
     /// @notice Returns the rewards vault module address.
@@ -360,21 +403,6 @@ contract OllaCore is
         return _convertToSharesForDeposit(assets);
     }
 
-    /// @notice Returns the assets previewed for a redeem.
-    /// @param shares The shares being redeemed.
-    /// @return assets The assets that would be returned.
-    function previewRedeem(uint256 shares) external view override returns (uint256 assets) {
-        return _convertToAssetsForRedeem(shares);
-    }
-
-    /// @notice Returns the pending withdrawal for an owner.
-    /// @param owner The owner to query.
-    /// @return pending The pending withdrawal details.
-    function pendingWithdrawal(address owner) external view override returns (PendingWithdrawal memory pending) {
-        pending = _pendingWithdrawals[owner];
-        return pending;
-    }
-
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
@@ -383,30 +411,9 @@ contract OllaCore is
             - buckets.slashingDelta;
     }
 
-    function _requestWithdrawal(uint256 shares, uint256 assets, address receiver, address owner) internal {
-        if (receiver == address(0) || owner == address(0)) {
-            revert OllaCoreZeroAddress();
-        }
-
-        if (_pendingWithdrawals[owner].shares != 0) {
-            revert OllaCorePendingWithdrawalExists(owner);
-        }
-
-        if (msg.sender != owner) {
-            revert OllaCoreUnauthorized(msg.sender, owner);
-        }
-
-        uint256 availableAssets = totalAssets();
-        if (assets > availableAssets) {
-            revert OllaCoreInsufficientLiquidity(assets, availableAssets);
-        }
-
-        _pendingWithdrawals[owner] = PendingWithdrawal({ shares: shares, assets: assets, receiver: receiver });
-
-        _increaseCumulativeWithdrawals(assets);
-
-        _stAztec.burn(owner, shares);
-    }
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     // slither-disable-next-line dead-code
     function _stake(uint256 amount) internal {
@@ -422,10 +429,6 @@ contract OllaCore is
         emit UnstakeRequested(messageId, amount);
         _stakingManager.unstake(amount);
         _syncBufferedWithBalance();
-    }
-
-    function _clearPendingWithdrawal(address owner) internal {
-        delete _pendingWithdrawals[owner];
     }
 
     function _increaseCumulativeDeposits(uint256 amount) internal {
@@ -483,29 +486,17 @@ contract OllaCore is
 
     function _increaseBuffered(uint256 amount) internal {
         if (amount == 0) {
-            revert OllaCoreInvalidAmount();
+            revert OllaCore__InvalidAmount();
         }
         uint256 oldValue = _accountingState.bufferedAssets;
         uint256 newValue = oldValue + amount;
         _accountingState.bufferedAssets = newValue;
     }
 
-    function _decreaseBuffered(uint256 amount) internal {
-        if (amount == 0) {
-            revert OllaCoreInvalidAmount();
-        }
-        uint256 oldValue = _accountingState.bufferedAssets;
-        if (amount > oldValue) {
-            revert OllaCoreInsufficientBucketBalance(Bucket.Buffered, amount, oldValue);
-        }
-        uint256 newValue = oldValue - amount;
-        _accountingState.bufferedAssets = newValue;
-    }
-
     // slither-disable-next-line dead-code
     function _increaseStakedPrincipal(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
-            revert OllaCoreInvalidAmount();
+            revert OllaCore__InvalidAmount();
         }
         uint256 oldValue = _accountingState.stakedPrincipal;
         uint256 newValue = oldValue + amount;
@@ -515,11 +506,11 @@ contract OllaCore is
     // slither-disable-next-line dead-code
     function _decreaseStakedPrincipal(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
-            revert OllaCoreInvalidAmount();
+            revert OllaCore__InvalidAmount();
         }
         uint256 oldValue = _accountingState.stakedPrincipal;
         if (amount > oldValue) {
-            revert OllaCoreInsufficientBucketBalance(Bucket.StakedPrincipal, amount, oldValue);
+            revert OllaCore__InsufficientBucketBalance(Bucket.StakedPrincipal, amount, oldValue);
         }
         uint256 newValue = oldValue - amount;
         _accountingState.stakedPrincipal = newValue;
@@ -528,7 +519,7 @@ contract OllaCore is
     // slither-disable-next-line dead-code
     function _increaseRewardsVaultBalance(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
-            revert OllaCoreInvalidAmount();
+            revert OllaCore__InvalidAmount();
         }
         uint256 oldValue = _accountingState.rewardsVaultBalance;
         uint256 newValue = oldValue + amount;
@@ -538,11 +529,11 @@ contract OllaCore is
     // slither-disable-next-line dead-code
     function _decreaseRewardsVaultBalance(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
         if (amount == 0) {
-            revert OllaCoreInvalidAmount();
+            revert OllaCore__InvalidAmount();
         }
         uint256 oldValue = _accountingState.rewardsVaultBalance;
         if (amount > oldValue) {
-            revert OllaCoreInsufficientBucketBalance(Bucket.RewardsVault, amount, oldValue);
+            revert OllaCore__InsufficientBucketBalance(Bucket.RewardsVault, amount, oldValue);
         }
         uint256 newValue = oldValue - amount;
         _accountingState.rewardsVaultBalance = newValue;
@@ -562,7 +553,7 @@ contract OllaCore is
         uint256 buffered = _accountingState.bufferedAssets;
         uint256 actual = _asset.balanceOf(address(this));
         if (buffered != actual) {
-            revert OllaCoreBufferedBalanceMismatch(buffered, actual);
+            revert OllaCore__BufferedBalanceMismatch(buffered, actual);
         }
     }
 
@@ -588,25 +579,12 @@ contract OllaCore is
         return assets.mulDiv(supply, totalAssets(), rounding);
     }
 
-    function _convertToAssetsForRedeem(uint256 assets) internal view returns (uint256) {
-        return _convertToAssets(assets, Math.Rounding.Ceil);
-    }
-
-    function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view returns (uint256) {
-        IStAztec stAztecToken = _stAztec;
-        uint256 supply = stAztecToken.totalSupply();
-        if (supply == 0) {
-            return shares;
-        }
-        return shares.mulDiv(totalAssets(), supply, rounding);
-    }
-
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (msg.sender != _governance) {
-            revert OllaCoreUnauthorizedGovernance(msg.sender);
+            revert OllaCore__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {
-            revert OllaCoreZeroAddress();
+            revert OllaCore__ZeroAddress("newImplementation");
         }
     }
 
