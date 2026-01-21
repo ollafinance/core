@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
@@ -161,6 +162,18 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vault.requestRedeem(2 ether, alice);
     }
 
+    function test_RequestRedeem_AllowsWhenPaused() external {
+        _deposit(alice, 10 ether);
+
+        vm.prank(governance);
+        vault.pause();
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(4 ether, alice);
+
+        assertEq(requestId, 1, "request should succeed while paused");
+    }
+
     function test_FinalizeWithdrawals_UsesAvailableLiquidity() external {
         _deposit(alice, 10 ether);
         _deposit(bob, 12 ether);
@@ -175,6 +188,17 @@ contract OllaCoreWithdrawalQueueTest is Test {
         IWithdrawalQueue.WithdrawalRequest memory second = queue.getRequest(2);
         assertTrue(first.finalized, "earliest request should finalize");
         assertFalse(second.finalized, "later request should remain pending");
+    }
+
+    function test_RevertWhen_FinalizeWithdrawalsPaused() external {
+        _deposit(alice, 10 ether);
+        (, uint256 assetsExpected) = _requestRedeem(alice, 5 ether, alice);
+
+        vm.prank(governance);
+        vault.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vault.finalizeWithdrawals(assetsExpected);
     }
 
     function test_FinalizeWithdrawals_DecrementsBufferedAssets() external {
@@ -194,6 +218,20 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(
             afterBuckets.bufferedAssets, beforeBuckets.bufferedAssets - used, "buffered assets should decrement by used"
         );
+    }
+
+    function test_FinalizeWithdrawals_PreviewMatchesFinalized() external {
+        _deposit(alice, 11 ether);
+        _deposit(bob, 9 ether);
+
+        (, uint256 assetsExpectedAlice) = _requestRedeem(alice, 5 ether, alice);
+        (, uint256 assetsExpectedBob) = _requestRedeem(bob, 6 ether, bob);
+
+        uint256 available = assetsExpectedAlice + assetsExpectedBob;
+        uint256 previewed = queue.previewFinalizeWithdrawals(available);
+        uint256 used = vault.finalizeWithdrawals(available);
+
+        assertEq(used, previewed, "finalized amount should match preview");
     }
 
     function test_FinalizeWithdrawals_FinalizedRequestsClaimable() external {
