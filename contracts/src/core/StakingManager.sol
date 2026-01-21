@@ -94,12 +94,21 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         if (address(stakingAsset) == address(0)) {
             revert StakingManager__ZeroAddress("stakingAsset");
         }
-        if (rollupRegistry == address(0)) revert StakingManager__ZeroAddress("rollupRegistry");
-        if (rewardsVault == address(0)) revert StakingManager__ZeroAddress("rewardsVault");
-        if (core == address(0)) revert StakingManager__ZeroAddress("core");
-        if (providerAdmin == address(0)) revert StakingManager__ZeroAddress("providerAdmin");
-        if (defaultAdmin == address(0)) revert StakingManager__ZeroAddress("defaultAdmin");
-
+        if (rollupRegistry == address(0)) {
+            revert StakingManager__ZeroAddress("rollupRegistry");
+        }
+        if (rewardsVault == address(0)) {
+            revert StakingManager__ZeroAddress("rewardsVault");
+        }
+        if (core == address(0)) {
+            revert StakingManager__ZeroAddress("core");
+        }
+        if (providerAdmin == address(0)) {
+            revert StakingManager__ZeroAddress("providerAdmin");
+        }
+        if (defaultAdmin == address(0)) {
+            revert StakingManager__ZeroAddress("defaultAdmin");
+        }
         STAKING_ASSET = stakingAsset;
         ROLLUP_REGISTRY = IAztecRollupRegistry(rollupRegistry);
         REWARDS_VAULT = rewardsVault;
