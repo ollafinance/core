@@ -213,8 +213,9 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                 state.stakedAmount += view_.effectiveBalance;
             }
 
-            // Handle attesters that may have been externally exited
-            //   likely only ZOMBIE, EXITING "should" not happen externally
+            // Handle attesters that may have been externally exited e.g.
+            //   ZOMBIE - attester has been slashed too much to continue validating
+            //   EXITING - provider has initiated an exit outside of StakingManager
             if (view_.exit.exists) {
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                     state.pendingUnstakeAmount += view_.exit.amount;
@@ -230,7 +231,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             address attester = _pendingUnstakeRequests[i];
             AttesterView memory view_ = rollup.getAttesterView(attester);
 
-            // NOTE: this should not be needed, because we will always claim matured exits and remove from _pendingUnstakeRequests atomically
             if (view_.exit.exists) {
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                     state.pendingUnstakeAmount += view_.exit.amount;
