@@ -433,6 +433,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             // Skip if exit doesn't exist (already finalized externally)
             if (!view_.exit.exists) {
+                // TODO: only withdrawer(this contract) can finalize, so this should not be possible - revert instead?
                 _isUnstakePending[attester] = false;
                 // Remove from pending list (swap and pop)
                 uint256 lastIndex = _pendingUnstakeRequests.length - 1;
