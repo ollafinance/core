@@ -80,12 +80,6 @@ contract OllaCore is
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when a pending withdrawal already exists.
-    error OllaCore__PendingWithdrawalExists(address owner);
-
-    /// @notice Thrown when a zero address is provided.
-    error OllaCore__ZeroAddress(string param);
-
     /// @notice Thrown when a caller is not governance.
     error OllaCore__UnauthorizedGovernance(address caller);
 
@@ -98,11 +92,6 @@ contract OllaCore is
     /// @notice Thrown when buffered assets do not match the vault balance.
     error OllaCore__BufferedBalanceMismatch(uint256 expected, uint256 actual);
 
-    /// @notice Thrown when queue request ids are inconsistent.
-    error OllaCore__UnexpectedRequestId(uint256 expected, uint256 actual);
-
-    /// @notice Thrown when previewed and finalized amounts mismatch.
-    error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/

@@ -46,7 +46,26 @@ interface IWithdrawalQueue {
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when a zero address is provided.
+    error WithdrawalQueue__ZeroAddress(string param);
+
+    /// @notice Thrown when a zero amount is provided.
+    error WithdrawalQueue__ZeroAmount(string param);
+
+    /// @notice Thrown when a request is not finalized.
+    error WithdrawalQueue__NotFinalized(uint256 id);
+
+    /// @notice Thrown when a request is already claimed.
+    error WithdrawalQueue__AlreadyClaimed(uint256 id);
+
+    /// @notice Thrown when a request id is invalid.
+    error WithdrawalQueue__InvalidRequest(uint256 id);
+
+    /*//////////////////////////////////////////////////////////////
+                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the queue.

@@ -79,7 +79,7 @@ contract WithdrawalQueueTest is Test {
     function test_RevertWhen_ZeroShares() public {
         address alice = makeAddr("alice");
 
-        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueue.WithdrawalQueue__ZeroAmount.selector, "shares"));
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__ZeroAmount.selector, "shares"));
         vm.prank(core);
         queue.requestWithdrawal(alice, 0, 10, 1e18);
     }
@@ -87,7 +87,7 @@ contract WithdrawalQueueTest is Test {
     function test_RevertWhen_ZeroAssetsExpected() public {
         address alice = makeAddr("alice");
 
-        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueue.WithdrawalQueue__ZeroAmount.selector, "assetsExpected"));
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__ZeroAmount.selector, "assetsExpected"));
         vm.prank(core);
         queue.requestWithdrawal(alice, 10, 0, 1e18);
     }
@@ -169,7 +169,7 @@ contract WithdrawalQueueTest is Test {
         address alice = makeAddr("alice");
         _request(alice, 10, 100, 1e18);
 
-        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueue.WithdrawalQueue__NotFinalized.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__NotFinalized.selector, 1));
         queue.claimWithdrawal(1);
     }
 
@@ -182,7 +182,7 @@ contract WithdrawalQueueTest is Test {
 
         queue.claimWithdrawal(1);
 
-        vm.expectRevert(abi.encodeWithSelector(WithdrawalQueue.WithdrawalQueue__AlreadyClaimed.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__AlreadyClaimed.selector, 1));
         queue.claimWithdrawal(1);
     }
 

@@ -10,7 +10,17 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 /// @author Olla Core contributors
 interface IStAztec is IERC20, IERC20Metadata, IERC20Permit {
     /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when a caller is not authorized to mint/burn.
+    error StAztecUnauthorized(address caller);
+
+    /// @notice Thrown when a zero address is provided.
+    error StAztecZeroAddress();
+
+    /*//////////////////////////////////////////////////////////////
+                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Mints stAztec shares to an account.

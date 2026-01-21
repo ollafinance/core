@@ -181,7 +181,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vm.prank(alice);
         vault.requestRedeem(5 ether, alice);
 
-        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCore__PendingWithdrawalExists.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__PendingWithdrawalExists.selector, alice));
         vm.prank(alice);
         vault.requestRedeem(2 ether, alice);
     }

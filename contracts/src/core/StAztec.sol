@@ -26,16 +26,6 @@ contract StAztec is ERC20Permit, IStAztec {
     address public immutable OLLA_CORE;
 
     /*//////////////////////////////////////////////////////////////
-                                ERRORS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Thrown when a caller is not authorized to mint/burn.
-    error StAztecUnauthorized(address caller);
-
-    /// @notice Thrown when a zero address is provided.
-    error StAztecZeroAddress();
-
-    /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 

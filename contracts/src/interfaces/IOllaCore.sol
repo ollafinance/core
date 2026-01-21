@@ -141,7 +141,23 @@ interface IOllaCore {
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when a pending withdrawal already exists.
+    error OllaCore__PendingWithdrawalExists(address owner);
+
+    /// @notice Thrown when a zero address is provided.
+    error OllaCore__ZeroAddress(string param);
+
+    /// @notice Thrown when queue request ids are inconsistent.
+    error OllaCore__UnexpectedRequestId(uint256 expected, uint256 actual);
+
+    /// @notice Thrown when previewed and finalized amounts mismatch.
+    error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
+
+    /*//////////////////////////////////////////////////////////////
+                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable max-line-length
