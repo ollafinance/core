@@ -143,6 +143,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
     // slither-disable-next-line calls-loop
     function cleanActivatedAttesters() external override onlyRole(CORE_ROLE) nonReentrant {
+        // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
 
@@ -228,6 +229,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @inheritdoc IStakingManager
     // slither-disable-next-line calls-loop,timestamp
     function getStakingState() external view override returns (StakingState memory state) {
+        // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
 
@@ -282,11 +284,11 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             revert StakingManager__InsufficientKeys();
         }
 
-        // Get canonical rollup from registry
+        // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
 
-        // Get activation threshold from rollup
+        // TODO: Consider storing this on contract to save gas
         uint256 activationThreshold = rollup.getActivationThreshold();
 
         // Calculate how many attesters we can stake to
@@ -348,7 +350,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
     function _unstake(uint256 amount) internal {
-        // Get canonical rollup from registry
+        // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
 
@@ -413,7 +415,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
     function _claimUnstakedFunds() internal returns (uint256 claimed) {
-        // Get canonical rollup from registry
+        // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
 
