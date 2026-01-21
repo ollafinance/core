@@ -122,35 +122,24 @@ contract WithdrawalQueue is
         nonReentrant
         returns (uint256 used)
     {
-        uint256 requestId = nextPendingId;
-        uint256 upperBound = nextRequestId;
-        uint256 usedAssets = 0;
-        uint256 pendingAssets = totalPendingAssets;
+        uint256 requestId;
+        uint256 pendingAssets;
+        (used, requestId, pendingAssets) = _previewFinalize(available);
 
-        while (requestId < upperBound) {
-            WithdrawalRequest storage request = _requests[requestId];
-
-            uint256 assetsExpected = request.assetsExpected;
-
+        uint256 upperBound = requestId;
+        uint256 currentId = nextPendingId;
+        while (currentId < upperBound) {
+            WithdrawalRequest storage request = _requests[currentId];
             if (!request.finalized) {
-                if (available < assetsExpected) {
-                    break;
-                }
-
                 request.finalized = true;
-                pendingAssets -= assetsExpected;
-                available -= assetsExpected;
-                usedAssets += assetsExpected;
-
-                emit WithdrawalFinalized(requestId, assetsExpected);
+                emit WithdrawalFinalized(currentId, request.assetsExpected);
             }
-
-            ++requestId;
+            ++currentId;
         }
 
         totalPendingAssets = pendingAssets;
         nextPendingId = requestId;
-        return usedAssets;
+        return used;
     }
 
     // slither-disable-end pess-multiple-storage-read
@@ -195,6 +184,46 @@ contract WithdrawalQueue is
     function nextUnfinalized() external view override returns (uint256 requestId) {
         return nextPendingId;
     }
+
+    /// @notice Previews assets used for withdrawal finalization.
+    /// @param available The available assets to finalize.
+    /// @return usedAssets The assets that would be used.
+    function previewFinalizeWithdrawals(uint256 available) external view override returns (uint256 usedAssets) {
+        (usedAssets,,) = _previewFinalize(available);
+        return usedAssets;
+    }
+
+    // slither-disable-start pess-multiple-storage-read
+    function _previewFinalize(uint256 available)
+        internal
+        view
+        returns (uint256 usedAssets, uint256 nextPendingId_, uint256 pendingAssets)
+    {
+        nextPendingId_ = nextPendingId;
+        uint256 upperBound = nextRequestId;
+        pendingAssets = totalPendingAssets;
+
+        while (nextPendingId_ < upperBound) {
+            WithdrawalRequest storage request = _requests[nextPendingId_];
+            uint256 assetsExpected = request.assetsExpected;
+
+            if (!request.finalized) {
+                if (available < assetsExpected) {
+                    break;
+                }
+
+                available -= assetsExpected;
+                usedAssets += assetsExpected;
+                pendingAssets -= assetsExpected;
+            }
+
+            ++nextPendingId_;
+        }
+
+        return (usedAssets, nextPendingId_, pendingAssets);
+    }
+
+    // slither-disable-end pess-multiple-storage-read
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newImplementation == address(0)) {
