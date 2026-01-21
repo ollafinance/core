@@ -44,30 +44,30 @@ interface IOllaCore {
     // solhint-disable gas-indexed-events
     /// @notice Emitted when a deposit is completed.
     /// @param caller The address that initiated the deposit.
-    /// @param receiver The address receiving the shares.
+    /// @param recipient The address receiving the shares.
     /// @param assets The assets deposited.
     /// @param shares The shares minted.
-    event Deposit(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
+    event Deposit(address indexed caller, address indexed recipient, uint256 assets, uint256 shares);
 
     /// @notice Emitted when a withdrawal is completed.
     /// @param caller The address that initiated the withdrawal.
-    /// @param receiver The address receiving the assets.
+    /// @param recipient The address receiving the assets.
     /// @param owner The share owner.
     /// @param assets The assets withdrawn.
     /// @param shares The shares burned.
     event Withdraw(
-        address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares
+        address indexed caller, address indexed recipient, address indexed owner, uint256 assets, uint256 shares
     );
 
     /// @notice Emitted when a withdrawal request is created.
     /// @param requestId The withdrawal request id.
-    /// @param receiver The address receiving the assets.
+    /// @param recipient The address receiving the assets.
     /// @param shares The shares burned.
     /// @param assetsExpected The assets expected at request time.
     /// @param exchangeRate The exchange rate locked at request time.
     event WithdrawalRequested(
         uint256 indexed requestId,
-        address indexed receiver,
+        address indexed recipient,
         uint256 shares,
         uint256 assetsExpected,
         uint256 exchangeRate
@@ -125,9 +125,9 @@ interface IOllaCore {
 
     /// @notice Emitted when a withdrawal is claimed via queue.
     /// @param requestId Withdrawal request id.
-    /// @param receiver Receiver address.
+    /// @param recipient Recipient address.
     /// @param assets Assets claimed.
-    event WithdrawalClaimed(uint256 requestId, address receiver, uint256 assets);
+    event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
 
     /// @notice Emitted when rewards are harvested.
     /// @param harvested Harvested reward amount.
@@ -182,15 +182,15 @@ interface IOllaCore {
 
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
-    /// @param receiver The recipient of the stAztec shares.
-    /// @return shares The shares minted to the receiver.
-    function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+    /// @param recipient The recipient of the stAztec shares.
+    /// @return shares The shares minted to the recipient.
+    function deposit(uint256 assets, address recipient) external returns (uint256 shares);
 
     /// @notice Requests a redemption in shares.
     /// @param shares The number of shares to redeem.
-    /// @param receiver The receiver of the assets.
+    /// @param recipient The recipient of the assets.
     /// @return requestId The withdrawal request id.
-    function requestRedeem(uint256 shares, address receiver) external returns (uint256 requestId);
+    function requestRedeem(uint256 shares, address recipient) external returns (uint256 requestId);
 
     /*//////////////////////////////////////////////////////////////
                       PROVIDER ADMIN FUNCTIONS

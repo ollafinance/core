@@ -31,7 +31,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
     event WithdrawalRequested(
         uint256 indexed requestId,
-        address indexed receiver,
+        address indexed recipient,
         uint256 shares,
         uint256 assetsExpected,
         uint256 exchangeRate
@@ -133,7 +133,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 requestId = vault.requestRedeem(shares, bob);
 
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
-        assertEq(request.user, bob, "queue stores receiver");
+        assertEq(request.user, bob, "queue stores recipient");
         assertEq(request.shares, shares, "queue stores share amount");
         assertEq(request.assetsExpected, expectedAssets, "queue stores assets expected");
         assertEq(request.rate, rate, "queue stores request rate");
@@ -360,12 +360,12 @@ contract OllaCoreWithdrawalQueueTest is Test {
         return shares;
     }
 
-    function _requestRedeem(address owner, uint256 shares, address receiver)
+    function _requestRedeem(address owner, uint256 shares, address recipient)
         internal
         returns (uint256 requestId, uint256 assetsExpected)
     {
         vm.prank(owner);
-        requestId = vault.requestRedeem(shares, receiver);
+        requestId = vault.requestRedeem(shares, recipient);
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);

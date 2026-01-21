@@ -164,17 +164,17 @@ contract OllaCore is
 
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
-    /// @param receiver The recipient of the stAztec shares.
-    /// @return shares The shares minted to the receiver.
-    function deposit(uint256 assets, address receiver)
+    /// @param recipient The recipient of the stAztec shares.
+    /// @return shares The shares minted to the recipient.
+    function deposit(uint256 assets, address recipient)
         external
         override
         nonReentrant
         whenNotPaused
         returns (uint256 shares)
     {
-        if (receiver == address(0)) {
-            revert OllaCore__ZeroAddress("receiver");
+        if (recipient == address(0)) {
+            revert OllaCore__ZeroAddress("recipient");
         }
 
         shares = _convertToSharesForDeposit(assets);
@@ -183,24 +183,24 @@ contract OllaCore is
         _syncBufferedWithBalance();
         _increaseCumulativeDeposits(assets);
 
-        _stAztec.mint(receiver, shares);
-        emit Deposit(msg.sender, receiver, assets, shares);
+        _stAztec.mint(recipient, shares);
+        emit Deposit(msg.sender, recipient, assets, shares);
         return shares;
     }
 
     /// @notice Requests a redemption in shares.
     /// @param shares The number of shares to redeem.
-    /// @param receiver The receiver of the assets.
+    /// @param recipient The recipient of the assets.
     /// @return requestId The withdrawal request id.
-    function requestRedeem(uint256 shares, address receiver)
+    function requestRedeem(uint256 shares, address recipient)
         external
         override
         nonReentrant
         returns (uint256 requestId)
     {
         address owner = msg.sender;
-        if (receiver == address(0)) {
-            revert OllaCore__ZeroAddress("receiver");
+        if (recipient == address(0)) {
+            revert OllaCore__ZeroAddress("recipient");
         }
 
         if (_activeRequestIds[owner] != 0) {
@@ -215,12 +215,12 @@ contract OllaCore is
         _increaseCumulativeWithdrawals(assetsExpected);
         _stAztec.burn(owner, shares);
 
-        requestId = _withdrawalQueue.requestWithdrawal(receiver, shares, assetsExpected, rate);
+        requestId = _withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
         if (requestId != expectedRequestId) {
             revert OllaCore__UnexpectedRequestId(expectedRequestId, requestId);
         }
 
-        emit WithdrawalRequested(requestId, receiver, shares, assetsExpected, rate);
+        emit WithdrawalRequested(requestId, recipient, shares, assetsExpected, rate);
         return requestId;
     }
 

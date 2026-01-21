@@ -100,9 +100,9 @@ contract OllaCoreTest is Test {
                               EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event Deposit(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
+    event Deposit(address indexed caller, address indexed recipient, uint256 assets, uint256 shares);
     event Withdraw(
-        address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares
+        address indexed caller, address indexed recipient, address indexed owner, uint256 assets, uint256 shares
     );
     event Paused();
     event Unpaused();
@@ -124,7 +124,7 @@ contract OllaCoreTest is Test {
     event Upgraded(address indexed implementation);
     event WithdrawalRequested(
         uint256 indexed requestId,
-        address indexed receiver,
+        address indexed recipient,
         uint256 shares,
         uint256 assetsExpected,
         uint256 exchangeRate
@@ -297,9 +297,9 @@ contract OllaCoreTest is Test {
         uint256 requestId = vault.requestRedeem(shares, bob);
 
         assertEq(requestId, 1, "request id should start at 1");
-        (address receiver, uint256 recordedShares, uint256 recordedAssets, uint256 recordedRate) =
+        (address recipient, uint256 recordedShares, uint256 recordedAssets, uint256 recordedRate) =
             _queueRequestSnapshot();
-        assertEq(receiver, bob, "queue receives receiver");
+        assertEq(recipient, bob, "queue receives recipient");
         assertEq(recordedShares, shares, "queue receives share amount");
         assertEq(recordedAssets, expectedAssets, "queue receives assetsExpected");
         assertEq(recordedRate, rate, "queue receives exchange rate");
