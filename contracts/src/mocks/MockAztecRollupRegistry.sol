@@ -26,12 +26,6 @@ contract MockAztecRollupRegistry is IAztecRollupRegistry {
     }
 
     /// @inheritdoc IAztecRollupRegistry
-    function getRollup(uint256) external view override returns (address) {
-        // For simplicity, always return the canonical rollup regardless of version
-        return _canonicalRollup;
-    }
-
-    /// @inheritdoc IAztecRollupRegistry
     function getGovernance() external view override returns (address) {
         return _governance;
     }
