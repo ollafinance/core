@@ -446,9 +446,11 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             uint256 exitAmount = view_.exit.amount;
 
-            // Try to finalize this withdrawal
-            // solhint-disable-next-line no-empty-blocks
-            try rollup.finalizeWithdraw(attester) {
+            if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+                // Still pending, skip
+                ++i;
+            } else {
+                rollup.finalizeWithdraw(attester);
                 sumOfExitAmounts += exitAmount;
                 _isUnstakePending[attester] = false;
                 // Remove from pending list (swap and pop)
@@ -458,9 +460,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                 }
                 _pendingUnstakeRequests.pop();
                 // Don't increment i, we moved a new element to this position
-            } catch {
-                // Withdrawal not ready yet, skip
-                ++i;
             }
         }
 
