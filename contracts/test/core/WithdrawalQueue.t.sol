@@ -84,6 +84,39 @@ contract WithdrawalQueueTest is Test {
         assertFalse(third.finalized, "third request should remain pending");
     }
 
+    function test_PreviewFinalizeWithdrawals_MatchesFinalizeUsed() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+
+        _request(alice, 10, 100, 1e18);
+        _request(bob, 10, 200, 1e18);
+
+        uint256 previewUsed = queue.previewFinalizeWithdrawals(250);
+
+        vm.prank(core);
+        uint256 used = queue.finalizeWithdrawals(250);
+
+        assertEq(previewUsed, used, "preview should match finalize used");
+        assertEq(queue.nextPendingId(), 2, "next pending id should advance");
+    }
+
+    function test_PreviewFinalizeWithdrawals_DoesNotMutateState() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+
+        _request(alice, 10, 100, 1e18);
+        _request(bob, 10, 200, 1e18);
+
+        uint256 nextPendingBefore = queue.nextPendingId();
+        uint256 pendingBefore = queue.totalPendingAssets();
+
+        uint256 previewUsed = queue.previewFinalizeWithdrawals(150);
+
+        assertEq(previewUsed, 100, "preview should include only first request");
+        assertEq(queue.nextPendingId(), nextPendingBefore, "preview should not advance pending id");
+        assertEq(queue.totalPendingAssets(), pendingBefore, "preview should not change pending assets");
+    }
+
     function test_Claim_RevertWhen_NotFinalized() public {
         address alice = makeAddr("alice");
         _request(alice, 10, 100, 1e18);
@@ -163,6 +196,28 @@ contract WithdrawalQueueTest is Test {
                 assertFalse(request.finalized, "requests beyond liquidity should remain pending");
             }
         }
+    }
+
+    function testFuzz_PreviewFinalizeWithdrawals_MatchesFinalize(uint96[6] memory assetsRaw, uint96 availableRaw)
+        public
+    {
+        uint256[6] memory assets;
+        uint256 totalAssets = 0;
+
+        for (uint256 i = 0; i < assetsRaw.length; i++) {
+            assets[i] = uint256(bound(assetsRaw[i], 1, 1e18));
+            totalAssets += assets[i];
+            address user = address(uint160(200 + i));
+            _request(user, assets[i], assets[i], 1e18);
+        }
+
+        uint256 available = uint256(bound(availableRaw, 0, totalAssets * 2));
+        uint256 previewUsed = queue.previewFinalizeWithdrawals(available);
+
+        vm.prank(core);
+        uint256 used = queue.finalizeWithdrawals(available);
+
+        assertEq(previewUsed, used, "preview should match finalize used");
     }
 
     function _request(address user, uint256 shares, uint256 assetsExpected, uint256 rate)
