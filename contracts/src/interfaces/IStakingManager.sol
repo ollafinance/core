@@ -98,9 +98,6 @@ interface IStakingManager {
     /// @notice Thrown when an amount is zero.
     error StakingManager__ZeroAmount();
 
-    /// @notice Thrown when caller is not authorized.
-    error StakingManager__Unauthorized();
-
     /// @notice Thrown when trying to unstake more than staked.
     error StakingManager__InsufficientStake();
 
