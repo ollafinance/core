@@ -132,13 +132,13 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @inheritdoc IStakingManager
     function stake(uint256 amount) external override onlyRole(CORE_ROLE) nonReentrant {
         if (amount == 0) revert StakingManager__ZeroAmount();
-        _stakeInternal(amount);
+        _stake(amount);
     }
 
     /// @inheritdoc IStakingManager
     function unStake(uint256 amount) external override onlyRole(CORE_ROLE) nonReentrant {
         if (amount == 0) revert StakingManager__ZeroAmount();
-        _unstakeInternal(amount);
+        _unstake(amount);
     }
 
     /// @inheritdoc IStakingManager
@@ -287,7 +287,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
-    function _stakeInternal(uint256 amount) internal {
+    function _stake(uint256 amount) internal {
         // Get canonical rollup from registry
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
@@ -359,7 +359,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
-    function _unstakeInternal(uint256 amount) internal {
+    function _unstake(uint256 amount) internal {
         // Get canonical rollup from registry
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
