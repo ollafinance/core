@@ -446,6 +446,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
             uint256 exitAmount = view_.exit.amount;
 
+            // slither-disable-next-line timestamp
             if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                 // Still pending, skip
                 ++i;
