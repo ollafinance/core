@@ -72,7 +72,7 @@ contract OllaCore is
     error OllaCorePendingWithdrawalExists(address owner);
 
     /// @notice Thrown when a zero address is provided.
-    error OllaCoreZeroAddress();
+    error OllaCoreZeroAddress(string param);
 
     /// @notice Thrown when a caller is not governance.
     error OllaCoreUnauthorizedGovernance(address caller);
@@ -110,12 +110,26 @@ contract OllaCore is
         address rewardsVault_,
         address safetyModule_
     ) external override initializer {
-        if (
-            address(asset_) == address(0) || address(stAztec_) == address(0) || address(stakingManager_) == address(0)
-                || governance_ == address(0) || withdrawalQueue_ == address(0) || rewardsVault_ == address(0)
-                || safetyModule_ == address(0)
-        ) {
-            revert OllaCoreZeroAddress();
+        if (address(asset_) == address(0)) {
+            revert OllaCoreZeroAddress("asset_");
+        }
+        if (address(stAztec_) == address(0)) {
+            revert OllaCoreZeroAddress("stAztec_");
+        }
+        if (address(stakingManager_) == address(0)) {
+            revert OllaCoreZeroAddress("stakingManager_");
+        }
+        if (governance_ == address(0)) {
+            revert OllaCoreZeroAddress("governance_");
+        }
+        if (withdrawalQueue_ == address(0)) {
+            revert OllaCoreZeroAddress("withdrawalQueue_");
+        }
+        if (rewardsVault_ == address(0)) {
+            revert OllaCoreZeroAddress("rewardsVault_");
+        }
+        if (safetyModule_ == address(0)) {
+            revert OllaCoreZeroAddress("safetyModule_");
         }
 
         __AccessControl_init();
@@ -149,7 +163,7 @@ contract OllaCore is
         returns (uint256 shares)
     {
         if (receiver == address(0)) {
-            revert OllaCoreZeroAddress();
+            revert OllaCoreZeroAddress("receiver");
         }
 
         shares = _convertToSharesForDeposit(assets);
@@ -175,7 +189,7 @@ contract OllaCore is
     {
         address owner = msg.sender;
         if (receiver == address(0)) {
-            revert OllaCoreZeroAddress();
+            revert OllaCoreZeroAddress("receiver");
         }
 
         if (_activeRequestIds[owner] != 0) {
@@ -531,7 +545,7 @@ contract OllaCore is
             revert OllaCoreUnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {
-            revert OllaCoreZeroAddress();
+            revert OllaCoreZeroAddress("newImplementation");
         }
     }
 

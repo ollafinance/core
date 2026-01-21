@@ -41,7 +41,7 @@ contract WithdrawalQueue is
     uint256[45] private __gap;
 
     /// @notice Thrown when a zero address is provided.
-    error WithdrawalQueueZeroAddress();
+    error WithdrawalQueueZeroAddress(string param);
 
     /// @notice Thrown when a request amount is invalid.
     error WithdrawalQueueInvalidAmount();
@@ -63,8 +63,11 @@ contract WithdrawalQueue is
     /// @param core_ OllaCore address.
     /// @param admin_ Default admin role address.
     function initialize(address core_, address admin_) external override initializer {
-        if (core_ == address(0) || admin_ == address(0)) {
-            revert WithdrawalQueueZeroAddress();
+        if (core_ == address(0)) {
+            revert WithdrawalQueueZeroAddress("core_");
+        }
+        if (admin_ == address(0)) {
+            revert WithdrawalQueueZeroAddress("admin_");
         }
 
         __AccessControl_init();
@@ -90,7 +93,7 @@ contract WithdrawalQueue is
         returns (uint256 requestId)
     {
         if (user == address(0)) {
-            revert WithdrawalQueueZeroAddress();
+            revert WithdrawalQueueZeroAddress("user");
         }
         if (shares == 0 || assetsExpected == 0) {
             revert WithdrawalQueueInvalidAmount();
@@ -195,7 +198,7 @@ contract WithdrawalQueue is
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newImplementation == address(0)) {
-            revert WithdrawalQueueZeroAddress();
+            revert WithdrawalQueueZeroAddress("newImplementation");
         }
     }
 }
