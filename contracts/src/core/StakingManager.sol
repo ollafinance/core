@@ -247,8 +247,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
-                                INTERNAL FUNCTIONS
-                                //////////////////////////////////////////////////////////////*/
+                          INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @dev Internal stake implementation.
     /// @param amount The amount to stake.
@@ -257,6 +257,12 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
     function _stake(uint256 amount) internal {
+        // Check we have enough keys
+        uint256 availableKeys = _providerQueue.length();
+        if (availableKeys == 0) {
+            revert StakingManager__InsufficientKeys();
+        }
+
         // Get canonical rollup from registry
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
@@ -269,12 +275,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         uint256 attestersToStakeTo = amount / activationThreshold;
         if (attestersToStakeTo == 0) {
             revert StakingManager__InsufficientAmount();
-        }
-
-        // Check we have enough keys
-        uint256 availableKeys = _providerQueue.length();
-        if (availableKeys == 0) {
-            revert StakingManager__InsufficientKeys();
         }
 
         // Limit attesters to available keys
