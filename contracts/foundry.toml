@@ -61,8 +61,8 @@ remappings_generate = false
 
 # See more config options https://book.getfoundry.sh/reference/config/overview
 [invariant]
-runs = 16
-depth = 16
+runs = 8
+depth = 8
 
 [profile.ci.invariant]
 runs = 256
