@@ -15,23 +15,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Check for Solidity files
-        id: sol-files
-        run: |
-          if find src test script -type f -name "*.sol" -print -quit | grep -q .; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Setup Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
       - name: Setup Soldeer dependencies
-        if: steps.sol-files.outputs.found == 'true'
         uses: ./.github/actions/setup-soldeer
       - name: Forge fmt check
-        if: steps.sol-files.outputs.found == 'true'
         run: forge fmt --check
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -46,13 +36,8 @@ jobs:
         run: yarn install --immutable
         working-directory: .
       - name: Build solhint rules
-        if: steps.sol-files.outputs.found == 'true'
         run: yarn solhint:build
         working-directory: .
       - name: Run solhint
-        if: steps.sol-files.outputs.found == 'true'
         run: yarn lint
         working-directory: .
-      - name: Skip lint (no Solidity files)
-        if: steps.sol-files.outputs.found != 'true'
-        run: echo "No Solidity files found; skipping lint and fmt."
