@@ -96,7 +96,7 @@ GitHub Actions workflows run on PRs to main:
 ```
 
 - For contracts, add sections in this order, but only include headings that have code in them:
-  `CONSTANTS`, `IMMUTABLES`, `CONSTRUCTOR`, `CORE FUNCTIONS`, `PROVIDER AND ADMIN FUNCTIONS`, `EXTERNAL FUNCTIONS`, `INTERNAL FUNCTIONS`
+  `CONSTANTS`, `IMMUTABLES`, `STATE`, `ERRORS`, `CONSTRUCTOR`, `CORE FUNCTIONS`, `PROVIDER AND ADMIN FUNCTIONS`, `EXTERNAL FUNCTIONS`, `INTERNAL FUNCTIONS`
 - For interfaces, add sections in this order, but only include headings that have code in them:
   `STRUCTS`, `EVENTS`, `ERRORS`, `CORE FUNCTIONS`, `PROVIDER ADMIN FUNCTIONS`, `VIEW FUNCTIONS`
 - For tests, split sections by the contract functionality being tested (use uppercase headings aligned with the test's feature areas). Only include headings that have code in them.

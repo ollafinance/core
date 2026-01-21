@@ -25,6 +25,10 @@ contract WithdrawalQueue is
     /// @notice Role assigned to OllaCore for queue operations.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
 
+    /*//////////////////////////////////////////////////////////////
+                                 STATE
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice OllaCore address.
     address public override core;
 
@@ -43,6 +47,10 @@ contract WithdrawalQueue is
     /// @notice Storage gap for upgradability.
     // slither-disable-next-line unused-state
     uint256[45] private __gap;
+
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a zero address is provided.
     error WithdrawalQueue__ZeroAddress(string param);

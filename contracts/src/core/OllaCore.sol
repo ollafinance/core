@@ -49,6 +49,10 @@ contract OllaCore is
     /// @notice Role for core module callbacks.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
 
+    /*//////////////////////////////////////////////////////////////
+                                 STATE
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Contract related interfaces and addresses
     IERC20 private _asset;
     IStAztec private _stAztec;
@@ -71,6 +75,10 @@ contract OllaCore is
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
     uint256[36] private __gap;
+
+    /*//////////////////////////////////////////////////////////////
+                                ERRORS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a pending withdrawal already exists.
     error OllaCore__PendingWithdrawalExists(address owner);
@@ -95,7 +103,6 @@ contract OllaCore is
 
     /// @notice Thrown when previewed and finalized amounts mismatch.
     error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
-
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
