@@ -92,13 +92,13 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         address defaultAdmin
     ) {
         if (address(stakingAsset) == address(0)) {
-            revert StakingManager__ZeroAddress();
+            revert StakingManager__ZeroAddress("stakingAsset");
         }
-        if (rollupRegistry == address(0)) revert StakingManager__ZeroAddress();
-        if (rewardsVault == address(0)) revert StakingManager__ZeroAddress();
-        if (core == address(0)) revert StakingManager__ZeroAddress();
-        if (providerAdmin == address(0)) revert StakingManager__ZeroAddress();
-        if (defaultAdmin == address(0)) revert StakingManager__ZeroAddress();
+        if (rollupRegistry == address(0)) revert StakingManager__ZeroAddress("rollupRegistry");
+        if (rewardsVault == address(0)) revert StakingManager__ZeroAddress("rewardsVault");
+        if (core == address(0)) revert StakingManager__ZeroAddress("core");
+        if (providerAdmin == address(0)) revert StakingManager__ZeroAddress("providerAdmin");
+        if (defaultAdmin == address(0)) revert StakingManager__ZeroAddress("defaultAdmin");
 
         STAKING_ASSET = stakingAsset;
         ROLLUP_REGISTRY = IAztecRollupRegistry(rollupRegistry);
@@ -187,7 +187,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         onlyRole(STAKING_PROVIDER_ADMIN_ROLE)
     {
         if (rewardsRecipient == address(0)) {
-            revert StakingManager__ZeroAddress();
+            revert StakingManager__ZeroAddress("rewardsRecipient");
         }
         _provider.rewardsRecipient = rewardsRecipient;
         emit ProviderSet(_provider.admin, rewardsRecipient);

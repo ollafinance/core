@@ -93,7 +93,7 @@ interface IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when an address is zero.
-    error StakingManager__ZeroAddress();
+    error StakingManager__ZeroAddress(string param);
 
     /// @notice Thrown when an amount is zero.
     error StakingManager__ZeroAmount();

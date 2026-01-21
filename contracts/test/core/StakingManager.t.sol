@@ -158,17 +158,17 @@ contract StakingManagerTest is Test {
     }
 
     function test_RevertWhen_ConstructorZeroAddress() external {
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "stakingAsset"));
         new StakingManager(
             IERC20(address(0)), address(rollupRegistry), rewardsVault, core, providerAdmin, providerAdmin, defaultAdmin
         );
 
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rollupRegistry"));
         new StakingManager(
             IERC20(address(aztec)), address(0), rewardsVault, core, providerAdmin, providerAdmin, defaultAdmin
         );
 
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsVault"));
         new StakingManager(
             IERC20(address(aztec)),
             address(rollupRegistry),
@@ -179,7 +179,7 @@ contract StakingManagerTest is Test {
             defaultAdmin
         );
 
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "core"));
         new StakingManager(
             IERC20(address(aztec)),
             address(rollupRegistry),
@@ -190,12 +190,12 @@ contract StakingManagerTest is Test {
             defaultAdmin
         );
 
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "providerAdmin"));
         new StakingManager(
             IERC20(address(aztec)), address(rollupRegistry), rewardsVault, core, address(0), providerAdmin, defaultAdmin
         );
 
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "defaultAdmin"));
         new StakingManager(
             IERC20(address(aztec)),
             address(rollupRegistry),
@@ -299,7 +299,9 @@ contract StakingManagerTest is Test {
     }
 
     function test_RevertWhen_SetProviderRewardsRecipient_ZeroAddress() external {
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAddress.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsRecipient")
+        );
         vm.prank(providerAdmin);
         stakingManager.setProviderRewardsRecipient(address(0));
     }
