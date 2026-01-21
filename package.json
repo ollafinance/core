@@ -18,6 +18,7 @@
     "test": "yarn test:unit && yarn test:invariant && yarn test:integration",
     "test:unit": "cd contracts && forge test --match-path \"test/**/*.t.sol\" --no-match-path \"test/**/*.integration.sol\"",
     "test:invariant": "cd contracts && forge test --match-path \"test/**/*.invariant.sol\"",
-    "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.sol\""
+    "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.sol\"",
+    "test:interface-compat": "cd contracts && forge test --match-contract AztecInterfaceCompatibilityTest -vv"
   }
 }
