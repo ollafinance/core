@@ -44,6 +44,7 @@ contract StakingManagerTest is Test {
     event KeysAddedToProvider(address[] attesters);
     event StakedWithProvider(address indexed attester, uint256 amount);
     event UnstakeInitiated(address indexed attester, uint256 amount);
+    event UnstakeFinalized(address indexed attester, uint256 amount);
     event UnstakedFundsClaimed(uint256 amount);
     event RewardsHarvested(uint256 amount);
     event QueueDripped(address indexed attester);
@@ -464,6 +465,11 @@ contract StakingManagerTest is Test {
         emit UnstakeInitiated(keys[0].attester, ACTIVATION_THRESHOLD);
 
         stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        vm.expectEmit(true, true, true, true);
+        emit UnstakeFinalized(keys[0].attester, ACTIVATION_THRESHOLD);
+
+        stakingManager.getUnstakedFunds();
         vm.stopPrank();
     }
 

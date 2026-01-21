@@ -460,6 +460,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                     _pendingUnstakeRequests[i] = _pendingUnstakeRequests[lastIndex];
                 }
                 _pendingUnstakeRequests.pop();
+                emit UnstakeFinalized(attester, exitAmount);
                 // Don't increment i, we moved a new element to this position
             }
         }

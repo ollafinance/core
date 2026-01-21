@@ -76,6 +76,11 @@ interface IStakingManager {
     /// @param amount The amount being unstaked.
     event UnstakeInitiated(address indexed attester, uint256 amount);
 
+    //  @notice Emitted when an unstake is finalized.
+    //  @param attester The attester address.
+    //  @param amount The amount unstaked.
+    event UnstakeFinalized(address indexed attester, uint256 amount);
+
     /// @notice Emitted when unstaked funds are claimed back to core.
     /// @param amount The amount claimed.
     event UnstakedFundsClaimed(uint256 amount);
