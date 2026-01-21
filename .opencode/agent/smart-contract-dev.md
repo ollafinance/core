@@ -164,7 +164,7 @@ Invariant Testing:
 - Consider upgrade patterns carefully (proxy considerations)
 - Run `forge lint` to catch security and style issues
 - Address high-severity lints: incorrect-shift, divide-before-multiply
-- Use custom errors instead of revert strings for gas efficiency (enforced by solhint `gas-custom-errors` rule)
+- Use custom errors instead of revert strings for gas efficiency (enforced by solhint `gas-custom-errors` rule), custom errors should be of the format `ContractName__ErrorName`
 - Avoid unused variables and imports (enforced by solhint)
 - Check send/transfer results (enforced by solhint `check-send-result` rule)
 
