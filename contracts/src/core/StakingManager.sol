@@ -361,23 +361,15 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         // Iterate through activated attesters
         while (i < _activatedAttesters.length) {
             address attester = _activatedAttesters[i];
-            AttesterView memory view_ = rollup.getAttesterView(attester);
 
-            // Skip if not validating or zero balance (could be slashed to zero)
-            if (view_.status != Status.VALIDATING || view_.effectiveBalance == 0) {
+            // Initiate withdrawal on rollup
+            bool isInitiated = rollup.initiateWithdraw(attester, address(this));
+            if (!isInitiated) {
                 ++i;
-                // TODO: Consider removing from activated list if not validating? (and potentially adding to _pendingUnstakeRequests)
                 continue;
             }
 
-            // Initiate withdrawal on rollup
-            // WARNING: With Aztec version 3.0.1 only true is returned, so we ignore it here.
-            // slither-disable-next-line unused-return
-            rollup.initiateWithdraw(attester, address(this));
-
-            // TODO: evaluate if this is needed, or if we could just use view_.effectiveBalance directly
-            // Query again to get actual exit.amount (should match effectiveBalance at time of initiation)
-            view_ = rollup.getAttesterView(attester);
+            AttesterView memory view_ = rollup.getAttesterView(attester);
             uint256 exitAmount = view_.exit.amount;
 
             // Update tracking
