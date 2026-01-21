@@ -79,11 +79,45 @@ GitHub Actions workflows run on PRs to main:
 - Use descriptive test names: `test_RevertWhen_ConditionNotMet()`, `testFuzz_FunctionName()`, `invariant_PropertyName()`
 - Implement proper access controls and security patterns
 - Always include error handling and input validation
+- Place errors that can be reverted by external or public functions in the relevant interface; keep internal-only errors in the concrete contract
 - Use events for important state changes
 - Optimize for readability over gas savings unless specifically requested
 - Enable dynamic test linking for large projects: `dynamic_test_linking = true`
 - Target Solidity version `>=0.8.24 <0.9.0` and EVM version `cancun` as configured in foundry.toml
   </foundry_standards>
+
+<error_placement>
+
+Example error placement rules (external vs internal):
+
+```solidity
+// Interface: external-facing errors
+interface IExample {
+    error Example__ZeroAddress(string param);
+
+    function deposit(uint256 assets) external;
+}
+
+// Contract: internal-only errors
+contract Example is IExample {
+    error Example__InvalidState();
+
+    function deposit(uint256 assets) external override {
+        if (msg.sender == address(0)) {
+            revert Example__ZeroAddress("caller");
+        }
+        _updateAccounting();
+    }
+
+    function _updateAccounting() internal {
+        if (block.number == 0) {
+            revert Example__InvalidState();
+        }
+    }
+}
+```
+
+</error_placement>
 
 <code_sectioning>
 
