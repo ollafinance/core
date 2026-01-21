@@ -212,42 +212,11 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecStaking rollup = IAztecStaking(rollupAddress);
 
-        // Iterate through activated attesters
-        uint256 activatedLength = _activatedAttesters.length;
-        for (uint256 i; i < activatedLength; ++i) {
-            address attester = _activatedAttesters[i];
-            AttesterView memory view_ = rollup.getAttesterView(attester);
+        state = _getActivatedAttestersStakingState(rollup);
+        StakingState memory pendingState = _getPendingUnstakeRequestsStakingState(rollup);
 
-            if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
-                state.stakedAmount += view_.effectiveBalance;
-            }
-
-            // Handle attesters that may have been externally exited e.g.
-            //   ZOMBIE - attester has been slashed too much to continue validating
-            //   EXITING - provider has initiated an exit outside of StakingManager
-            if (view_.exit.exists) {
-                if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
-                    state.pendingUnstakeAmount += view_.exit.amount;
-                } else {
-                    state.withdrawableAmount += view_.exit.amount;
-                }
-            }
-        }
-
-        // Iterate through pending unstake requests
-        uint256 pendingLength = _pendingUnstakeRequests.length;
-        for (uint256 i; i < pendingLength; ++i) {
-            address attester = _pendingUnstakeRequests[i];
-            AttesterView memory view_ = rollup.getAttesterView(attester);
-
-            if (view_.exit.exists) {
-                if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
-                    state.pendingUnstakeAmount += view_.exit.amount;
-                } else {
-                    state.withdrawableAmount += view_.exit.amount;
-                }
-            }
-        }
+        state.pendingUnstakeAmount += pendingState.pendingUnstakeAmount;
+        state.withdrawableAmount += pendingState.withdrawableAmount;
 
         return state;
     }
@@ -278,8 +247,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
-                           INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
+                                INTERNAL FUNCTIONS
+                                //////////////////////////////////////////////////////////////*/
 
     /// @dev Internal stake implementation.
     /// @param amount The amount to stake.
@@ -513,4 +482,58 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             _isActivatedAttester[attester] = false;
         }
     }
+
+    // slither-disable-start calls-loop,timestamp
+    function _getActivatedAttestersStakingState(IAztecStaking rollup)
+        internal
+        view
+        returns (StakingState memory state)
+    {
+        uint256 activatedLength = _activatedAttesters.length;
+        for (uint256 i; i < activatedLength; ++i) {
+            address attester = _activatedAttesters[i];
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+
+            if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
+                state.stakedAmount += view_.effectiveBalance;
+            }
+
+            // Handle attesters that may have been externally exited e.g.
+            //   ZOMBIE - attester has been slashed too much to continue validating
+            //   EXITING - provider has initiated an exit outside of StakingManager
+            if (view_.exit.exists) {
+                if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+                    state.pendingUnstakeAmount += view_.exit.amount;
+                } else {
+                    state.withdrawableAmount += view_.exit.amount;
+                }
+            }
+        }
+        return state;
+    }
+
+    // slither-disable-end calls-loop,timestamp
+
+    // slither-disable-start calls-loop,timestamp
+    function _getPendingUnstakeRequestsStakingState(IAztecStaking rollup)
+        internal
+        view
+        returns (StakingState memory state)
+    {
+        uint256 pendingLength = _pendingUnstakeRequests.length;
+        for (uint256 i; i < pendingLength; ++i) {
+            address attester = _pendingUnstakeRequests[i];
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+
+            if (view_.exit.exists) {
+                if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+                    state.pendingUnstakeAmount += view_.exit.amount;
+                } else {
+                    state.withdrawableAmount += view_.exit.amount;
+                }
+            }
+        }
+        return state;
+    }
+    // slither-disable-end calls-loop,timestamp
 }
