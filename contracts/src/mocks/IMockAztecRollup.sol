@@ -116,8 +116,14 @@ interface IMockAztecRollup {
     /// @param exitableAt The timestamp when exit becomes finalizable.
     function setExitReady(address attester, uint256 exitableAt) external;
 
+    /// @notice Sets an external exit for an attester (for testing).
+    /// @param attester The attester address.
+    /// @param amount The exit amount.
+    /// @param exitableAt The timestamp when exit becomes finalizable.
+    function setExternalExit(address attester, uint256 amount, uint256 exitableAt) external;
+
     /*//////////////////////////////////////////////////////////////
-                        EXTERNAL VIEW FUNCTIONS
+                         EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the staking asset address.

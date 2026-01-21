@@ -136,9 +136,28 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /// @inheritdoc IStakingManager
-    function unStake(uint256 amount) external override onlyRole(CORE_ROLE) nonReentrant {
+    function unstake(uint256 amount) external override onlyRole(CORE_ROLE) nonReentrant {
         if (amount == 0) revert StakingManager__ZeroAmount();
         _unstake(amount);
+    }
+
+    // slither-disable-next-line calls-loop
+    function cleanActivatedAttesters() external override onlyRole(CORE_ROLE) nonReentrant {
+        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
+        IAztecStaking rollup = IAztecStaking(rollupAddress);
+
+        uint256 i = 0;
+        while (i < _activatedAttesters.length) {
+            address attester = _activatedAttesters[i];
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+            if (view_.exit.exists) {
+                _removeActivatedAttester(attester);
+                _pendingUnstakeRequests.push(attester);
+                _isUnstakePending[attester] = true;
+            } else {
+                ++i;
+            }
+        }
     }
 
     /// @inheritdoc IStakingManager
@@ -340,20 +359,30 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         while (i < _activatedAttesters.length) {
             address attester = _activatedAttesters[i];
 
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+            uint256 exitAmount = view_.effectiveBalance;
+
             // Initiate withdrawal on rollup
             bool isInitiated = rollup.initiateWithdraw(attester, address(this));
             if (!isInitiated) {
-                ++i;
-                continue;
+                if (view_.exit.exists) {
+                    // Already exiting due too external reason, just update tracking
+                    _removeActivatedAttester(attester);
+                    _pendingUnstakeRequests.push(attester);
+                    // NOTE: we do not update totalUnstakedAmount here since we did not initiate a new exit-
+                    //       and this pendingUnstake has already been accounted for in staking state
+                    ++i;
+                    continue;
+                } else {
+                    // If we get here it means that this contract (the withdrawer) has finalized wihtout updating state
+                    // Should not be possible
+                    revert StakingManager__UnstakeFailed(attester);
+                }
             }
-
-            AttesterView memory view_ = rollup.getAttesterView(attester);
-            uint256 exitAmount = view_.exit.amount;
 
             // Update tracking
             totalUnstakedAmount += exitAmount;
 
-            // Move attester from activated to pending (swap-and-pop, don't increment i)
             _removeActivatedAttester(attester);
             _pendingUnstakeRequests.push(attester);
             _isUnstakePending[attester] = true;
@@ -464,6 +493,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
     }
 
+    // slither-disable-start costly-loop
     /// @dev Removes an attester from the activated attesters list.
     /// @param attester The attester address.
     function _removeActivatedAttester(address attester) internal {
@@ -482,6 +512,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             _isActivatedAttester[attester] = false;
         }
     }
+
+    // slither-disable-end costly-loop
 
     // slither-disable-start calls-loop,timestamp
     function _getActivatedAttestersStakingState(IAztecStaking rollup)

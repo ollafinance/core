@@ -420,7 +420,7 @@ contract OllaCore is
     function _unstake(uint256 amount) internal {
         uint256 messageId = ++_unstakeMessageId;
         emit UnstakeRequested(messageId, amount);
-        _stakingManager.unStake(amount);
+        _stakingManager.unstake(amount);
         _syncBufferedWithBalance();
     }
 

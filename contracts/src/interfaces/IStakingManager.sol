@@ -116,6 +116,9 @@ interface IStakingManager {
     /// @notice Thrown when stake amount is below activation threshold.
     error StakingManager__InsufficientAmount();
 
+    /// @notice Thrown when unstake fails for an attester.
+    error StakingManager__UnstakeFailed(address attester);
+
     /*//////////////////////////////////////////////////////////////
                             CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -126,7 +129,11 @@ interface IStakingManager {
 
     /// @notice Initiates an unstake with the staking provider.
     /// @param amount The amount to unstake.
-    function unStake(uint256 amount) external;
+    function unstake(uint256 amount) external;
+
+    // @notice Syncs the activated attesters with the rollup and moves them to pendingUnstake if needed.
+    // @dev Since attesters can exit due to external reasons activatedAtesters is not guranteed to be in sync.
+    function cleanActivatedAttesters() external;
 
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.

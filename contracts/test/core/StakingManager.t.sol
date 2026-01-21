@@ -119,6 +119,25 @@ contract StakingManagerTest is Test {
         vm.stopPrank();
     }
 
+    function _setupStakedAttestersWithExits(uint256 total, uint256 exited) internal {
+        require(exited <= total, "exited cannot be more than total");
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
+        vm.prank(providerAdmin);
+        stakingManager.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD * total);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD * total);
+        stakingManager.stake(ACTIVATION_THRESHOLD * total);
+        vm.stopPrank();
+
+        // Simulate external exits for the first 'exited' attesters
+        for (uint256 i = 0; i < exited; ++i) {
+            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                         CONSTRUCTOR TESTS
     //////////////////////////////////////////////////////////////*/
@@ -423,7 +442,7 @@ contract StakingManagerTest is Test {
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
         vm.prank(core);
-        stakingManager.unStake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount - ACTIVATION_THRESHOLD);
@@ -444,20 +463,20 @@ contract StakingManagerTest is Test {
         vm.expectEmit(true, true, true, true);
         emit UnstakeInitiated(keys[0].attester, ACTIVATION_THRESHOLD);
 
-        stakingManager.unStake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
     }
 
     function test_RevertWhen_Unstake_ExceedsStaked() external {
         vm.prank(core);
         vm.expectRevert(IStakingManager.StakingManager__InsufficientStake.selector);
-        stakingManager.unStake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
     function test_RevertWhen_Unstake_ZeroAmount() external {
         vm.expectRevert(IStakingManager.StakingManager__ZeroAmount.selector);
         vm.prank(core);
-        stakingManager.unStake(0);
+        stakingManager.unstake(0);
     }
 
     function test_RevertWhen_Unstake_Unauthorized() external {
@@ -467,14 +486,14 @@ contract StakingManagerTest is Test {
             )
         );
         vm.prank(alice);
-        stakingManager.unStake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
     function test_Unstake_MultipleAttesters() external {
         _setupMultipleStakedAttesters(3);
 
         vm.prank(core);
-        stakingManager.unStake(ACTIVATION_THRESHOLD * 2);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
@@ -494,7 +513,7 @@ contract StakingManagerTest is Test {
 
         assertFalse(stakingManager.isUnstakePending(keys[0].attester));
 
-        stakingManager.unStake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
 
         assertTrue(stakingManager.isUnstakePending(keys[0].attester));
@@ -508,7 +527,7 @@ contract StakingManagerTest is Test {
         _setupStakedAttester();
 
         vm.prank(core);
-        stakingManager.unStake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
@@ -524,7 +543,7 @@ contract StakingManagerTest is Test {
         _setupStakedAttester();
 
         vm.prank(core);
-        stakingManager.unStake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         vm.expectEmit(true, true, true, true);
         emit UnstakedFundsClaimed(ACTIVATION_THRESHOLD);
@@ -543,7 +562,7 @@ contract StakingManagerTest is Test {
         _setupMultipleStakedAttesters(3);
 
         vm.prank(core);
-        stakingManager.unStake(ACTIVATION_THRESHOLD * 3);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
@@ -640,7 +659,7 @@ contract StakingManagerTest is Test {
         uint256 unstakeAmount = ACTIVATION_THRESHOLD * unstakeCount;
 
         vm.prank(core);
-        stakingManager.unStake(unstakeAmount);
+        stakingManager.unstake(unstakeAmount);
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * (stakeCount - unstakeCount));
@@ -664,7 +683,7 @@ contract StakingManagerTest is Test {
         _setupMultipleStakedAttesters(3);
 
         vm.prank(core);
-        stakingManager.unStake(ACTIVATION_THRESHOLD * 2);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
@@ -677,7 +696,7 @@ contract StakingManagerTest is Test {
         _setupMultipleStakedAttesters(2);
 
         vm.prank(core);
-        stakingManager.unStake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         // Set exit to be in the future for the attester that was unstaked
         // The unstake logic picks from the front of the array, so it's keys[0].attester (address(1))
@@ -688,5 +707,64 @@ contract StakingManagerTest is Test {
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
         assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD);
         assertEq(state.withdrawableAmount, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            CLEAN ACTIVATED ATTESTERS TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_CleanActivatedAttesters_RemovesExitedAttesters() external {
+        uint256 total = 3;
+        uint256 exited = 2;
+        _setupStakedAttestersWithExits(total, exited);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), total - exited);
+        assertEq(stakingManager.getPendingUnstakeCount(), exited);
+    }
+
+    function test_CleanActivatedAttesters_NoExits() external {
+        _setupMultipleStakedAttesters(2);
+
+        uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
+        uint256 pendingBefore = stakingManager.getPendingUnstakeCount();
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore);
+        assertEq(stakingManager.getPendingUnstakeCount(), pendingBefore);
+    }
+
+    function test_CleanActivatedAttesters_AllExits() external {
+        uint256 total = 2;
+        uint256 exited = 2;
+        _setupStakedAttestersWithExits(total, exited);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0);
+        assertEq(stakingManager.getPendingUnstakeCount(), exited);
+    }
+
+    function test_CleanActivatedAttesters_EmptyActivated() external {
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0);
+        assertEq(stakingManager.getPendingUnstakeCount(), 0);
+    }
+
+    function test_RevertWhen_CleanActivatedAttesters_Unauthorized() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.CORE_ROLE()
+            )
+        );
+        vm.prank(alice);
+        stakingManager.cleanActivatedAttesters();
     }
 }

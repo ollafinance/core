@@ -35,7 +35,7 @@ contract MockStakingManager is IStakingManager {
 
     /// @notice Records an unstake request.
     /// @param amount The amount to unstake.
-    function unStake(uint256 amount) external override {
+    function unstake(uint256 amount) external override {
         lastUnstakeAmount = amount;
         if (_stakedAmount >= amount) {
             _stakedAmount -= amount;
@@ -55,6 +55,11 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function setProviderRewardsRecipient(address) external override {
+        // No-op for mock
+    }
+
+    /// @inheritdoc IStakingManager
+    function cleanActivatedAttesters() external override {
         // No-op for mock
     }
 

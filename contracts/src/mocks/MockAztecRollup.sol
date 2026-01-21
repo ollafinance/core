@@ -136,6 +136,18 @@ contract MockAztecRollup is IMockAztecRollup {
         }
     }
 
+    /// @inheritdoc IMockAztecRollup
+    function setExternalExit(address _attester, uint256 _amount, uint256 _exitableAt) external override {
+        _exits[_attester] = Exit({
+            withdrawalId: 0,
+            amount: _amount,
+            exitableAt: Timestamp.wrap(_exitableAt),
+            recipientOrWithdrawer: address(this),
+            isRecipient: false,
+            exists: true
+        });
+    }
+
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
