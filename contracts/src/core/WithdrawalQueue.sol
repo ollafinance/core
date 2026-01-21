@@ -41,19 +41,19 @@ contract WithdrawalQueue is
     uint256[45] private __gap;
 
     /// @notice Thrown when a zero address is provided.
-    error WithdrawalQueueZeroAddress(string param);
+    error WithdrawalQueue__ZeroAddress(string param);
 
-    /// @notice Thrown when a request amount is invalid.
-    error WithdrawalQueueInvalidAmount();
+    /// @notice Thrown when a zero amount is provided.
+    error WithdrawalQueue__ZeroAmount(string param);
 
     /// @notice Thrown when a request is not finalized.
-    error WithdrawalQueueNotFinalized(uint256 id);
+    error WithdrawalQueue__NotFinalized(uint256 id);
 
     /// @notice Thrown when a request is already claimed.
-    error WithdrawalQueueAlreadyClaimed(uint256 id);
+    error WithdrawalQueue__AlreadyClaimed(uint256 id);
 
     /// @notice Thrown when a request id is invalid.
-    error WithdrawalQueueInvalidRequest(uint256 id);
+    error WithdrawalQueue__InvalidRequest(uint256 id);
 
     constructor() {
         _disableInitializers();
@@ -64,10 +64,10 @@ contract WithdrawalQueue is
     /// @param admin_ Default admin role address.
     function initialize(address core_, address admin_) external override initializer {
         if (core_ == address(0)) {
-            revert WithdrawalQueueZeroAddress("core_");
+            revert WithdrawalQueue__ZeroAddress("core_");
         }
         if (admin_ == address(0)) {
-            revert WithdrawalQueueZeroAddress("admin_");
+            revert WithdrawalQueue__ZeroAddress("admin_");
         }
 
         __AccessControl_init();
@@ -93,10 +93,13 @@ contract WithdrawalQueue is
         returns (uint256 requestId)
     {
         if (user == address(0)) {
-            revert WithdrawalQueueZeroAddress("user");
+            revert WithdrawalQueue__ZeroAddress("user");
         }
-        if (shares == 0 || assetsExpected == 0) {
-            revert WithdrawalQueueInvalidAmount();
+        if (shares == 0) {
+            revert WithdrawalQueue__ZeroAmount("shares");
+        }
+        if (assetsExpected == 0) {
+            revert WithdrawalQueue__ZeroAmount("assetsExpected");
         }
 
         requestId = nextRequestId;
@@ -151,13 +154,13 @@ contract WithdrawalQueue is
     function claimWithdrawal(uint256 id) external override nonReentrant returns (uint256 assetsExpected) {
         WithdrawalRequest storage request = _requests[id];
         if (request.user == address(0)) {
-            revert WithdrawalQueueInvalidRequest(id);
+            revert WithdrawalQueue__InvalidRequest(id);
         }
         if (!request.finalized) {
-            revert WithdrawalQueueNotFinalized(id);
+            revert WithdrawalQueue__NotFinalized(id);
         }
         if (request.claimed) {
-            revert WithdrawalQueueAlreadyClaimed(id);
+            revert WithdrawalQueue__AlreadyClaimed(id);
         }
 
         request.claimed = true;
@@ -174,7 +177,7 @@ contract WithdrawalQueue is
     function getRequest(uint256 id) external view override returns (WithdrawalRequest memory request) {
         request = _requests[id];
         if (request.user == address(0)) {
-            revert WithdrawalQueueInvalidRequest(id);
+            revert WithdrawalQueue__InvalidRequest(id);
         }
         return request;
     }
@@ -227,7 +230,7 @@ contract WithdrawalQueue is
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newImplementation == address(0)) {
-            revert WithdrawalQueueZeroAddress("newImplementation");
+            revert WithdrawalQueue__ZeroAddress("newImplementation");
         }
     }
 }
