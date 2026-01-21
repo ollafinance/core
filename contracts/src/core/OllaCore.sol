@@ -89,6 +89,9 @@ contract OllaCore is
     /// @notice Thrown when queue request ids are inconsistent.
     error OllaCore__UnexpectedRequestId(uint256 expected, uint256 actual);
 
+    /// @notice Thrown when previewed and finalized amounts mismatch.
+    error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
+
     constructor() {
         _disableInitializers();
     }
@@ -271,6 +274,7 @@ contract OllaCore is
         override
         onlyRole(OPERATOR_ROLE)
         whenNotPaused
+        nonReentrant
         returns (uint256 used)
     {
         _syncBufferedWithBalance();
@@ -280,8 +284,13 @@ contract OllaCore is
             revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, available, bufferedAssets);
         }
 
-        used = _withdrawalQueue.finalizeWithdrawals(available);
+        used = _withdrawalQueue.previewFinalizeWithdrawals(available);
         _accountingState.bufferedAssets = bufferedAssets - used;
+
+        uint256 finalized = _withdrawalQueue.finalizeWithdrawals(available);
+        if (finalized != used) {
+            revert OllaCore__FinalizeAmountMismatch(used, finalized);
+        }
 
         emit WithdrawalFinalized(available, used);
         return used;
