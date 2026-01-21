@@ -5,6 +5,10 @@ pragma solidity ^0.8.27;
 /// @notice Interface for the FIFO withdrawal queue.
 /// @author Olla Core contributors
 interface IWithdrawalQueue {
+    /*//////////////////////////////////////////////////////////////
+                                STRUCTS
+    //////////////////////////////////////////////////////////////*/
+
     struct WithdrawalRequest {
         address user;
         bool finalized;
@@ -13,6 +17,10 @@ interface IWithdrawalQueue {
         uint256 assetsExpected;
         uint256 rate;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
 
     // solhint-disable gas-indexed-events
     /// @notice Emitted when a withdrawal request is enqueued.
@@ -36,6 +44,10 @@ interface IWithdrawalQueue {
     /// @param assetsExpected The assets claimed for the request.
     event WithdrawalClaimed(uint256 indexed id, address indexed user, uint256 assetsExpected);
     // solhint-enable gas-indexed-events
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the queue.
     /// @param core_ OllaCore address.
@@ -61,6 +73,14 @@ interface IWithdrawalQueue {
     /// @param id The request id.
     /// @return assetsExpected The assets expected for the request.
     function claimWithdrawal(uint256 id) external returns (uint256 assetsExpected);
+
+    /*//////////////////////////////////////////////////////////////
+                      PROVIDER ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /*//////////////////////////////////////////////////////////////
+                             VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the OllaCore address.
     /// @return coreAddress The core address.

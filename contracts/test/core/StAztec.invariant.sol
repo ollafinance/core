@@ -6,7 +6,15 @@ import { Test } from "@forge-std/Test.sol";
 import { StAztec } from "src/core/StAztec.sol";
 
 contract StAztecCoreHarness {
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     StAztec public token;
+
+    /*//////////////////////////////////////////////////////////////
+                           CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function setToken(StAztec _token) external {
         token = _token;
@@ -22,14 +30,26 @@ contract StAztecCoreHarness {
 }
 
 contract StAztecHandler is Test {
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     StAztec public token;
     StAztecCoreHarness public core;
 
     address[] public actors;
 
+    /*//////////////////////////////////////////////////////////////
+                                VIEWS
+    //////////////////////////////////////////////////////////////*/
+
     function actorsLength() external view returns (uint256) {
         return actors.length;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(StAztec _token, StAztecCoreHarness _core) {
         token = _token;
@@ -39,6 +59,10 @@ contract StAztecHandler is Test {
             actors.push(makeAddr(string(abi.encode("actor", i))));
         }
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             TOKEN ACTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function mint(uint256 amount, uint256 actorSeed) external {
         amount = bound(amount, 1, type(uint96).max);
@@ -62,9 +86,17 @@ contract StAztecHandler is Test {
 }
 
 contract StAztecInvariantTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     StAztec internal token;
     StAztecCoreHarness internal core;
     StAztecHandler internal handler;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
         core = new StAztecCoreHarness();
@@ -74,6 +106,10 @@ contract StAztecInvariantTest is Test {
         handler = new StAztecHandler(token, core);
         targetContract(address(handler));
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        INVARIANT CHECKS
+    //////////////////////////////////////////////////////////////*/
 
     function invariant_TotalSupplyEqualsBalances() external view {
         uint256 supply = token.totalSupply();

@@ -11,7 +11,15 @@ import { IERC20Mintable } from "src/interfaces/IERC20Mintable.sol";
 /// @notice Mock Aztec asset for tests.
 /// @author Olla Core contributors
 contract MockAztec is IERC20Mintable, ERC20, Ownable2Step, ERC20Permit {
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
+
     constructor(address initialOwner) ERC20("AZTEC", "AZTEC") Ownable(initialOwner) ERC20Permit("AZTEC") { }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Mints tokens to the recipient.
     /// @param to The recipient address.

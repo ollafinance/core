@@ -5,6 +5,10 @@ pragma solidity ^0.8.27;
 /// @notice Interface for OllaCore stake/unstake messaging.
 /// @author Olla Core contributors
 interface IStakingManager {
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Stakes assets with the staking provider.
     /// @param amount The amount to stake.
     function stake(uint256 amount) external;

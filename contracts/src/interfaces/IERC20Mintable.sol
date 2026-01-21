@@ -5,6 +5,10 @@ pragma solidity ^0.8.27;
 /// @notice Interface for mintable ERC-20 tokens.
 /// @author Olla Core contributors
 interface IERC20Mintable {
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Mints tokens to the recipient.
     /// @param to The recipient address.
     /// @param amount The token amount to mint.

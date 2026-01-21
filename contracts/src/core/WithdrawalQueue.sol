@@ -18,6 +18,10 @@ contract WithdrawalQueue is
     ReentrancyGuard,
     IWithdrawalQueue
 {
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Role assigned to OllaCore for queue operations.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
 
@@ -55,9 +59,17 @@ contract WithdrawalQueue is
     /// @notice Thrown when a request id is invalid.
     error WithdrawalQueue__InvalidRequest(uint256 id);
 
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
+
     constructor() {
         _disableInitializers();
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the queue and roles.
     /// @param core_ OllaCore address.
@@ -171,6 +183,10 @@ contract WithdrawalQueue is
 
     // slither-disable-end pess-multiple-storage-read
 
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Returns the request struct for a given id.
     /// @param id The request id.
     /// @return request The request struct.
@@ -195,6 +211,10 @@ contract WithdrawalQueue is
         (usedAssets,,) = _previewFinalize(available);
         return usedAssets;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     // slither-disable-start pess-multiple-storage-read
     function _previewFinalize(uint256 available)

@@ -9,15 +9,27 @@ import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
 
 contract WithdrawalQueueTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                              EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event WithdrawalRequested(
         uint256 indexed id, address indexed user, uint256 shares, uint256 assetsExpected, uint256 rate
     );
     event WithdrawalFinalized(uint256 indexed id, uint256 assets);
     event WithdrawalClaimed(uint256 indexed id, address indexed user, uint256 assetsExpected);
 
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     WithdrawalQueue internal queue;
     address internal core;
     address internal admin;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
 
     function setUp() public {
         core = makeAddr("core");
@@ -28,6 +40,10 @@ contract WithdrawalQueueTest is Test {
         queue = WithdrawalQueue(address(proxy));
         queue.initialize(core, admin);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                         REQUEST CREATION
+    //////////////////////////////////////////////////////////////*/
 
     function test_RequestWithdrawal_EnqueuesMonotonicIds() public {
         address alice = makeAddr("alice");
@@ -56,6 +72,10 @@ contract WithdrawalQueueTest is Test {
         assertFalse(first.claimed, "new requests should not be claimed");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                             ERROR CASES
+    //////////////////////////////////////////////////////////////*/
+
     function test_RevertWhen_ZeroShares() public {
         address alice = makeAddr("alice");
 
@@ -71,6 +91,10 @@ contract WithdrawalQueueTest is Test {
         vm.prank(core);
         queue.requestWithdrawal(alice, 10, 0, 1e18);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        FINALIZATION LOGIC
+    //////////////////////////////////////////////////////////////*/
 
     function test_FinalizeWithdrawals_FifoPartial() public {
         address alice = makeAddr("alice");
@@ -99,6 +123,10 @@ contract WithdrawalQueueTest is Test {
         assertFalse(second.finalized, "second request should remain pending");
         assertFalse(third.finalized, "third request should remain pending");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                         PREVIEW FINALIZE
+    //////////////////////////////////////////////////////////////*/
 
     function test_PreviewFinalizeWithdrawals_MatchesFinalizeUsed() public {
         address alice = makeAddr("alice");
@@ -132,6 +160,10 @@ contract WithdrawalQueueTest is Test {
         assertEq(queue.nextPendingId(), nextPendingBefore, "preview should not advance pending id");
         assertEq(queue.totalPendingAssets(), pendingBefore, "preview should not change pending assets");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           CLAIM REQUESTS
+    //////////////////////////////////////////////////////////////*/
 
     function test_Claim_RevertWhen_NotFinalized() public {
         address alice = makeAddr("alice");
@@ -171,6 +203,10 @@ contract WithdrawalQueueTest is Test {
         assertEq(assets, 150, "claim should return the expected assets");
         assertEq(queue.totalPendingAssets(), 0, "claim should not change pending totals");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
 
     function testFuzz_FinalizeWithdrawals_FifoTotals(uint96[5] memory assetsRaw, uint96 availableRaw) public {
         uint256[5] memory assets;
@@ -235,6 +271,10 @@ contract WithdrawalQueueTest is Test {
 
         assertEq(previewUsed, used, "preview should match finalize used");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                               HELPERS
+    //////////////////////////////////////////////////////////////*/
 
     function _request(address user, uint256 shares, uint256 assetsExpected, uint256 rate)
         internal

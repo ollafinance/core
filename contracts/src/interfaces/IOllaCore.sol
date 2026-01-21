@@ -10,6 +10,10 @@ import { IStAztec } from "src/interfaces/IStAztec.sol";
 /// @notice Interface for the OllaCore vault with async withdrawals.
 /// @author Olla Core contributors
 interface IOllaCore {
+    /*//////////////////////////////////////////////////////////////
+                                STRUCTS
+    //////////////////////////////////////////////////////////////*/
+
     struct AccountingState {
         uint256 bufferedAssets;
         uint256 stakedPrincipal;
@@ -32,6 +36,10 @@ interface IOllaCore {
         uint256 netFlows;
         uint256 timestamp;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
 
     // solhint-disable gas-indexed-events
     /// @notice Emitted when a deposit is completed.
@@ -132,6 +140,10 @@ interface IOllaCore {
     event Unpaused();
     // solhint-enable gas-indexed-events
 
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     // solhint-disable max-line-length
     /// @notice Initializes the vault with the Aztec asset address.
     /// @param asset_ The underlying Aztec asset.
@@ -164,6 +176,10 @@ interface IOllaCore {
     /// @return requestId The withdrawal request id.
     function requestRedeem(uint256 shares, address receiver) external returns (uint256 requestId);
 
+    /*//////////////////////////////////////////////////////////////
+                      PROVIDER ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Pauses deposits and withdrawals.
     function pause() external;
 
@@ -180,6 +196,10 @@ interface IOllaCore {
     /// @param available The available assets for withdrawals.
     /// @return used The assets used for finalization.
     function finalizeWithdrawals(uint256 available) external returns (uint256 used);
+
+    /*//////////////////////////////////////////////////////////////
+                             VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the underlying asset address.
     /// @return The underlying asset address.

@@ -15,11 +15,19 @@ import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 contract OllaCoreHandler is Test {
     using Math for uint256;
 
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     MockAztec public asset;
     OllaCore public vault;
     StAztec public stAztec;
 
     address[] public actors;
+
+    /*//////////////////////////////////////////////////////////////
+                             CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(MockAztec _asset, OllaCore _vault, StAztec _stAztec) {
         asset = _asset;
@@ -31,9 +39,17 @@ contract OllaCoreHandler is Test {
         }
     }
 
+    /*//////////////////////////////////////////////////////////////
+                                 VIEWS
+    //////////////////////////////////////////////////////////////*/
+
     function actorsLength() external view returns (uint256) {
         return actors.length;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE ACTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function deposit(uint96 amount, uint256 actorSeed) external {
         uint256 assets = uint256(bound(amount, 1, type(uint96).max));
@@ -50,6 +66,10 @@ contract OllaCoreHandler is Test {
 contract OllaCoreDepositHandler is Test {
     using Math for uint256;
 
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     MockAztec public asset;
     OllaCore public vault;
     StAztec public stAztec;
@@ -58,6 +78,10 @@ contract OllaCoreDepositHandler is Test {
 
     uint256 public previousExchangeRate;
     uint256 public latestExchangeRate;
+
+    /*//////////////////////////////////////////////////////////////
+                             CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
     constructor(MockAztec _asset, OllaCore _vault, StAztec _stAztec) {
         asset = _asset;
@@ -72,6 +96,10 @@ contract OllaCoreDepositHandler is Test {
         previousExchangeRate = latestExchangeRate;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                                 VIEWS
+    //////////////////////////////////////////////////////////////*/
+
     function actorsLength() external view returns (uint256) {
         return actors.length;
     }
@@ -79,6 +107,10 @@ contract OllaCoreDepositHandler is Test {
     function actorAt(uint256 index) external view returns (address) {
         return actors[index];
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE ACTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function deposit(uint96 amount, uint256 actorSeed) external {
         previousExchangeRate = latestExchangeRate;
@@ -99,12 +131,20 @@ contract OllaCoreDepositHandler is Test {
 contract OllaCoreInvariantTest is Test {
     using Math for uint256;
 
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     OllaCore internal vault;
     StAztec internal stAztec;
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
     OllaCoreHandler internal handler;
     address internal operator;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
         asset = new MockAztec(address(this));
@@ -132,6 +172,10 @@ contract OllaCoreInvariantTest is Test {
         targetContract(address(handler));
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        ACCOUNTING INVARIANTS
+    //////////////////////////////////////////////////////////////*/
+
     function invariant_TotalAssetsEqualBuckets() external view {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
         uint256 expectedTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
@@ -146,6 +190,10 @@ contract OllaCoreInvariantTest is Test {
 
         assertEq(vault.exchangeRate(), expectedRate, "exchange rate matches totals");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        REPORTING INVARIANTS
+    //////////////////////////////////////////////////////////////*/
 
     function invariant_StoredExchangeRateMatchesSnapshot() external {
         vm.prank(operator);
@@ -180,6 +228,10 @@ contract OllaCoreInvariantTest is Test {
         assertLe(latestTimestamp, block.timestamp, "report timestamp should not exceed block time");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                           HELPER METHODS
+    //////////////////////////////////////////////////////////////*/
+
     function _expectedShares(uint256 assets) internal view returns (uint256) {
         uint256 supply = stAztec.totalSupply();
         if (supply == 0) {
@@ -196,6 +248,10 @@ contract OllaCoreInvariantTest is Test {
         return shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Floor);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                       CONVERSION INVARIANTS
+    //////////////////////////////////////////////////////////////*/
+
     function invariant_ConvertToSharesMatchesSpec() external view {
         uint256 assets = bound(uint256(block.timestamp), 1, type(uint96).max);
         assertEq(vault.convertToShares(assets), _expectedShares(assets), "convertToShares matches spec");
@@ -210,6 +266,10 @@ contract OllaCoreInvariantTest is Test {
         uint256 assets = bound(uint256(block.timestamp), 1, type(uint96).max);
         assertEq(vault.previewDeposit(assets), _expectedShares(assets), "previewDeposit matches spec");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                       ZERO SUPPLY BEHAVIOR
+    //////////////////////////////////////////////////////////////*/
 
     function invariant_ZeroSupplyBehavior() external view {
         uint256 supply = stAztec.totalSupply();
@@ -229,11 +289,19 @@ contract OllaCoreInvariantTest is Test {
 contract OllaCoreDepositInvariantTest is Test {
     using Math for uint256;
 
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
     OllaCore internal vault;
     StAztec internal stAztec;
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
     OllaCoreDepositHandler internal handler;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
         asset = new MockAztec(address(this));
@@ -257,6 +325,10 @@ contract OllaCoreDepositInvariantTest is Test {
         handler = new OllaCoreDepositHandler(asset, vault, stAztec);
         targetContract(address(handler));
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        EXCHANGE RATE INVARIANTS
+    //////////////////////////////////////////////////////////////*/
 
     function invariant_ExchangeRateNonDecreasingAfterDeposits() external view {
         assertGe(

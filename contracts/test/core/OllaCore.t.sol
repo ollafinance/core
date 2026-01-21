@@ -18,6 +18,10 @@ import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 import { MockWithdrawalQueue } from "src/mocks/MockWithdrawalQueue.sol";
 
 contract OllaCoreHarness is OllaCore {
+    /*//////////////////////////////////////////////////////////////
+                           CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     function exposedIncreaseBuffered(uint256 amount) external {
         _increaseBuffered(amount);
     }
@@ -80,6 +84,10 @@ contract OllaCoreHarness is OllaCore {
 }
 
 contract OllaCoreUpgradeMock is OllaCore {
+    /*//////////////////////////////////////////////////////////////
+                           CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     function version() external pure returns (uint256) {
         return 2;
     }
@@ -87,6 +95,10 @@ contract OllaCoreUpgradeMock is OllaCore {
 
 contract OllaCoreTest is Test {
     using Math for uint256;
+
+    /*//////////////////////////////////////////////////////////////
+                              EVENTS
+    //////////////////////////////////////////////////////////////*/
 
     event Deposit(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
     event Withdraw(
@@ -118,7 +130,15 @@ contract OllaCoreTest is Test {
         uint256 exchangeRate
     );
 
+    /*//////////////////////////////////////////////////////////////
+                             CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
     uint256 internal constant DECIMALS = 1e18;
+
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
     OllaCoreHarness internal vault;
@@ -131,6 +151,10 @@ contract OllaCoreTest is Test {
     address internal rewardsVault;
     address internal safetyModule;
     address internal operator;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
         asset = new MockAztec(address(this));
@@ -161,6 +185,10 @@ contract OllaCoreTest is Test {
         vm.stopPrank();
     }
 
+    /*//////////////////////////////////////////////////////////////
+                               HELPERS
+    //////////////////////////////////////////////////////////////*/
+
     function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
         asset.mint(owner, assets);
         vm.prank(owner);
@@ -178,6 +206,10 @@ contract OllaCoreTest is Test {
         (user,,, shares, assetsExpected, rate) = withdrawalQueue.lastRequest();
         return (user, shares, assetsExpected, rate);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
 
     function test_InitializeSetsCoreAddresses() external view {
         assertEq(vault.asset(), address(asset), "asset set");
@@ -199,6 +231,10 @@ contract OllaCoreTest is Test {
         );
     }
 
+    /*//////////////////////////////////////////////////////////////
+                              UPGRADES
+    //////////////////////////////////////////////////////////////*/
+
     function test_RevertWhen_UnauthorizedUpgrade() external {
         OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
         address attacker = makeAddr("attacker");
@@ -207,6 +243,10 @@ contract OllaCoreTest is Test {
         vm.prank(attacker);
         vault.upgradeToAndCall(address(newImplementation), "");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           PAUSE CONTROL
+    //////////////////////////////////////////////////////////////*/
 
     function test_GuardianCanPauseAndUnpause() external {
         vm.expectEmit(true, true, true, true, address(vault));
@@ -239,6 +279,10 @@ contract OllaCoreTest is Test {
         vault.deposit(5 * DECIMALS, alice);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        WITHDRAWAL REQUESTS
+    //////////////////////////////////////////////////////////////*/
+
     function test_RequestRedeem_CallsQueueWithExpectedValues() external {
         _performDeposit(alice, 20 * DECIMALS);
 
@@ -260,6 +304,10 @@ contract OllaCoreTest is Test {
         assertEq(recordedAssets, expectedAssets, "queue receives assetsExpected");
         assertEq(recordedRate, rate, "queue receives exchange rate");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          OPERATOR ACTIONS
+    //////////////////////////////////////////////////////////////*/
 
     function test_OperatorCanCallOperatorHooks() external {
         vm.expectEmit(true, true, true, true, address(vault));
@@ -283,6 +331,10 @@ contract OllaCoreTest is Test {
         assertEq(used, 0, "finalize returns zero in stub");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                              UPGRADES
+    //////////////////////////////////////////////////////////////*/
+
     function test_GovernanceCanUpgrade() external {
         OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
 
@@ -295,6 +347,10 @@ contract OllaCoreTest is Test {
         uint256 version = OllaCoreUpgradeMock(address(vault)).version();
         assertEq(version, 2, "upgrade applied");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                               DEPOSITS
+    //////////////////////////////////////////////////////////////*/
 
     function test_DepositMintsAtExchangeRate() external {
         uint256 depositAssetAmountAlice = 100 * DECIMALS;
@@ -322,6 +378,10 @@ contract OllaCoreTest is Test {
         IOllaCore.FlowCounters memory flows = vault.flowCounters();
         assertEq(flows.cumulativeDeposits, 10 * DECIMALS, "cumulative deposits updated");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          ACCOUNTING STATE
+    //////////////////////////////////////////////////////////////*/
 
     function test_BucketGettersReflectState() external {
         uint256 assets = 10 * DECIMALS;
@@ -375,6 +435,10 @@ contract OllaCoreTest is Test {
         assertEq(accountingAfter.rewardsDelta, rewardsDeltaBefore, "rewards delta unchanged");
         assertEq(accountingAfter.slashingDelta, slashingDeltaBefore, "slashing delta unchanged");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
 
     function testFuzz_TotalAssetsComposition(
         uint96 buffered,
@@ -439,6 +503,10 @@ contract OllaCoreTest is Test {
         assertEq(grossRewards, expectedGross, "gross rewards fuzz");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                         ACCOUNTING UPDATES
+    //////////////////////////////////////////////////////////////*/
+
     function test_UpdateAccountingSnapshots() external {
         uint256 depositAmount = 25 * DECIMALS;
 
@@ -469,6 +537,10 @@ contract OllaCoreTest is Test {
         assertEq(reportAfter.exchangeRate, expectedRate, "latest report exchange rate stored");
         assertEq(reportAfter.timestamp, expectedTimestamp, "report timestamp updated");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                       ACCOUNTING CALCULATIONS
+    //////////////////////////////////////////////////////////////*/
 
     function test_ComputeNetFlows() external {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
@@ -504,6 +576,10 @@ contract OllaCoreTest is Test {
 
         assertEq(grossRewards, 10 * DECIMALS, "gross rewards computed");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                      ACCOUNTING TIMELINESS
+    //////////////////////////////////////////////////////////////*/
 
     function test_UpdateAccountingTimestampMonotonic() external {
         _performDeposit(alice, 5 * DECIMALS);
@@ -555,6 +631,10 @@ contract OllaCoreTest is Test {
         assertEq(flowsAfter.latestReportCumulativeWithdrawals, 0, "latestReportCumulativeWithdrawals updated");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                             ERROR CASES
+    //////////////////////////////////////////////////////////////*/
+
     function test_RevertWhen_BufferedBalanceMismatch() external {
         uint256 assets = 10 * DECIMALS;
         uint256 bonus = 2 * DECIMALS;
@@ -581,6 +661,10 @@ contract OllaCoreTest is Test {
         vm.prank(alice);
         vault.deposit(assets, alice);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           INIT VALIDATION
+    //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_InitializeZeroAddress() external {
         OllaCore coreImplementation = new OllaCore();
@@ -648,6 +732,10 @@ contract OllaCoreTest is Test {
             asset, newStAztec, newStakingManager, newGovernance, newWithdrawalQueue, newRewardsVault, address(0)
         );
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          FUZZED DEPOSITS
+    //////////////////////////////////////////////////////////////*/
 
     function testFuzz_DepositMintsShares(uint96 assets) external {
         assets = uint96(bound(assets, 1, type(uint96).max));

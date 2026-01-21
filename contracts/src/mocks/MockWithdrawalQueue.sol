@@ -28,6 +28,10 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @notice Stored requests by id.
     mapping(uint256 requestId => WithdrawalRequest request) internal _requests;
 
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Initializes the mock with a core address.
     /// @param core_ OllaCore address.
     /// @param admin_ Unused admin address.
@@ -75,6 +79,10 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         assetsExpected = request.assetsExpected;
         return assetsExpected;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the request struct for a given id.
     /// @param id The request id.

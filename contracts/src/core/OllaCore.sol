@@ -28,6 +28,10 @@ contract OllaCore is
     using SafeERC20 for IERC20;
     using Math for uint256;
 
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
     enum Bucket {
         Buffered,
         StakedPrincipal,
@@ -92,9 +96,17 @@ contract OllaCore is
     /// @notice Thrown when previewed and finalized amounts mismatch.
     error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
 
+    /*//////////////////////////////////////////////////////////////
+                              CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
+
     constructor() {
         _disableInitializers();
     }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the vault with asset and module addresses.
     /// @param asset_ The underlying Aztec asset.
@@ -216,6 +228,10 @@ contract OllaCore is
         return requestId;
     }
 
+    /*//////////////////////////////////////////////////////////////
+                      PROVIDER AND ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Pauses deposits and withdrawals.
     function pause() external override onlyRole(GUARDIAN_ROLE) {
         _pause();
@@ -295,6 +311,10 @@ contract OllaCore is
         emit WithdrawalFinalized(available, used);
         return used;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the underlying asset address.
     /// @return The underlying asset address.
@@ -394,6 +414,10 @@ contract OllaCore is
         return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.rewardsDelta
             - buckets.slashingDelta;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     // slither-disable-next-line dead-code
     function _stake(uint256 amount) internal {

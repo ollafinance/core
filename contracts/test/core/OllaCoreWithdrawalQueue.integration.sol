@@ -15,12 +15,20 @@ import { MockAztec } from "src/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 
 contract OllaCoreWithdrawalQueueHarness is OllaCore {
+    /*//////////////////////////////////////////////////////////////
+                           CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     function exposedIncreaseRewardsVaultBalance(uint256 amount) external {
         _increaseRewardsVaultBalance(amount);
     }
 }
 
 contract OllaCoreWithdrawalQueueTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                              EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event WithdrawalRequested(
         uint256 indexed requestId,
         address indexed receiver,
@@ -28,6 +36,10 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 assetsExpected,
         uint256 exchangeRate
     );
+
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
     OllaCoreWithdrawalQueueHarness internal vault;
@@ -39,6 +51,10 @@ contract OllaCoreWithdrawalQueueTest is Test {
     address internal safetyModule;
     address internal alice;
     address internal bob;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
         asset = new MockAztec(address(this));
@@ -68,6 +84,10 @@ contract OllaCoreWithdrawalQueueTest is Test {
         alice = makeAddr("alice");
         bob = makeAddr("bob");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        REQUEST REDEEM FLOW
+    //////////////////////////////////////////////////////////////*/
 
     function test_RequestRedeem_BurnsShares() external {
         uint256 shares = _deposit(alice, 10 ether);
@@ -151,6 +171,10 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(request.rate, rate, "request rate should match current rate");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                             ERROR CASES
+    //////////////////////////////////////////////////////////////*/
+
     function test_RevertWhen_ActiveRequestExists() external {
         _deposit(alice, 15 ether);
 
@@ -173,6 +197,10 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
         assertEq(requestId, 1, "request should succeed while paused");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                       WITHDRAWAL FINALIZATION
+    //////////////////////////////////////////////////////////////*/
 
     function test_FinalizeWithdrawals_UsesAvailableLiquidity() external {
         _deposit(alice, 10 ether);
@@ -267,6 +295,10 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertFalse(third.finalized, "third request should remain pending");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                             FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
     function testFuzz_FinalizeWithdrawals_FifoAvailable(uint96[4] memory assetsRaw, uint96 availableRaw) external {
         uint256[4] memory assetsExpected;
         uint256 totalAssets = 0;
@@ -314,6 +346,10 @@ contract OllaCoreWithdrawalQueueTest is Test {
             }
         }
     }
+
+    /*//////////////////////////////////////////////////////////////
+                               HELPERS
+    //////////////////////////////////////////////////////////////*/
 
     function _deposit(address owner, uint256 assets) internal returns (uint256 shares) {
         asset.mint(owner, assets);
