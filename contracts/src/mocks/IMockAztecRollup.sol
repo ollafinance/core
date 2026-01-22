@@ -7,7 +7,7 @@ import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IMockAztecRollup
 /// @notice Interface for MockAztecRollup test helper contract.
-/// @dev Extends IAztecStaking with test-specific functions.
+/// @dev Extends IAztecRollup with test-specific functions.
 /// @author Olla Core contributors
 interface IMockAztecRollup {
     /*//////////////////////////////////////////////////////////////
