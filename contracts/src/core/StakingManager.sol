@@ -5,7 +5,6 @@ import { AccessControl } from "@oz/access/AccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-
 import { IAztecRollup } from "src/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
