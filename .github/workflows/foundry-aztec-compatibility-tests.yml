@@ -21,5 +21,7 @@ jobs:
           version: stable
       - name: Setup Soldeer dependencies
         uses: ./.github/actions/setup-soldeer
+      - name: Forge clean
+        run: forge clean
       - name: Forge Aztec compatibility tests
         run: forge test --match-path "test/integration/AztecInterfaceCompatibility.t.sol"
