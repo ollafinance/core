@@ -1,72 +1,106 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Script, console2 } from "@forge-std/Script.sol";
-import { OllaCore } from "src/core/OllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { MockAztec } from "src/mocks/MockAztec.sol";
-import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
-import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { IStAztec } from "src/interfaces/IStAztec.sol";
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { console2 } from "@forge-std/Script.sol";
+import { BaseDeployer } from "./base/BaseDeployer.s.sol";
+import { DeployConfig } from "./config/Config.s.sol";
+import { LocalConfig } from "./config/Local.s.sol";
+import { TestnetConfig } from "./config/Testnet.s.sol";
+import { MocksDeployer } from "./deployers/Mocks.s.sol";
+import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
+import { StAztecDeployer } from "./deployers/StAztec.s.sol";
 
-contract DeployScript is Script {
-    function setUp() public { }
+/// @title DeployScript
+/// @notice Main deployment orchestrator - deploys all contracts based on environment
+contract DeployScript is BaseDeployer {
+    // Deployers
+    MocksDeployer internal mocksDeployer;
+    OllaCoreDeployer internal ollaCoreDeployer;
+    StAztecDeployer internal stAztecDeployer;
+
+    function setUp() public {
+        // Initialize deployers
+        mocksDeployer = new MocksDeployer();
+        ollaCoreDeployer = new OllaCoreDeployer();
+        stAztecDeployer = new StAztecDeployer();
+    }
 
     function run() public {
-        uint256 deployerPrivateKey =
-            vm.envOr("PRIVATE_KEY", uint256(0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80));
-        address deployer = vm.addr(deployerPrivateKey);
+        // Load config based on DEPLOY_ENV
+        DeployConfig memory config = _loadConfig();
 
-        vm.startBroadcast(deployerPrivateKey);
+        console2.log("===========================================");
+        console2.log("Deploying to:", config.name);
+        console2.log("Chain ID:", config.chainId);
+        console2.log("Deployer:", config.deployer);
+        console2.log("Deploy Mocks:", config.deployMocks);
+        console2.log("===========================================");
 
-        // 1. Deploy Mocks
-        MockAztec asset = new MockAztec(deployer);
-        MockStakingManager stakingManager = new MockStakingManager();
+        // Track deployed addresses
+        address asset;
+        address stakingManager;
+        address ollaCoreImpl;
+        address ollaCoreProxy;
+        address stAztec;
 
-        console2.log("Mock Asset deployed at:", address(asset));
-        console2.log("Mock StakingManager deployed at:", address(stakingManager));
+        // Initialize deployment JSON
+        string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
+        bool isFirstAddress = true;
 
-        // 2. Deploy OllaCore Implementation
-        OllaCore coreImpl = new OllaCore();
-        console2.log("OllaCore Implementation deployed at:", address(coreImpl));
+        // 1. Deploy or use existing mocks/external contracts
+        if (config.deployMocks) {
+            console2.log("\n--- Deploying Mocks ---");
+            (asset, stakingManager) = mocksDeployer.deploy(config);
+            json = _addAddressToJson(json, "MockAztec", asset, isFirstAddress);
+            isFirstAddress = false;
+            json = _addAddressToJson(json, "MockStakingManager", stakingManager, false);
+        } else {
+            console2.log("\n--- Using External Contracts ---");
+            asset = config.asset;
+            stakingManager = config.stakingManager;
+            require(asset != address(0), "Deploy: asset address required for non-mock deployment");
+            require(stakingManager != address(0), "Deploy: stakingManager address required for non-mock deployment");
+            console2.log("Asset:", asset);
+            console2.log("StakingManager:", stakingManager);
+        }
 
-        // 3. Deploy OllaCore Proxy (Uninitialized)
-        // We pass empty bytes ("") so initialize is NOT called yet
-        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImpl), "");
-        address coreAddress = address(coreProxy);
-        console2.log("OllaCore Proxy deployed at:", address(coreAddress));
+        // 2. Deploy OllaCore (implementation + proxy)
+        console2.log("\n--- Deploying OllaCore ---");
+        (ollaCoreImpl, ollaCoreProxy) = ollaCoreDeployer.deploy(config);
+        json = _addAddressToJson(json, "OllaCoreImplementation", ollaCoreImpl, isFirstAddress);
+        if (isFirstAddress) isFirstAddress = false;
+        json = _addAddressToJson(json, "OllaCoreProxy", ollaCoreProxy, false);
 
-        // 4. Deploy StAztec (linked to Proxy)
-        StAztec stAztec = new StAztec(coreAddress);
-        console2.log("StAztec deployed at:", address(stAztec));
+        // 3. Deploy StAztec (linked to OllaCore proxy)
+        console2.log("\n--- Deploying StAztec ---");
+        stAztec = stAztecDeployer.deploy(config, ollaCoreProxy);
+        json = _addAddressToJson(json, "StAztec", stAztec, false);
 
-        // 5. Initialize OllaCore
-        // Using deployer as governance, rewardsVault, withdrawalQueue, safetyModule for now
-        address governance = deployer;
-        address withdrawalQueue = deployer; // Placeholder
-        address rewardsVault = deployer; // Placeholder
-        address safetyModule = deployer; // Placeholder
+        // 4. Initialize OllaCore with all dependencies
+        console2.log("\n--- Initializing OllaCore ---");
+        ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager);
 
-        // Cast proxy to OllaCore to call initialize
-        OllaCore(coreAddress)
-            .initialize(
-                IERC20(address(asset)),
-                IStAztec(address(stAztec)),
-                IStakingManager(address(stakingManager)),
-                governance,
-                withdrawalQueue,
-                rewardsVault,
-                safetyModule
-            );
-        console2.log("OllaCore Initialized");
+        // 5. Write deployment JSON
+        json = _closeAddressesJson(json);
+        _writeDeploymentJson(config.name, json);
 
-        // 6. Setup for Dev: Mint some assets to deployer
-        asset.mint(deployer, 1000 ether);
-        asset.approve(coreAddress, 1000 ether);
-        console2.log("Minted and Approved 1000 Mock Assets to Deployer");
+        console2.log("\n===========================================");
+        console2.log("Deployment complete!");
+        console2.log("===========================================");
+    }
 
-        vm.stopBroadcast();
+    /// @notice Load the appropriate config based on DEPLOY_ENV
+    function _loadConfig() internal returns (DeployConfig memory) {
+        string memory env = vm.envOr("DEPLOY_ENV", string("local"));
+
+        if (keccak256(bytes(env)) == keccak256(bytes("local"))) {
+            LocalConfig localConfig = new LocalConfig();
+            return localConfig.getConfig();
+        } else if (keccak256(bytes(env)) == keccak256(bytes("testnet"))) {
+            TestnetConfig testnetConfig = new TestnetConfig();
+            return testnetConfig.getConfig();
+        } else {
+            revert(string.concat("Unknown DEPLOY_ENV: ", env));
+        }
     }
 }
