@@ -383,13 +383,22 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /// @notice Stakes a batch of attesters on the rollup.
+    /// @dev Reentrancy protection provided by external caller (stake).
     /// @param rollup The rollup staking interface.
     /// @param attestersToStakeTo The number of attesters to stake.
     /// @param activationThreshold The stake amount per attester.
     // slither-disable-start calls-loop
+    // slither-disable-start reentrancy-benign
     function _stakeAttesters(IAztecStaking rollup, uint256 attestersToStakeTo, uint256 activationThreshold) internal {
         for (uint256 i; i < attestersToStakeTo; ++i) {
             KeyStore memory keyStore = _providerQueue.dequeue();
+            _addActivatedAttester(keyStore.attester);
+            emit StakedWithProvider(keyStore.attester, activationThreshold);
+            // External call is safe:
+            // - Caller has nonReentrant modifier
+            // - State fully updated before call (CEI pattern)
+            // - No ETH transfer
+            // slither-disable-next-line reentrancy-no-eth
             rollup.deposit(
                 keyStore.attester,
                 address(this),
@@ -398,18 +407,20 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                 keyStore.proofOfPossession,
                 true
             );
-            _addActivatedAttester(keyStore.attester);
-            emit StakedWithProvider(keyStore.attester, activationThreshold);
         }
     }
 
+    // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
     /// @notice Initiates unstake requests for activated attesters.
+    /// @dev External calls inside loop are safe:
+    ///      - rollup is a trusted Aztec contract
+    ///      - attesters are permissioned
+    ///      - failure should revert entire unstake operation
     /// @param rollup The rollup staking interface.
     /// @param amount The amount to unstake.
     /// @return totalUnstakedAmount The total amount initiated for unstake.
-    // slither-disable-start calls-loop
     function _initiateUnstakeRequests(IAztecStaking rollup, uint256 amount)
         internal
         returns (uint256 totalUnstakedAmount)
@@ -428,18 +439,26 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         return totalUnstakedAmount;
     }
 
-    // slither-disable-end calls-loop
-
     /// @notice Processes a single attester unstake attempt.
+    /// @dev External calls inside a loop are intentional and safe:
+    ///      - `rollup` is a trusted Aztec protocol contract
+    ///      - Attesters are permissioned and managed by the provider
+    ///      - Function is only reachable via CORE_ROLE-gated entrypoints with nonReentrant
+    ///      - State updates after external call are benign (internal bookkeeping only)
+    ///      - Failure is expected to revert the entire unstake operation
     /// @param rollup The rollup staking interface.
     /// @param attester The attester address to process.
     /// @return incrementIndex Whether the caller should advance the index.
     /// @return exitAmount The unstake amount initiated for the attester.
+    // slither-disable-start calls-loop
+    // slither-disable-start reentrancy-benign
     function _processUnstakeAttester(IAztecStaking rollup, address attester)
         internal
         returns (bool incrementIndex, uint256 exitAmount)
     {
         AttesterView memory view_ = rollup.getAttesterView(attester);
+        exitAmount = view_.effectiveBalance;
+
         bool isInitiated = rollup.initiateWithdraw(attester, address(this));
         if (!isInitiated) {
             if (view_.exit.exists) {
@@ -449,11 +468,13 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             revert StakingManager__UnstakeFailed(attester);
         }
 
-        exitAmount = view_.effectiveBalance;
         _moveToPendingUnstake(attester, true);
         emit UnstakeInitiated(attester, exitAmount);
         return (false, exitAmount);
     }
+
+    // slither-disable-end reentrancy-benign
+    // slither-disable-end calls-loop
 
     /// @notice Moves an attester from activated to pending unstake tracking.
     /// @param attester The attester address.
@@ -467,9 +488,11 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /// @notice Finalizes pending unstake requests that are exitable.
+    /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
     /// @param rollup The rollup staking interface.
     /// @return sumOfExitAmounts The total amount finalized.
     // slither-disable-start calls-loop
+    // slither-disable-start reentrancy-benign
     function _finalizePendingUnstakes(IAztecStaking rollup) internal returns (uint256 sumOfExitAmounts) {
         uint256 i = 0;
         while (i < _pendingUnstakeRequests.length) {
@@ -486,16 +509,21 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                 ++i;
                 continue;
             }
-
-            rollup.finalizeWithdraw(attester);
             sumOfExitAmounts += view_.exit.amount;
             _isUnstakePending[attester] = false;
             _removePendingUnstakeAtIndex(i);
             emit UnstakeFinalized(attester, view_.exit.amount);
+            // External call is safe:
+            // - Caller has nonReentrant modifier
+            // - State fully updated before call (CEI pattern)
+            // - No ETH transfer
+            // slither-disable-next-line reentrancy-no-eth
+            rollup.finalizeWithdraw(attester);
         }
         return sumOfExitAmounts;
     }
 
+    // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
     /// @notice Removes a pending unstake request at the given index.
