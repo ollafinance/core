@@ -440,7 +440,7 @@ contract OllaCore is
     function _claimWithdrawal(uint256 requestId) internal returns (uint256 assets) {
         IWithdrawalQueue queue = _withdrawalQueue;
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
-        address receiver = request.user;
+        address receiver = request.recipient;
         assets = request.assetsExpected;
         address owner = _requestOwners[requestId];
         if (owner != address(0)) {

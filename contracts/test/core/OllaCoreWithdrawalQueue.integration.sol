@@ -135,7 +135,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 requestId = vault.requestRedeem(shares, bob);
 
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
-        assertEq(request.user, bob, "queue stores recipient");
+        assertEq(request.recipient, bob, "queue stores recipient");
         assertEq(request.shares, shares, "queue stores share amount");
         assertEq(request.assetsExpected, expectedAssets, "queue stores assets expected");
         assertEq(request.rate, rate, "queue stores request rate");

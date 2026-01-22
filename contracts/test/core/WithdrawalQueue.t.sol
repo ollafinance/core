@@ -14,10 +14,10 @@ contract WithdrawalQueueTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     event WithdrawalRequested(
-        uint256 indexed id, address indexed user, uint256 shares, uint256 assetsExpected, uint256 rate
+        uint256 indexed id, address indexed recipient, uint256 shares, uint256 assetsExpected, uint256 rate
     );
     event WithdrawalFinalized(uint256 indexed id, uint256 assets);
-    event WithdrawalClaimed(uint256 indexed id, address indexed user, uint256 assetsExpected);
+    event WithdrawalClaimed(uint256 indexed id, address indexed recipient, uint256 assetsExpected);
 
     /*//////////////////////////////////////////////////////////////
                           TEST FIXTURES
@@ -64,7 +64,7 @@ contract WithdrawalQueueTest is Test {
         assertEq(queue.totalPendingAssets(), 190, "pending assets should sum enqueued requests");
 
         IWithdrawalQueue.WithdrawalRequest memory first = queue.getRequest(firstId);
-        assertEq(first.user, alice, "request should store the user address");
+        assertEq(first.recipient, alice, "request should store the recipient address");
         assertEq(first.shares, 100, "request should store the share amount");
         assertEq(first.assetsExpected, 120, "request should store expected assets");
         assertEq(first.rate, 1e18, "request should store the locked rate");

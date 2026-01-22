@@ -82,19 +82,19 @@ contract WithdrawalQueue is
     }
 
     /// @notice Enqueues a new withdrawal request.
-    /// @param user The request owner.
+    /// @param recipient The request owner.
     /// @param shares The shares burned for the request.
     /// @param assetsExpected The assets expected when finalized.
     /// @param rate The exchange rate locked at request time.
     /// @return requestId The request id.
-    function requestWithdrawal(address user, uint256 shares, uint256 assetsExpected, uint256 rate)
+    function requestWithdrawal(address recipient, uint256 shares, uint256 assetsExpected, uint256 rate)
         external
         override
         onlyRole(CORE_ROLE)
         returns (uint256 requestId)
     {
-        if (user == address(0)) {
-            revert WithdrawalQueue__ZeroAddress("user");
+        if (recipient == address(0)) {
+            revert WithdrawalQueue__ZeroAddress("recipient");
         }
         if (shares == 0) {
             revert WithdrawalQueue__ZeroAmount("shares");
@@ -108,10 +108,15 @@ contract WithdrawalQueue is
         totalPendingAssets += assetsExpected;
 
         _requests[requestId] = WithdrawalRequest({
-            user: user, finalized: false, claimed: false, shares: shares, assetsExpected: assetsExpected, rate: rate
+            recipient: recipient,
+            finalized: false,
+            claimed: false,
+            shares: shares,
+            assetsExpected: assetsExpected,
+            rate: rate
         });
 
-        emit WithdrawalRequested(requestId, user, shares, assetsExpected, rate);
+        emit WithdrawalRequested(requestId, recipient, shares, assetsExpected, rate);
         return requestId;
     }
 
@@ -154,7 +159,7 @@ contract WithdrawalQueue is
     /// @return assetsExpected The assets expected for the request.
     function claimWithdrawal(uint256 id) external override nonReentrant returns (uint256 assetsExpected) {
         WithdrawalRequest storage request = _requests[id];
-        if (request.user == address(0)) {
+        if (request.recipient == address(0)) {
             revert WithdrawalQueue__InvalidRequest(id);
         }
         if (!request.finalized) {
@@ -166,7 +171,7 @@ contract WithdrawalQueue is
 
         request.claimed = true;
         assetsExpected = request.assetsExpected;
-        emit WithdrawalClaimed(id, request.user, assetsExpected);
+        emit WithdrawalClaimed(id, request.recipient, assetsExpected);
         return assetsExpected;
     }
 
@@ -181,7 +186,7 @@ contract WithdrawalQueue is
     /// @return request The request struct.
     function getRequest(uint256 id) external view override returns (WithdrawalRequest memory request) {
         request = _requests[id];
-        if (request.user == address(0)) {
+        if (request.recipient == address(0)) {
             revert WithdrawalQueue__InvalidRequest(id);
         }
         return request;
