@@ -71,10 +71,11 @@ contract OllaCore is
     uint256 private _unstakeMessageId;
 
     mapping(address owner => uint256 requestId) private _activeRequestIds;
+    mapping(uint256 requestId => address owner) private _requestOwners;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[36] private __gap;
+    uint256[50] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -91,6 +92,9 @@ contract OllaCore is
 
     /// @notice Thrown when buffered assets do not match the vault balance.
     error OllaCore__BufferedBalanceMismatch(uint256 expected, uint256 actual);
+
+    /// @notice Thrown when queue assets do not match stored request data.
+    error OllaCore__ClaimAssetsMismatch(uint256 requestId, uint256 expected, uint256 actual);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -212,6 +216,7 @@ contract OllaCore is
         uint256 expectedRequestId = _withdrawalQueue.nextRequestId();
 
         _activeRequestIds[owner] = expectedRequestId;
+        _requestOwners[expectedRequestId] = owner;
         _increaseCumulativeWithdrawals(assetsExpected);
         _stAztec.burn(owner, shares);
 
@@ -222,6 +227,23 @@ contract OllaCore is
 
         emit WithdrawalRequested(requestId, recipient, shares, assetsExpected, rate);
         return requestId;
+    }
+
+    /// @notice Claims a finalized withdrawal request for a controller.
+    /// @param owner The request owner.
+    /// @return assets The assets claimed for the request.
+    function claimActiveRequest(address owner) external override nonReentrant returns (uint256 assets) {
+        uint256 requestId = _activeRequestIds[owner];
+        assets = _claimWithdrawal(requestId);
+        return assets;
+    }
+
+    /// @notice Claims a finalized withdrawal request by id.
+    /// @param requestId The withdrawal request id.
+    /// @return assets The assets claimed for the request.
+    function claimRequestById(uint256 requestId) external override nonReentrant returns (uint256 assets) {
+        assets = _claimWithdrawal(requestId);
+        return assets;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -414,6 +436,27 @@ contract OllaCore is
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    function _claimWithdrawal(uint256 requestId) internal returns (uint256 assets) {
+        IWithdrawalQueue queue = _withdrawalQueue;
+        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        address receiver = request.user;
+        assets = request.assetsExpected;
+        address owner = _requestOwners[requestId];
+        if (owner != address(0)) {
+            _activeRequestIds[owner] = 0;
+            delete _requestOwners[requestId];
+        }
+
+        uint256 assetsClaimed = queue.claimWithdrawal(requestId);
+        if (assetsClaimed != assets) {
+            revert OllaCore__ClaimAssetsMismatch(requestId, assets, assetsClaimed);
+        }
+
+        _asset.safeTransfer(receiver, assets);
+        emit WithdrawalClaimed(requestId, receiver, assets);
+        return assets;
+    }
 
     // slither-disable-next-line dead-code
     function _stake(uint256 amount) internal {
