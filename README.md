@@ -93,31 +93,35 @@ pattern = re.compile(
     re.MULTILINE,
 )
 
-replacement = """def _detect_arbitrary_from(self, f):
-        all_high_level_calls = [
-            f_called[1].solidity_signature
-            for f_called in f.high_level_calls
-            if isinstance(f_called[1], Function)
-        ]
-        all_library_calls = []
-        for f_called in f.library_calls:
-            # Slither >=0.11.4 returns LibraryCall objects
-            if hasattr(f_called, "function") and hasattr(f_called.function, "solidity_signature"):
-                all_library_calls.append(f_called.function.solidity_signature)
-            elif hasattr(f_called, "solidity_signature"):
-                all_library_calls.append(f_called.solidity_signature)
-            else:
-                # Older Slither returns tuples
-                all_library_calls.append(f_called[1].solidity_signature)
-
-        all_calls = all_high_level_calls + all_library_calls
-
-        if any(map(lambda s: s in all_calls, self._signatures)):
-            return self._arbitrary_from(f.nodes)
-        else:
-            return []
-
-    def _arbitrary_from"""
+replacement = "\n".join(
+    [
+        "def _detect_arbitrary_from(self, f):",
+        "        all_high_level_calls = [",
+        "            f_called[1].solidity_signature",
+        "            for f_called in f.high_level_calls",
+        "            if isinstance(f_called[1], Function)",
+        "        ]",
+        "        all_library_calls = []",
+        "        for f_called in f.library_calls:",
+        "            # Slither >=0.11.4 returns LibraryCall objects",
+        "            if hasattr(f_called, \"function\") and hasattr(f_called.function, \"solidity_signature\"):",
+        "                all_library_calls.append(f_called.function.solidity_signature)",
+        "            elif hasattr(f_called, \"solidity_signature\"):",
+        "                all_library_calls.append(f_called.solidity_signature)",
+        "            else:",
+        "                # Older Slither returns tuples",
+        "                all_library_calls.append(f_called[1].solidity_signature)",
+        "",
+        "        all_calls = all_high_level_calls + all_library_calls",
+        "",
+        "        if any(map(lambda s: s in all_calls, self._signatures)):",
+        "            return self._arbitrary_from(f.nodes)",
+        "        else:",
+        "            return []",
+        "",
+        "    def _arbitrary_from",
+    ]
+)
 
 new_src, count = pattern.subn(replacement, src)
 if count == 0:
