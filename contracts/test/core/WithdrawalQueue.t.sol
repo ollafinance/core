@@ -215,6 +215,8 @@ contract WithdrawalQueueTest is Test {
         for (uint256 i = 0; i < assetsRaw.length; i++) {
             assets[i] = uint256(bound(assetsRaw[i], 1, 1e18));
             totalAssets += assets[i];
+            // casting to uint160 is safe because 100 + i stays within 160 bits
+            // forge-lint: disable-next-line(unsafe-typecast)
             address user = address(uint160(100 + i));
             _request(user, assets[i], assets[i], 1e18);
         }
@@ -259,6 +261,8 @@ contract WithdrawalQueueTest is Test {
         for (uint256 i = 0; i < assetsRaw.length; i++) {
             assets[i] = uint256(bound(assetsRaw[i], 1, 1e18));
             totalAssets += assets[i];
+            // casting to uint160 is safe because 200 + i stays within 160 bits
+            // forge-lint: disable-next-line(unsafe-typecast)
             address user = address(uint160(200 + i));
             _request(user, assets[i], assets[i], 1e18);
         }

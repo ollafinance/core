@@ -69,7 +69,8 @@ contract StAztecTest is Test {
         token.mint(alice, mintAmount);
 
         vm.prank(alice);
-        token.transfer(bob, 40 * DECIMALS);
+        bool transferSuccess = token.transfer(bob, 40 * DECIMALS);
+        assertTrue(transferSuccess, "transfer should succeed");
 
         assertEq(token.balanceOf(alice), 60 * DECIMALS, "alice balance after transfer");
         assertEq(token.balanceOf(bob), 40 * DECIMALS, "bob balance after transfer");
@@ -78,7 +79,8 @@ contract StAztecTest is Test {
         token.approve(charlie, 30 * DECIMALS);
 
         vm.prank(charlie);
-        token.transferFrom(alice, bob, 30 * DECIMALS);
+        bool transferFromSuccess = token.transferFrom(alice, bob, 30 * DECIMALS);
+        assertTrue(transferFromSuccess, "transferFrom should succeed");
 
         assertEq(token.balanceOf(alice), 30 * DECIMALS, "alice balance after transferFrom");
         assertEq(token.balanceOf(bob), 70 * DECIMALS, "bob balance after transferFrom");
@@ -223,7 +225,8 @@ contract StAztecTest is Test {
         uint256 supplyBefore = token.totalSupply();
 
         vm.prank(alice);
-        token.transfer(bob, amount / 2);
+        bool fuzzTransferSuccess = token.transfer(bob, amount / 2);
+        assertTrue(fuzzTransferSuccess, "transfer should succeed");
 
         assertEq(token.totalSupply(), supplyBefore, "total supply unchanged");
         assertEq(token.balanceOf(alice) + token.balanceOf(bob), supplyBefore, "balances sum to supply");
@@ -240,7 +243,8 @@ contract StAztecTest is Test {
         token.approve(charlie, spendAmount);
 
         vm.prank(charlie);
-        token.transferFrom(alice, bob, spendAmount);
+        bool fuzzTransferFromSuccess = token.transferFrom(alice, bob, spendAmount);
+        assertTrue(fuzzTransferFromSuccess, "transferFrom should succeed");
 
         assertEq(token.balanceOf(alice), mintAmount - spendAmount, "alice balance after transferFrom");
         assertEq(token.balanceOf(bob), spendAmount, "bob balance after transferFrom");

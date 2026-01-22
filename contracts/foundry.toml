@@ -50,6 +50,9 @@ quote_style = "double"
 bracket_spacing = true
 int_types = "long"
 
+[lint]
+exclude_lints = ["mixed-case-variable"]
+
 [dependencies]
 "@openzeppelin-contracts" = "5.5.0"
 "@openzeppelin-contracts-upgradeable" = "5.5.0"
