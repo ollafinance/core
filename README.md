@@ -74,11 +74,37 @@ python -m pip install -U slither-analyzer==0.11.4
 yarn slither
 ```
 
-For Slitherin, install the plugin and run:
+Slitherin is pinned in CI to `0.7.2` and patched for Slither 0.11.4 compatibility. To match CI locally:
 
 ```bash
-cd contracts
-slitherin .
+python -m pip install -U slitherin==0.7.2
+python - <<'PY'
+import inspect
+import os
+import slitherin
+
+path = os.path.join(os.path.dirname(inspect.getfile(slitherin)), "detectors", "nft_approve_warning.py")
+with open(path, "r", encoding="utf-8") as f:
+    src = f.read()
+
+old = """        for f_called in f.library_calls:\n            # Slither >=0.11.4 returns LibraryCall objects\n            if hasattr(f_called, \"solidity_signature\"):\n                all_library_calls.append(f_called.solidity_signature)\n            else:\n                # Older Slither returns tuples\n                all_library_calls.append(f_called[1].solidity_signature)\n"""
+
+new = """        for f_called in f.library_calls:\n            # Slither >=0.11.4 returns LibraryCall objects\n            if hasattr(f_called, \"function\") and hasattr(f_called.function, \"solidity_signature\"):\n                all_library_calls.append(f_called.function.solidity_signature)\n            elif hasattr(f_called, \"solidity_signature\"):\n                all_library_calls.append(f_called.solidity_signature)\n            else:\n                # Older Slither returns tuples\n                all_library_calls.append(f_called[1].solidity_signature)\n"""
+
+if old not in src:
+    raise SystemExit("Expected Slitherin snippet not found; check slitherin version.")
+
+src = src.replace(old, new)
+with open(path, "w", encoding="utf-8") as f:
+    f.write(src)
+print("Patched", path)
+PY
+```
+
+Slitherin runs as a Slither plugin, so use the standard command:
+
+```bash
+yarn slither
 ```
 
 ## Storage layout checks
