@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-ENV PATH="/root/.foundry/bin:${PATH}"
+ENV PATH="/usr/local/bin:${PATH}"
 
 # Install system dependencies as root
 RUN apt-get update \
