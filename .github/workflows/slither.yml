@@ -38,11 +38,13 @@ jobs:
               src = f.read()
 
           pattern = re.compile(
-              r"""\n(\s*for f_called in f\.library_calls:\n\s*# Slither >=0\.11\.4 returns LibraryCall objects\n)(\s*if hasattr\(f_called, \\\"solidity_signature\\\"\):\n\s*all_library_calls\.append\(f_called\.solidity_signature\)\n\s*else:\n\s*# Older Slither returns tuples\n\s*all_library_calls\.append\(f_called\[1\]\.solidity_signature\)\n)"""
+              r"""(\s*all_library_calls\s*=\s*\[\]\n)([\s\S]*?)(\n\s*all_calls\s*=)"""
           )
 
           replacement = (
               "\\1"
+              "        for f_called in f.library_calls:\n"
+              "            # Slither >=0.11.4 returns LibraryCall objects\n"
               "            if hasattr(f_called, \\\"function\\\") and hasattr(f_called.function, \\\"solidity_signature\\\"):\n"
               "                all_library_calls.append(f_called.function.solidity_signature)\n"
               "            elif hasattr(f_called, \\\"solidity_signature\\\"):\n"
@@ -50,6 +52,7 @@ jobs:
               "            else:\n"
               "                # Older Slither returns tuples\n"
               "                all_library_calls.append(f_called[1].solidity_signature)\n"
+              "\\3"
           )
 
           new_src, count = pattern.subn(replacement, src)
