@@ -29,7 +29,8 @@ jobs:
           docker buildx build \
             --cache-from type=local,src=/tmp/.buildx-cache \
             --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
-            -f contracts/Dockerfile.slither \
+            --load \
+            -f Dockerfile.slither \
             -t olla-slither:ci \
             .
           rm -rf /tmp/.buildx-cache
