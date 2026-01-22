@@ -2,17 +2,22 @@ FROM python:3.11-slim
 
 ENV PATH="/root/.foundry/bin:${PATH}"
 
+# Install system dependencies as root
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        curl \
-        git \
-        ca-certificates \
-        build-essential \
-    && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends \
+  curl \
+  git \
+  ca-certificates \
+  build-essential \
+  && rm -rf /var/lib/apt/lists/*
 
+# Install Python packages as root
 RUN python -m pip install --no-cache-dir slither-analyzer==0.11.4 slitherin==0.7.2
+
+# Install Foundry as root to /usr/local for all users
 RUN curl -L https://foundry.paradigm.xyz | bash || true
-RUN foundryup
+RUN /root/.foundry/bin/foundryup && \
+    cp /root/.foundry/bin/* /usr/local/bin/
 
 RUN python - <<'PY'
 import inspect
@@ -64,3 +69,12 @@ with open(path, "w", encoding="utf-8") as f:
 
 print("Patched", path)
 PY
+
+# Create user with same UID/GID as host
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN groupadd -g $GROUP_ID user && \
+  useradd -u $USER_ID -g $GROUP_ID -m user
+
+# Switch to non-root user for remaining operations
+USER user

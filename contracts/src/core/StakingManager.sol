@@ -356,7 +356,9 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
     }
 
+    // TODO: see if we can optimize this further
     // slither-disable-start costly-loop
+    // slither-disable-start pess-multiple-storage-read
     /// @notice Removes an attester from the activated attesters list.
     /// @param attester The attester address.
     function _removeActivatedAttester(address attester) internal {
@@ -377,13 +379,14 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     // slither-disable-end costly-loop
+    // slither-disable-end pess-multiple-storage-read
 
     /// @notice Transfers assets from core and approves the rollup.
     /// @param rollupAddress The rollup address to approve.
     /// @param actualStakeAmount The amount to transfer and approve.
     function _transferAndApproveStake(address rollupAddress, uint256 actualStakeAmount) internal {
         // Note: CORE is an immutable trusted address set at construction, not arbitrary
-        // slither-disable-next-line arbitrary-send-erc20
+        // slither-disable-next-line arbitrary-send-erc20,pess-nft-approve-warning
         STAKING_ASSET.safeTransferFrom(CORE, address(this), actualStakeAmount);
         STAKING_ASSET.forceApprove(rollupAddress, actualStakeAmount);
     }
@@ -428,6 +431,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @return totalUnstakedAmount The total amount initiated for unstake.
     function _initiateUnstakeRequests(IAztecStaking rollup, uint256 amount)
         internal
+        onlyRole(CORE_ROLE)
         returns (uint256 totalUnstakedAmount)
     {
         uint256 i = 0;
@@ -530,6 +534,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
+    // TODO: see if we can optimize this further
+    // slither-disable-start pess-multiple-storage-read
     /// @notice Removes a pending unstake request at the given index.
     /// @param index The index to remove.
     function _removePendingUnstakeAtIndex(uint256 index) internal {
@@ -539,6 +545,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
         _pendingUnstakeRequests.pop();
     }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /// @notice Finalizes a claim by validating and transferring unstaked funds.
     /// @param balanceBefore The token balance before finalization.
