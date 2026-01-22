@@ -3,8 +3,9 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { Test } from "@forge-std/Test.sol";
 
-import { IAztecStaking as OllaOverrideIStaking } from "src/interfaces/IAztecStaking.sol";
+import { IAztecRollup as OllaOverrideIStaking } from "src/interfaces/IAztecRollup.sol";
 import { IStaking, IStakingCore } from "@az/core/interfaces/IStaking.sol";
+import { IRollup } from "@az/core/interfaces/IRollup.sol";
 import { IAztecRollupRegistry as OllaOverrideIAztecRollupRegistry } from "src/interfaces/IAztecRollupRegistry.sol";
 import { IRegistry } from "@az/governance/interfaces/IRegistry.sol";
 import { G1Point as OllaOverrideG1Point, G2Point as OllaOverrideG2Point } from "src/libraries/BN254Lib.sol";
@@ -12,7 +13,7 @@ import { G1Point, G2Point } from "@az/shared/libraries/BN254Lib.sol";
 
 contract AztecInterfaceCompatibilityTest is Test {
     /*//////////////////////////////////////////////////////////////
-                                IAztecStaking
+                                IAztecRollup
     //////////////////////////////////////////////////////////////*/
     function test_Conformance_DepositSignature() public {
         bytes4 expectedSelector = IStakingCore.deposit.selector;
@@ -47,6 +48,27 @@ contract AztecInterfaceCompatibilityTest is Test {
         bytes4 actualSelector = OllaOverrideIStaking.getAttesterView.selector;
 
         assertEq(expectedSelector, actualSelector, "GetAttesterView selector mismatch");
+    }
+
+    function test_Conformance_GetSequencerRewardsSignature() public {
+        bytes4 expectedSelector = IRollup.getSequencerRewards.selector;
+        bytes4 actualSelector = OllaOverrideIStaking.getSequencerRewards.selector;
+
+        assertEq(expectedSelector, actualSelector, "GetSequencerRewards selector mismatch");
+    }
+
+    function test_Conformance_IsRewardsClaimableSignature() public {
+        bytes4 expectedSelector = IRollup.isRewardsClaimable.selector;
+        bytes4 actualSelector = OllaOverrideIStaking.isRewardsClaimable.selector;
+
+        assertEq(expectedSelector, actualSelector, "IsRewardsClaimable selector mismatch");
+    }
+
+    function test_Conformance_GetEarliestRewardsClaimableTimestampSignature() public {
+        bytes4 expectedSelector = IRollup.getEarliestRewardsClaimableTimestamp.selector;
+        bytes4 actualSelector = OllaOverrideIStaking.getEarliestRewardsClaimableTimestamp.selector;
+
+        assertEq(expectedSelector, actualSelector, "GetEarliestRewardsClaimableTimestamp selector mismatch");
     }
 
     /*//////////////////////////////////////////////////////////////
