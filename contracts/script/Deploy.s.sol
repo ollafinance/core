@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import {console2} from "@forge-std/Script.sol";
-import {BaseDeployer} from "./base/BaseDeployer.s.sol";
-import {DeployConfig} from "./config/Config.s.sol";
-import {LocalConfig} from "./config/Local.s.sol";
-import {TestnetConfig} from "./config/Testnet.s.sol";
-import {MocksDeployer} from "./deployers/Mocks.s.sol";
-import {OllaCoreDeployer} from "./deployers/OllaCore.s.sol";
-import {StAztecDeployer} from "./deployers/StAztec.s.sol";
+import { console2 } from "@forge-std/Script.sol";
+import { BaseDeployer } from "./base/BaseDeployer.s.sol";
+import { DeployConfig } from "./config/Config.s.sol";
+import { LocalConfig } from "./config/Local.s.sol";
+import { TestnetConfig } from "./config/Testnet.s.sol";
+import { MocksDeployer } from "./deployers/Mocks.s.sol";
+import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
+import { StAztecDeployer } from "./deployers/StAztec.s.sol";
 
 /// @title DeployScript
 /// @notice Main deployment orchestrator - deploys all contracts based on environment
