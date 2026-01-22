@@ -114,32 +114,4 @@ contract MockStakingManager is IStakingManager {
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
     }
-
-    /*//////////////////////////////////////////////////////////////
-                        EXTERNAL NON-VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IStakingManager
-    function addKeysToProvider(KeyStore[] calldata) external pure override {
-        // No-op for mock
-        return;
-    }
-
-    /// @inheritdoc IStakingManager
-    function dripQueue(uint256) external pure override {
-        // No-op for mock
-        return;
-    }
-
-    /// @inheritdoc IStakingManager
-    function setProviderRewardsRecipient(address) external pure override {
-        // No-op for mock
-        return;
-    }
-
-    /// @inheritdoc IStakingManager
-    function cleanActivatedAttesters() external pure override {
-        // No-op for mock
-        return;
-    }
 }
