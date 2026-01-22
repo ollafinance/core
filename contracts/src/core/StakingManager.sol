@@ -141,7 +141,9 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         _unstake(amount);
     }
 
-    // slither-disable-next-line calls-loop
+    // slither-disable-start calls-loop
+    /// @notice Syncs activated attesters with the rollup exit state.
+    /// @dev Moves exited attesters into the pending unstake queue.
     function cleanActivatedAttesters() external override onlyRole(CORE_ROLE) nonReentrant {
         // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
@@ -160,6 +162,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             }
         }
     }
+
+    // slither-disable-end calls-loop
 
     /// @inheritdoc IStakingManager
     function getUnstakedFunds() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 received) {
@@ -226,12 +230,12 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IStakingManager
-    // slither-disable-next-line calls-loop,timestamp
+    // slither-disable-start calls-loop,timestamp
+    /// @notice Returns aggregated staking state from the rollup.
+    /// @return state The aggregated staking state.
     function getStakingState() external view override returns (StakingState memory state) {
         // TODO: research if we can assume moving with rollup is safe
-        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
-        IAztecStaking rollup = IAztecStaking(rollupAddress);
+        (, IAztecStaking rollup) = _getRollup();
 
         state = _getActivatedAttestersStakingState(rollup);
         StakingState memory pendingState = _getPendingUnstakeRequestsStakingState(rollup);
@@ -241,6 +245,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
         return state;
     }
+
+    // slither-disable-end calls-loop,timestamp
 
     /// @inheritdoc IStakingManager
     function getQueueLength() external view override returns (uint256) {
@@ -276,65 +282,21 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start divide-before-multiply
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
+    // Reentrancy safe: caller (stake) has nonReentrant modifier
+    //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
     function _stake(uint256 amount) internal {
-        // Check we have enough keys
         uint256 availableKeys = _providerQueue.length();
         if (availableKeys == 0) {
             revert StakingManager__InsufficientKeys();
         }
-
-        // TODO: research if we can assume moving with rollup is safe
-        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
-        IAztecStaking rollup = IAztecStaking(rollupAddress);
-
-        // TODO: Consider storing this on contract to save gas
+        (address rollupAddress, IAztecStaking rollup) = _getRollup();
         uint256 activationThreshold = rollup.getActivationThreshold();
-
-        // Calculate how many attesters we can stake to
-        // Note: Division before multiplication is intentional - we want to truncate to whole attesters
-        uint256 attestersToStakeTo = amount / activationThreshold;
-        if (attestersToStakeTo == 0) {
-            revert StakingManager__InsufficientAmount();
-        }
-
-        // Limit attesters to available keys
-        if (attestersToStakeTo > availableKeys) {
-            attestersToStakeTo = availableKeys;
-        }
-
-        // Calculate actual stake amount (intentional truncation to whole attesters)
+        uint256 attestersToStakeTo = _calculateAttestersToStake(amount, activationThreshold, availableKeys);
         uint256 actualStakeAmount = attestersToStakeTo * activationThreshold;
-        // Transfer assets from core to this contract
-        // Note: CORE is an immutable trusted address set at construction, not arbitrary
-        // slither-disable-next-line arbitrary-send-erc20
-        STAKING_ASSET.safeTransferFrom(CORE, address(this), actualStakeAmount);
 
-        // Approve rollup to spend
-        STAKING_ASSET.forceApprove(rollupAddress, actualStakeAmount);
-
-        // Stake each attester (loop over external calls is intentional for batch operations)
-        for (uint256 i; i < attestersToStakeTo; ++i) {
-            // Dequeue a key
-            KeyStore memory keyStore = _providerQueue.dequeue();
-
-            // Deposit to rollup
-            rollup.deposit(
-                keyStore.attester,
-                address(this), // StakingManager is the withdrawer
-                keyStore.publicKeyG1,
-                keyStore.publicKeyG2,
-                keyStore.proofOfPossession,
-                true // moveWithLatestRollup
-            );
-
-            // Track activated attester
-            _addActivatedAttester(keyStore.attester);
-
-            emit StakedWithProvider(keyStore.attester, activationThreshold);
-        }
-
-        // Reset approval
+        _transferAndApproveStake(rollupAddress, actualStakeAmount);
+        _stakeAttesters(rollup, attestersToStakeTo, activationThreshold);
         STAKING_ASSET.forceApprove(rollupAddress, 0);
     }
 
@@ -348,57 +310,12 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @param amount The amount to unstake.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
+    // Reentrancy safe: caller (unstake) has nonReentrant modifier
+    //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
     function _unstake(uint256 amount) internal {
-        // TODO: research if we can assume moving with rollup is safe
-        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
-        IAztecStaking rollup = IAztecStaking(rollupAddress);
-
-        uint256 totalUnstakedAmount = 0;
-        uint256 i = 0;
-
-        // Iterate through activated attesters
-        while (i < _activatedAttesters.length) {
-            address attester = _activatedAttesters[i];
-
-            AttesterView memory view_ = rollup.getAttesterView(attester);
-            uint256 exitAmount = view_.effectiveBalance;
-
-            // Initiate withdrawal on rollup
-            bool isInitiated = rollup.initiateWithdraw(attester, address(this));
-            if (!isInitiated) {
-                if (view_.exit.exists) {
-                    // Already exiting due too external reason, just update tracking
-                    _removeActivatedAttester(attester);
-                    _pendingUnstakeRequests.push(attester);
-                    // NOTE: we do not update totalUnstakedAmount here since we did not initiate a new exit-
-                    //       and this pendingUnstake has already been accounted for in staking state
-                    ++i;
-                    continue;
-                } else {
-                    // If we get here it means that this contract (the withdrawer) has finalized wihtout updating state
-                    // Should not be possible
-                    revert StakingManager__UnstakeFailed(attester);
-                }
-            }
-
-            // Update tracking
-            totalUnstakedAmount += exitAmount;
-
-            _removeActivatedAttester(attester);
-            _pendingUnstakeRequests.push(attester);
-            _isUnstakePending[attester] = true;
-
-            emit UnstakeInitiated(attester, exitAmount);
-
-            // Check if we've unstaked enough
-            if (totalUnstakedAmount >= amount) {
-                break;
-            }
-            // Note: Don't increment i since _removeActivatedAttester uses swap-and-pop
-        }
-
-        // Verify we unstaked enough
+        (, IAztecStaking rollup) = _getRollup();
+        uint256 totalUnstakedAmount = _initiateUnstakeRequests(rollup, amount);
         if (totalUnstakedAmount < amount) {
             revert StakingManager__InsufficientStake();
         }
@@ -413,73 +330,15 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @return claimed The amount claimed.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
+    // Reentrancy safe: caller (claimUnstakedFunds) has nonReentrant modifier
+    //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
     function _claimUnstakedFunds() internal returns (uint256 claimed) {
-        // TODO: research if we can assume moving with rollup is safe
-        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
-        IAztecStaking rollup = IAztecStaking(rollupAddress);
+        (, IAztecStaking rollup) = _getRollup();
 
-        // Snapshot balance before the loop
         uint256 balanceBefore = STAKING_ASSET.balanceOf(address(this));
-        uint256 sumOfExitAmounts = 0;
-
-        uint256 i = 0;
-        // Loop over pending requests to claim matured withdrawals (intentional batch operation)
-        while (i < _pendingUnstakeRequests.length) {
-            address attester = _pendingUnstakeRequests[i];
-
-            // Query exit.amount BEFORE finalizeWithdraw (exit is deleted after)
-            AttesterView memory view_ = rollup.getAttesterView(attester);
-
-            // Skip if exit doesn't exist (already finalized externally)
-            if (!view_.exit.exists) {
-                // TODO: only withdrawer(this contract) can finalize, so this should not be possible - revert instead?
-                _isUnstakePending[attester] = false;
-                // Remove from pending list (swap and pop)
-                uint256 lastIndex = _pendingUnstakeRequests.length - 1;
-                if (i != lastIndex) {
-                    _pendingUnstakeRequests[i] = _pendingUnstakeRequests[lastIndex];
-                }
-                _pendingUnstakeRequests.pop();
-                continue;
-            }
-
-            uint256 exitAmount = view_.exit.amount;
-
-            // slither-disable-next-line timestamp
-            if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
-                // Still pending, skip
-                ++i;
-            } else {
-                rollup.finalizeWithdraw(attester);
-                sumOfExitAmounts += exitAmount;
-                _isUnstakePending[attester] = false;
-                // Remove from pending list (swap and pop)
-                uint256 lastIndex = _pendingUnstakeRequests.length - 1;
-                if (i != lastIndex) {
-                    _pendingUnstakeRequests[i] = _pendingUnstakeRequests[lastIndex];
-                }
-                _pendingUnstakeRequests.pop();
-                emit UnstakeFinalized(attester, exitAmount);
-                // Don't increment i, we moved a new element to this position
-            }
-        }
-
-        // Compute total claimed after the loop
-        uint256 balanceAfter = STAKING_ASSET.balanceOf(address(this));
-        claimed = balanceAfter - balanceBefore;
-
-        // Validate consistency: sumOfExitAmounts should match actual token transfer
-        // This ensures all exit amounts were correctly accounted for
-        if (sumOfExitAmounts != claimed) {
-            revert StakingManager__ClaimAmountMismatch();
-        }
-
-        if (claimed > 0) {
-            // Transfer claimed funds to core
-            STAKING_ASSET.safeTransfer(CORE, claimed);
-            emit UnstakedFundsClaimed(claimed);
-        }
+        uint256 sumOfExitAmounts = _finalizePendingUnstakes(rollup);
+        claimed = _finalizeClaim(balanceBefore, sumOfExitAmounts);
         return claimed;
     }
 
@@ -487,7 +346,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
-    /// @dev Adds an attester to the activated attesters list.
+    /// @notice Adds an attester to the activated attesters list.
     /// @param attester The attester address.
     function _addActivatedAttester(address attester) internal {
         if (!_isActivatedAttester[attester]) {
@@ -498,7 +357,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     // slither-disable-start costly-loop
-    /// @dev Removes an attester from the activated attesters list.
+    /// @notice Removes an attester from the activated attesters list.
     /// @param attester The attester address.
     function _removeActivatedAttester(address attester) internal {
         if (_isActivatedAttester[attester]) {
@@ -518,6 +377,195 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     // slither-disable-end costly-loop
+
+    /// @notice Transfers assets from core and approves the rollup.
+    /// @param rollupAddress The rollup address to approve.
+    /// @param actualStakeAmount The amount to transfer and approve.
+    function _transferAndApproveStake(address rollupAddress, uint256 actualStakeAmount) internal {
+        // Note: CORE is an immutable trusted address set at construction, not arbitrary
+        // slither-disable-next-line arbitrary-send-erc20
+        STAKING_ASSET.safeTransferFrom(CORE, address(this), actualStakeAmount);
+        STAKING_ASSET.forceApprove(rollupAddress, actualStakeAmount);
+    }
+
+    /// @notice Stakes a batch of attesters on the rollup.
+    /// @dev Reentrancy protection provided by external caller (stake).
+    /// @param rollup The rollup staking interface.
+    /// @param attestersToStakeTo The number of attesters to stake.
+    /// @param activationThreshold The stake amount per attester.
+    // slither-disable-start calls-loop
+    // slither-disable-start reentrancy-benign
+    function _stakeAttesters(IAztecStaking rollup, uint256 attestersToStakeTo, uint256 activationThreshold) internal {
+        for (uint256 i; i < attestersToStakeTo; ++i) {
+            KeyStore memory keyStore = _providerQueue.dequeue();
+            _addActivatedAttester(keyStore.attester);
+            emit StakedWithProvider(keyStore.attester, activationThreshold);
+            // External call is safe:
+            // - Caller has nonReentrant modifier
+            // - State fully updated before call (CEI pattern)
+            // slither-disable-next-line reentrancy-no-eth
+            rollup.deposit(
+                keyStore.attester,
+                address(this),
+                keyStore.publicKeyG1,
+                keyStore.publicKeyG2,
+                keyStore.proofOfPossession,
+                true
+            );
+        }
+    }
+
+    // slither-disable-end reentrancy-benign
+    // slither-disable-end calls-loop
+
+    /// @notice Initiates unstake requests for activated attesters.
+    /// @dev External calls inside loop are safe:
+    ///      - rollup is a trusted Aztec contract
+    ///      - attesters are permissioned
+    ///      - failure should revert entire unstake operation
+    /// @param rollup The rollup staking interface.
+    /// @param amount The amount to unstake.
+    /// @return totalUnstakedAmount The total amount initiated for unstake.
+    function _initiateUnstakeRequests(IAztecStaking rollup, uint256 amount)
+        internal
+        returns (uint256 totalUnstakedAmount)
+    {
+        uint256 i = 0;
+        while (i < _activatedAttesters.length) {
+            (bool incrementIndex, uint256 exitAmount) = _processUnstakeAttester(rollup, _activatedAttesters[i]);
+            totalUnstakedAmount += exitAmount;
+            if (totalUnstakedAmount > amount - 1) {
+                break;
+            }
+            if (incrementIndex) {
+                ++i;
+            }
+        }
+        return totalUnstakedAmount;
+    }
+
+    /// @notice Processes a single attester unstake attempt.
+    /// @dev External calls inside a loop are intentional and safe:
+    ///      - `rollup` is a trusted Aztec protocol contract
+    ///      - Attesters are permissioned and managed by the provider
+    ///      - Function is only reachable via CORE_ROLE-gated entrypoints with nonReentrant
+    ///      - State updates after external call are benign (internal bookkeeping only)
+    ///      - Failure is expected to revert the entire unstake operation
+    /// @param rollup The rollup staking interface.
+    /// @param attester The attester address to process.
+    /// @return incrementIndex Whether the caller should advance the index.
+    /// @return exitAmount The unstake amount initiated for the attester.
+    // slither-disable-start calls-loop
+    // slither-disable-start reentrancy-benign
+    function _processUnstakeAttester(IAztecStaking rollup, address attester)
+        internal
+        returns (bool incrementIndex, uint256 exitAmount)
+    {
+        AttesterView memory view_ = rollup.getAttesterView(attester);
+        exitAmount = view_.effectiveBalance;
+
+        bool isInitiated = rollup.initiateWithdraw(attester, address(this));
+        if (!isInitiated) {
+            if (view_.exit.exists) {
+                _moveToPendingUnstake(attester, false);
+                return (true, 0);
+            }
+            revert StakingManager__UnstakeFailed(attester);
+        }
+
+        _moveToPendingUnstake(attester, true);
+        emit UnstakeInitiated(attester, exitAmount);
+        return (false, exitAmount);
+    }
+
+    // slither-disable-end reentrancy-benign
+    // slither-disable-end calls-loop
+
+    /// @notice Moves an attester from activated to pending unstake tracking.
+    /// @param attester The attester address.
+    /// @param markPending Whether to mark the attester as pending in the mapping.
+    function _moveToPendingUnstake(address attester, bool markPending) internal {
+        _removeActivatedAttester(attester);
+        _pendingUnstakeRequests.push(attester);
+        if (markPending) {
+            _isUnstakePending[attester] = true;
+        }
+    }
+
+    /// @notice Finalizes pending unstake requests that are exitable.
+    /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
+    /// @param rollup The rollup staking interface.
+    /// @return sumOfExitAmounts The total amount finalized.
+    // slither-disable-start calls-loop
+    // slither-disable-start reentrancy-benign
+    function _finalizePendingUnstakes(IAztecStaking rollup) internal returns (uint256 sumOfExitAmounts) {
+        uint256 i = 0;
+        while (i < _pendingUnstakeRequests.length) {
+            address attester = _pendingUnstakeRequests[i];
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+            if (!view_.exit.exists) {
+                _isUnstakePending[attester] = false;
+                _removePendingUnstakeAtIndex(i);
+                continue;
+            }
+
+            // slither-disable-next-line timestamp
+            if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+                ++i;
+                continue;
+            }
+            sumOfExitAmounts += view_.exit.amount;
+            _isUnstakePending[attester] = false;
+            _removePendingUnstakeAtIndex(i);
+            emit UnstakeFinalized(attester, view_.exit.amount);
+            // External call is safe:
+            // - Caller has nonReentrant modifier
+            // - State fully updated before call (CEI pattern)
+            // slither-disable-next-line reentrancy-no-eth
+            rollup.finalizeWithdraw(attester);
+        }
+        return sumOfExitAmounts;
+    }
+
+    // slither-disable-end reentrancy-benign
+    // slither-disable-end calls-loop
+
+    /// @notice Removes a pending unstake request at the given index.
+    /// @param index The index to remove.
+    function _removePendingUnstakeAtIndex(uint256 index) internal {
+        uint256 lastIndex = _pendingUnstakeRequests.length - 1;
+        if (index != lastIndex) {
+            _pendingUnstakeRequests[index] = _pendingUnstakeRequests[lastIndex];
+        }
+        _pendingUnstakeRequests.pop();
+    }
+
+    /// @notice Finalizes a claim by validating and transferring unstaked funds.
+    /// @param balanceBefore The token balance before finalization.
+    /// @param sumOfExitAmounts The sum of finalized exit amounts.
+    /// @return claimed The amount claimed and transferred.
+    function _finalizeClaim(uint256 balanceBefore, uint256 sumOfExitAmounts) internal returns (uint256 claimed) {
+        uint256 balanceAfter = STAKING_ASSET.balanceOf(address(this));
+        claimed = balanceAfter - balanceBefore;
+        if (sumOfExitAmounts != claimed) {
+            revert StakingManager__ClaimAmountMismatch();
+        }
+
+        if (claimed > 0) {
+            STAKING_ASSET.safeTransfer(CORE, claimed);
+            emit UnstakedFundsClaimed(claimed);
+        }
+        return claimed;
+    }
+
+    /// @notice Returns the canonical rollup address and interface.
+    /// @return rollupAddress The canonical rollup address.
+    /// @return rollup The rollup staking interface.
+    function _getRollup() internal view returns (address rollupAddress, IAztecStaking rollup) {
+        rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
+        rollup = IAztecStaking(rollupAddress);
+        return (rollupAddress, rollup);
+    }
 
     // slither-disable-start calls-loop,timestamp
     function _getActivatedAttestersStakingState(IAztecStaking rollup)
@@ -571,5 +619,26 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
         return state;
     }
+
     // slither-disable-end calls-loop,timestamp
+
+    /// @notice Calculates the attester count to stake to, bounded by available keys.
+    /// @param amount The stake amount requested.
+    /// @param activationThreshold The stake amount per attester.
+    /// @param availableKeys The number of keys available in the queue.
+    /// @return attestersToStakeTo The number of attesters to stake.
+    function _calculateAttestersToStake(uint256 amount, uint256 activationThreshold, uint256 availableKeys)
+        internal
+        pure
+        returns (uint256 attestersToStakeTo)
+    {
+        attestersToStakeTo = amount / activationThreshold;
+        if (attestersToStakeTo == 0) {
+            revert StakingManager__InsufficientAmount();
+        }
+        if (attestersToStakeTo > availableKeys) {
+            attestersToStakeTo = availableKeys;
+        }
+        return attestersToStakeTo;
+    }
 }

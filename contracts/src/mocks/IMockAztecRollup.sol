@@ -27,26 +27,26 @@ interface IMockAztecRollup {
         G1Point publicKeyInG1,
         G2Point publicKeyInG2,
         G1Point proofOfPossession,
-        uint256 amount
+        uint256 indexed amount
     );
 
     /// @notice Emitted when a withdrawal is initiated.
     /// @param attester The attester address.
     /// @param recipient The recipient address.
     /// @param amount The withdrawal amount.
-    event WithdrawInitiated(address indexed attester, address indexed recipient, uint256 amount);
+    event WithdrawInitiated(address indexed attester, address indexed recipient, uint256 indexed amount);
 
     /// @notice Emitted when a withdrawal is finalized.
     /// @param attester The attester address.
     /// @param recipient The recipient address.
     /// @param amount The withdrawal amount.
-    event WithdrawFinalized(address indexed attester, address indexed recipient, uint256 amount);
+    event WithdrawFinalized(address indexed attester, address indexed recipient, uint256 indexed amount);
 
     /// @notice Emitted when rewards are claimed.
     /// @param sequencer The sequencer address.
     /// @param recipient The recipient address.
     /// @param amount The rewards amount.
-    event RewardsClaimed(address indexed sequencer, address indexed recipient, uint256 amount);
+    event RewardsClaimed(address indexed sequencer, address indexed recipient, uint256 indexed amount);
 
     /*//////////////////////////////////////////////////////////////
                                   ERRORS
@@ -81,9 +81,9 @@ interface IMockAztecRollup {
     function deposit(
         address attester,
         address withdrawer,
-        G1Point memory publicKeyInG1,
-        G2Point memory publicKeyInG2,
-        G1Point memory proofOfPossession,
+        G1Point calldata publicKeyInG1,
+        G2Point calldata publicKeyInG2,
+        G1Point calldata proofOfPossession,
         bool onCanonical
     ) external;
 
