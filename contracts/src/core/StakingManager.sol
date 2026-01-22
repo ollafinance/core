@@ -282,7 +282,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // slither-disable-start divide-before-multiply
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
-    // Reentrancy safe: caller (stake) has nonReentrant modifier, no ETH involved
+    // Reentrancy safe: caller (stake) has nonReentrant modifier
+    //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
     function _stake(uint256 amount) internal {
         uint256 availableKeys = _providerQueue.length();
@@ -309,7 +310,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @param amount The amount to unstake.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
-    // Reentrancy safe: caller (unstake) has nonReentrant modifier, no ETH involved
+    // Reentrancy safe: caller (unstake) has nonReentrant modifier
+    //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
     function _unstake(uint256 amount) internal {
         (, IAztecStaking rollup) = _getRollup();
@@ -328,7 +330,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @return claimed The amount claimed.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
-    // Reentrancy safe: caller (getUnstakedFunds) has nonReentrant modifier, no ETH involved
+    // Reentrancy safe: caller (claimUnstakedFunds) has nonReentrant modifier
+    //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
     function _claimUnstakedFunds() internal returns (uint256 claimed) {
         (, IAztecStaking rollup) = _getRollup();
@@ -400,7 +403,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             // External call is safe:
             // - Caller has nonReentrant modifier
             // - State fully updated before call (CEI pattern)
-            // - No ETH transfer
             // slither-disable-next-line reentrancy-no-eth
             rollup.deposit(
                 keyStore.attester,
@@ -519,7 +521,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             // External call is safe:
             // - Caller has nonReentrant modifier
             // - State fully updated before call (CEI pattern)
-            // - No ETH transfer
             // slither-disable-next-line reentrancy-no-eth
             rollup.finalizeWithdraw(attester);
         }
