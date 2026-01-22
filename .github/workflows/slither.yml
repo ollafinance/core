@@ -37,14 +37,26 @@ jobs:
           with open(path, "r", encoding="utf-8") as f:
               src = f.read()
 
-          old = """        for f_called in f.library_calls:\n            # Slither >=0.11.4 returns LibraryCall objects\n            if hasattr(f_called, \"solidity_signature\"):\n                all_library_calls.append(f_called.solidity_signature)\n            else:\n                # Older Slither returns tuples\n                all_library_calls.append(f_called[1].solidity_signature)\n"""
+          pattern = re.compile(
+              r"""\n(\s*for f_called in f\.library_calls:\n\s*# Slither >=0\.11\.4 returns LibraryCall objects\n)(\s*if hasattr\(f_called, \\\"solidity_signature\\\"\):\n\s*all_library_calls\.append\(f_called\.solidity_signature\)\n\s*else:\n\s*# Older Slither returns tuples\n\s*all_library_calls\.append\(f_called\[1\]\.solidity_signature\)\n)"""
+          )
 
-          new = """        for f_called in f.library_calls:\n            # Slither >=0.11.4 returns LibraryCall objects\n            if hasattr(f_called, \"function\") and hasattr(f_called.function, \"solidity_signature\"):\n                all_library_calls.append(f_called.function.solidity_signature)\n            elif hasattr(f_called, \"solidity_signature\"):\n                all_library_calls.append(f_called.solidity_signature)\n            else:\n                # Older Slither returns tuples\n                all_library_calls.append(f_called[1].solidity_signature)\n"""
+          replacement = (
+              "\\1"
+              "            if hasattr(f_called, \\\"function\\\") and hasattr(f_called.function, \\\"solidity_signature\\\"):\n"
+              "                all_library_calls.append(f_called.function.solidity_signature)\n"
+              "            elif hasattr(f_called, \\\"solidity_signature\\\"):\n"
+              "                all_library_calls.append(f_called.solidity_signature)\n"
+              "            else:\n"
+              "                # Older Slither returns tuples\n"
+              "                all_library_calls.append(f_called[1].solidity_signature)\n"
+          )
 
-          if old not in src:
+          new_src, count = pattern.subn(replacement, src)
+          if count == 0:
               raise SystemExit("Expected Slitherin snippet not found; check slitherin version.")
 
-          src = src.replace(old, new)
+          src = new_src
           with open(path, "w", encoding="utf-8") as f:
               f.write(src)
           print("Patched", path)
