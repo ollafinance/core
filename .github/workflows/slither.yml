@@ -23,8 +23,8 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
-      - name: Install Slither, Slytherin, and solc-select
-        run: pip install slither-analyzer==0.11.4 slytherin solc-select
+      - name: Install Slither, Slitherin, and solc-select
+        run: pip install slither-analyzer==0.11.4 slitherin==0.7.2 solc-select
       - name: Install solc
         run: |
           solc-select install 0.8.27

@@ -74,11 +74,11 @@ python -m pip install -U slither-analyzer==0.11.4
 yarn slither
 ```
 
-For Slytherin, install the plugin and run:
+For Slitherin, install the plugin and run:
 
 ```bash
 cd contracts
-slytherin .
+slitherin .
 ```
 
 ## Storage layout checks
