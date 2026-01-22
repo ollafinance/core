@@ -15,34 +15,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Check for Solidity files
-        id: sol-files
-        run: |
-          if find src test script -type f -name "*.sol" -print -quit | grep -q .; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Setup Foundry
-        if: steps.sol-files.outputs.found == 'true'
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
       - name: Install Slither, Slytherin, and solc-select
-        if: steps.sol-files.outputs.found == 'true'
         run: pip install slither-analyzer==0.11.4 slytherin solc-select
       - name: Install solc
-        if: steps.sol-files.outputs.found == 'true'
         run: |
-          solc-select install 0.8.24
-          solc-select use 0.8.24
+          solc-select install 0.8.27
+          solc-select use 0.8.27
       - name: Run Slither
-        if: steps.sol-files.outputs.found == 'true'
         run: slither . --config-file slither.config.json
-      - name: Skip analysis (no Solidity files)
-        if: steps.sol-files.outputs.found != 'true'
-        run: echo "No Solidity files found; skipping Slither/Slytherin."

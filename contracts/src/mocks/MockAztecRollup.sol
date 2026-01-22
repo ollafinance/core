@@ -48,9 +48,9 @@ contract MockAztecRollup is IMockAztecRollup {
     function deposit(
         address _attester,
         address _withdrawer,
-        G1Point memory _publicKeyInG1,
-        G2Point memory _publicKeyInG2,
-        G1Point memory _proofOfPossession,
+        G1Point calldata _publicKeyInG1,
+        G2Point calldata _publicKeyInG2,
+        G1Point calldata _proofOfPossession,
         bool
     ) external override {
         STAKING_ASSET.safeTransferFrom(msg.sender, address(this), _activationThreshold);

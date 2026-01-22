@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { Test } from "@forge-std/Test.sol";
+import { Test, Vm } from "@forge-std/Test.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
@@ -42,11 +42,11 @@ contract StakingManagerTest is Test {
 
     event ProviderSet(address indexed admin, address indexed rewardsRecipient);
     event KeysAddedToProvider(address[] attesters);
-    event StakedWithProvider(address indexed attester, uint256 amount);
-    event UnstakeInitiated(address indexed attester, uint256 amount);
-    event UnstakeFinalized(address indexed attester, uint256 amount);
-    event UnstakedFundsClaimed(uint256 amount);
-    event RewardsHarvested(uint256 amount);
+    event StakedWithProvider(address indexed attester, uint256 indexed amount);
+    event UnstakeInitiated(address indexed attester, uint256 indexed amount);
+    event UnstakeFinalized(address indexed attester, uint256 indexed amount);
+    event UnstakedFundsClaimed(uint256 indexed amount);
+    event RewardsHarvested(uint256 indexed amount);
     event QueueDripped(address indexed attester);
 
     /*//////////////////////////////////////////////////////////////
@@ -385,7 +385,8 @@ contract StakingManagerTest is Test {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), stakeAmount);
 
-        vm.expectEmit(true, true, true, true);
+        // Filter events to only those from stakingManager (skip ERC20 Approval/Transfer events)
+        vm.expectEmit(true, true, true, true, address(stakingManager));
         emit StakedWithProvider(keys[0].attester, ACTIVATION_THRESHOLD);
 
         stakingManager.stake(stakeAmount);
@@ -461,12 +462,13 @@ contract StakingManagerTest is Test {
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
 
-        vm.expectEmit(true, true, true, true);
+        // Filter events to only those from stakingManager
+        vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeInitiated(keys[0].attester, ACTIVATION_THRESHOLD);
 
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        vm.expectEmit(true, true, true, true);
+        vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeFinalized(keys[0].attester, ACTIVATION_THRESHOLD);
 
         stakingManager.getUnstakedFunds();
@@ -551,11 +553,25 @@ contract StakingManagerTest is Test {
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        vm.expectEmit(true, true, true, true);
-        emit UnstakedFundsClaimed(ACTIVATION_THRESHOLD);
+        // UnstakeFinalized is emitted before UnstakedFundsClaimed, so record logs instead
+        vm.recordLogs();
 
         vm.prank(core);
         stakingManager.getUnstakedFunds();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        // Find UnstakedFundsClaimed event (amount is indexed, so it's in topics[1])
+        bool foundEvent = false;
+        bytes32 expectedSelector = keccak256("UnstakedFundsClaimed(uint256)");
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].topics[0] == expectedSelector) {
+                uint256 amount = uint256(entries[i].topics[1]);
+                assertEq(amount, ACTIVATION_THRESHOLD);
+                foundEvent = true;
+                break;
+            }
+        }
+        assertTrue(foundEvent, "UnstakedFundsClaimed event not found");
     }
 
     function test_GetUnstakedFunds_ReturnsZeroWhenNoPending() external {
@@ -592,7 +608,8 @@ contract StakingManagerTest is Test {
     }
 
     function test_HarvestRewards_EmitsEvent() external {
-        vm.expectEmit(true, true, true, true);
+        // Filter events to only those from stakingManager
+        vm.expectEmit(true, true, true, true, address(stakingManager));
         emit RewardsHarvested(0);
 
         vm.prank(core);

@@ -53,12 +53,12 @@ library QueueLib {
     /// @param _self The queue storage reference.
     /// @return keyStore The dequeued KeyStore.
     function dequeue(Queue storage _self) internal returns (IStakingManager.KeyStore memory keyStore) {
-        if (_self.last <= _self.first) {
+        if (_self.last == _self.first) {
             revert QueueLib__QueueIsEmpty();
         }
         keyStore = _self.keyStores[_self.first];
         delete _self.keyStores[_self.first];
-        _self.first += 1;
+        ++_self.first;
         return keyStore;
     }
 
@@ -92,7 +92,7 @@ library QueueLib {
         view
         returns (IStakingManager.KeyStore memory)
     {
-        if (_index < _self.first || _index >= _self.last) {
+        if (_index < _self.first || _index > _self.last - 1) {
             revert QueueLib__QueueIndexOutOfBounds();
         }
         return _self.keyStores[_index];

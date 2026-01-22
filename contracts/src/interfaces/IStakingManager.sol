@@ -69,25 +69,25 @@ interface IStakingManager {
     /// @notice Emitted when assets are staked with a attester.
     /// @param attester The attester address.
     /// @param amount The amount staked.
-    event StakedWithProvider(address indexed attester, uint256 amount);
+    event StakedWithProvider(address indexed attester, uint256 indexed amount);
 
     /// @notice Emitted when an unstake is initiated.
     /// @param attester The attester address.
     /// @param amount The amount being unstaked.
-    event UnstakeInitiated(address indexed attester, uint256 amount);
+    event UnstakeInitiated(address indexed attester, uint256 indexed amount);
 
-    //  @notice Emitted when an unstake is finalized.
-    //  @param attester The attester address.
-    //  @param amount The amount unstaked.
-    event UnstakeFinalized(address indexed attester, uint256 amount);
+    /// @notice Emitted when an unstake is finalized.
+    /// @param attester The attester address.
+    /// @param amount The amount unstaked.
+    event UnstakeFinalized(address indexed attester, uint256 indexed amount);
 
     /// @notice Emitted when unstaked funds are claimed back to core.
     /// @param amount The amount claimed.
-    event UnstakedFundsClaimed(uint256 amount);
+    event UnstakedFundsClaimed(uint256 indexed amount);
 
     /// @notice Emitted when rewards are harvested.
     /// @param amount The amount harvested.
-    event RewardsHarvested(uint256 amount);
+    event RewardsHarvested(uint256 indexed amount);
 
     /// @notice Emitted when keys are removed from the queue.
     /// @param attester The attester address of the removed key.
@@ -133,8 +133,8 @@ interface IStakingManager {
     /// @param amount The amount to unstake.
     function unstake(uint256 amount) external;
 
-    // @notice Syncs the activated attesters with the rollup and moves them to pendingUnstake if needed.
-    // @dev Since attesters can exit due to external reasons activatedAtesters is not guranteed to be in sync.
+    /// @notice Syncs the activated attesters with the rollup and moves them to pendingUnstake if needed.
+    /// @dev Since attesters can exit due to external reasons activatedAtesters is not guranteed to be in sync.
     function cleanActivatedAttesters() external;
 
     /// @notice Claims matured unstaked funds back to core.
