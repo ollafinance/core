@@ -43,30 +43,6 @@ contract MockStakingManager is IStakingManager {
         ++unstakeCalls;
     }
 
-    /// @inheritdoc IStakingManager
-    function addKeysToProvider(KeyStore[] calldata) external override {
-        // No-op for mock
-        return;
-    }
-
-    /// @inheritdoc IStakingManager
-    function dripQueue(uint256) external override {
-        // No-op for mock
-        return;
-    }
-
-    /// @inheritdoc IStakingManager
-    function setProviderRewardsRecipient(address) external override {
-        // No-op for mock
-        return;
-    }
-
-    /// @inheritdoc IStakingManager
-    function cleanActivatedAttesters() external override {
-        // No-op for mock
-        return;
-    }
-
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -113,5 +89,33 @@ contract MockStakingManager is IStakingManager {
     /// @inheritdoc IStakingManager
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        EXTERNAL NON-VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function addKeysToProvider(KeyStore[] calldata) external pure override {
+        // No-op for mock
+        return;
+    }
+
+    /// @inheritdoc IStakingManager
+    function dripQueue(uint256) external pure override {
+        // No-op for mock
+        return;
+    }
+
+    /// @inheritdoc IStakingManager
+    function setProviderRewardsRecipient(address) external pure override {
+        // No-op for mock
+        return;
+    }
+
+    /// @inheritdoc IStakingManager
+    function cleanActivatedAttesters() external pure override {
+        // No-op for mock
+        return;
     }
 }
