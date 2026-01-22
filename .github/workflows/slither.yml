@@ -15,75 +15,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Cache Docker layers
+        uses: actions/cache@v4
         with:
-          python-version: "3.11"
-      - name: Setup Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: stable
-      - name: Install Slither, Slitherin, and solc-select
-        run: pip install slither-analyzer==0.11.4 slitherin==0.7.2 solc-select
-      - name: Patch Slitherin nft_approve_warning for LibraryCall
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-slither-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-slither-
+      - name: Build Slither Docker image
         run: |
-          python - <<'PY'
-          import inspect
-          import os
-          import re
-          import slitherin
-
-          path = os.path.join(os.path.dirname(inspect.getfile(slitherin)), "detectors", "nft_approve_warning.py")
-          with open(path, "r", encoding="utf-8") as f:
-              src = f.read()
-
-          pattern = re.compile(
-              r"def _detect_arbitrary_from\([^\n]*\):[\s\S]*?def _arbitrary_from",
-              re.MULTILINE,
-          )
-
-          replacement = "\n".join(
-              [
-                  "def _detect_arbitrary_from(self, f):",
-                  "        all_high_level_calls = [",
-                  "            f_called[1].solidity_signature",
-                  "            for f_called in f.high_level_calls",
-                  "            if isinstance(f_called[1], Function)",
-                  "        ]",
-                  "        all_library_calls = []",
-                  "        for f_called in f.library_calls:",
-                  "            # Slither >=0.11.4 returns LibraryCall objects",
-                  "            if hasattr(f_called, \"function\") and hasattr(f_called.function, \"solidity_signature\"):",
-                  "                all_library_calls.append(f_called.function.solidity_signature)",
-                  "            elif hasattr(f_called, \"solidity_signature\"):",
-                  "                all_library_calls.append(f_called.solidity_signature)",
-                  "            else:",
-                  "                # Older Slither returns tuples",
-                  "                all_library_calls.append(f_called[1].solidity_signature)",
-                  "",
-                  "        all_calls = all_high_level_calls + all_library_calls",
-                  "",
-                  "        if any(map(lambda s: s in all_calls, self._signatures)):",
-                  "            return self._arbitrary_from(f.nodes)",
-                  "        else:",
-                  "            return []",
-                  "",
-                  "    def _arbitrary_from",
-              ]
-          )
-
-          new_src, count = pattern.subn(replacement, src)
-          if count == 0:
-              raise SystemExit("Expected Slitherin _detect_arbitrary_from not found; check slitherin version.")
-
-          src = new_src
-          with open(path, "w", encoding="utf-8") as f:
-              f.write(src)
-          print("Patched", path)
-          PY
-      - name: Install solc
-        run: |
-          solc-select install 0.8.27
-          solc-select use 0.8.27
-      - name: Run Slither
-        run: slither . --config-file slither.config.json
+          docker buildx build \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            -f contracts/Dockerfile.slither \
+            -t olla-slither:ci \
+            .
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+      - name: Run Slither (Docker)
+        run: docker run --rm -v "$PWD/contracts:/work" -w /work olla-slither:ci slither . --config-file slither.config.json

@@ -140,6 +140,12 @@ Slitherin runs as a Slither plugin, so use the standard command:
 yarn slither
 ```
 
+To run via Docker (uses `contracts/Dockerfile.slither`):
+
+```bash
+yarn slither:docker
+```
+
 ## Storage layout checks
 
 Run storage layout checks whenever upgradeable contracts change storage (new variables, reordered fields, or updated inheritance), and before preparing an upgrade or release.

@@ -1,0 +1,66 @@
+FROM python:3.11-slim
+
+ENV PATH="/root/.foundry/bin:${PATH}"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        git \
+        ca-certificates \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m pip install --no-cache-dir slither-analyzer==0.11.4 slitherin==0.7.2
+RUN curl -L https://foundry.paradigm.xyz | bash || true
+RUN foundryup
+
+RUN python - <<'PY'
+import inspect
+import os
+import re
+import slitherin
+
+path = os.path.join(os.path.dirname(inspect.getfile(slitherin)), "detectors", "nft_approve_warning.py")
+with open(path, "r", encoding="utf-8") as f:
+    src = f.read()
+
+pattern = re.compile(r"def _detect_arbitrary_from\([^\n]*\):[\s\S]*?def _arbitrary_from", re.MULTILINE)
+replacement = "\n".join(
+    [
+        "def _detect_arbitrary_from(self, f):",
+        "        all_high_level_calls = [",
+        "            f_called[1].solidity_signature",
+        "            for f_called in f.high_level_calls",
+        "            if isinstance(f_called[1], Function)",
+        "        ]",
+        "        all_library_calls = []",
+        "        for f_called in f.library_calls:",
+        "            # Slither >=0.11.4 returns LibraryCall objects",
+        "            if hasattr(f_called, \"function\") and hasattr(f_called.function, \"solidity_signature\"):",
+        "                all_library_calls.append(f_called.function.solidity_signature)",
+        "            elif hasattr(f_called, \"solidity_signature\"):",
+        "                all_library_calls.append(f_called.solidity_signature)",
+        "            else:",
+        "                # Older Slither returns tuples",
+        "                all_library_calls.append(f_called[1].solidity_signature)",
+        "",
+        "        all_calls = all_high_level_calls + all_library_calls",
+        "",
+        "        if any(map(lambda s: s in all_calls, self._signatures)):",
+        "            return self._arbitrary_from(f.nodes)",
+        "        else:",
+        "            return []",
+        "",
+        "    def _arbitrary_from",
+    ]
+)
+
+new_src, count = pattern.subn(replacement, src)
+if count == 0:
+    raise SystemExit("Expected Slitherin _detect_arbitrary_from not found; check slitherin version.")
+
+with open(path, "w", encoding="utf-8") as f:
+    f.write(new_src)
+
+print("Patched", path)
+PY
