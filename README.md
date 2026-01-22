@@ -89,7 +89,7 @@ with open(path, "r", encoding="utf-8") as f:
     src = f.read()
 
 pattern = re.compile(
-    r"def _detect_arbitrary_from\(self, f\):[\s\S]*?def _arbitrary_from",
+    r"def _detect_arbitrary_from\([^\n]*\):[\s\S]*?def _arbitrary_from",
     re.MULTILINE,
 )
 
