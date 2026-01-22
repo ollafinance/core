@@ -88,42 +88,43 @@ path = os.path.join(os.path.dirname(inspect.getfile(slitherin)), "detectors", "n
 with open(path, "r", encoding="utf-8") as f:
     src = f.read()
 
-lines = src.splitlines()
-patched = False
-for i, line in enumerate(lines):
-    if "for f_called in f.library_calls:" in line:
-        indent = re.match(r"\s*", line).group(0)
-        start = i
-        end = i + 1
-        while end < len(lines):
-            if lines[end].strip() == "":
-                end += 1
-                continue
-            if not lines[end].startswith(indent + "    "):
-                break
-            end += 1
+pattern = re.compile(
+    r"def _detect_arbitrary_from\(self, f\):[\s\S]*?def _arbitrary_from",
+    re.MULTILINE,
+)
 
-        new_block = [
-            f"{indent}for f_called in f.library_calls:",
-            f"{indent}    # Slither >=0.11.4 returns LibraryCall objects",
-            f"{indent}    if hasattr(f_called, \"function\") and hasattr(f_called.function, \"solidity_signature\"):",
-            f"{indent}        all_library_calls.append(f_called.function.solidity_signature)",
-            f"{indent}    elif hasattr(f_called, \"solidity_signature\"):",
-            f"{indent}        all_library_calls.append(f_called.solidity_signature)",
-            f"{indent}    else:",
-            f"{indent}        # Older Slither returns tuples",
-            f"{indent}        all_library_calls.append(f_called[1].solidity_signature)",
+replacement = """def _detect_arbitrary_from(self, f):
+        all_high_level_calls = [
+            f_called[1].solidity_signature
+            for f_called in f.high_level_calls
+            if isinstance(f_called[1], Function)
         ]
+        all_library_calls = []
+        for f_called in f.library_calls:
+            # Slither >=0.11.4 returns LibraryCall objects
+            if hasattr(f_called, "function") and hasattr(f_called.function, "solidity_signature"):
+                all_library_calls.append(f_called.function.solidity_signature)
+            elif hasattr(f_called, "solidity_signature"):
+                all_library_calls.append(f_called.solidity_signature)
+            else:
+                # Older Slither returns tuples
+                all_library_calls.append(f_called[1].solidity_signature)
 
-        lines = lines[:start] + new_block + lines[end:]
-        patched = True
-        break
+        all_calls = all_high_level_calls + all_library_calls
 
-if not patched:
-    raise SystemExit("Expected Slitherin library_calls loop not found; check slitherin version.")
+        if any(map(lambda s: s in all_calls, self._signatures)):
+            return self._arbitrary_from(f.nodes)
+        else:
+            return []
+
+    def _arbitrary_from"""
+
+new_src, count = pattern.subn(replacement, src)
+if count == 0:
+    raise SystemExit("Expected Slitherin _detect_arbitrary_from not found; check slitherin version.")
 
 with open(path, "w", encoding="utf-8") as f:
-    f.write("\n".join(lines) + "\n")
+    f.write(new_src)
 
 print("Patched", path)
 PY
