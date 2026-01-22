@@ -67,7 +67,10 @@ yarn husky install
 
 ## Static analysis
 
-Slither is pinned in CI to `0.11.4` (see `.github/workflows/slither.yml`). To match CI locally:
+- Slither is pinned in CI to `0.11.4` (see `.github/workflows/slither.yml`).
+- Slitherin is pinned in CI to `0.7.2` and patched for Slither 0.11.4 compatibility.
+
+To run via Docker (uses `contracts/Dockerfile.slither`):
 
 ```bash
 yarn slither:docker
