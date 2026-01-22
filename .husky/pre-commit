@@ -16,7 +16,7 @@ yarn forge:fmt
 print_step "solhint"
 yarn lint:fix
 print_step "slither (docker)"
-yarn slither:docker-no-compile
+yarn slither:docker
 print_step "unit tests"
 yarn test:unit
 print_step "integration tests"
