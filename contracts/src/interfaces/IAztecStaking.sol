@@ -52,5 +52,8 @@ interface IAztecStaking {
     /// @return The stake amount required per attester.
     function getActivationThreshold() external view returns (uint256);
 
+    /// @notice Returns the attester view for a given attester.
+    /// @param _attester The attester address to query.
+    /// @return The attester view struct.
     function getAttesterView(address _attester) external view returns (AttesterView memory);
 }
