@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { console2 } from "@forge-std/Script.sol";
-import { BaseDeployer } from "./base/BaseDeployer.s.sol";
-import { DeployConfig } from "./config/Config.s.sol";
-import { LocalConfig } from "./config/Local.s.sol";
-import { TestnetConfig } from "./config/Testnet.s.sol";
-import { MocksDeployer } from "./deployers/Mocks.s.sol";
-import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
-import { StAztecDeployer } from "./deployers/StAztec.s.sol";
+import {console2} from "@forge-std/Script.sol";
+import {BaseDeployer} from "./base/BaseDeployer.s.sol";
+import {DeployConfig} from "./config/Config.s.sol";
+import {LocalConfig} from "./config/Local.s.sol";
+import {TestnetConfig} from "./config/Testnet.s.sol";
+import {MocksDeployer} from "./deployers/Mocks.s.sol";
+import {OllaCoreDeployer} from "./deployers/OllaCore.s.sol";
+import {StAztecDeployer} from "./deployers/StAztec.s.sol";
 
 /// @title DeployScript
 /// @notice Main deployment orchestrator - deploys all contracts based on environment
@@ -51,18 +51,20 @@ contract DeployScript is BaseDeployer {
         if (config.deployMocks) {
             console2.log("\n--- Deploying Mocks ---");
             (asset, stakingManager) = mocksDeployer.deploy(config);
-            json = _addAddressToJson(json, "MockAztec", asset, isFirstAddress);
-            isFirstAddress = false;
-            json = _addAddressToJson(json, "MockStakingManager", stakingManager, false);
         } else {
             console2.log("\n--- Using External Contracts ---");
             asset = config.asset;
             stakingManager = config.stakingManager;
             require(asset != address(0), "Deploy: asset address required for non-mock deployment");
             require(stakingManager != address(0), "Deploy: stakingManager address required for non-mock deployment");
-            console2.log("Asset:", asset);
-            console2.log("StakingManager:", stakingManager);
         }
+
+        // Always write Asset and StakingManager to JSON (regardless of mock or real)
+        console2.log("Asset:", asset);
+        console2.log("StakingManager:", stakingManager);
+        json = _addAddressToJson(json, "Asset", asset, isFirstAddress);
+        isFirstAddress = false;
+        json = _addAddressToJson(json, "StakingManager", stakingManager, false);
 
         // 2. Deploy OllaCore (implementation + proxy)
         console2.log("\n--- Deploying OllaCore ---");
