@@ -81,22 +81,50 @@ python -m pip install -U slitherin==0.7.2
 python - <<'PY'
 import inspect
 import os
+import re
 import slitherin
 
 path = os.path.join(os.path.dirname(inspect.getfile(slitherin)), "detectors", "nft_approve_warning.py")
 with open(path, "r", encoding="utf-8") as f:
     src = f.read()
 
-old = """        for f_called in f.library_calls:\n            # Slither >=0.11.4 returns LibraryCall objects\n            if hasattr(f_called, \"solidity_signature\"):\n                all_library_calls.append(f_called.solidity_signature)\n            else:\n                # Older Slither returns tuples\n                all_library_calls.append(f_called[1].solidity_signature)\n"""
+lines = src.splitlines()
+patched = False
+for i, line in enumerate(lines):
+    if "for f_called in f.library_calls:" in line:
+        indent = re.match(r"\s*", line).group(0)
+        start = i
+        end = i + 1
+        while end < len(lines):
+            if lines[end].strip() == "":
+                end += 1
+                continue
+            if not lines[end].startswith(indent + "    "):
+                break
+            end += 1
 
-new = """        for f_called in f.library_calls:\n            # Slither >=0.11.4 returns LibraryCall objects\n            if hasattr(f_called, \"function\") and hasattr(f_called.function, \"solidity_signature\"):\n                all_library_calls.append(f_called.function.solidity_signature)\n            elif hasattr(f_called, \"solidity_signature\"):\n                all_library_calls.append(f_called.solidity_signature)\n            else:\n                # Older Slither returns tuples\n                all_library_calls.append(f_called[1].solidity_signature)\n"""
+        new_block = [
+            f"{indent}for f_called in f.library_calls:",
+            f"{indent}    # Slither >=0.11.4 returns LibraryCall objects",
+            f"{indent}    if hasattr(f_called, \"function\") and hasattr(f_called.function, \"solidity_signature\"):",
+            f"{indent}        all_library_calls.append(f_called.function.solidity_signature)",
+            f"{indent}    elif hasattr(f_called, \"solidity_signature\"):",
+            f"{indent}        all_library_calls.append(f_called.solidity_signature)",
+            f"{indent}    else:",
+            f"{indent}        # Older Slither returns tuples",
+            f"{indent}        all_library_calls.append(f_called[1].solidity_signature)",
+        ]
 
-if old not in src:
-    raise SystemExit("Expected Slitherin snippet not found; check slitherin version.")
+        lines = lines[:start] + new_block + lines[end:]
+        patched = True
+        break
 
-src = src.replace(old, new)
+if not patched:
+    raise SystemExit("Expected Slitherin library_calls loop not found; check slitherin version.")
+
 with open(path, "w", encoding="utf-8") as f:
-    f.write(src)
+    f.write("\n".join(lines) + "\n")
+
 print("Patched", path)
 PY
 ```
