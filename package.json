@@ -20,6 +20,7 @@
     "test:invariant": "cd contracts && forge test --match-path \"test/**/*.invariant.sol\"",
     "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.sol\"",
     "dev:anvil": "anvil",
-    "dev:deploy": "cd contracts && forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    "deploy:local": "cd contracts && DEPLOY_ENV=local forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545",
+    "deploy:testnet": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia --verify"
   }
 }
