@@ -228,7 +228,7 @@ contract StakingManagerHandler is Test {
         }
 
         vm.prank(core);
-        try stakingManager.harvestRewards(100_000) returns (uint256 harvested) {
+        try stakingManager.harvestRewards() returns (uint256 harvested) {
             ghost_totalHarvested += harvested;
         } catch {
             // Expected if not authorized or other errors

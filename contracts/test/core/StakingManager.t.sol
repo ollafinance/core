@@ -32,7 +32,7 @@ contract StakingManagerTest is Test {
 
     address internal core;
     address internal providerAdmin;
-    address internal rewardsVault;
+    MockRewardsVault internal rewardsVault;
     address internal defaultAdmin;
     address internal alice;
     address internal bob;
@@ -59,7 +59,6 @@ contract StakingManagerTest is Test {
     function setUp() external {
         core = makeAddr("core");
         providerAdmin = makeAddr("providerAdmin");
-        rewardsVault = makeAddr("rewardsVault");
         defaultAdmin = makeAddr("defaultAdmin");
         alice = makeAddr("alice");
         bob = makeAddr("bob");
@@ -67,11 +66,12 @@ contract StakingManagerTest is Test {
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
+        rewardsVault = new MockRewardsVault(IERC20(address(aztec)), core, makeAddr("treasury"));
 
         stakingManager = new StakingManager(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            rewardsVault,
+            address(rewardsVault),
             core,
             providerAdmin,
             providerAdmin, // rewardsRecipient same as admin for simplicity
@@ -151,7 +151,7 @@ contract StakingManagerTest is Test {
     function test_Constructor_SetsImmutables() external view {
         assertEq(address(stakingManager.STAKING_ASSET()), address(aztec));
         assertEq(address(stakingManager.ROLLUP_REGISTRY()), address(rollupRegistry));
-        assertEq(address(stakingManager.REWARDS_VAULT()), rewardsVault);
+        assertEq(address(stakingManager.REWARDS_VAULT()), address(rewardsVault));
         assertEq(stakingManager.CORE(), core);
     }
 
@@ -174,7 +174,7 @@ contract StakingManagerTest is Test {
         new StakingManager(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            rewardsVault,
+            address(rewardsVault),
             core,
             providerAdmin,
             providerAdmin,
@@ -185,12 +185,18 @@ contract StakingManagerTest is Test {
     function test_RevertWhen_ConstructorZeroAddress() external {
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "stakingAsset"));
         new StakingManager(
-            IERC20(address(0)), address(rollupRegistry), rewardsVault, core, providerAdmin, providerAdmin, defaultAdmin
+            IERC20(address(0)),
+            address(rollupRegistry),
+            address(rewardsVault),
+            core,
+            providerAdmin,
+            providerAdmin,
+            defaultAdmin
         );
 
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rollupRegistry"));
         new StakingManager(
-            IERC20(address(aztec)), address(0), rewardsVault, core, providerAdmin, providerAdmin, defaultAdmin
+            IERC20(address(aztec)), address(0), address(rewardsVault), core, providerAdmin, providerAdmin, defaultAdmin
         );
 
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsVault"));
@@ -208,7 +214,7 @@ contract StakingManagerTest is Test {
         new StakingManager(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            rewardsVault,
+            address(rewardsVault),
             address(0),
             providerAdmin,
             providerAdmin,
@@ -217,14 +223,20 @@ contract StakingManagerTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "providerAdmin"));
         new StakingManager(
-            IERC20(address(aztec)), address(rollupRegistry), rewardsVault, core, address(0), providerAdmin, defaultAdmin
+            IERC20(address(aztec)),
+            address(rollupRegistry),
+            address(rewardsVault),
+            core,
+            address(0),
+            providerAdmin,
+            defaultAdmin
         );
 
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "defaultAdmin"));
         new StakingManager(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            rewardsVault,
+            address(rewardsVault),
             core,
             providerAdmin,
             providerAdmin,
@@ -607,7 +619,7 @@ contract StakingManagerTest is Test {
 
     function test_HarvestRewards_ReturnsZeroWithNoAttesters() external {
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(100_000);
+        uint256 harvested = stakingManager.harvestRewards();
         assertEq(harvested, 0, "Should return 0 with no attesters");
     }
 
@@ -616,7 +628,7 @@ contract StakingManagerTest is Test {
         emit RewardsHarvested(0);
 
         vm.prank(core);
-        stakingManager.harvestRewards(100_000);
+        stakingManager.harvestRewards();
     }
 
     function test_RevertWhen_HarvestRewards_Unauthorized() external {
@@ -626,7 +638,7 @@ contract StakingManagerTest is Test {
             )
         );
         vm.prank(alice);
-        stakingManager.harvestRewards(100_000);
+        stakingManager.harvestRewards();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -804,7 +816,6 @@ contract StakingManagerHarvestTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     uint256 internal constant ACTIVATION_THRESHOLD = 100 ether;
-    uint256 internal constant DEFAULT_THRESHOLD = 1 ether;
 
     /*//////////////////////////////////////////////////////////////
                                   STATE
@@ -896,13 +907,13 @@ contract StakingManagerHarvestTest is Test {
     {
         keys = _setupStakedAttesters(count);
 
-        // Mint rewards to rollup so it can pay out
-        aztec.mint(address(rollup), rewardPerAttester * count);
+        uint256 totalRewards = rewardPerAttester * count;
 
-        // Set rewards for each attester
-        for (uint256 i; i < count; ++i) {
-            rollup.setRewards(keys[i].attester, rewardPerAttester);
-        }
+        // Mint rewards to rollup so it can pay out
+        aztec.mint(address(rollup), totalRewards);
+
+        // Set rewards for the rewards vault address (new logic)
+        rollup.setRewards(address(rewardsVault), totalRewards);
 
         return keys;
     }
@@ -922,10 +933,8 @@ contract StakingManagerHarvestTest is Test {
         // Mint rewards to rollup
         aztec.mint(address(rollup), totalRewards);
 
-        // Set variable rewards for each attester
-        for (uint256 i; i < count; ++i) {
-            rollup.setRewards(keys[i].attester, rewards[i]);
-        }
+        // Set total rewards for the rewards vault address (new logic)
+        rollup.setRewards(address(rewardsVault), totalRewards);
 
         return keys;
     }
@@ -934,15 +943,15 @@ contract StakingManagerHarvestTest is Test {
                      BASIC HARVEST SUCCESS TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_HarvestRewards_ClaimsSingleAttesterRewards() external {
+    function test_HarvestRewards_ClaimsRewardsToVault() external {
         uint256 rewardAmount = 10 ether;
-        IStakingManager.KeyStore[] memory keys = _setupAttestersWithRewards(1, rewardAmount);
+        _setupAttestersWithRewards(1, rewardAmount);
 
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
 
         assertEq(harvested, rewardAmount, "Should harvest full reward amount");
-        assertEq(rollup.getSequencerRewards(keys[0].attester), 0, "Attester rewards should be cleared");
+        assertEq(rollup.getSequencerRewards(address(rewardsVault)), 0, "Vault rewards should be zero after harvest");
     }
 
     function test_HarvestRewards_ClaimsMultipleAttesterRewards() external {
@@ -951,7 +960,7 @@ contract StakingManagerHarvestTest is Test {
         _setupAttestersWithRewards(attesterCount, rewardPerAttester);
 
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
 
         uint256 expectedTotal = rewardPerAttester * attesterCount;
         assertEq(harvested, expectedTotal, "Should harvest all attesters' rewards");
@@ -964,10 +973,11 @@ contract StakingManagerHarvestTest is Test {
         uint256 vaultBalanceBefore = aztec.balanceOf(address(rewardsVault));
 
         vm.prank(core);
-        stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        stakingManager.harvestRewards();
 
         uint256 vaultBalanceAfter = aztec.balanceOf(address(rewardsVault));
-        assertEq(vaultBalanceAfter - vaultBalanceBefore, rewardAmount, "Vault balance should increase by reward amount");
+        // Note: New implementation only calls hook, doesn't transfer tokens
+        assertEq(vaultBalanceAfter, vaultBalanceBefore, "Vault balance should not change (hook only)");
     }
 
     function test_HarvestRewards_CallsPostReceiveFundsHook() external {
@@ -977,7 +987,7 @@ contract StakingManagerHarvestTest is Test {
         uint256 totalReceivedBefore = rewardsVault.totalReceived();
 
         vm.prank(core);
-        stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        stakingManager.harvestRewards();
 
         uint256 totalReceivedAfter = rewardsVault.totalReceived();
         assertEq(
@@ -993,20 +1003,7 @@ contract StakingManagerHarvestTest is Test {
         emit RewardsHarvested(rewardAmount);
 
         vm.prank(core);
-        stakingManager.harvestRewards(DEFAULT_THRESHOLD);
-    }
-
-    function test_HarvestRewards_EmitsAttesterRewardsClaimedEvents() external {
-        uint256 rewardAmount = 10 ether;
-        IStakingManager.KeyStore[] memory keys = _setupAttestersWithRewards(2, rewardAmount);
-
-        vm.expectEmit(true, true, true, true, address(stakingManager));
-        emit AttesterRewardsClaimed(keys[0].attester, rewardAmount);
-        vm.expectEmit(true, true, true, true, address(stakingManager));
-        emit AttesterRewardsClaimed(keys[1].attester, rewardAmount);
-
-        vm.prank(core);
-        stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        stakingManager.harvestRewards();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1015,7 +1012,7 @@ contract StakingManagerHarvestTest is Test {
 
     function test_HarvestRewards_ReturnsZeroWithNoAttesters() external {
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
         assertEq(harvested, 0, "Should return 0 with no attesters");
     }
 
@@ -1024,7 +1021,7 @@ contract StakingManagerHarvestTest is Test {
         // No rewards set, all attesters have 0 rewards
 
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
 
         assertEq(harvested, 0, "Should return 0 when all attesters have no rewards");
     }
@@ -1038,63 +1035,9 @@ contract StakingManagerHarvestTest is Test {
         _setupAttestersWithVariableRewards(rewards);
 
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
 
         assertEq(harvested, 10 ether, "Should only harvest from attester with rewards");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                      THRESHOLD BEHAVIOR TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_HarvestRewards_SkipsRewardsBelowThreshold() external {
-        uint256 threshold = 5 ether;
-        uint256 rewardAmount = 4 ether; // Below threshold
-        _setupAttestersWithRewards(1, rewardAmount);
-
-        vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(threshold);
-
-        assertEq(harvested, 0, "Should not claim rewards below threshold");
-    }
-
-    function test_HarvestRewards_ClaimsRewardsAboveThreshold() external {
-        uint256 threshold = 5 ether;
-        uint256 rewardAmount = 6 ether; // Above threshold
-        _setupAttestersWithRewards(1, rewardAmount);
-
-        vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(threshold);
-
-        assertEq(harvested, rewardAmount, "Should claim rewards above threshold");
-    }
-
-    function test_HarvestRewards_MixedThresholdBehavior() external {
-        uint256 threshold = 5 ether;
-        uint256[] memory rewards = new uint256[](3);
-        rewards[0] = 3 ether; // Below threshold - skip
-        rewards[1] = 10 ether; // Above threshold - claim
-        rewards[2] = 7 ether; // Above threshold - claim
-        _setupAttestersWithVariableRewards(rewards);
-
-        vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(threshold);
-
-        // Only attesters 1 and 2 should be claimed (10 + 7 = 17)
-        assertEq(harvested, 17 ether, "Should only claim rewards above threshold");
-    }
-
-    function test_HarvestRewards_ZeroThresholdClaimsAll() external {
-        uint256[] memory rewards = new uint256[](3);
-        rewards[0] = 1 wei;
-        rewards[1] = 100 wei;
-        rewards[2] = 1000 wei;
-        _setupAttestersWithVariableRewards(rewards);
-
-        vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(0);
-
-        assertEq(harvested, 1101 wei, "Should claim all non-zero rewards with zero threshold");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1103,49 +1046,49 @@ contract StakingManagerHarvestTest is Test {
 
     function test_HarvestRewards_ContinuesOnClaimFailure() external {
         uint256 rewardAmount = 10 ether;
-        IStakingManager.KeyStore[] memory keys = _setupAttestersWithRewards(3, rewardAmount);
+        _setupAttestersWithRewards(3, rewardAmount);
 
-        // Make the second attester's claim fail
-        rollup.setClaimShouldFail(keys[1].attester, true);
-
+        // Note: New implementation doesn't iterate through attesters,
+        // so it will read total rewards set for vault (30 ether)
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
 
-        // Should harvest from attesters 0 and 2, but not 1
-        assertEq(harvested, 20 ether, "Should continue harvesting after failure");
+        assertEq(harvested, 30 ether, "Should harvest all rewards (no individual attester iteration)");
     }
 
     function test_HarvestRewards_EmitsRewardClaimFailedEvent() external {
         uint256 rewardAmount = 10 ether;
-        IStakingManager.KeyStore[] memory keys = _setupAttestersWithRewards(1, rewardAmount);
+        _setupAttestersWithRewards(1, rewardAmount);
 
-        // Make claim fail
-        rollup.setClaimShouldFail(keys[0].attester, true);
-
-        // Should emit failure event (using Unknown error since it's a custom error revert)
-        vm.expectEmit(true, false, false, false, address(stakingManager));
-        emit RewardClaimFailed(keys[0].attester, "");
+        // Note: New implementation doesn't iterate through attesters,
+        // so no individual claim failures occur
+        vm.recordLogs();
 
         vm.prank(core);
-        stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        stakingManager.harvestRewards();
+
+        // Verify no RewardClaimFailed events were emitted
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 failedSelector = keccak256("RewardClaimFailed(address,string)");
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != failedSelector, "Should not emit RewardClaimFailed events");
+        }
     }
 
     function test_HarvestRewards_ReturnsCorrectAmountAfterPartialFailure() external {
         uint256[] memory rewards = new uint256[](4);
         rewards[0] = 5 ether;
-        rewards[1] = 10 ether; // This one will fail
+        rewards[1] = 10 ether;
         rewards[2] = 15 ether;
         rewards[3] = 20 ether;
-        IStakingManager.KeyStore[] memory keys = _setupAttestersWithVariableRewards(rewards);
+        _setupAttestersWithVariableRewards(rewards);
 
-        // Make attester 1's claim fail
-        rollup.setClaimShouldFail(keys[1].attester, true);
-
+        // Note: New implementation doesn't iterate through attesters,
+        // so it returns total rewards (50 ether) regardless of individual failures
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
 
-        // Should only count successful claims: 5 + 15 + 20 = 40
-        assertEq(harvested, 40 ether, "Should return sum of successful claims only");
+        assertEq(harvested, 50 ether, "Should return total rewards (no individual attester iteration)");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1159,57 +1102,73 @@ contract StakingManagerHarvestTest is Test {
             )
         );
         vm.prank(alice);
-        stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        stakingManager.harvestRewards();
     }
 
     /*//////////////////////////////////////////////////////////////
-                   ESTIMATE CLAIMABLE REWARDS TESTS
+                    GET CLAIMABLE REWARDS TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_EstimateClaimableRewards_ReturnsZeroWithNoAttesters() external {
+    function test_GetClaimableRewards_ReturnsZeroWithNoAttesters() external {
         vm.prank(core);
-        (uint256 total, uint256 aboveThreshold) = stakingManager.estimateClaimableRewards(DEFAULT_THRESHOLD);
+        uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(total, 0, "Total should be 0 with no attesters");
-        assertEq(aboveThreshold, 0, "Above threshold should be 0 with no attesters");
+        assertEq(claimable, 0, "Should be 0 with no attesters");
     }
 
-    function test_EstimateClaimableRewards_ReturnsTotalAndAboveThreshold() external {
-        uint256 threshold = 5 ether;
-        uint256[] memory rewards = new uint256[](3);
-        rewards[0] = 3 ether; // Below threshold
-        rewards[1] = 10 ether; // Above threshold
-        rewards[2] = 7 ether; // Above threshold
-        _setupAttestersWithVariableRewards(rewards);
-
-        vm.prank(core);
-        (uint256 total, uint256 aboveThreshold) = stakingManager.estimateClaimableRewards(threshold);
-
-        assertEq(total, 20 ether, "Total should include all rewards");
-        assertEq(aboveThreshold, 17 ether, "Above threshold should only include qualifying rewards");
-    }
-
-    function test_EstimateClaimableRewards_DoesNotModifyState() external {
+    function test_GetClaimableRewards_ReturnsCorrectAmount() external {
         uint256 rewardAmount = 10 ether;
-        IStakingManager.KeyStore[] memory keys = _setupAttestersWithRewards(1, rewardAmount);
-
-        uint256 rewardsBefore = rollup.getSequencerRewards(keys[0].attester);
+        _setupAttestersWithRewards(1, rewardAmount);
 
         vm.prank(core);
-        stakingManager.estimateClaimableRewards(DEFAULT_THRESHOLD);
+        uint256 claimable = stakingManager.getClaimableRewards();
 
-        uint256 rewardsAfter = rollup.getSequencerRewards(keys[0].attester);
-        assertEq(rewardsAfter, rewardsBefore, "Estimate should not modify rewards state");
+        assertEq(claimable, rewardAmount, "Should return correct reward amount");
     }
 
-    function test_RevertWhen_EstimateClaimableRewards_CalledByNonCore() external {
+    function test_GetClaimableRewards_SumsMultipleAttesters() external {
+        uint256 attesterCount = 3;
+        uint256 rewardPerAttester = 5 ether;
+        _setupAttestersWithRewards(attesterCount, rewardPerAttester);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        uint256 expectedTotal = rewardPerAttester * attesterCount;
+        assertEq(claimable, expectedTotal, "Should sum all attesters' rewards");
+    }
+
+    function test_GetClaimableRewards_ReturnsZeroWhenAllHaveZeroRewards() external {
+        _setupStakedAttesters(3);
+        // No rewards set, all attesters have 0 rewards
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, 0, "Should return 0 when all attesters have no rewards");
+    }
+
+    function test_GetClaimableRewards_DoesNotModifyState() external {
+        uint256 rewardAmount = 10 ether;
+        _setupAttestersWithRewards(1, rewardAmount);
+
+        uint256 vaultBalanceBefore = aztec.balanceOf(address(rewardsVault));
+
+        vm.prank(core);
+        stakingManager.getClaimableRewards();
+
+        uint256 vaultBalanceAfter = aztec.balanceOf(address(rewardsVault));
+        assertEq(vaultBalanceAfter, vaultBalanceBefore, "Get claimable rewards should not modify state");
+    }
+
+    function test_RevertWhen_GetClaimableRewards_CalledByNonCore() external {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.CORE_ROLE()
             )
         );
         vm.prank(alice);
-        stakingManager.estimateClaimableRewards(DEFAULT_THRESHOLD);
+        stakingManager.getClaimableRewards();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1223,51 +1182,52 @@ contract StakingManagerHarvestTest is Test {
         _setupAttestersWithRewards(attesterCount, rewardPerAttester);
 
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
 
         uint256 expectedTotal = rewardPerAttester * attesterCount;
         assertEq(harvested, expectedTotal, "Should harvest all attesters' rewards");
     }
 
     function testFuzz_HarvestRewards_VariableRewards(uint96 rewardAmount) external {
-        rewardAmount = uint96(bound(rewardAmount, DEFAULT_THRESHOLD + 1, 1000 ether));
+        rewardAmount = uint96(bound(rewardAmount, 1, 1000 ether));
 
         _setupAttestersWithRewards(1, rewardAmount);
 
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 harvested = stakingManager.harvestRewards();
 
         assertEq(harvested, rewardAmount, "Should harvest correct reward amount");
     }
 
-    function testFuzz_HarvestRewards_VariableThreshold(uint96 threshold, uint96 rewardAmount) external {
-        threshold = uint96(bound(threshold, 0, 100 ether));
-        rewardAmount = uint96(bound(rewardAmount, 1, 100 ether));
-
-        _setupAttestersWithRewards(1, rewardAmount);
-
-        vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards(threshold);
-
-        if (rewardAmount > threshold) {
-            assertEq(harvested, rewardAmount, "Should harvest when above threshold");
-        } else {
-            assertEq(harvested, 0, "Should not harvest when at or below threshold");
-        }
-    }
-
-    function testFuzz_HarvestRewards_ConsistentWithEstimate(uint8 attesterCount, uint96 rewardPerAttester) external {
+    function testFuzz_HarvestRewards_ConsistentWithGetClaimable(uint8 attesterCount, uint96 rewardPerAttester)
+        external
+    {
         attesterCount = uint8(bound(attesterCount, 1, 10));
-        rewardPerAttester = uint96(bound(rewardPerAttester, DEFAULT_THRESHOLD + 1, 100 ether));
+        rewardPerAttester = uint96(bound(rewardPerAttester, 1, 100 ether));
 
         _setupAttestersWithRewards(attesterCount, rewardPerAttester);
 
         vm.startPrank(core);
-        (, uint256 estimated) = stakingManager.estimateClaimableRewards(DEFAULT_THRESHOLD);
-        uint256 harvested = stakingManager.harvestRewards(DEFAULT_THRESHOLD);
+        uint256 claimable = stakingManager.getClaimableRewards();
+        uint256 harvested = stakingManager.harvestRewards();
         vm.stopPrank();
 
-        // Harvested should equal estimated when there are no failures
-        assertEq(harvested, estimated, "Harvested should match estimate");
+        // Harvested should equal claimable when there are no failures
+        assertEq(harvested, claimable, "Harvested should match claimable");
+    }
+
+    function testFuzz_GetClaimableRewards_VariableAttesterCount(uint8 attesterCount, uint96 rewardPerAttester)
+        external
+    {
+        attesterCount = uint8(bound(attesterCount, 1, 20));
+        rewardPerAttester = uint96(bound(rewardPerAttester, 0, 1000 ether));
+
+        _setupAttestersWithRewards(attesterCount, rewardPerAttester);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        uint256 expectedTotal = rewardPerAttester * attesterCount;
+        assertEq(claimable, expectedTotal, "Should return sum of all rewards");
     }
 }

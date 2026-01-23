@@ -171,45 +171,20 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         return _claimUnstakedFunds();
     }
 
-    // slither-disable-start calls-loop
     /// @notice External calls inside loop are intentional and safe:
     ///      - `rollup` is a trusted Aztec protocol contract
     ///      - Attesters are permissioned and managed by the provider
     ///      - Function is only reachable via CORE_ROLE-gated entrypoints with nonReentrant
     ///      - State updates after external call are benign (internal bookkeeping only)
     ///      - Failure is handled gracefully with try-catch, allowing continuation
-    // slither-disable-start pess-multiple-storage-read
     /// @inheritdoc IStakingManager
-    function harvestRewards(uint256 rewardClaimThreshold)
-        external
-        override
-        onlyRole(CORE_ROLE)
-        nonReentrant
-        returns (uint256 harvested)
-    {
+    function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
-
-        // First loop: identify attesters with rewards above threshold
-        address[] memory eligibleAttesters = _getEligibleAttesters(rollup, rewardClaimThreshold);
-
-        if (eligibleAttesters.length == 0) {
-            emit RewardsHarvested(0);
-            return 0;
-        }
-
-        // Second loop: harvest rewards from eligible attesters
-        uint256 rewardsBefore = REWARDS_VAULT.getAvailableFunds();
-        _harvestFromEligibleAttesters(rollup, eligibleAttesters);
-        uint256 rewardsAfter = REWARDS_VAULT.getAvailableFunds();
-
-        harvested = rewardsAfter - rewardsBefore;
-
+        harvested = rollup.claimSequencerRewards(address(REWARDS_VAULT));
+        REWARDS_VAULT.postReceiveFundsHook(harvested);
         emit RewardsHarvested(harvested);
         return harvested;
     }
-
-    // slither-disable-end pess-multiple-storage-read
-    // slither-disable-end calls-loop
 
     /*//////////////////////////////////////////////////////////////
                         PROVIDER ADMIN FUNCTIONS
@@ -261,47 +236,13 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    // slither-disable-start calls-loop
-    /// @notice External calls inside loop are intentional and safe for estimation:
-    ///      - `rollup` is a trusted Aztec protocol contract
-    ///      - Function is view-only with no state changes
-    ///      - Attesters are permissioned and managed by the provider
-    ///      - Function is only reachable via CORE_ROLE-gated entrypoints
-    ///      - Failure is handled gracefully with try-catch, allowing continuation
-    /// @inheritdoc IStakingManager
-    function estimateClaimableRewards(uint256 rewardClaimThreshold)
-        external
-        view
-        override
-        onlyRole(CORE_ROLE)
-        returns (uint256 totalEstimate, uint256 aboveThresholdEstimate)
-    {
+    /// @notice Internal helper to get the claimable rewards.
+    /// @dev Internal helper to get the claimable rewards.
+    /// @return claimableRewards The total rewards claimable to rewards recipient.
+    function getClaimableRewards() external view override onlyRole(CORE_ROLE) returns (uint256 claimableRewards) {
         (, IAztecRollup rollup) = _getRollup();
-
-        address[] memory attesters = _activatedAttesters;
-        uint256 attestersLength = attesters.length;
-
-        if (attestersLength == 0) {
-            return (0, 0);
-        }
-
-        for (uint256 i; i < attestersLength; ++i) {
-            address attester = attesters[i];
-
-            try rollup.getSequencerRewards(attester) returns (uint256 pendingRewards) {
-                totalEstimate += pendingRewards;
-
-                if (pendingRewards > rewardClaimThreshold) {
-                    aboveThresholdEstimate += pendingRewards;
-                }
-            } catch {
-                // Skip attester if rewards query fails
-                continue;
-            }
-        }
+        return rollup.getSequencerRewards(address(REWARDS_VAULT));
     }
-
-    // slither-disable-end calls-loop
 
     // slither-disable-start calls-loop,timestamp
     /// @notice Returns aggregated staking state from the rollup.
@@ -640,40 +581,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         return claimed;
     }
 
-    /// @notice Harvests rewards from a list of eligible attesters.
-    /// @param rollup The rollup interface.
-    /// @param eligibleAttesters Array of attesters to harvest rewards from.
-    // slither-disable-start calls-loop
-    // slither-disable-start reentrancy-benign
-    // Reentrancy safe: caller (harvestRewards) has nonReentrant modifier
-    //   also the called contract is trusted Aztec protocol contract
-    // slither-disable-start reentrancy-no-eth
-    function _harvestFromEligibleAttesters(IAztecRollup rollup, address[] memory eligibleAttesters) internal {
-        uint256 eligibleLength = eligibleAttesters.length;
-        for (uint256 i; i < eligibleLength; ++i) {
-            address attester = eligibleAttesters[i];
-
-            // claimSequencerRewards claims for the attester and transfers to this contract
-            try rollup.claimSequencerRewards(attester) returns (uint256 claimedAmount) {
-                // Transfer claimed rewards to RewardsVault and notify
-                STAKING_ASSET.safeTransfer(address(REWARDS_VAULT), claimedAmount);
-                REWARDS_VAULT.postReceiveFundsHook(claimedAmount);
-
-                emit AttesterRewardsClaimed(attester, claimedAmount);
-            } catch Error(string memory reason) {
-                // NOTE: this catch is here to provide more context on revert reason, only.
-                //       The outer catch will make sure no other erros break the loop.
-                emit RewardClaimFailed(attester, reason);
-            } catch {
-                emit RewardClaimFailed(attester, "Unknown error");
-            }
-        }
-    }
-
-    // slither-disable-end reentrancy-no-eth
-    // slither-disable-end reentrancy-benign
-    // slither-disable-end calls-loop
-
     /// @notice Returns the canonical rollup address and interface.
     /// @return rollupAddress The canonical rollup address.
     /// @return rollup The rollup staking interface.
@@ -733,60 +640,6 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     // slither-disable-end calls-loop,timestamp
-
-    /// @notice Gets the list of attesters with rewards above the threshold.
-    /// @param rollup The rollup interface.
-    /// @param rewardClaimThreshold The minimum reward amount to claim.
-    /// @return eligibleAttesters Array of attesters with rewards above threshold.
-    // slither-disable-start calls-loop
-    function _getEligibleAttesters(IAztecRollup rollup, uint256 rewardClaimThreshold)
-        internal
-        view
-        returns (address[] memory eligibleAttesters)
-    {
-        address[] memory attesters = _activatedAttesters;
-        uint256 attestersLength = attesters.length;
-
-        // First pass: count eligible attesters to allocate exact array size
-        uint256 eligibleCount = 0;
-        for (uint256 i; i < attestersLength; ++i) {
-            address attester = attesters[i];
-
-            try rollup.getSequencerRewards(attester) returns (uint256 pendingRewards) {
-                if (pendingRewards > rewardClaimThreshold) {
-                    ++eligibleCount;
-                }
-            } catch {
-                // Skip attester if rewards query fails
-                continue;
-            }
-        }
-
-        // Allocate array with exact size
-        eligibleAttesters = new address[](eligibleCount);
-
-        // Second pass: populate array with eligible attesters
-        if (eligibleCount > 0) {
-            uint256 currentIndex = 0;
-            for (uint256 i; i < attestersLength; ++i) {
-                address attester = attesters[i];
-
-                try rollup.getSequencerRewards(attester) returns (uint256 pendingRewards) {
-                    if (pendingRewards > rewardClaimThreshold) {
-                        eligibleAttesters[currentIndex] = attester;
-                        ++currentIndex;
-                    }
-                } catch {
-                    // Skip attester if rewards query fails
-                    continue;
-                }
-            }
-        }
-
-        return eligibleAttesters;
-    }
-
-    // slither-disable-end calls-loop
 
     /// @notice Calculates the attester count to stake to, bounded by available keys.
     /// @param amount The stake amount requested.
