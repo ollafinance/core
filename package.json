@@ -23,10 +23,11 @@
     "test:unit": "cd contracts && forge test --match-path \"test/**/*.t.sol\" --no-match-path \"test/**/*.integration.sol\"",
     "test:invariant": "cd contracts && forge test --match-path \"test/**/*.invariant.sol\"",
     "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.sol\"",
+    "test:interface-compat": "cd contracts && forge test --match-path \"test/integration/AztecInterfaceCompatibility.integration.sol\"",
     "dev:chain": "anvil",
     "dev:build": "cd contracts && forge build",
     "deploy:local": "cd contracts && DEPLOY_ENV=local forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545",
-    "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia --verify",
-    "test:interface-compat": "cd contracts && forge test --match-contract AztecInterfaceCompatibilityTest"
+    "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia"
   }
 }
+
