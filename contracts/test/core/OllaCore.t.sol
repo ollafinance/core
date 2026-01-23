@@ -14,6 +14,7 @@ import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/mocks/MockAztec.sol";
+import { MockSafetyModule } from "src/mocks/MockSafetyModule.sol";
 import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 import { MockWithdrawalQueue } from "src/mocks/MockWithdrawalQueue.sol";
 
@@ -149,7 +150,7 @@ contract OllaCoreTest is Test {
     address internal bob;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal rewardsVault;
-    address internal safetyModule;
+    MockSafetyModule internal safetyModule;
     address internal operator;
 
     /*//////////////////////////////////////////////////////////////
@@ -167,12 +168,12 @@ contract OllaCoreTest is Test {
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
         rewardsVault = makeAddr("rewardsVault");
-        safetyModule = makeAddr("safetyModule");
+        safetyModule = new MockSafetyModule();
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
 
         vault.initialize(
-            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, safetyModule
+            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
         );
 
         alice = makeAddr("alice");
@@ -218,7 +219,7 @@ contract OllaCoreTest is Test {
         assertEq(vault.governance(), governance, "governance set");
         assertEq(vault.withdrawalQueue(), address(withdrawalQueue), "withdrawal queue set");
         assertEq(vault.rewardsVault(), rewardsVault, "rewards vault set");
-        assertEq(vault.safetyModule(), safetyModule, "safety module set");
+        assertEq(vault.safetyModule(), address(safetyModule), "safety module set");
         IOllaCore.LatestReport memory report = vault.latestReport();
         assertEq(report.exchangeRate, 1e18, "exchange rate init");
         assertEq(report.totalAssets, 0, "lastTotalAssets init");
@@ -227,7 +228,7 @@ contract OllaCoreTest is Test {
     function test_RevertWhen_Reinitialize() external {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         vault.initialize(
-            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, safetyModule
+            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
         );
     }
 
