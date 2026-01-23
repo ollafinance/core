@@ -10,18 +10,23 @@
   },
   "packageManager": "yarn@4.12.0",
   "scripts": {
+    "forge:build": "cd contracts && forge build",
+    "forge:build-all": "cd contracts && forge build --force",
+    "forge:fmt": "cd contracts && forge fmt",
     "postinstall": "husky install",
     "solhint:build": "tsc -p solhint-rules/tsconfig.json",
     "lint": "cd contracts && solhint --config .solhint.json \"src/**/*.sol\"",
     "lint:fix": "cd contracts && solhint --config .solhint.json --fix --noPrompt \"src/**/*.sol\"",
     "slither": "cd contracts && slither . --config-file slither.config.json",
-    "test": "yarn test:unit && yarn test:invariant && yarn test:integration",
+    "slither:docker": "docker build -f contracts/Dockerfile.slither -t olla-slither:local . && docker run --rm -v \"$PWD/contracts:/work\" -w /work olla-slither:local slither . --config-file slither.config.json",
+    "test": "yarn test:unit && yarn test:invariant && yarn test:integration && yarn test:interface-compat",
     "test:unit": "cd contracts && forge test --match-path \"test/**/*.t.sol\" --no-match-path \"test/**/*.integration.sol\"",
     "test:invariant": "cd contracts && forge test --match-path \"test/**/*.invariant.sol\"",
     "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.sol\"",
     "dev:chain": "anvil",
     "dev:build": "cd contracts && forge build",
     "deploy:local": "cd contracts && DEPLOY_ENV=local forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545",
-    "deploy:testnet": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia --verify"
+    "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia --verify",
+    "test:interface-compat": "cd contracts && forge test --match-contract AztecInterfaceCompatibilityTest"
   }
 }

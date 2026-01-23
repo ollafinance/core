@@ -9,6 +9,20 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 /// @notice Interface for the stAztec liquid staking token.
 /// @author Olla Core contributors
 interface IStAztec is IERC20, IERC20Metadata, IERC20Permit {
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when a caller is not authorized to mint/burn.
+    error StAztecUnauthorized(address caller);
+
+    /// @notice Thrown when a zero address is provided.
+    error StAztecZeroAddress();
+
+    /*//////////////////////////////////////////////////////////////
+                              CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Mints stAztec shares to an account.
     /// @param to The recipient address.
     /// @param amount The amount of shares to mint.

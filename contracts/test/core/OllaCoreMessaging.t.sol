@@ -11,6 +11,10 @@ import { MockAztec } from "src/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 
 contract OllaCoreMessagingHarness is OllaCore {
+    /*//////////////////////////////////////////////////////////////
+                           CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     function exposedStake(uint256 amount) external {
         _stake(amount);
     }
@@ -21,13 +25,25 @@ contract OllaCoreMessagingHarness is OllaCore {
 }
 
 contract OllaCoreMessagingTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                              EVENTS
+    //////////////////////////////////////////////////////////////*/
+
     event StakeRequested(uint256 indexed messageId, uint256 amount);
     event UnstakeRequested(uint256 indexed messageId, uint256 amount);
+
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
     OllaCoreMessagingHarness internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
         asset = new MockAztec(address(this));
@@ -45,6 +61,10 @@ contract OllaCoreMessagingTest is Test {
         vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                            STAKE MESSAGES
+    //////////////////////////////////////////////////////////////*/
+
     function test_StakeMessageRoutesToStakingManager() external {
         uint256 assetsBefore = vault.totalAssets();
 
@@ -58,6 +78,10 @@ contract OllaCoreMessagingTest is Test {
         assertEq(vault.totalAssets(), assetsBefore, "assets unchanged");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                           UNSTAKE MESSAGES
+    //////////////////////////////////////////////////////////////*/
+
     function test_UnstakeMessageRoutesToStakingManager() external {
         uint256 assetsBefore = vault.totalAssets();
 
@@ -70,6 +94,10 @@ contract OllaCoreMessagingTest is Test {
         assertEq(stakingManager.unstakeCalls(), 1, "unstake call count");
         assertEq(vault.totalAssets(), assetsBefore, "assets unchanged");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                         MESSAGE ID TRACKING
+    //////////////////////////////////////////////////////////////*/
 
     function test_StakeMessageIdMonotonic() external {
         vm.expectEmit(true, true, false, true, address(vault));

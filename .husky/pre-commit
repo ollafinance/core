@@ -1,17 +1,27 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-if find contracts/src contracts/test contracts/script -type f -name "*.sol" -print -quit | grep -q .; then
-  echo "Running forge fmt before commit..."
-  (cd contracts && forge fmt)
-  echo "Running solhint before commit..."
-  yarn lint:fix
-  echo "Running slither before commit..."
-  yarn slither
-  echo "Running unit tests before commit..."
-  yarn test:unit
-  echo "Running invariant tests before commit..."
-  yarn test:invariant
-else
-  echo "No Solidity files found; skipping forge fmt, solhint, and tests."
-fi
+print_step() {
+  echo ""
+  echo "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+  echo " $1 "
+  echo "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+  echo ""
+}
+
+print_step "PRE COMMIT HOOKS"
+
+print_step "forge fmt"
+yarn forge:fmt
+print_step "solhint"
+yarn lint:fix
+print_step "slither (docker)"
+yarn slither:docker
+print_step "unit tests"
+yarn test:unit
+print_step "integration tests"
+yarn test:integration
+print_step "interface compatibility tests"
+yarn test:interface-compat
+print_step "invariant tests"
+yarn test:invariant

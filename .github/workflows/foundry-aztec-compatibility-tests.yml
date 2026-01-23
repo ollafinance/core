@@ -1,4 +1,4 @@
-name: Foundry Required Tests
+name: Foundry Aztec Compatibility Tests
 
 on:
   pull_request:
@@ -6,8 +6,8 @@ on:
       - main
 
 jobs:
-  required:
-    name: Forge required tests
+  compatibility:
+    name: Forge Aztec compatibility tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,5 +23,5 @@ jobs:
         uses: ./.github/actions/setup-soldeer
       - name: Forge clean
         run: forge clean
-      - name: Forge required tests
-        run: forge test --match-path "test/**/*.integration.sol"
+      - name: Forge Aztec compatibility tests
+        run: forge test --match-path "test/integration/AztecInterfaceCompatibility.integration.sol"
