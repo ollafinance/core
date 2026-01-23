@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 
 /// @title MockStakingManager
@@ -23,7 +22,7 @@ contract MockStakingManager is IStakingManager {
     uint256 private _stakedAmount;
 
     /*//////////////////////////////////////////////////////////////
-                           EXTERNAL FUNCTIONS
+                          EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Records a stake request.
@@ -45,39 +44,12 @@ contract MockStakingManager is IStakingManager {
     }
 
     /*//////////////////////////////////////////////////////////////
-                         EXTERNAL VIEW FUNCTIONS
+                        EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
     function getStakingState() external view override returns (StakingState memory) {
         return StakingState({ stakedAmount: _stakedAmount, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
-    }
-
-    /// @notice No-op initializer for interface compatibility.
-    /// @param stakingAsset Unused.
-    /// @param rollupRegistry Unused.
-    /// @param rewardsVault Unused.
-    /// @param core Unused.
-    /// @param providerAdmin Unused.
-    /// @param providerRewardsRecipient Unused.
-    /// @param defaultAdmin Unused.
-    function initialize(
-        IERC20 stakingAsset,
-        address rollupRegistry,
-        address rewardsVault,
-        address core,
-        address providerAdmin,
-        address providerRewardsRecipient,
-        address defaultAdmin
-    ) external pure override {
-        stakingAsset;
-        rollupRegistry;
-        rewardsVault;
-        core;
-        providerAdmin;
-        providerRewardsRecipient;
-        defaultAdmin;
-        return;
     }
 
     /*//////////////////////////////////////////////////////////////

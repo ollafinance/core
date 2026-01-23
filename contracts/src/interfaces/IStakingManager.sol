@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+// Import BN254 types - local definitions compatible with Aztec protocol
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IStakingManager
@@ -104,7 +104,7 @@ interface IStakingManager {
     event RewardClaimFailed(address indexed attester, string reason);
 
     /*//////////////////////////////////////////////////////////////
-                                  ERRORS
+                                 ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when an address is zero.
@@ -132,29 +132,7 @@ interface IStakingManager {
     error StakingManager__UnstakeFailed(address attester);
 
     /*//////////////////////////////////////////////////////////////
-                              INITIALIZER
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Initializes the StakingManager behind a proxy.
-    /// @param stakingAsset The staking asset token.
-    /// @param rollupRegistry The Aztec rollup registry contract.
-    /// @param rewardsVault The rewards vault address.
-    /// @param core The OllaCore contract address.
-    /// @param providerAdmin The provider admin address.
-    /// @param providerRewardsRecipient The provider rewards recipient address.
-    /// @param defaultAdmin The default admin for role management.
-    function initialize(
-        IERC20 stakingAsset,
-        address rollupRegistry,
-        address rewardsVault,
-        address core,
-        address providerAdmin,
-        address providerRewardsRecipient,
-        address defaultAdmin
-    ) external;
-
-    /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
+                            CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Stakes assets with the staking provider.

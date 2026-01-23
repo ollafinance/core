@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.27;
+pragma solidity >=0.8.27 <0.9.0;
 
-import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
-import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { AccessControl } from "@oz/access/AccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
@@ -17,12 +15,12 @@ import { Queue, QueueLib } from "src/libraries/QueueLib.sol";
 /// @title StakingManager
 /// @notice Manages staking delegation, attester keys, and reward harvesting.
 /// @author Olla Core contributors
-contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuard, IStakingManager {
+contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using QueueLib for Queue;
 
     /*//////////////////////////////////////////////////////////////
-                                 CONSTANTS
+                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Role for OllaCore to call stake/unstake operations.
@@ -32,24 +30,24 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     bytes32 public constant STAKING_PROVIDER_ADMIN_ROLE = keccak256("STAKING_PROVIDER_ADMIN_ROLE");
 
     /*//////////////////////////////////////////////////////////////
-                                  STATE
+                               IMMUTABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Contract related interfaces and addresses
     /// @notice The staking asset (AZTEC token).
-    IERC20 public stakingAsset;
+    IERC20 public immutable STAKING_ASSET;
 
     /// @notice The Aztec rollup registry contract.
-    IAztecRollupRegistry public rollupRegistry;
+    IAztecRollupRegistry public immutable ROLLUP_REGISTRY;
 
     /// @notice The rewards vault contract.
-    IRewardsVault public rewardsVault;
+    IRewardsVault public immutable REWARDS_VAULT;
 
     /// @notice The OllaCore contract address.
-    address public core;
+    address public immutable CORE;
 
-    /// @notice Address authorized to perform upgrades.
-    address public governance;
+    /*//////////////////////////////////////////////////////////////
+                                 STATE
+    //////////////////////////////////////////////////////////////*/
 
     /// @dev Provider configuration.
     ProviderConfig private _provider;
@@ -73,85 +71,59 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Mapping to check if an attester has a pending unstake.
     mapping(address attester => bool isPending) private _isUnstakePending;
 
-    /// @notice Storage gap for upgradability.
-    // slither-disable-next-line unused-state
-    uint256[48] private __gap;
-
     /*//////////////////////////////////////////////////////////////
-                                  ERRORS
+                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when a caller is not authorized governance.
-    error StakingManager__UnauthorizedGovernance(address caller);
-
-    /*//////////////////////////////////////////////////////////////
-                               CONSTRUCTOR
-    //////////////////////////////////////////////////////////////*/
-
-    constructor() {
-        _disableInitializers();
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                              INITIALIZER
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Initializes the StakingManager behind a proxy.
-    /// @param stakingAsset_ The staking asset token.
-    /// @param rollupRegistry_ The Aztec rollup registry contract.
-    /// @param rewardsVault_ The rewards vault address.
-    /// @param core_ The OllaCore contract address.
-    /// @param providerAdmin_ The provider admin address.
-    /// @param providerRewardsRecipient_ The provider rewards recipient address.
-    /// @param defaultAdmin_ The default admin for role management.
-    function initialize(
-        IERC20 stakingAsset_,
-        address rollupRegistry_,
-        address rewardsVault_,
-        address core_,
-        address providerAdmin_,
-        address providerRewardsRecipient_,
-        address defaultAdmin_
-    ) external override initializer {
-        if (address(stakingAsset_) == address(0)) {
+    /// @notice Constructs the StakingManager.
+    /// @param stakingAsset The staking asset token.
+    /// @param rollupRegistry The Aztec rollup registry contract.
+    /// @param rewardsVault The rewards vault address.
+    /// @param core The OllaCore contract address.
+    /// @param providerAdmin The provider admin address.
+    /// @param providerRewardsRecipient The provider rewards recipient address.
+    /// @param defaultAdmin The default admin for role management.
+    constructor(
+        IERC20 stakingAsset,
+        address rollupRegistry,
+        address rewardsVault,
+        address core,
+        address providerAdmin,
+        address providerRewardsRecipient,
+        address defaultAdmin
+    ) {
+        if (address(stakingAsset) == address(0)) {
             revert StakingManager__ZeroAddress("stakingAsset");
         }
-        if (rollupRegistry_ == address(0)) {
+        if (rollupRegistry == address(0)) {
             revert StakingManager__ZeroAddress("rollupRegistry");
         }
-        if (rewardsVault_ == address(0)) {
+        if (rewardsVault == address(0)) {
             revert StakingManager__ZeroAddress("rewardsVault");
         }
-        if (core_ == address(0)) {
+        if (core == address(0)) {
             revert StakingManager__ZeroAddress("core");
         }
-        if (providerAdmin_ == address(0)) {
+        if (providerAdmin == address(0)) {
             revert StakingManager__ZeroAddress("providerAdmin");
         }
-        if (providerRewardsRecipient_ == address(0)) {
-            revert StakingManager__ZeroAddress("providerRewardsRecipient");
-        }
-        if (defaultAdmin_ == address(0)) {
+        if (defaultAdmin == address(0)) {
             revert StakingManager__ZeroAddress("defaultAdmin");
         }
+        STAKING_ASSET = stakingAsset;
+        ROLLUP_REGISTRY = IAztecRollupRegistry(rollupRegistry);
+        REWARDS_VAULT = IRewardsVault(rewardsVault);
+        CORE = core;
 
-        __AccessControl_init();
-
-        stakingAsset = stakingAsset_;
-        rollupRegistry = IAztecRollupRegistry(rollupRegistry_);
-        rewardsVault = IRewardsVault(rewardsVault_);
-        core = core_;
-        governance = defaultAdmin_;
-
-        _provider = ProviderConfig({ admin: providerAdmin_, rewardsRecipient: providerRewardsRecipient_ });
+        _provider = ProviderConfig({ admin: providerAdmin, rewardsRecipient: providerRewardsRecipient });
 
         _providerQueue.init();
 
-        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
-        _grantRole(CORE_ROLE, core_);
-        _grantRole(STAKING_PROVIDER_ADMIN_ROLE, providerAdmin_);
+        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
+        _grantRole(CORE_ROLE, core);
+        _grantRole(STAKING_PROVIDER_ADMIN_ROLE, providerAdmin);
 
-        emit ProviderSet(providerAdmin_, providerRewardsRecipient_);
+        emit ProviderSet(providerAdmin, providerRewardsRecipient);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -175,7 +147,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Moves exited attesters into the pending unstake queue.
     function cleanActivatedAttesters() external override onlyRole(CORE_ROLE) nonReentrant {
         // TODO: research if we can assume moving with rollup is safe
-        address rollupAddress = rollupRegistry.getCanonicalRollup();
+        address rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         IAztecRollup rollup = IAztecRollup(rollupAddress);
 
         uint256 i = 0;
@@ -208,8 +180,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
-        harvested = rollup.claimSequencerRewards(address(rewardsVault));
-        rewardsVault.postReceiveFundsHook(harvested);
+        harvested = rollup.claimSequencerRewards(address(REWARDS_VAULT));
+        REWARDS_VAULT.postReceiveFundsHook(harvested);
         emit RewardsHarvested(harvested);
         return harvested;
     }
@@ -269,7 +241,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @return claimableRewards The total rewards claimable to rewards recipient.
     function getClaimableRewards() external view override onlyRole(CORE_ROLE) returns (uint256 claimableRewards) {
         (, IAztecRollup rollup) = _getRollup();
-        return rollup.getSequencerRewards(address(rewardsVault));
+        return rollup.getSequencerRewards(address(REWARDS_VAULT));
     }
 
     // slither-disable-start calls-loop,timestamp
@@ -340,7 +312,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         _transferAndApproveStake(rollupAddress, actualStakeAmount);
         _stakeAttesters(rollup, attestersToStakeTo, activationThreshold);
-        stakingAsset.forceApprove(rollupAddress, 0);
+        STAKING_ASSET.forceApprove(rollupAddress, 0);
     }
 
     // slither-disable-end reentrancy-no-eth
@@ -379,7 +351,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function _claimUnstakedFunds() internal returns (uint256 claimed) {
         (, IAztecRollup rollup) = _getRollup();
 
-        uint256 balanceBefore = stakingAsset.balanceOf(address(this));
+        uint256 balanceBefore = STAKING_ASSET.balanceOf(address(this));
         uint256 sumOfExitAmounts = _finalizePendingUnstakes(rollup);
         claimed = _finalizeClaim(balanceBefore, sumOfExitAmounts);
         return claimed;
@@ -428,10 +400,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param rollupAddress The rollup address to approve.
     /// @param actualStakeAmount The amount to transfer and approve.
     function _transferAndApproveStake(address rollupAddress, uint256 actualStakeAmount) internal {
-        // Note: `core` is a trusted address set during initialization, not arbitrary.
+        // Note: CORE is an immutable trusted address set at construction, not arbitrary
         // slither-disable-next-line arbitrary-send-erc20,pess-nft-approve-warning
-        stakingAsset.safeTransferFrom(core, address(this), actualStakeAmount);
-        stakingAsset.forceApprove(rollupAddress, actualStakeAmount);
+        STAKING_ASSET.safeTransferFrom(CORE, address(this), actualStakeAmount);
+        STAKING_ASSET.forceApprove(rollupAddress, actualStakeAmount);
     }
 
     /// @notice Stakes a batch of attesters on the rollup.
@@ -596,14 +568,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param sumOfExitAmounts The sum of finalized exit amounts.
     /// @return claimed The amount claimed and transferred.
     function _finalizeClaim(uint256 balanceBefore, uint256 sumOfExitAmounts) internal returns (uint256 claimed) {
-        uint256 balanceAfter = stakingAsset.balanceOf(address(this));
+        uint256 balanceAfter = STAKING_ASSET.balanceOf(address(this));
         claimed = balanceAfter - balanceBefore;
         if (sumOfExitAmounts != claimed) {
             revert StakingManager__ClaimAmountMismatch();
         }
 
         if (claimed > 0) {
-            stakingAsset.safeTransfer(core, claimed);
+            STAKING_ASSET.safeTransfer(CORE, claimed);
             emit UnstakedFundsClaimed(claimed);
         }
         return claimed;
@@ -613,7 +585,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @return rollupAddress The canonical rollup address.
     /// @return rollup The rollup staking interface.
     function _getRollup() internal view returns (address rollupAddress, IAztecRollup rollup) {
-        rollupAddress = rollupRegistry.getCanonicalRollup();
+        rollupAddress = ROLLUP_REGISTRY.getCanonicalRollup();
         rollup = IAztecRollup(rollupAddress);
         return (rollupAddress, rollup);
     }
@@ -668,15 +640,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     // slither-disable-end calls-loop,timestamp
-
-    function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != governance) {
-            revert StakingManager__UnauthorizedGovernance(msg.sender);
-        }
-        if (newImplementation == address(0)) {
-            revert StakingManager__ZeroAddress("newImplementation");
-        }
-    }
 
     /// @notice Calculates the attester count to stake to, bounded by available keys.
     /// @param amount The stake amount requested.
