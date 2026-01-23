@@ -93,6 +93,16 @@ interface IStakingManager {
     /// @param attester The attester address of the removed key.
     event QueueDripped(address indexed attester);
 
+    /// @notice Emitted when rewards are claimed for a specific attester.
+    /// @param attester The attester address.
+    /// @param amount The amount of rewards claimed.
+    event AttesterRewardsClaimed(address indexed attester, uint256 indexed amount);
+
+    /// @notice Emitted when reward claim fails for an attester.
+    /// @param attester The attester address.
+    /// @param reason The failure reason.
+    event RewardClaimFailed(address indexed attester, string reason);
+
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -142,9 +152,9 @@ interface IStakingManager {
     function getUnstakedFunds() external returns (uint256 received);
 
     /// @notice Claims sequencer rewards to RewardsVault.
+    /// @param rewardClaimThreshold The minimum reward amount to claim per attester.
     /// @return harvested The amount of rewards harvested.
-    function harvestRewards() external returns (uint256 harvested);
-
+    function harvestRewards(uint256 rewardClaimThreshold) external returns (uint256 harvested);
     /*//////////////////////////////////////////////////////////////
                         PROVIDER ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -165,6 +175,15 @@ interface IStakingManager {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Estimates the amount of rewards that can be claimed from all activated attesters.
+    /// @dev Only callable by CORE_ROLE. Does not actually claim rewards.
+    /// @param rewardClaimThreshold The minimum reward amount to consider per attester.
+    /// @return totalEstimate The total estimated claimable rewards.
+    /// @return aboveThresholdEstimate The estimated claimable rewards above the threshold.
+    function estimateClaimableRewards(uint256 rewardClaimThreshold)
+        external
+        view
+        returns (uint256 totalEstimate, uint256 aboveThresholdEstimate);
     /// @notice Returns the current staking state by querying the rollup.
     /// @dev Iterates through all attesters and queries getAttesterView for each.
     /// @return state The aggregated staking state.

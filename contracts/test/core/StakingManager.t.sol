@@ -146,7 +146,7 @@ contract StakingManagerTest is Test {
     function test_Constructor_SetsImmutables() external view {
         assertEq(address(stakingManager.STAKING_ASSET()), address(aztec));
         assertEq(address(stakingManager.ROLLUP_REGISTRY()), address(rollupRegistry));
-        assertEq(stakingManager.REWARDS_VAULT(), rewardsVault);
+        assertEq(address(stakingManager.REWARDS_VAULT()), rewardsVault);
         assertEq(stakingManager.CORE(), core);
     }
 
@@ -603,7 +603,7 @@ contract StakingManagerTest is Test {
     function test_HarvestRewards_ReturnsZero() external {
         // Placeholder implementation returns 0
         vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards();
+        uint256 harvested = stakingManager.harvestRewards(100_000);
         assertEq(harvested, 0);
     }
 
@@ -613,7 +613,7 @@ contract StakingManagerTest is Test {
         emit RewardsHarvested(0);
 
         vm.prank(core);
-        stakingManager.harvestRewards();
+        stakingManager.harvestRewards(100_000);
     }
 
     function test_RevertWhen_HarvestRewards_Unauthorized() external {
@@ -623,7 +623,7 @@ contract StakingManagerTest is Test {
             )
         );
         vm.prank(alice);
-        stakingManager.harvestRewards();
+        stakingManager.harvestRewards(100_000);
     }
 
     /*//////////////////////////////////////////////////////////////

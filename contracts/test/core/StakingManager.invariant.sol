@@ -202,7 +202,7 @@ contract StakingManagerHandler is Test {
     /// @notice Harvest rewards (only core can call)
     function harvestRewards() external {
         vm.prank(core);
-        try stakingManager.harvestRewards() returns (
+        try stakingManager.harvestRewards(100_000) returns (
             uint256
         ) {
         // Could track harvested amount if needed

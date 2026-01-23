@@ -57,12 +57,22 @@ contract MockStakingManager is IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
+    function estimateClaimableRewards(uint256)
+        external
+        pure
+        override
+        returns (uint256 totalEstimate, uint256 aboveThresholdEstimate)
+    {
+        return (0, 0);
+    }
+
+    /// @inheritdoc IStakingManager
     function getUnstakedFunds() external pure override returns (uint256 received) {
         return 0;
     }
 
     /// @inheritdoc IStakingManager
-    function harvestRewards() external pure override returns (uint256 harvested) {
+    function harvestRewards(uint256) external pure override returns (uint256 harvested) {
         return 0;
     }
 

@@ -7,6 +7,7 @@ import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IAztecRollup } from "src/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/interfaces/IAztecRollupRegistry.sol";
+import { IRewardsVault } from "src/interfaces/IRewardsVault.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { AttesterView, Status, Timestamp } from "src/libraries/AztecTypes.sol";
 import { Queue, QueueLib } from "src/libraries/QueueLib.sol";
@@ -38,8 +39,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @notice The Aztec rollup registry contract.
     IAztecRollupRegistry public immutable ROLLUP_REGISTRY;
 
-    /// @notice The rewards vault address.
-    address public immutable REWARDS_VAULT;
+    /// @notice The rewards vault contract.
+    IRewardsVault public immutable REWARDS_VAULT;
 
     /// @notice The OllaCore contract address.
     address public immutable CORE;
@@ -111,7 +112,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
         STAKING_ASSET = stakingAsset;
         ROLLUP_REGISTRY = IAztecRollupRegistry(rollupRegistry);
-        REWARDS_VAULT = rewardsVault;
+        REWARDS_VAULT = IRewardsVault(rewardsVault);
         CORE = core;
 
         _provider = ProviderConfig({ admin: providerAdmin, rewardsRecipient: providerRewardsRecipient });
@@ -171,11 +172,54 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /// @inheritdoc IStakingManager
-    function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
-        // Placeholder: RewardsVault integration deferred to Milestone 5
-        // In production, this would call rollup.claimSequencerRewards for each activated attester
-        // and forward the rewards to REWARDS_VAULT
-        harvested = 0;
+    function harvestRewards(uint256 rewardClaimThreshold)
+        external
+        override
+        onlyRole(CORE_ROLE)
+        nonReentrant
+        returns (uint256 harvested)
+    {
+        (, IAztecRollup rollup) = _getRollup();
+
+        // Get all activated attesters to check for rewards
+        address[] memory attesters = _activatedAttesters;
+        uint256 attestersLength = attesters.length;
+
+        if (attestersLength == 0) {
+            emit RewardsHarvested(0);
+            return 0;
+        }
+        uint256 rewardsBefore = REWARDS_VAULT.getAvailableFunds();
+        for (uint256 i; i < attestersLength; ++i) {
+            address attester = attesters[i];
+
+            // Check if rewards are claimable for this attester
+            try rollup.getSequencerRewards(attester) returns (uint256 pendingRewards) {
+                // Only claim if rewards exceed gas threshold
+                if (pendingRewards > rewardClaimThreshold) {
+                    try rollup.claimSequencerRewards(attester) returns (uint256 claimedAmount) {
+                        // Transfer rewards to RewardsVault and call hook
+                        STAKING_ASSET.safeTransferFrom(address(rollup), address(REWARDS_VAULT), claimedAmount);
+                        REWARDS_VAULT.postReceiveFundsHook(claimedAmount);
+
+                        emit AttesterRewardsClaimed(attester, claimedAmount);
+                    } catch Error(string memory reason) {
+                        // Log claim failure but continue with other attesters
+                        emit RewardClaimFailed(attester, reason);
+                    } catch {
+                        // Handle unknown errors
+                        emit RewardClaimFailed(attester, "Unknown error");
+                    }
+                }
+            } catch {
+                // Skip attester if rewards query fails
+                continue;
+            }
+        }
+
+        uint256 rewardsAfter = REWARDS_VAULT.getAvailableFunds();
+        harvested = rewardsAfter - rewardsBefore;
+
         emit RewardsHarvested(harvested);
         return harvested;
     }
@@ -229,6 +273,39 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function estimateClaimableRewards(uint256 rewardClaimThreshold)
+        external
+        view
+        override
+        onlyRole(CORE_ROLE)
+        returns (uint256 totalEstimate, uint256 aboveThresholdEstimate)
+    {
+        (, IAztecRollup rollup) = _getRollup();
+
+        address[] memory attesters = _activatedAttesters;
+        uint256 attestersLength = attesters.length;
+
+        if (attestersLength == 0) {
+            return (0, 0);
+        }
+
+        for (uint256 i; i < attestersLength; ++i) {
+            address attester = attesters[i];
+
+            try rollup.getSequencerRewards(attester) returns (uint256 pendingRewards) {
+                totalEstimate += pendingRewards;
+
+                if (pendingRewards > rewardClaimThreshold) {
+                    aboveThresholdEstimate += pendingRewards;
+                }
+            } catch {
+                // Skip attester if rewards query fails
+                continue;
+            }
+        }
+    }
 
     // slither-disable-start calls-loop,timestamp
     /// @notice Returns aggregated staking state from the rollup.
