@@ -171,6 +171,14 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         return _claimUnstakedFunds();
     }
 
+    // slither-disable-start calls-loop
+    /// @notice External calls inside loop are intentional and safe:
+    ///      - `rollup` is a trusted Aztec protocol contract
+    ///      - Attesters are permissioned and managed by the provider
+    ///      - Function is only reachable via CORE_ROLE-gated entrypoints with nonReentrant
+    ///      - State updates after external call are benign (internal bookkeeping only)
+    ///      - Failure is handled gracefully with try-catch, allowing continuation
+    // slither-disable-start pess-multiple-storage-read
     /// @inheritdoc IStakingManager
     function harvestRewards(uint256 rewardClaimThreshold)
         external
@@ -189,7 +197,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             emit RewardsHarvested(0);
             return 0;
         }
-        uint256 rewardsBefore = REWARDS_VAULT.getAvailableFunds();
+        IRewardsVault rewardsVault = REWARDS_VAULT;
+        uint256 rewardsBefore = rewardsVault.getAvailableFunds();
         for (uint256 i; i < attestersLength; ++i) {
             address attester = attesters[i];
 
@@ -197,9 +206,10 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             try rollup.getSequencerRewards(attester) returns (uint256 pendingRewards) {
                 // Only claim if rewards exceed gas threshold
                 if (pendingRewards > rewardClaimThreshold) {
+                    // claimSequencerRewards claims for the attester and transfers to this contract
                     try rollup.claimSequencerRewards(attester) returns (uint256 claimedAmount) {
-                        // Transfer rewards to RewardsVault and call hook
-                        STAKING_ASSET.safeTransferFrom(address(rollup), address(REWARDS_VAULT), claimedAmount);
+                        // Transfer claimed rewards to RewardsVault and notify
+                        STAKING_ASSET.safeTransfer(address(REWARDS_VAULT), claimedAmount);
                         REWARDS_VAULT.postReceiveFundsHook(claimedAmount);
 
                         emit AttesterRewardsClaimed(attester, claimedAmount);
@@ -217,12 +227,15 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             }
         }
 
-        uint256 rewardsAfter = REWARDS_VAULT.getAvailableFunds();
+        uint256 rewardsAfter = rewardsVault.getAvailableFunds();
         harvested = rewardsAfter - rewardsBefore;
 
         emit RewardsHarvested(harvested);
         return harvested;
     }
+
+    // slither-disable-end pess-multiple-storage-read
+    // slither-disable-end calls-loop
 
     /*//////////////////////////////////////////////////////////////
                         PROVIDER ADMIN FUNCTIONS
@@ -274,6 +287,13 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    // slither-disable-start calls-loop
+    /// @notice External calls inside loop are intentional and safe for estimation:
+    ///      - `rollup` is a trusted Aztec protocol contract
+    ///      - Function is view-only with no state changes
+    ///      - Attesters are permissioned and managed by the provider
+    ///      - Function is only reachable via CORE_ROLE-gated entrypoints
+    ///      - Failure is handled gracefully with try-catch, allowing continuation
     /// @inheritdoc IStakingManager
     function estimateClaimableRewards(uint256 rewardClaimThreshold)
         external
@@ -306,6 +326,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
             }
         }
     }
+
+    // slither-disable-end calls-loop
 
     // slither-disable-start calls-loop,timestamp
     /// @notice Returns aggregated staking state from the rollup.

@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import { Test } from "@forge-std/Test.sol";
 
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { StakingManager } from "src/core/StakingManager.sol";
@@ -10,6 +11,7 @@ import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/mocks/MockAztec.sol";
 import { MockAztecRollupRegistry } from "src/mocks/MockAztecRollupRegistry.sol";
 import { MockAztecRollup } from "src/mocks/MockAztecRollup.sol";
+import { MockRewardsVault } from "src/mocks/MockRewardsVault.sol";
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title StakingManagerHandler
@@ -33,6 +35,8 @@ contract StakingManagerHandler is Test {
     uint256 public ghost_keysAdded;
     uint256 public ghost_keysDripped;
     uint256 public ghost_keysActivated;
+    uint256 public ghost_totalHarvested;
+    uint256 public ghost_totalRewardsSet;
 
     constructor(
         StakingManager _stakingManager,
@@ -200,15 +204,34 @@ contract StakingManagerHandler is Test {
     }
 
     /// @notice Harvest rewards (only core can call)
-    function harvestRewards() external {
-        vm.prank(core);
-        try stakingManager.harvestRewards(100_000) returns (
-            uint256
-        ) {
-        // Could track harvested amount if needed
+    /// @dev Sets random rewards for activated attesters before harvesting.
+    function harvestRewards(uint256 rewardSeed) external {
+        uint256 activatedCount = stakingManager.getActivatedAttesterCount();
+
+        // Set random rewards for some attesters if there are any
+        if (activatedCount > 0) {
+            // Use seed to determine reward amount per attester
+            uint256 rewardPerAttester = bound(rewardSeed, 0, 10e18);
+
+            // We can't iterate activated attesters directly, but we can set rewards
+            // for addresses based on our key generation pattern (address(uint160(i + 1)))
+            uint256 keysToReward = bound(rewardSeed % 100, 0, ghost_keysActivated);
+            for (uint256 i; i < keysToReward; ++i) {
+                address attester = address(uint160(i + 1));
+                // Only set rewards if we have tokens to back them
+                if (rewardPerAttester > 0) {
+                    stakingAsset.mint(address(rollup), rewardPerAttester);
+                    rollup.setRewards(attester, rewardPerAttester);
+                    ghost_totalRewardsSet += rewardPerAttester;
+                }
+            }
         }
-            catch {
-            // Expected if not authorized
+
+        vm.prank(core);
+        try stakingManager.harvestRewards(100_000) returns (uint256 harvested) {
+            ghost_totalHarvested += harvested;
+        } catch {
+            // Expected if not authorized or other errors
         }
     }
 }
@@ -222,26 +245,28 @@ contract StakingManagerInvariantTest is Test {
     MockAztec internal stakingAsset;
     MockAztecRollupRegistry internal rollupRegistry;
     MockAztecRollup internal rollup;
+    MockRewardsVault internal rewardsVault;
     StakingManagerHandler internal handler;
 
     address internal core;
     address internal providerAdmin;
-    address internal rewardsVault;
     address internal governance;
     address internal defaultAdmin;
+    address internal treasury;
 
     function setUp() external {
         // Setup addresses
         core = makeAddr("core");
         providerAdmin = makeAddr("providerAdmin");
-        rewardsVault = makeAddr("rewardsVault");
         governance = makeAddr("governance");
         defaultAdmin = makeAddr("defaultAdmin");
+        treasury = makeAddr("treasury");
 
         // Setup mock contracts
         stakingAsset = new MockAztec(address(this));
         rollupRegistry = new MockAztecRollupRegistry(address(0));
         rollup = new MockAztecRollup(stakingAsset, 100e18); // 100 AZTEC activation threshold
+        rewardsVault = new MockRewardsVault(IERC20(address(stakingAsset)), core, treasury);
 
         // Set canonical rollup
         rollupRegistry.setCanonicalRollup(address(rollup));
@@ -250,7 +275,7 @@ contract StakingManagerInvariantTest is Test {
         stakingManager = new StakingManager(
             stakingAsset,
             address(rollupRegistry),
-            rewardsVault,
+            address(rewardsVault),
             core,
             providerAdmin,
             makeAddr("providerRewardsRecipient"),
@@ -263,7 +288,7 @@ contract StakingManagerInvariantTest is Test {
 
         // Setup handler
         handler = new StakingManagerHandler(
-            stakingManager, stakingAsset, rollupRegistry, rollup, core, providerAdmin, rewardsVault
+            stakingManager, stakingAsset, rollupRegistry, rollup, core, providerAdmin, address(rewardsVault)
         );
 
         targetContract(address(handler));
@@ -412,6 +437,33 @@ contract StakingManagerInvariantTest is Test {
         // Staking manager should generally not hold tokens except during transaction execution
         // In steady state, balance should be minimal
         assertLe(stakingManagerBalance, 1e18, "staking manager should not hold large token balances in steady state");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       HARVEST REWARDS INVARIANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Harvested rewards should never be negative
+    function invariant_HarvestNeverNegative() external view {
+        assertGe(handler.ghost_totalHarvested(), 0, "total harvested should never be negative");
+    }
+
+    /// @notice Harvested rewards should not exceed total rewards set
+    function invariant_HarvestNotExceedRewardsSet() external view {
+        assertLe(
+            handler.ghost_totalHarvested(),
+            handler.ghost_totalRewardsSet(),
+            "harvested should not exceed total rewards set"
+        );
+    }
+
+    /// @notice RewardsVault balance consistency with harvested rewards
+    function invariant_RewardsVaultConsistency() external view {
+        uint256 vaultBalance = stakingAsset.balanceOf(address(rewardsVault));
+        uint256 totalHarvested = handler.ghost_totalHarvested();
+
+        // Vault balance should equal total harvested (assuming no withdrawals in tests)
+        assertEq(vaultBalance, totalHarvested, "vault balance should match total harvested");
     }
 
     /*//////////////////////////////////////////////////////////////

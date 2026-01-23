@@ -67,6 +67,9 @@ interface IMockAztecRollup {
     /// @notice Thrown when exit is not ready for finalization.
     error MockAztecRollup__NotReady();
 
+    /// @notice Thrown when claim is set to fail for testing.
+    error MockAztecRollup__ClaimFailed();
+
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -97,10 +100,11 @@ interface IMockAztecRollup {
     /// @param attester The attester address.
     function finalizeWithdraw(address attester) external;
 
-    /// @notice Claims sequencer rewards.
-    /// @param recipient The recipient address.
+    /// @notice Claims sequencer rewards for a coinbase/attester.
+    /// @dev For testing: looks up rewards for _coinbase, transfers to msg.sender.
+    /// @param coinbase The coinbase/attester address to claim rewards for.
     /// @return amount The amount of rewards claimed.
-    function claimSequencerRewards(address recipient) external returns (uint256 amount);
+    function claimSequencerRewards(address coinbase) external returns (uint256 amount);
 
     /// @notice Sets pending rewards for a sequencer (test helper).
     /// @param sequencer The sequencer address.
@@ -121,6 +125,16 @@ interface IMockAztecRollup {
     /// @param amount The exit amount.
     /// @param exitableAt The timestamp when exit becomes finalizable.
     function setExternalExit(address attester, uint256 amount, uint256 exitableAt) external;
+
+    /// @notice Sets whether claimSequencerRewards should fail for a coinbase/attester (test helper).
+    /// @param coinbase The coinbase/attester address.
+    /// @param shouldFail Whether the claim should revert.
+    function setClaimShouldFail(address coinbase, bool shouldFail) external;
+
+    /// @notice Returns whether claim should fail for a coinbase/attester.
+    /// @param coinbase The coinbase/attester address.
+    /// @return Whether claim should fail.
+    function claimShouldFail(address coinbase) external view returns (bool);
 
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL VIEW FUNCTIONS
