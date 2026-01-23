@@ -50,21 +50,21 @@ contract AztecInterfaceCompatibilityTest is Test {
         assertEq(expectedSelector, actualSelector, "GetAttesterView selector mismatch");
     }
 
-    function test_Conformance_GetSequencerRewardsSignature() public {
+    function test_Conformance_GetSequencerRewardsSignature() public pure {
         bytes4 expectedSelector = IRollup.getSequencerRewards.selector;
         bytes4 actualSelector = OllaOverrideIStaking.getSequencerRewards.selector;
 
         assertEq(expectedSelector, actualSelector, "GetSequencerRewards selector mismatch");
     }
 
-    function test_Conformance_IsRewardsClaimableSignature() public {
+    function test_Conformance_IsRewardsClaimableSignature() public pure {
         bytes4 expectedSelector = IRollup.isRewardsClaimable.selector;
         bytes4 actualSelector = OllaOverrideIStaking.isRewardsClaimable.selector;
 
         assertEq(expectedSelector, actualSelector, "IsRewardsClaimable selector mismatch");
     }
 
-    function test_Conformance_GetEarliestRewardsClaimableTimestampSignature() public {
+    function test_Conformance_GetEarliestRewardsClaimableTimestampSignature() public pure {
         bytes4 expectedSelector = IRollup.getEarliestRewardsClaimableTimestamp.selector;
         bytes4 actualSelector = OllaOverrideIStaking.getEarliestRewardsClaimableTimestamp.selector;
 
