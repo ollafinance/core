@@ -159,6 +159,9 @@ interface IOllaCore {
     /// @notice Thrown when a deposit exceeds the configured cap.
     error OllaCore__DepositCapExceeded(uint256 assets, uint256 totalAssets);
 
+    /// @notice Thrown when deposits are blocked by the safety module pause.
+    error OllaCore__SafetyModulePaused();
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/

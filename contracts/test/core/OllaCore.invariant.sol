@@ -10,7 +10,9 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/mocks/MockAztec.sol";
+import { MockSafetyModule } from "src/mocks/MockSafetyModule.sol";
 import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
+import { MockWithdrawalQueue } from "src/mocks/MockWithdrawalQueue.sol";
 
 contract OllaCoreHandler is Test {
     using Math for uint256;
@@ -139,6 +141,8 @@ contract OllaCoreInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
+    MockWithdrawalQueue internal withdrawalQueue;
+    MockSafetyModule internal safetyModule;
     OllaCoreHandler internal handler;
     address internal operator;
 
@@ -156,10 +160,12 @@ contract OllaCoreInvariantTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         address governance = makeAddr("governance");
-        address withdrawalQueue = makeAddr("withdrawalQueue");
+        withdrawalQueue = new MockWithdrawalQueue();
         address rewardsVault = makeAddr("rewardsVault");
-        address safetyModule = makeAddr("safetyModule");
-        vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
+        safetyModule = new MockSafetyModule();
+        vault.initialize(
+            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
+        );
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         operator = makeAddr("operator");
@@ -297,6 +303,8 @@ contract OllaCoreDepositInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
+    MockWithdrawalQueue internal withdrawalQueue;
+    MockSafetyModule internal safetyModule;
     OllaCoreDepositHandler internal handler;
 
     /*//////////////////////////////////////////////////////////////
@@ -313,10 +321,12 @@ contract OllaCoreDepositInvariantTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         address governance = makeAddr("governance");
-        address withdrawalQueue = makeAddr("withdrawalQueue");
+        withdrawalQueue = new MockWithdrawalQueue();
         address rewardsVault = makeAddr("rewardsVault");
-        address safetyModule = makeAddr("safetyModule");
-        vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
+        safetyModule = new MockSafetyModule();
+        vault.initialize(
+            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
+        );
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.prank(governance);
