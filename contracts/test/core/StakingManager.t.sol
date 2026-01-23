@@ -606,7 +606,6 @@ contract StakingManagerTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_HarvestRewards_ReturnsZeroWithNoAttesters() external {
-        // No attesters activated, should return 0
         vm.prank(core);
         uint256 harvested = stakingManager.harvestRewards(100_000);
         assertEq(harvested, 0, "Should return 0 with no attesters");
