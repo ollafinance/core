@@ -100,7 +100,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @notice Previews assets used for withdrawal finalization.
     /// @param available The available assets to finalize.
     /// @return used The assets that would be used.
-    function previewFinalizeWithdrawals(uint256 available) external view override returns (uint256 used) {
+    function previewFinalizeWithdrawals(uint256 available) external pure override returns (uint256 used) {
         return available;
     }
 }
