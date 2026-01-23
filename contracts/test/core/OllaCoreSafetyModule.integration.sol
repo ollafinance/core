@@ -10,6 +10,7 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/core/SafetyModule.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
+import { ISafetyModule } from "src/interfaces/ISafetyModule.sol";
 import { MockAztec } from "src/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
 import { MockWithdrawalQueue } from "src/mocks/MockWithdrawalQueue.sol";
@@ -207,6 +208,35 @@ contract OllaCoreSafetyModuleTest is Test {
         assertEq(
             safetyModule.lastAccountingTimestamp(), block.timestamp, "accounting timestamp should update on success"
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          WITHDRAWAL MINIMUM
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_RequestRedeemBelowMinimum() external {
+        uint256 minimum = 10 * DECIMALS;
+        vm.prank(admin);
+        safetyModule.setWithdrawalMinimum(minimum);
+
+        _performDeposit(alice, 20 * DECIMALS);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ISafetyModule.SafetyModule__BelowWithdrawalMinimum.selector, 5 * DECIMALS, minimum)
+        );
+        _performRequestRedeem(alice, 5 * DECIMALS, alice);
+    }
+
+    function test_RequestRedeemAtMinimum_Succeeds() external {
+        uint256 minimum = 10 * DECIMALS;
+        vm.prank(admin);
+        safetyModule.setWithdrawalMinimum(minimum);
+
+        _performDeposit(alice, 20 * DECIMALS);
+
+        uint256 requestId = _performRequestRedeem(alice, minimum, alice);
+
+        assertEq(requestId, 1, "minimum request should succeed");
     }
 
     /*//////////////////////////////////////////////////////////////

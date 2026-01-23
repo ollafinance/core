@@ -223,6 +223,7 @@ contract OllaCore is
 
         uint256 rate = _exchangeRate();
         uint256 assetsExpected = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        ISafetyModule(_safetyModule).checkWithdrawalMinimum(shares);
         uint256 expectedRequestId = _withdrawalQueue.nextRequestId();
 
         _activeRequestIds[owner] = expectedRequestId;
@@ -326,10 +327,10 @@ contract OllaCore is
 
     // slither-disable-end pess-multiple-storage-read
 
+    // slither-disable-start pess-multiple-storage-read
     /// @notice Operator-triggered withdrawal finalization hook.
     /// @param available The available assets for withdrawals.
     /// @return used The assets used for finalization.
-    // slither-disable-start pess-multiple-storage-read
     function finalizeWithdrawals(uint256 available)
         external
         override
