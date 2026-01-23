@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { StakingManager } from "src/core/StakingManager.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
@@ -271,8 +272,11 @@ contract StakingManagerInvariantTest is Test {
         // Set canonical rollup
         rollupRegistry.setCanonicalRollup(address(rollup));
 
-        // Deploy StakingManager (non-upgradeable, constructor-based initialization)
-        stakingManager = new StakingManager(
+        // Deploy StakingManager behind an ERC1967 proxy
+        StakingManager implementation = new StakingManager();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        stakingManager = StakingManager(address(proxy));
+        stakingManager.initialize(
             stakingAsset,
             address(rollupRegistry),
             address(rewardsVault),
