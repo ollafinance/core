@@ -10,6 +10,7 @@ import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
+import { ISafetyModule } from "src/interfaces/ISafetyModule.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
@@ -179,6 +180,11 @@ contract OllaCore is
     {
         if (recipient == address(0)) {
             revert OllaCore__ZeroAddress("recipient");
+        }
+
+        uint256 currentTotalAssets = totalAssets();
+        if (!ISafetyModule(_safetyModule).checkDepositAllowed(assets, currentTotalAssets)) {
+            revert OllaCore__DepositCapExceeded(assets, currentTotalAssets);
         }
 
         shares = _convertToSharesForDeposit(assets);
