@@ -113,7 +113,7 @@ sequenceDiagram
 
     Note over U,C: Phase 1 – user requests withdrawal
 
-    U->>C: requestWithdrawal(shares)
+    U->>C: requestRedeem(shares)
     C->>ST: burn(from=U, amount=shares)
     Note right of C: Compute assetsExpected = shares * exchangeRate
     C->>WQ: requestWithdrawal(user, shares, assetsExpected, rate)
@@ -121,8 +121,8 @@ sequenceDiagram
 
     Note over U,WQ: Phase 2 – later, after liquidity and operator action
 
-    U->>C: claim
-    C->>WQ: claim(requestId)
+    U->>C: claimRequestById(requestId)
+    C->>WQ: claimWithdrawal(requestId)
     WQ->>WQ: mark request as claimed
     C->>U: transfer assetsExpected
 ```
@@ -208,8 +208,8 @@ sequenceDiagram
     participant AR as AztecRollupContract
 
     op->>C: rebalance
-    C->>WQ: getWithdrawalRequestsAmount
-    WQ-->>C: withdrawalRequestsAmount
+    C->>WQ: totalPendingAssets
+    WQ-->>C: totalPendingAssets
     C->>C: amountToUnstake = max(0, withdrawalRequestsAmount - bufferedAssets)
     C->>stkMan: unStake(amountToUnstake)
     stkMan->>stkMan: actualAmountToUnstake = max(0, amountToUnstake - pendingUnstakes)
@@ -223,4 +223,3 @@ sequenceDiagram
         AR-->>stkMan: transfer Aztec
     end
 ```
-

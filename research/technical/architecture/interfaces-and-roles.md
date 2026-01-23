@@ -6,8 +6,10 @@
 
 | Function | Arguments | Returns | Access | Description |
 | --- | --- | --- | --- | --- |
-| `deposit` | `uint256 assets`, `address receiver` | `uint256 shares` | `public` | Accept deposit and mint `stAztec` using `exchangeRate` |
-| `requestWithdrawal` | `uint256 shares`, `address receiver` | `uint256 requestId` | `public` | Burns `shares` and queues a FIFO withdraw request |
+| `deposit` | `uint256 assets`, `address recipient` | `uint256 shares` | `public` | Accept deposit and mint `stAztec` using `exchangeRate` |
+| `requestRedeem` | `uint256 shares`, `address recipient` | `uint256 requestId` | `public` | Burns `shares` and queues a FIFO withdraw request |
+| `claimActiveRequest` | `address owner` | `uint256 assets` | `public` | Claim a finalized request using the owner mapping |
+| `claimRequestById` | `uint256 requestId` | `uint256 assets` | `public` | Claim a finalized request by id |
 | `rebalance` | `—` | `—` | `OPERATOR_ROLE` | Harvest -> finalize withdrawals -> stake excess |
 | `updateAccounting` | `—` | `—` | `OPERATOR_ROLE` | Pull validator state -> update rate -> mint fees |
 | `finalizeWithdrawals` | `uint256 availableForWithdrawals` | `uint256 used` | `OPERATOR_ROLE` | Completes withdrawals based on liquidity |
@@ -40,12 +42,12 @@
 | Function | Arguments | Returns | Access | Description |
 | --- | --- | --- | --- | --- |
 | `stake` | `uint256 amount` | `—` | `CORE_ROLE` | Stakes capital using queued validator key |
-| `unStake` | `uint256 amount` | `—` | `CORE_ROLE` | Begin validator withdrawal flow |
+| `unstake` | `uint256 amount` | `—` | `CORE_ROLE` | Begin validator withdrawal flow |
 | `getUnstakedFunds` | `—` | `uint256 received` | `CORE_ROLE` | Claims matured unstakes to core |
 | `harvestRewards` | `—` | `uint256 harvested` | `CORE_ROLE` | Claims sequencer rewards to RewardsVault |
 | `addKeysToProvider` | `KeyStore[] keystores` | `—` | `STAKING_PROVIDER_ADMIN_ROLE` | Adds attester keys into queue |
 | `dripQueue` | `uint256 count` | `—` | `STAKING_PROVIDER_ADMIN_ROLE` | Rotates or activates keys |
-| `totalStaked` | `—` | `uint256` | `view` | Current staked principal |
+| `getStakingState` | `—` | `StakingState` | `view` | Aggregated staking state from the rollup |
 
 ### WithdrawalQueue
 
@@ -53,7 +55,7 @@
 | --- | --- | --- | --- | --- |
 | `requestWithdrawal` | `address user`, `uint256 shares`, `uint256 assets`, `uint256 rate` | `uint256 requestId` | `CORE_ROLE` | Enqueue withdrawal at locked rate |
 | `finalizeWithdrawals` | `uint256 availableAssets` | `uint256 usedAssets` | `CORE_ROLE` | FIFO finalization based on liquidity |
-| `claim` | `uint256 requestId` | `uint256 assets` | `public` | Withdraw finalized funds |
+| `claimWithdrawal` | `uint256 requestId` | `uint256 assets` | `public` | Withdraw finalized funds |
 | `getRequest` | `uint256 requestId` | `WithdrawalRequest` | `view` | Returns struct info |
 | `nextUnfinalized` | `—` | `uint256` | `view` | Queue head pointer |
 
@@ -81,4 +83,3 @@ All roles implemented via OpenZeppelin AccessControl.
 | `CORE_ROLE` | OllaCore (on other modules) | Mint or burn stAztec, create or finalize withdrawals, invoke staking or unstaking and reward harvesting. |
 | `STAKING_PROVIDER_ADMIN_ROLE` | Node operator or provider admin | Add validator keys, manage provider queue, rotate provider admin. |
 | `MINTER_ROLE` / `BURNER_ROLE` (StAztec) | OllaCore | Mint or burn stAztec. |
-

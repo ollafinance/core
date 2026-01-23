@@ -10,7 +10,7 @@ uint256 exchangeRate = totalAssets() / stAztec.totalSupply();
 ```solidity
 function totalAssets() internal view returns (uint256) {
     return bufferedAssets          // idle AZTEC sitting in OllaCore
-        + stakedPrincipal          // from StakingManager.totalStaked()
+        + stakedPrincipal          // from StakingManager.getStakingState().stakedAmount
         + rewardsVaultBalance      // RV.balance()
         + rewardsDelta             // from AztecRollupContract (claimable)
         - slashingDelta;           // net slashing impact (>= 0)
