@@ -86,7 +86,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     }
 
     /*//////////////////////////////////////////////////////////////
-                           EXTERNAL FUNCTIONS
+                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the request struct for a given id.

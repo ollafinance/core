@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/core/SafetyModule.sol";
@@ -21,9 +22,19 @@ contract OllaCoreSafetyModuleHarness is OllaCore {
     function exposedIncreaseRewardsVaultBalance(uint256 amount) external {
         _increaseRewardsVaultBalance(amount);
     }
+
+    function exposedSetSlashingDelta(uint256 amount) external {
+        _setSlashingDelta(amount);
+    }
 }
 
 contract OllaCoreSafetyModuleTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event CircuitBreakerTriggered(bytes32 reason);
+
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -68,7 +79,7 @@ contract OllaCoreSafetyModuleTest is Test {
         operator = makeAddr("operator");
         alice = makeAddr("alice");
 
-        safetyModule = new SafetyModule(admin, guardian, address(vault), 0, 500, 6_000, 1 days);
+        safetyModule = new SafetyModule(admin, guardian, address(vault), 1_000_000 * DECIMALS, 500, 6_000, 1 days);
 
         vault.initialize(
             asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
@@ -94,8 +105,17 @@ contract OllaCoreSafetyModuleTest is Test {
         return shares;
     }
 
+    function _performRequestRedeem(address owner, uint256 shares, address recipient)
+        internal
+        returns (uint256 requestId)
+    {
+        vm.prank(owner);
+        requestId = vault.requestRedeem(shares, recipient);
+        return requestId;
+    }
+
     /*//////////////////////////////////////////////////////////////
-                             DEPOSIT CAPS
+                              DEPOSIT CAPS
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_DepositAboveCap() external {
@@ -142,5 +162,103 @@ contract OllaCoreSafetyModuleTest is Test {
         );
         vm.prank(alice);
         vault.deposit(depositAmount, alice);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             CIRCUIT BREAKERS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_UpdateAccounting_TriggersRateDropBreaker() external {
+        _performDeposit(alice, 100 * DECIMALS);
+
+        vault.exposedSetSlashingDelta(10 * DECIMALS);
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(safetyModule.RATE_DROP());
+
+        vault.updateAccounting();
+
+        assertTrue(safetyModule.isPaused(), "rate-drop breaker should pause");
+    }
+
+    function test_FinalizeWithdrawals_TriggersQueueRatioBreaker() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        _performRequestRedeem(alice, 80 * DECIMALS, alice);
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
+
+        vault.finalizeWithdrawals(0);
+
+        assertTrue(safetyModule.isPaused(), "queue ratio breaker should pause");
+    }
+
+    function test_UpdateAccounting_TriggersAccountingLivenessBreaker() external {
+        vm.warp(block.timestamp + 2 days);
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(safetyModule.ACCOUNTING_STALE());
+
+        vault.updateAccounting();
+
+        assertTrue(safetyModule.isPaused(), "accounting liveness breaker should pause");
+        assertEq(
+            safetyModule.lastAccountingTimestamp(), block.timestamp, "accounting timestamp should update on success"
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              PAUSED FLOWS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_DepositBlockedBySafetyModulePause() external {
+        vm.prank(guardian);
+        safetyModule.pause();
+
+        asset.mint(alice, 10 * DECIMALS);
+        vm.prank(alice);
+        asset.approve(address(vault), 10 * DECIMALS);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__SafetyModulePaused.selector));
+        vm.prank(alice);
+        vault.deposit(10 * DECIMALS, alice);
+    }
+
+    function test_RequestRedeem_AllowsWhenPaused() external {
+        uint256 shares = _performDeposit(alice, 12 * DECIMALS);
+
+        vm.prank(governance);
+        vault.pause();
+
+        vm.prank(guardian);
+        safetyModule.pause();
+
+        uint256 requestId = _performRequestRedeem(alice, shares / 2, alice);
+
+        assertEq(requestId, 1, "request should succeed while paused");
+    }
+
+    function test_RevertWhen_FinalizeWithdrawalsPaused() external {
+        _performDeposit(alice, 10 * DECIMALS);
+
+        vm.prank(governance);
+        vault.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vault.finalizeWithdrawals(0);
+    }
+
+    function test_ClaimWithdrawal_AllowsWhenPaused() external {
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
+        _performRequestRedeem(alice, shares / 2, alice);
+
+        vm.prank(governance);
+        vault.pause();
+
+        uint256 claimed = vault.claimActiveRequest(alice);
+
+        assertEq(claimed, 5 * DECIMALS, "claim should succeed while paused");
     }
 }
