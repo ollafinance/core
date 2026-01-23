@@ -31,7 +31,7 @@
     - Ensure `finalizeWithdrawals` is blocked when paused.
     - Ensure `claimWithdrawal` is allowed when paused (queue handles claiming logic).
 5. Enforce withdrawal minimum in `requestRedeem` or queue enqueue path:
-    - Call `safetyModule.checkWithdrawalMinimum(assets)` before any conversion or queue write.
+    - Call `safetyModule.checkWithdrawalMinimum(shares)` before any queue write.
     - Revert with a dedicated error when the check fails.
 6. Tests in `contracts/test/core/OllaCoreSafetyModule.t.sol`:
     - Rate-drop, queue ratio, and liveness thresholds trigger SafetyModule pause and emit `CircuitBreakerTriggered`.
@@ -43,14 +43,14 @@
 - [ ] Deposit cap blocks deposits above limit.
 - [ ] Rate-drop and queue ratio triggers pause.
 - [ ] Accounting liveness pauses when stale.
-- [ ] Withdrawal minimum rejects smaller requests.
+- [ ] Withdrawal minimum rejects smaller share requests.
 - [ ] Each flow respects paused state.
 
 ## Acceptance Criteria
 
 - [ ] SafetyModule enforces caps and breakers with correct inputs.
 - [ ] Breaker checks are wired into core flows with correct inputs.
-- [ ] Withdrawal minimum enforced at request time.
+- [ ] Withdrawal minimum (shares) enforced at request time.
 - [ ] Paused behavior matches defined flow above.
 
 ## Verification
