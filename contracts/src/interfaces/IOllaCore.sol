@@ -192,6 +192,16 @@ interface IOllaCore {
     /// @return requestId The withdrawal request id.
     function requestRedeem(uint256 shares, address recipient) external returns (uint256 requestId);
 
+    /// @notice Claims a finalized withdrawal request for a controller.
+    /// @param owner The request owner.
+    /// @return assets The assets claimed for the request.
+    function claimActiveRequest(address owner) external returns (uint256 assets);
+
+    /// @notice Claims a finalized withdrawal request by id.
+    /// @param requestId The withdrawal request id.
+    /// @return assets The assets claimed for the request.
+    function claimRequestById(uint256 requestId) external returns (uint256 assets);
+
     /*//////////////////////////////////////////////////////////////
                       PROVIDER ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/

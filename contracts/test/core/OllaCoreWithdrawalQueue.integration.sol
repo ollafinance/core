@@ -37,6 +37,8 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 exchangeRate
     );
 
+    event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
+
     /*//////////////////////////////////////////////////////////////
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
@@ -133,7 +135,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 requestId = vault.requestRedeem(shares, bob);
 
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
-        assertEq(request.user, bob, "queue stores recipient");
+        assertEq(request.recipient, bob, "queue stores recipient");
         assertEq(request.shares, shares, "queue stores share amount");
         assertEq(request.assetsExpected, expectedAssets, "queue stores assets expected");
         assertEq(request.rate, rate, "queue stores request rate");
@@ -199,7 +201,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                       WITHDRAWAL FINALIZATION
+                            WITHDRAWAL FINALIZATION
     //////////////////////////////////////////////////////////////*/
 
     function test_FinalizeWithdrawals_UsesAvailableLiquidity() external {
@@ -293,6 +295,76 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertTrue(first.finalized, "first request should finalize");
         assertFalse(second.finalized, "second request should remain pending");
         assertFalse(third.finalized, "third request should remain pending");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                               CLAIM FLOW
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_ClaimNotFinalized() external {
+        _deposit(alice, 10 ether);
+
+        (uint256 requestId,) = _requestRedeem(alice, 5 ether, alice);
+
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__NotFinalized.selector, requestId));
+        vault.claimRequestById(requestId);
+    }
+
+    function test_RevertWhen_DoubleClaim() external {
+        _deposit(alice, 10 ether);
+
+        (uint256 requestId, uint256 assetsExpected) = _requestRedeem(alice, 5 ether, alice);
+        vault.finalizeWithdrawals(assetsExpected);
+
+        vault.claimRequestById(requestId);
+
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__AlreadyClaimed.selector, requestId));
+        vault.claimRequestById(requestId);
+    }
+
+    function test_ClaimTransfersExpectedAssets() external {
+        _deposit(alice, 12 ether);
+
+        (uint256 requestId, uint256 assetsExpected) = _requestRedeem(alice, 6 ether, bob);
+        vault.finalizeWithdrawals(assetsExpected);
+
+        uint256 receiverBalanceBefore = asset.balanceOf(bob);
+
+        uint256 claimed = vault.claimRequestById(requestId);
+
+        uint256 receiverBalanceAfter = asset.balanceOf(bob);
+        assertEq(claimed, assetsExpected, "claimed assets should equal assetsExpected");
+        assertEq(receiverBalanceAfter - receiverBalanceBefore, assetsExpected, "receiver gets expected assets");
+    }
+
+    function test_ClaimActiveRequestClaimsFullRequest() external {
+        _deposit(alice, 14 ether);
+
+        (uint256 requestId, uint256 assetsExpected) = _requestRedeem(alice, 7 ether, bob);
+        vault.finalizeWithdrawals(assetsExpected);
+
+        uint256 receiverBalanceBefore = asset.balanceOf(bob);
+
+        uint256 claimed = vault.claimActiveRequest(alice);
+
+        uint256 receiverBalanceAfter = asset.balanceOf(bob);
+        assertEq(requestId, 1, "request id should be first");
+        assertEq(claimed, assetsExpected, "redeem should claim full assetsExpected");
+        assertEq(receiverBalanceAfter - receiverBalanceBefore, assetsExpected, "redeem claims full assetsExpected");
+    }
+
+    function test_ClaimAllowedWhenPaused() external {
+        _deposit(alice, 10 ether);
+
+        (, uint256 assetsExpected) = _requestRedeem(alice, 5 ether, alice);
+        vault.finalizeWithdrawals(assetsExpected);
+
+        vm.prank(governance);
+        vault.pause();
+
+        uint256 claimed = vault.claimActiveRequest(alice);
+
+        assertEq(claimed, assetsExpected, "claim should succeed while paused");
     }
 
     /*//////////////////////////////////////////////////////////////

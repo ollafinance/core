@@ -332,6 +332,58 @@ contract OllaCoreTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                           WITHDRAWAL CLAIMS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ClaimActiveRequest_ClearsActiveRequest() external {
+        _performDeposit(alice, 20 * DECIMALS);
+
+        uint256 rate = vault.exchangeRate();
+        uint256 shares = 6 * DECIMALS;
+        uint256 assetsExpected = shares * rate / 1e18;
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, alice);
+        assertEq(requestId, 1, "request id starts at 1");
+
+        uint256 balanceBefore = asset.balanceOf(alice);
+
+        uint256 claimed = vault.claimActiveRequest(alice);
+
+        uint256 balanceAfter = asset.balanceOf(alice);
+        assertEq(claimed, assetsExpected, "claimed assets match expected");
+        assertEq(balanceAfter - balanceBefore, assetsExpected, "assets transferred to recipient");
+
+        vm.prank(alice);
+        uint256 newRequestId = vault.requestRedeem(2 * DECIMALS, alice);
+        assertEq(newRequestId, 2, "active request cleared after claim");
+    }
+
+    function test_ClaimRequestById_AllowsNonOwner() external {
+        _performDeposit(alice, 15 * DECIMALS);
+
+        uint256 rate = vault.exchangeRate();
+        uint256 shares = 5 * DECIMALS;
+        uint256 assetsExpected = shares * rate / 1e18;
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, bob);
+
+        uint256 balanceBefore = asset.balanceOf(bob);
+
+        vm.prank(bob);
+        uint256 claimed = vault.claimRequestById(requestId);
+
+        uint256 balanceAfter = asset.balanceOf(bob);
+        assertEq(claimed, assetsExpected, "claimed assets match expected");
+        assertEq(balanceAfter - balanceBefore, assetsExpected, "assets sent to receiver");
+
+        vm.prank(alice);
+        uint256 newRequestId = vault.requestRedeem(1 * DECIMALS, alice);
+        assertEq(newRequestId, 2, "owner can request again after claim by id");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                               UPGRADES
     //////////////////////////////////////////////////////////////*/
 
