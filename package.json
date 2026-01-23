@@ -27,6 +27,6 @@
     "dev:chain": "anvil",
     "dev:build": "cd contracts && forge build",
     "deploy:local": "cd contracts && DEPLOY_ENV=local forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545",
-    "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia --verify"
+    "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia"
   }
 }
