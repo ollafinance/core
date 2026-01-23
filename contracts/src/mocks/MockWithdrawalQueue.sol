@@ -41,12 +41,12 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     }
 
     /// @notice Records a withdrawal request.
-    /// @param user The request owner.
+    /// @param recipient The request owner.
     /// @param shares The shares burned for the request.
     /// @param assetsExpected The assets expected when finalized.
     /// @param rate The exchange rate locked at request time.
     /// @return requestId The request id.
-    function requestWithdrawal(address user, uint256 shares, uint256 assetsExpected, uint256 rate)
+    function requestWithdrawal(address recipient, uint256 shares, uint256 assetsExpected, uint256 rate)
         external
         override
         returns (uint256 requestId)
@@ -54,7 +54,12 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         requestId = nextRequestId;
         ++nextRequestId;
         WithdrawalRequest memory request = WithdrawalRequest({
-            user: user, finalized: false, claimed: false, shares: shares, assetsExpected: assetsExpected, rate: rate
+            recipient: recipient,
+            finalized: false,
+            claimed: false,
+            shares: shares,
+            assetsExpected: assetsExpected,
+            rate: rate
         });
         lastRequest = request;
         _requests[requestId] = request;
@@ -100,7 +105,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @notice Previews assets used for withdrawal finalization.
     /// @param available The available assets to finalize.
     /// @return used The assets that would be used.
-    function previewFinalizeWithdrawals(uint256 available) external view override returns (uint256 used) {
+    function previewFinalizeWithdrawals(uint256 available) external pure override returns (uint256 used) {
         return available;
     }
 }

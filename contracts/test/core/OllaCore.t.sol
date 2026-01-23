@@ -332,6 +332,58 @@ contract OllaCoreTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                           WITHDRAWAL CLAIMS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ClaimActiveRequest_ClearsActiveRequest() external {
+        _performDeposit(alice, 20 * DECIMALS);
+
+        uint256 rate = vault.exchangeRate();
+        uint256 shares = 6 * DECIMALS;
+        uint256 assetsExpected = shares * rate / 1e18;
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, alice);
+        assertEq(requestId, 1, "request id starts at 1");
+
+        uint256 balanceBefore = asset.balanceOf(alice);
+
+        uint256 claimed = vault.claimActiveRequest(alice);
+
+        uint256 balanceAfter = asset.balanceOf(alice);
+        assertEq(claimed, assetsExpected, "claimed assets match expected");
+        assertEq(balanceAfter - balanceBefore, assetsExpected, "assets transferred to recipient");
+
+        vm.prank(alice);
+        uint256 newRequestId = vault.requestRedeem(2 * DECIMALS, alice);
+        assertEq(newRequestId, 2, "active request cleared after claim");
+    }
+
+    function test_ClaimRequestById_AllowsNonOwner() external {
+        _performDeposit(alice, 15 * DECIMALS);
+
+        uint256 rate = vault.exchangeRate();
+        uint256 shares = 5 * DECIMALS;
+        uint256 assetsExpected = shares * rate / 1e18;
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, bob);
+
+        uint256 balanceBefore = asset.balanceOf(bob);
+
+        vm.prank(bob);
+        uint256 claimed = vault.claimRequestById(requestId);
+
+        uint256 balanceAfter = asset.balanceOf(bob);
+        assertEq(claimed, assetsExpected, "claimed assets match expected");
+        assertEq(balanceAfter - balanceBefore, assetsExpected, "assets sent to receiver");
+
+        vm.prank(alice);
+        uint256 newRequestId = vault.requestRedeem(1 * DECIMALS, alice);
+        assertEq(newRequestId, 2, "owner can request again after claim by id");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                               UPGRADES
     //////////////////////////////////////////////////////////////*/
 
@@ -471,7 +523,7 @@ contract OllaCoreTest is Test {
         uint96 cumulativeWithdrawals,
         uint96 latestReportCumulativeDeposits,
         uint96 latestReportCumulativeWithdrawals
-    ) external {
+    ) external view {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: cumulativeDeposits,
             cumulativeWithdrawals: cumulativeWithdrawals,
@@ -495,7 +547,7 @@ contract OllaCoreTest is Test {
         assertEq(netFlows, expectedNetFlows, "net flows fuzz");
     }
 
-    function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, uint96 netFlows) external {
+    function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, uint96 netFlows) external view {
         uint256 grossRewards = vault.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
         uint256 expectedGross = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
@@ -542,7 +594,7 @@ contract OllaCoreTest is Test {
                        ACCOUNTING CALCULATIONS
     //////////////////////////////////////////////////////////////*/
 
-    function test_ComputeNetFlows() external {
+    function test_ComputeNetFlows() external view {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: 12 * DECIMALS,
             cumulativeWithdrawals: 4 * DECIMALS,
@@ -557,7 +609,7 @@ contract OllaCoreTest is Test {
         assertEq(netFlows, 4 * DECIMALS, "net flows");
     }
 
-    function test_ComputeTotalAssets() external {
+    function test_ComputeTotalAssets() external view {
         IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             bufferedAssets: 3 * DECIMALS,
             stakedPrincipal: 4 * DECIMALS,
@@ -571,7 +623,7 @@ contract OllaCoreTest is Test {
         assertEq(totalAssets, 5 * DECIMALS, "total assets computed");
     }
 
-    function test_ComputeGrossRewards() external {
+    function test_ComputeGrossRewards() external view {
         uint256 grossRewards = vault.exposedComputeGrossRewards(100 * DECIMALS, 130 * DECIMALS, 20 * DECIMALS);
 
         assertEq(grossRewards, 10 * DECIMALS, "gross rewards computed");

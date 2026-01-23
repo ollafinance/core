@@ -10,7 +10,7 @@ interface IWithdrawalQueue {
     //////////////////////////////////////////////////////////////*/
 
     struct WithdrawalRequest {
-        address user;
+        address recipient;
         bool finalized;
         bool claimed;
         uint256 shares;
@@ -25,12 +25,12 @@ interface IWithdrawalQueue {
     // solhint-disable gas-indexed-events
     /// @notice Emitted when a withdrawal request is enqueued.
     /// @param id The request id.
-    /// @param user The request owner.
+    /// @param recipient The request owner.
     /// @param shares The shares burned for the request.
     /// @param assetsExpected The assets expected when finalized.
     /// @param rate The exchange rate locked at request time.
     event WithdrawalRequested(
-        uint256 indexed id, address indexed user, uint256 shares, uint256 assetsExpected, uint256 rate
+        uint256 indexed id, address indexed recipient, uint256 shares, uint256 assetsExpected, uint256 rate
     );
 
     /// @notice Emitted when a withdrawal request is finalized.
@@ -40,9 +40,9 @@ interface IWithdrawalQueue {
 
     /// @notice Emitted when a withdrawal request is claimed.
     /// @param id The request id.
-    /// @param user The request owner.
+    /// @param recipient The request owner.
     /// @param assetsExpected The assets claimed for the request.
-    event WithdrawalClaimed(uint256 indexed id, address indexed user, uint256 assetsExpected);
+    event WithdrawalClaimed(uint256 indexed id, address indexed recipient, uint256 assetsExpected);
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
@@ -74,12 +74,12 @@ interface IWithdrawalQueue {
     function initialize(address core_, address admin_) external;
 
     /// @notice Enqueues a new withdrawal request.
-    /// @param user The request owner.
+    /// @param recipient The request owner.
     /// @param shares The shares burned for the request.
     /// @param assetsExpected The assets expected when finalized.
     /// @param rate The exchange rate locked at request time.
     /// @return requestId The request id.
-    function requestWithdrawal(address user, uint256 shares, uint256 assetsExpected, uint256 rate)
+    function requestWithdrawal(address recipient, uint256 shares, uint256 assetsExpected, uint256 rate)
         external
         returns (uint256 requestId);
 

@@ -87,6 +87,8 @@ contract StakingManagerTest is Test {
         IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](count);
         for (uint256 i; i < count; ++i) {
             keys[i] = IStakingManager.KeyStore({
+                // casting to uint160 is safe because i + 1 stays within 160 bits
+                // forge-lint: disable-next-line(unsafe-typecast)
                 attester: address(uint160(i + 1)),
                 publicKeyG1: G1Point({ x: i, y: i + 1 }),
                 publicKeyG2: G2Point({ x0: i, x1: i + 1, y0: i + 2, y1: i + 3 }),
