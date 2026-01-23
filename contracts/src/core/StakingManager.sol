@@ -32,10 +32,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     bytes32 public constant STAKING_PROVIDER_ADMIN_ROLE = keccak256("STAKING_PROVIDER_ADMIN_ROLE");
 
     /*//////////////////////////////////////////////////////////////
-                                  STATE
+                                   STATE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Contract related interfaces and addresses
+    // Storage layout (v1): do not reorder or remove variables.
+    // - Only append new variables above `__gap` and reduce its length accordingly.
+    // - This contract is used behind an ERC1967/UUPS proxy; layout must remain upgrade-safe.
+
     /// @notice The staking asset (AZTEC token).
     IERC20 public stakingAsset;
 
@@ -73,7 +76,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Mapping to check if an attester has a pending unstake.
     mapping(address attester => bool isPending) private _isUnstakePending;
 
-    /// @notice Storage gap for upgradability.
+    /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
     uint256[48] private __gap;
 
