@@ -182,6 +182,10 @@ contract OllaCore is
             revert OllaCore__ZeroAddress("recipient");
         }
 
+        if (ISafetyModule(_safetyModule).isPaused()) {
+            revert OllaCore__SafetyModulePaused();
+        }
+
         uint256 currentTotalAssets = totalAssets();
         if (!ISafetyModule(_safetyModule).checkDepositAllowed(assets, currentTotalAssets)) {
             revert OllaCore__DepositCapExceeded(assets, currentTotalAssets);
@@ -276,10 +280,19 @@ contract OllaCore is
     // slither-disable-start pess-multiple-storage-read
     /// @notice Updates accounting snapshots and publishes the latest exchange rate data.
     function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
+        ISafetyModule safetyModuleRef = ISafetyModule(_safetyModule);
+        // slither-disable-start reentrancy-no-eth
+        // slither-disable-start reentrancy-benign
+        // slither-disable-start reentrancy-events
+        // SafetyModule is a trusted immutable dependency; calls are role-gated and non-reentrant, so fail-fast
+        // checks before accounting updates are safe.
+        safetyModuleRef.checkAccountingLiveness();
+
         IOllaCore.FlowCounters memory flowsSnapshot = _flowCounters;
         (uint256 netFlows,,) = _computeNetFlows(flowsSnapshot);
 
         uint256 oldTotalAssets = _latestReport.totalAssets;
+        uint256 oldRate = _latestReport.exchangeRate;
 
         IOllaCore.AccountingState storage buckets = _accountingState;
         _applyAccountingUpdates(
@@ -291,6 +304,8 @@ contract OllaCore is
         uint256 grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         uint256 rate = _exchangeRate();
 
+        safetyModuleRef.checkRateDrop(oldRate, rate);
+
         _updateReportingSnapshots(
             newTotalAssets,
             rate,
@@ -300,8 +315,13 @@ contract OllaCore is
             flowsSnapshot.cumulativeWithdrawals
         );
 
+        safetyModuleRef.setLastAccountingTimestamp(block.timestamp);
+
         emit AttestersStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
         emit AccountingUpdated(newTotalAssets, rate, grossRewards, netFlows, 0, 0, 0, _latestReport.timestamp);
+        // slither-disable-end reentrancy-events
+        // slither-disable-end reentrancy-benign
+        // slither-disable-end reentrancy-no-eth
     }
 
     // slither-disable-end pess-multiple-storage-read
@@ -309,6 +329,7 @@ contract OllaCore is
     /// @notice Operator-triggered withdrawal finalization hook.
     /// @param available The available assets for withdrawals.
     /// @return used The assets used for finalization.
+    // slither-disable-start pess-multiple-storage-read
     function finalizeWithdrawals(uint256 available)
         external
         override
@@ -317,6 +338,15 @@ contract OllaCore is
         nonReentrant
         returns (uint256 used)
     {
+        ISafetyModule safetyModuleRef = ISafetyModule(_safetyModule);
+        uint256 queued = _withdrawalQueue.totalPendingAssets();
+        uint256 total = totalAssets();
+        // slither-disable-start reentrancy-no-eth
+        // slither-disable-start reentrancy-events
+        // SafetyModule is a trusted immutable dependency; calls are role-gated and non-reentrant, so fail-fast
+        // checks before finalization are safe.
+        safetyModuleRef.checkQueueRatio(queued, total);
+
         _syncBufferedWithBalance();
 
         uint256 bufferedAssets = _accountingState.bufferedAssets;
@@ -333,8 +363,12 @@ contract OllaCore is
         }
 
         emit WithdrawalFinalized(available, used);
+        // slither-disable-end reentrancy-events
+        // slither-disable-end reentrancy-no-eth
         return used;
     }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
