@@ -661,10 +661,10 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
 
                 emit AttesterRewardsClaimed(attester, claimedAmount);
             } catch Error(string memory reason) {
-                // Log claim failure but continue with other attesters
+                // NOTE: this catch is here to provide more context on revert reason, only.
+                //       The outer catch will make sure no other erros break the loop.
                 emit RewardClaimFailed(attester, reason);
             } catch {
-                // Handle unknown errors
                 emit RewardClaimFailed(attester, "Unknown error");
             }
         }
