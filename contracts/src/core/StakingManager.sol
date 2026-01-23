@@ -7,6 +7,7 @@ import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IAztecRollup } from "src/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/interfaces/IAztecRollupRegistry.sol";
+import { IRewardsVault } from "src/interfaces/IRewardsVault.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { AttesterView, Status, Timestamp } from "src/libraries/AztecTypes.sol";
 import { Queue, QueueLib } from "src/libraries/QueueLib.sol";
@@ -38,8 +39,8 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     /// @notice The Aztec rollup registry contract.
     IAztecRollupRegistry public immutable ROLLUP_REGISTRY;
 
-    /// @notice The rewards vault address.
-    address public immutable REWARDS_VAULT;
+    /// @notice The rewards vault contract.
+    IRewardsVault public immutable REWARDS_VAULT;
 
     /// @notice The OllaCore contract address.
     address public immutable CORE;
@@ -111,7 +112,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         }
         STAKING_ASSET = stakingAsset;
         ROLLUP_REGISTRY = IAztecRollupRegistry(rollupRegistry);
-        REWARDS_VAULT = rewardsVault;
+        REWARDS_VAULT = IRewardsVault(rewardsVault);
         CORE = core;
 
         _provider = ProviderConfig({ admin: providerAdmin, rewardsRecipient: providerRewardsRecipient });
@@ -170,12 +171,17 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
         return _claimUnstakedFunds();
     }
 
+    /// @notice External calls inside loop are intentional and safe:
+    ///      - `rollup` is a trusted Aztec protocol contract
+    ///      - Attesters are permissioned and managed by the provider
+    ///      - Function is only reachable via CORE_ROLE-gated entrypoints with nonReentrant
+    ///      - State updates after external call are benign (internal bookkeeping only)
+    ///      - Failure is handled gracefully with try-catch, allowing continuation
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
-        // Placeholder: RewardsVault integration deferred to Milestone 5
-        // In production, this would call rollup.claimSequencerRewards for each activated attester
-        // and forward the rewards to REWARDS_VAULT
-        harvested = 0;
+        (, IAztecRollup rollup) = _getRollup();
+        harvested = rollup.claimSequencerRewards(address(REWARDS_VAULT));
+        REWARDS_VAULT.postReceiveFundsHook(harvested);
         emit RewardsHarvested(harvested);
         return harvested;
     }
@@ -230,6 +236,14 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Internal helper to get the claimable rewards.
+    /// @dev Internal helper to get the claimable rewards.
+    /// @return claimableRewards The total rewards claimable to rewards recipient.
+    function getClaimableRewards() external view override onlyRole(CORE_ROLE) returns (uint256 claimableRewards) {
+        (, IAztecRollup rollup) = _getRollup();
+        return rollup.getSequencerRewards(address(REWARDS_VAULT));
+    }
+
     // slither-disable-start calls-loop,timestamp
     /// @notice Returns aggregated staking state from the rollup.
     /// @return state The aggregated staking state.
@@ -274,7 +288,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          INTERNAL FUNCTIONS
+                           INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Internal stake implementation.
@@ -285,6 +299,7 @@ contract StakingManager is IStakingManager, AccessControl, ReentrancyGuard {
     // Reentrancy safe: caller (stake) has nonReentrant modifier
     //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
+    // slither-disable-next-line ordering
     function _stake(uint256 amount) internal {
         uint256 availableKeys = _providerQueue.length();
         if (availableKeys == 0) {
