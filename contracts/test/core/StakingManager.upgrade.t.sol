@@ -89,6 +89,39 @@ contract StakingManagerUpgradeTest is Test {
         stakingManager.upgradeToAndCall(address(newImplementation), "");
     }
 
+    function test_RevertWhen_DefaultAdminButNotGovernance_Upgrade() external {
+        StakingManagerUpgradeMock newImplementation = new StakingManagerUpgradeMock();
+        address otherAdmin = makeAddr("otherAdmin");
+
+        // defaultAdmin is the sole governance address; grant DEFAULT_ADMIN_ROLE to a different account
+        bytes32 defaultAdminRole = stakingManager.DEFAULT_ADMIN_ROLE();
+        vm.prank(defaultAdmin);
+        stakingManager.grantRole(defaultAdminRole, otherAdmin);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(StakingManager.StakingManager__UnauthorizedGovernance.selector, otherAdmin)
+        );
+        vm.prank(otherAdmin);
+        stakingManager.upgradeToAndCall(address(newImplementation), "");
+    }
+
+    function test_RevertWhen_UpgradeToZeroImplementation() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "newImplementation")
+        );
+        vm.prank(defaultAdmin);
+        stakingManager.upgradeToAndCall(address(0), "");
+    }
+
+    function test_RevertWhen_UpgradeCalledOnImplementationDirectly() external {
+        StakingManagerUpgradeMock newImplementation = new StakingManagerUpgradeMock();
+        StakingManager implementation = new StakingManager();
+
+        vm.expectRevert();
+        vm.prank(defaultAdmin);
+        implementation.upgradeToAndCall(address(newImplementation), "");
+    }
+
     function test_GovernanceCanUpgrade_PreservesState() external {
         address rewardsRecipient = makeAddr("rewardsRecipient");
 

@@ -91,9 +91,6 @@ contract MockAztecRollup is IMockAztecRollup {
         if (!exit.exists) {
             revert MockAztecRollup__NotExiting();
         }
-        if (!exit.isRecipient) {
-            revert MockAztecRollup__InitiateWithdrawNeeded();
-        }
         if (Timestamp.unwrap(exit.exitableAt) > block.timestamp) {
             revert MockAztecRollup__NotReady();
         }
@@ -145,11 +142,15 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function setExternalExit(address _attester, uint256 _amount, uint256 _exitableAt) external override {
+        address withdrawer = withdrawers[_attester];
+        if (withdrawer == address(0)) {
+            withdrawer = address(this);
+        }
         _exits[_attester] = Exit({
             withdrawalId: 0,
             amount: _amount,
             exitableAt: Timestamp.wrap(_exitableAt),
-            recipientOrWithdrawer: address(this),
+            recipientOrWithdrawer: withdrawer,
             isRecipient: false,
             exists: true
         });

@@ -612,7 +612,7 @@ contract StakingManagerTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    GET UNSTAKED FUNDS TESTS
+                     GET UNSTAKED FUNDS TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_GetUnstakedFunds_ClaimsMaturedWithdrawals() external {
@@ -678,6 +678,39 @@ contract StakingManagerTest is Test {
         assertEq(claimed, ACTIVATION_THRESHOLD * 3);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD * 3);
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
+    }
+
+    function test_GetUnstakedFunds_PartialExitReadiness_ClaimsOnlyReady() external {
+        _setupMultipleStakedAttesters(2);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
+
+        // Make attester[0] not yet exitable; attester[1] stays immediately exitable in the mock.
+        rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, ACTIVATION_THRESHOLD);
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
+        assertEq(stakingManager.getPendingUnstakeCount(), 1);
+        assertTrue(stakingManager.isUnstakePending(keys[0].attester));
+        assertFalse(stakingManager.isUnstakePending(keys[1].attester));
+
+        vm.warp(block.timestamp + 2 days);
+
+        coreBalanceBefore = aztec.balanceOf(core);
+        vm.prank(core);
+        claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, ACTIVATION_THRESHOLD);
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
+        assertEq(stakingManager.getPendingUnstakeCount(), 0);
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -841,6 +874,43 @@ contract StakingManagerTest is Test {
 
         assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore);
         assertEq(stakingManager.getPendingUnstakeCount(), pendingBefore);
+    }
+
+    function test_CleanActivatedAttesters_ExternallyExited_CanBeClaimed() external {
+        uint256 total = 3;
+        uint256 exited = 2;
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
+
+        vm.prank(providerAdmin);
+        stakingManager.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD * total);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD * total);
+        stakingManager.stake(ACTIVATION_THRESHOLD * total);
+        vm.stopPrank();
+
+        for (uint256 i; i < exited; ++i) {
+            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
+        }
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), total - exited);
+        assertEq(stakingManager.getPendingUnstakeCount(), exited);
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, ACTIVATION_THRESHOLD * exited);
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);
+        assertEq(stakingManager.getPendingUnstakeCount(), 0);
+        for (uint256 i; i < exited; ++i) {
+            assertFalse(stakingManager.isUnstakePending(keys[i].attester));
+        }
     }
 
     function test_CleanActivatedAttesters_AllExits() external {
