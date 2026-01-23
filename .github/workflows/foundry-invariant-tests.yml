@@ -21,6 +21,8 @@ jobs:
           version: stable
       - name: Setup Soldeer dependencies
         uses: ./.github/actions/setup-soldeer
+      - name: Forge clean
+        run: forge clean
       - name: Forge invariant tests
         run: forge test --match-path "test/**/*.invariant.sol"
         env:

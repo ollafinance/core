@@ -378,6 +378,8 @@ contract OllaCoreWithdrawalQueueTest is Test {
         for (uint256 i = 0; i < assetsRaw.length; i++) {
             uint256 assets = uint256(bound(assetsRaw[i], 1, 20 ether));
             totalAssets += assets;
+            // casting to uint160 is safe because 100 + i stays within 160 bits
+            // forge-lint: disable-next-line(unsafe-typecast)
             address user = address(uint160(100 + i));
             _deposit(user, assets);
             (, uint256 assetsExpectedValue) = _requestRedeem(user, assets, user);

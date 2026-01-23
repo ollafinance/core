@@ -523,7 +523,7 @@ contract OllaCoreTest is Test {
         uint96 cumulativeWithdrawals,
         uint96 latestReportCumulativeDeposits,
         uint96 latestReportCumulativeWithdrawals
-    ) external {
+    ) external view {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: cumulativeDeposits,
             cumulativeWithdrawals: cumulativeWithdrawals,
@@ -547,7 +547,7 @@ contract OllaCoreTest is Test {
         assertEq(netFlows, expectedNetFlows, "net flows fuzz");
     }
 
-    function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, uint96 netFlows) external {
+    function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, uint96 netFlows) external view {
         uint256 grossRewards = vault.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
         uint256 expectedGross = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
@@ -594,7 +594,7 @@ contract OllaCoreTest is Test {
                        ACCOUNTING CALCULATIONS
     //////////////////////////////////////////////////////////////*/
 
-    function test_ComputeNetFlows() external {
+    function test_ComputeNetFlows() external view {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: 12 * DECIMALS,
             cumulativeWithdrawals: 4 * DECIMALS,
@@ -609,7 +609,7 @@ contract OllaCoreTest is Test {
         assertEq(netFlows, 4 * DECIMALS, "net flows");
     }
 
-    function test_ComputeTotalAssets() external {
+    function test_ComputeTotalAssets() external view {
         IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             bufferedAssets: 3 * DECIMALS,
             stakedPrincipal: 4 * DECIMALS,
@@ -623,7 +623,7 @@ contract OllaCoreTest is Test {
         assertEq(totalAssets, 5 * DECIMALS, "total assets computed");
     }
 
-    function test_ComputeGrossRewards() external {
+    function test_ComputeGrossRewards() external view {
         uint256 grossRewards = vault.exposedComputeGrossRewards(100 * DECIMALS, 130 * DECIMALS, 20 * DECIMALS);
 
         assertEq(grossRewards, 10 * DECIMALS, "gross rewards computed");
