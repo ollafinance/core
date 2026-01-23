@@ -24,7 +24,7 @@ contract MockAztec is IERC20Mintable, ERC20, Ownable2Step, ERC20Permit {
     /// @notice Mints tokens to the recipient.
     /// @param to The recipient address.
     /// @param amount The token amount to mint.
-    function mint(address to, uint256 amount) external override onlyOwner {
+    function mint(address to, uint256 amount) external override {
         _mint(to, amount);
     }
 }

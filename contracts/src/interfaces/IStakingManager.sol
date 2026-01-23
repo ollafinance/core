@@ -93,6 +93,16 @@ interface IStakingManager {
     /// @param attester The attester address of the removed key.
     event QueueDripped(address indexed attester);
 
+    /// @notice Emitted when rewards are claimed for a specific attester.
+    /// @param attester The attester address.
+    /// @param amount The amount of rewards claimed.
+    event AttesterRewardsClaimed(address indexed attester, uint256 indexed amount);
+
+    /// @notice Emitted when reward claim fails for an attester.
+    /// @param attester The attester address.
+    /// @param reason The failure reason.
+    event RewardClaimFailed(address indexed attester, string reason);
+
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -144,7 +154,6 @@ interface IStakingManager {
     /// @notice Claims sequencer rewards to RewardsVault.
     /// @return harvested The amount of rewards harvested.
     function harvestRewards() external returns (uint256 harvested);
-
     /*//////////////////////////////////////////////////////////////
                         PROVIDER ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -164,6 +173,11 @@ interface IStakingManager {
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns claimable rewards.
+    /// @dev Only callable by CORE_ROLE. Does not actually claim rewards.
+    /// @return claimableRewards The total rewards claimalbe to rewards recipient.
+    function getClaimableRewards() external view returns (uint256 claimableRewards);
 
     /// @notice Returns the current staking state by querying the rollup.
     /// @dev Iterates through all attesters and queries getAttesterView for each.

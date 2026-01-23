@@ -49,7 +49,7 @@ interface IAztecRollup {
     function finalizeWithdraw(address _attester) external;
 
     /// @notice Claims sequencer rewards for a given coinbase address.
-    /// @dev taken from IRollup
+    /// @dev taken from IRollupCore
     /// @param _coinbase The address to claim rewards for.
     /// @return The amount of rewards claimed.
     function claimSequencerRewards(address _coinbase) external returns (uint256);
@@ -65,11 +65,11 @@ interface IAztecRollup {
     /// @return The attester view struct.
     function getAttesterView(address _attester) external view returns (AttesterView memory);
 
-    /// @notice Returns the pending sequencer rewards for a given sequencer.
+    /// @notice Returns the pending sequencer rewards for a given coinbase-address.
     /// @dev taken from IRollup
-    /// @param _sequencer The sequencer address to query.
+    /// @param _coinbase The coinbase address to query.
     /// @return The amount of pending rewards.
-    function getSequencerRewards(address _sequencer) external view returns (uint256);
+    function getSequencerRewards(address _coinbase) external view returns (uint256);
 
     /// @notice Checks if rewards are claimable.
     /// @dev taken from IRollup
