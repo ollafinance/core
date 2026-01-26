@@ -5,6 +5,7 @@ import { Test, Vm } from "@forge-std/Test.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { StakingManager } from "src/core/StakingManager.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
@@ -68,7 +69,10 @@ contract StakingManagerTest is Test {
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
         rewardsVault = new MockRewardsVault(IERC20(address(aztec)), core, makeAddr("treasury"));
 
-        stakingManager = new StakingManager(
+        StakingManager implementation = new StakingManager();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        stakingManager = StakingManager(address(proxy));
+        stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
@@ -148,30 +152,34 @@ contract StakingManagerTest is Test {
                         CONSTRUCTOR TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Constructor_SetsImmutables() external view {
-        assertEq(address(stakingManager.STAKING_ASSET()), address(aztec));
-        assertEq(address(stakingManager.ROLLUP_REGISTRY()), address(rollupRegistry));
-        assertEq(address(stakingManager.REWARDS_VAULT()), address(rewardsVault));
-        assertEq(stakingManager.CORE(), core);
+    function test_Initialize_SetsConfig() external view {
+        assertEq(address(stakingManager.stakingAsset()), address(aztec));
+        assertEq(address(stakingManager.rollupRegistry()), address(rollupRegistry));
+        assertEq(address(stakingManager.rewardsVault()), address(rewardsVault));
+        assertEq(stakingManager.core(), core);
     }
 
-    function test_Constructor_SetsProviderConfig() external view {
+    function test_Initialize_SetsProviderConfig() external view {
         IStakingManager.ProviderConfig memory config = stakingManager.getProviderConfig();
         assertEq(config.admin, providerAdmin);
         assertEq(config.rewardsRecipient, providerAdmin);
     }
 
-    function test_Constructor_GrantsRoles() external view {
+    function test_Initialize_GrantsRoles() external view {
         assertTrue(stakingManager.hasRole(stakingManager.DEFAULT_ADMIN_ROLE(), defaultAdmin));
         assertTrue(stakingManager.hasRole(stakingManager.CORE_ROLE(), core));
         assertTrue(stakingManager.hasRole(stakingManager.STAKING_PROVIDER_ADMIN_ROLE(), providerAdmin));
     }
 
-    function test_Constructor_EmitsProviderSet() external {
-        vm.expectEmit(true, true, true, true);
+    function test_Initialize_EmitsProviderSet() external {
+        StakingManager implementation = new StakingManager();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        StakingManager mgr = StakingManager(address(proxy));
+
+        vm.expectEmit(true, true, true, true, address(mgr));
         emit ProviderSet(providerAdmin, providerAdmin);
 
-        new StakingManager(
+        mgr.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
@@ -182,66 +190,125 @@ contract StakingManagerTest is Test {
         );
     }
 
-    function test_RevertWhen_ConstructorZeroAddress() external {
-        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "stakingAsset"));
-        new StakingManager(
-            IERC20(address(0)),
-            address(rollupRegistry),
-            address(rewardsVault),
-            core,
-            providerAdmin,
-            providerAdmin,
-            defaultAdmin
-        );
+    function test_RevertWhen_InitializeZeroAddress() external {
+        StakingManager implementation = new StakingManager();
 
-        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rollupRegistry"));
-        new StakingManager(
-            IERC20(address(aztec)), address(0), address(rewardsVault), core, providerAdmin, providerAdmin, defaultAdmin
-        );
+        {
+            ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+            StakingManager mgr = StakingManager(address(proxy));
+            vm.expectRevert(
+                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "stakingAsset")
+            );
+            mgr.initialize(
+                IERC20(address(0)),
+                address(rollupRegistry),
+                address(rewardsVault),
+                core,
+                providerAdmin,
+                providerAdmin,
+                defaultAdmin
+            );
+        }
 
-        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsVault"));
-        new StakingManager(
-            IERC20(address(aztec)),
-            address(rollupRegistry),
-            address(0),
-            core,
-            providerAdmin,
-            providerAdmin,
-            defaultAdmin
-        );
+        {
+            ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+            StakingManager mgr = StakingManager(address(proxy));
+            vm.expectRevert(
+                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rollupRegistry")
+            );
+            mgr.initialize(
+                IERC20(address(aztec)),
+                address(0),
+                address(rewardsVault),
+                core,
+                providerAdmin,
+                providerAdmin,
+                defaultAdmin
+            );
+        }
 
-        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "core"));
-        new StakingManager(
-            IERC20(address(aztec)),
-            address(rollupRegistry),
-            address(rewardsVault),
-            address(0),
-            providerAdmin,
-            providerAdmin,
-            defaultAdmin
-        );
+        {
+            ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+            StakingManager mgr = StakingManager(address(proxy));
+            vm.expectRevert(
+                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsVault")
+            );
+            mgr.initialize(
+                IERC20(address(aztec)),
+                address(rollupRegistry),
+                address(0),
+                core,
+                providerAdmin,
+                providerAdmin,
+                defaultAdmin
+            );
+        }
 
-        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "providerAdmin"));
-        new StakingManager(
-            IERC20(address(aztec)),
-            address(rollupRegistry),
-            address(rewardsVault),
-            core,
-            address(0),
-            providerAdmin,
-            defaultAdmin
-        );
+        {
+            ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+            StakingManager mgr = StakingManager(address(proxy));
+            vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "core"));
+            mgr.initialize(
+                IERC20(address(aztec)),
+                address(rollupRegistry),
+                address(rewardsVault),
+                address(0),
+                providerAdmin,
+                providerAdmin,
+                defaultAdmin
+            );
+        }
 
-        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "defaultAdmin"));
-        new StakingManager(
-            IERC20(address(aztec)),
-            address(rollupRegistry),
-            address(rewardsVault),
-            core,
-            providerAdmin,
-            providerAdmin,
-            address(0)
-        );
+        {
+            ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+            StakingManager mgr = StakingManager(address(proxy));
+            vm.expectRevert(
+                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "providerAdmin")
+            );
+            mgr.initialize(
+                IERC20(address(aztec)),
+                address(rollupRegistry),
+                address(rewardsVault),
+                core,
+                address(0),
+                providerAdmin,
+                defaultAdmin
+            );
+        }
+
+        {
+            ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+            StakingManager mgr = StakingManager(address(proxy));
+            vm.expectRevert(
+                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "providerRewardsRecipient")
+            );
+            mgr.initialize(
+                IERC20(address(aztec)),
+                address(rollupRegistry),
+                address(rewardsVault),
+                core,
+                providerAdmin,
+                address(0),
+                defaultAdmin
+            );
+        }
+
+        {
+            ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+            StakingManager mgr = StakingManager(address(proxy));
+            vm.expectRevert(
+                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "defaultAdmin")
+            );
+            mgr.initialize(
+                IERC20(address(aztec)),
+                address(rollupRegistry),
+                address(rewardsVault),
+                core,
+                providerAdmin,
+                providerAdmin,
+                address(0)
+            );
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -545,7 +612,7 @@ contract StakingManagerTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    GET UNSTAKED FUNDS TESTS
+                     GET UNSTAKED FUNDS TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_GetUnstakedFunds_ClaimsMaturedWithdrawals() external {
@@ -611,6 +678,39 @@ contract StakingManagerTest is Test {
         assertEq(claimed, ACTIVATION_THRESHOLD * 3);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD * 3);
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
+    }
+
+    function test_GetUnstakedFunds_PartialExitReadiness_ClaimsOnlyReady() external {
+        _setupMultipleStakedAttesters(2);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
+
+        // Make attester[0] not yet exitable; attester[1] stays immediately exitable in the mock.
+        rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, ACTIVATION_THRESHOLD);
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
+        assertEq(stakingManager.getPendingUnstakeCount(), 1);
+        assertTrue(stakingManager.isUnstakePending(keys[0].attester));
+        assertFalse(stakingManager.isUnstakePending(keys[1].attester));
+
+        vm.warp(block.timestamp + 2 days);
+
+        coreBalanceBefore = aztec.balanceOf(core);
+        vm.prank(core);
+        claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, ACTIVATION_THRESHOLD);
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
+        assertEq(stakingManager.getPendingUnstakeCount(), 0);
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -776,6 +876,43 @@ contract StakingManagerTest is Test {
         assertEq(stakingManager.getPendingUnstakeCount(), pendingBefore);
     }
 
+    function test_CleanActivatedAttesters_ExternallyExited_CanBeClaimed() external {
+        uint256 total = 3;
+        uint256 exited = 2;
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
+
+        vm.prank(providerAdmin);
+        stakingManager.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD * total);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD * total);
+        stakingManager.stake(ACTIVATION_THRESHOLD * total);
+        vm.stopPrank();
+
+        for (uint256 i; i < exited; ++i) {
+            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
+        }
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), total - exited);
+        assertEq(stakingManager.getPendingUnstakeCount(), exited);
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, ACTIVATION_THRESHOLD * exited);
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);
+        assertEq(stakingManager.getPendingUnstakeCount(), 0);
+        for (uint256 i; i < exited; ++i) {
+            assertFalse(stakingManager.isUnstakePending(keys[i].attester));
+        }
+    }
+
     function test_CleanActivatedAttesters_AllExits() external {
         uint256 total = 2;
         uint256 exited = 2;
@@ -857,7 +994,10 @@ contract StakingManagerHarvestTest is Test {
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
         rewardsVault = new MockRewardsVault(IERC20(address(aztec)), core, treasury);
 
-        stakingManager = new StakingManager(
+        StakingManager implementation = new StakingManager();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        stakingManager = StakingManager(address(proxy));
+        stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
