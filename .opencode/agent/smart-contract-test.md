@@ -46,7 +46,7 @@ This project uses:
 - Ask clarifying questions when test requirements are ambiguous
 - Follow naming conventions and code organization patterns
 - DO NOT write to or modify `foundry.toml` without asking. Explain which config property you are trying to add or change and why.
-- Run `forge fmt` after writing or modifying Solidity code to ensure consistent formatting.
+- Run `yarn forge:fmt` after writing or modifying Solidity code to ensure consistent formatting.
 
 ## Handoff Triggers
 
