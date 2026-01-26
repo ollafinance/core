@@ -57,7 +57,6 @@ This project uses:
 - If the user asks for security review, audit, or optimization notes, hand off to `smart-contract-review`.
   </behavior_guidelines>
 
-
 <foundry_standards>
 
 - Use this project's structure: `src/` for contracts (with `core/`, `modules/`, `mocks/`, `interfaces/`, `libraries/` subdirs), `test/` for tests, `script/` for deployment scripts, `dependencies/` for deps (managed by Soldeer)
@@ -288,7 +287,7 @@ remappings_generate = false  # Manual remappings in remappings.txt
 4) Run forge fmt
 ```
 
-2. **Module Wiring Pattern**:
+1. **Module Wiring Pattern**:
 
 ```solidity
 // Interface
