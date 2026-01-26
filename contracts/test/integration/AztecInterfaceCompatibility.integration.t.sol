@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { Test } from "@forge-std/Test.sol";
+import {Test} from "@forge-std/Test.sol";
 
-import { IAztecRollup as OllaOverrideIStaking } from "src/staking/interfaces/IAztecRollup.sol";
-import { IStaking, IStakingCore } from "@az/core/interfaces/IStaking.sol";
-import { IRollup } from "@az/core/interfaces/IRollup.sol";
+import {IAztecRollup as OllaOverrideIStaking} from "src/staking/interfaces/IAztecRollup.sol";
+import {IStaking, IStakingCore} from "@az/core/interfaces/IStaking.sol";
+import {IRollup} from "@az/core/interfaces/IRollup.sol";
 import {
     IAztecRollupRegistry as OllaOverrideIAztecRollupRegistry
 } from "src/staking/interfaces/IAztecRollupRegistry.sol";
-import { IRegistry } from "@az/governance/interfaces/IRegistry.sol";
-import { G1Point as OllaOverrideG1Point, G2Point as OllaOverrideG2Point } from "src/staking/libraries/BN254Lib.sol";
-import { G1Point, G2Point } from "@az/shared/libraries/BN254Lib.sol";
+import {IRegistry} from "@az/governance/interfaces/IRegistry.sol";
+import {G1Point as OllaOverrideG1Point, G2Point as OllaOverrideG2Point} from "src/staking/libraries/BN254Lib.sol";
+import {G1Point, G2Point} from "@az/shared/libraries/BN254Lib.sol";
 
 contract AztecInterfaceCompatibilityTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -79,12 +79,12 @@ contract AztecInterfaceCompatibilityTest is Test {
 
     function test_BN254StructCompatibility() public pure {
         // Create points using our custom types
-        OllaOverrideG1Point memory g1 = OllaOverrideG1Point({ x: 1, y: 2 });
-        OllaOverrideG2Point memory g2 = OllaOverrideG2Point({ x0: 1, x1: 2, y0: 3, y1: 4 });
+        OllaOverrideG1Point memory g1 = OllaOverrideG1Point({x: 1, y: 2});
+        OllaOverrideG2Point memory g2 = OllaOverrideG2Point({x0: 1, x1: 2, y0: 3, y1: 4});
 
         // Create points using Aztec's types
-        G1Point memory azG1 = G1Point({ x: 1, y: 2 });
-        G2Point memory azG2 = G2Point({ x0: 1, x1: 2, y0: 3, y1: 4 });
+        G1Point memory azG1 = G1Point({x: 1, y: 2});
+        G2Point memory azG2 = G2Point({x0: 1, x1: 2, y0: 3, y1: 4});
         // Verify ABI encoding is identical
         bytes memory encodedCustom = abi.encode(g1, g2);
         bytes memory encodedAztec = abi.encode(azG1, azG2);

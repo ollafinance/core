@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import {Test} from "@forge-std/Test.sol";
 
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
+import {IAccessControl} from "@oz/access/IAccessControl.sol";
 
-import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
-import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
+import {SafetyModule} from "src/safetymodule/SafetyModule.sol";
+import {ISafetyModule} from "src/safetymodule/ISafetyModule.sol";
 
 contract SafetyModuleTest is Test {
     /*//////////////////////////////////////////////////////////////
