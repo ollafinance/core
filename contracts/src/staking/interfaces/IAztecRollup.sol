@@ -11,7 +11,7 @@ import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 /// ## MAINTENANCE REQUIREMENTS
 ///
 /// When adding a function to this interface, make sure to also add a test in:
-///    olla-core/contracts/test/integration/AztecInterfaceCompatibility.t.sol
+///    olla-core/contracts/test/integration/AztecInterfaceCompatibility.integration.t.sol
 ///
 /// ## Why use a custom minimal interface instead of official?
 /// - Reduces attack surface by forcing less functions to be used (only necessary ones)

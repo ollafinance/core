@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import {Test, Vm} from "@forge-std/Test.sol";
+import { Test, Vm } from "@forge-std/Test.sol";
 
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {IAccessControl} from "@oz/access/IAccessControl.sol";
-import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {StakingManager} from "src/staking/StakingManager.sol";
-import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
-import {MockAztec} from "src/staking/mocks/MockAztec.sol";
-import {MockAztecRollup} from "src/staking/mocks/MockAztecRollup.sol";
-import {MockAztecRollupRegistry} from "src/staking/mocks/MockAztecRollupRegistry.sol";
-import {MockRewardsVault} from "src/core/mocks/MockRewardsVault.sol";
-import {G1Point, G2Point} from "src/staking/libraries/BN254Lib.sol";
+import { StakingManager } from "src/staking/StakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
+import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 contract StakingManagerTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -94,9 +94,9 @@ contract StakingManagerTest is Test {
                 // casting to uint160 is safe because i + 1 stays within 160 bits
                 // forge-lint: disable-next-line(unsafe-typecast)
                 attester: address(uint160(i + 1)),
-                publicKeyG1: G1Point({x: i, y: i + 1}),
-                publicKeyG2: G2Point({x0: i, x1: i + 1, y0: i + 2, y1: i + 3}),
-                proofOfPossession: G1Point({x: i + 10, y: i + 11})
+                publicKeyG1: G1Point({ x: i, y: i + 1 }),
+                publicKeyG2: G2Point({ x0: i, x1: i + 1, y0: i + 2, y1: i + 3 }),
+                proofOfPossession: G1Point({ x: i + 10, y: i + 11 })
             });
         }
         return keys;
@@ -1017,9 +1017,9 @@ contract StakingManagerHarvestTest is Test {
         for (uint256 i; i < count; ++i) {
             keys[i] = IStakingManager.KeyStore({
                 attester: address(uint160(i + 1)),
-                publicKeyG1: G1Point({x: i, y: i + 1}),
-                publicKeyG2: G2Point({x0: i, x1: i + 1, y0: i + 2, y1: i + 3}),
-                proofOfPossession: G1Point({x: i + 10, y: i + 11})
+                publicKeyG1: G1Point({ x: i, y: i + 1 }),
+                publicKeyG2: G2Point({ x0: i, x1: i + 1, y0: i + 2, y1: i + 3 }),
+                proofOfPossession: G1Point({ x: i + 10, y: i + 11 })
             });
         }
         return keys;

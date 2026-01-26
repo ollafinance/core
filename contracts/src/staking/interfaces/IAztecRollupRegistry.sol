@@ -8,7 +8,7 @@ pragma solidity >=0.8.27 <0.9.0;
 /// ## MAINTENANCE REQUIREMENTS
 ///
 /// *When adding a function to this interface, make sure to also add a test in:
-///     olla-core/contracts/test/integration/AztecInterfaceCompatibility.t.sol
+///     olla-core/contracts/test/integration/AztecInterfaceCompatibility.integration.t.sol
 ///
 /// ## TRADE-OFF
 ///

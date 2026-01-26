@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import {Test} from "@forge-std/Test.sol";
+import { Test } from "@forge-std/Test.sol";
 
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
-import {Math} from "@oz/utils/math/Math.sol";
-import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { Math } from "@oz/utils/math/Math.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {StakingManager} from "src/staking/StakingManager.sol";
-import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
-import {MockAztec} from "src/staking/mocks/MockAztec.sol";
-import {MockAztecRollupRegistry} from "src/staking/mocks/MockAztecRollupRegistry.sol";
-import {MockAztecRollup} from "src/staking/mocks/MockAztecRollup.sol";
-import {MockRewardsVault} from "src/core/mocks/MockRewardsVault.sol";
-import {G1Point, G2Point} from "src/staking/libraries/BN254Lib.sol";
+import { StakingManager } from "src/staking/StakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
+import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title StakingManagerHandler
 /// @notice Handler contract for StakingManager invariant testing.

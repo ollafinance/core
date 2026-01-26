@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import {Test} from "@forge-std/Test.sol";
+import { Test } from "@forge-std/Test.sol";
 
-import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
-import {WithdrawalQueue} from "src/core/WithdrawalQueue.sol";
-import {IWithdrawalQueue} from "src/core/interfaces/IWithdrawalQueue.sol";
+import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 
 contract WithdrawalQueueHandler is Test {
     /*//////////////////////////////////////////////////////////////
