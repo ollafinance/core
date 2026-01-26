@@ -86,8 +86,18 @@ contract OllaCoreHarness is OllaCore {
 
 contract OllaCoreUpgradeMock is OllaCore {
     /*//////////////////////////////////////////////////////////////
-                           CORE FUNCTIONS
+                                 STATE
     //////////////////////////////////////////////////////////////*/
+
+    uint256 public v2Value;
+
+    /*//////////////////////////////////////////////////////////////
+                            CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function setV2Value(uint256 value) external {
+        v2Value = value;
+    }
 
     function version() external pure returns (uint256) {
         return 2;
@@ -245,6 +255,34 @@ contract OllaCoreTest is Test {
         vault.upgradeToAndCall(address(newImplementation), "");
     }
 
+    function test_RevertWhen_DefaultAdminButNotGovernance_Upgrade() external {
+        OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
+        address otherAdmin = makeAddr("otherAdmin");
+
+        bytes32 defaultAdminRole = vault.DEFAULT_ADMIN_ROLE();
+        vm.prank(governance);
+        vault.grantRole(defaultAdminRole, otherAdmin);
+
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCore__UnauthorizedGovernance.selector, otherAdmin));
+        vm.prank(otherAdmin);
+        vault.upgradeToAndCall(address(newImplementation), "");
+    }
+
+    function test_RevertWhen_UpgradeToZeroImplementation() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newImplementation"));
+        vm.prank(governance);
+        vault.upgradeToAndCall(address(0), "");
+    }
+
+    function test_RevertWhen_UpgradeCalledOnImplementationDirectly() external {
+        OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
+        OllaCore implementation = new OllaCore();
+
+        vm.expectRevert();
+        vm.prank(governance);
+        implementation.upgradeToAndCall(address(newImplementation), "");
+    }
+
     /*//////////////////////////////////////////////////////////////
                            PAUSE CONTROL
     //////////////////////////////////////////////////////////////*/
@@ -399,6 +437,61 @@ contract OllaCoreTest is Test {
 
         uint256 version = OllaCoreUpgradeMock(address(vault)).version();
         assertEq(version, 2, "upgrade applied");
+    }
+
+    function test_GovernanceCanUpgrade_PreservesState() external {
+        uint256 depositAmount = 12 * DECIMALS;
+        uint256 sharesMinted = _performDeposit(alice, depositAmount);
+
+        uint256 queueShares = 5 * DECIMALS;
+        uint256 rateBefore = vault.exchangeRate();
+        uint256 expectedAssets = queueShares * rateBefore / 1e18;
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(queueShares, bob);
+        assertEq(requestId, 1, "request id starts at 1");
+
+        vm.prank(operator);
+        vault.exposedIncreaseStakedPrincipal(4 * DECIMALS);
+        vm.prank(operator);
+        vault.exposedIncreaseRewardsVaultBalance(2 * DECIMALS);
+        vm.prank(operator);
+        vault.exposedSetRewardsDelta(1 * DECIMALS);
+        vm.prank(operator);
+        vault.exposedSetSlashingDelta(1 * DECIMALS);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 totalAssetsBefore = vault.totalAssets();
+        uint256 aliceSharesBefore = stAztec.balanceOf(alice);
+        uint256 bobBalanceBefore = asset.balanceOf(bob);
+
+        OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
+
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit Upgraded(address(newImplementation));
+
+        vm.prank(governance);
+        vault.upgradeToAndCall(address(newImplementation), "");
+
+        OllaCoreUpgradeMock v2 = OllaCoreUpgradeMock(address(vault));
+        IOllaCore.AccountingState memory accountingAfter = v2.accountingState();
+
+        assertEq(v2.version(), 2, "upgrade applied");
+        assertEq(v2.totalAssets(), totalAssetsBefore, "total assets preserved");
+        assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered preserved");
+        assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked preserved");
+        assertEq(accountingAfter.rewardsVaultBalance, accountingBefore.rewardsVaultBalance, "rewards vault preserved");
+        assertEq(accountingAfter.rewardsDelta, accountingBefore.rewardsDelta, "rewards delta preserved");
+        assertEq(accountingAfter.slashingDelta, accountingBefore.slashingDelta, "slashing delta preserved");
+
+        uint256 claimedAssets = v2.claimActiveRequest(alice);
+        assertEq(claimedAssets, expectedAssets, "request assets preserved");
+        assertEq(asset.balanceOf(bob) - bobBalanceBefore, expectedAssets, "recipient receives assets");
+        assertEq(stAztec.balanceOf(alice), aliceSharesBefore, "shares preserved");
+        assertEq(sharesMinted - queueShares, aliceSharesBefore, "shares track request");
+
+        v2.setV2Value(123);
+        assertEq(v2.v2Value(), 123, "v2 storage works");
     }
 
     /*//////////////////////////////////////////////////////////////
