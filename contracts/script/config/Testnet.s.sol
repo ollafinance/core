@@ -27,8 +27,8 @@ contract TestnetConfig is ConfigHelper {
             asset: address(0), // TODO: Set real asset address
             stakingManager: address(0), // TODO: Set real staking manager address
             // Protocol fee config - TODO: set real values
-            protocolFeeBP: 0,
-            treasuryFeeSplitBP: 0,
+            protocolFeeBP: 500,
+            treasuryFeeSplitBP: 5000,
             // Governance addresses - TODO: replace with real addresses
             governance: deployer, // TODO: Set real governance address
             withdrawalQueue: deployer, // TODO: Set real withdrawal queue address

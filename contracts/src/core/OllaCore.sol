@@ -299,7 +299,8 @@ contract OllaCore is
 
         uint256 grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         uint256 rateBeforeRewards = _exchangeRate();
-        _payoutOllaProtocolFees(grossRewards, rateBeforeRewards);
+        (uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares) =
+            _payoutOllaProtocolFees(grossRewards, rateBeforeRewards);
         uint256 rateAfterRewardsPayout = _exchangeRate();
 
         safetyModuleRef.checkRateDrop(oldRate, rateAfterRewardsPayout);
@@ -317,7 +318,14 @@ contract OllaCore is
 
         emit AttestersStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
         emit AccountingUpdated(
-            newTotalAssets, rateAfterRewardsPayout, grossRewards, netFlows, 0, 0, 0, _latestReport.timestamp
+            newTotalAssets,
+            rateAfterRewardsPayout,
+            grossRewards,
+            netFlows,
+            protocolFeeAssets,
+            treasuryShares,
+            providerShares,
+            _latestReport.timestamp
         );
         // slither-disable-end reentrancy-events
         // slither-disable-end reentrancy-benign
@@ -480,25 +488,28 @@ contract OllaCore is
     /// @notice Payout protocol fees through minting shares.
     /// @param grossAssetRewards The gross asset rewards to charge fees on.
     /// @param currentRate The current exchange rate.
-    /// @return protocolFeeSharesTotal The total protocol fee shares minted.
+    /// @return ollaProtocolFeeAssets The asset amount paid as protocol fees.
+    /// @return treasuryShares The shares minted to the treasury.
+    /// @return providerShares The shares minted to the provider.
     function _payoutOllaProtocolFees(uint256 grossAssetRewards, uint256 currentRate)
         internal
         onlyRole(OPERATOR_ROLE)
-        returns (uint256 protocolFeeSharesTotal)
+        returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
-        uint256 ollaProtocolFeeAssets = grossAssetRewards * _protocolFeeBP / BP_DIVISOR;
+        ollaProtocolFeeAssets =
+            grossAssetRewards * _protocolFeeBP / BP_DIVISOR;
 
         // TODO: which rounding to use?
         uint256 protocolSharesTotal =
             ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Ceil);
 
-        uint256 treasuryShares = protocolSharesTotal * _treasuryFeeSplitBP / BP_DIVISOR;
-        uint256 providerShares = protocolSharesTotal - treasuryShares;
+        treasuryShares = protocolSharesTotal * _treasuryFeeSplitBP / BP_DIVISOR;
+        providerShares = protocolSharesTotal - treasuryShares;
         emit OllaProtocolFeesPaid(ollaProtocolFeeAssets, treasuryShares, providerShares);
         _modules.stAztec.mint(_modules.governance, treasuryShares);
         _modules.stAztec.mint(_modules.rewardsVault, providerShares);
 
-        return protocolSharesTotal;
+        return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
 
     function _claimWithdrawal(uint256 requestId) internal returns (uint256 assets) {

@@ -29,8 +29,8 @@ contract LocalConfig is ConfigHelper {
             asset: address(0),
             stakingManager: address(0),
             // Protocol fee config
-            protocolFeeBP: 0,
-            treasuryFeeSplitBP: 0,
+            protocolFeeBP: 500,
+            treasuryFeeSplitBP: 5000,
             // Governance addresses - all set to deployer for local dev
             governance: deployer,
             withdrawalQueue: deployer,
