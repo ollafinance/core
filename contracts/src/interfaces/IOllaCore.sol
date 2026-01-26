@@ -5,6 +5,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/interfaces/IStAztec.sol";
+import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
 
 /// @title IOllaCore
 /// @notice Interface for the OllaCore vault with async withdrawals.
@@ -35,6 +36,16 @@ interface IOllaCore {
         uint256 grossRewards;
         uint256 netFlows;
         uint256 timestamp;
+    }
+
+    struct Modules {
+        IERC20 asset;
+        IStAztec stAztec;
+        IStakingManager stakingManager;
+        address governance;
+        IWithdrawalQueue withdrawalQueue;
+        address rewardsVault;
+        address safetyModule;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -82,6 +93,16 @@ interface IOllaCore {
     /// @param messageId Monotonic message id.
     /// @param amount The amount requested to unstake.
     event UnstakeRequested(uint256 indexed messageId, uint256 amount);
+
+    /// @notice Emitted when the protocol fee is updated.
+    /// @param newFeeBP The new protocol fee in basis points.
+    event OllaProtocolFeeUpdated(uint256 newFeeBP);
+
+    /// @notice Emitted when protocol fees are paid.
+    /// @param protocolFeeAssets Protocol fee amount in assets.
+    /// @param treasuryShares Treasury fee shares minted.
+    /// @param providerShares Provider fee shares minted.
+    event OllaProtocolFeesPaid(uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares);
 
     /// @notice Emitted when accounting is updated.
     /// @param totalAssets Total assets snapshot.
@@ -166,11 +187,12 @@ interface IOllaCore {
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    // solhint-disable max-line-length
     /// @notice Initializes the vault with the Aztec asset address.
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
     /// @param stakingManager_ The staking manager for delegation messaging.
+    /// @param protocolFeeBP_ The protocol fee in basis points.
+    /// @param treasuryFeeSplitBP_ The treasury fee split in basis points.
     /// @param governance_ The governance address authorized to upgrade.
     /// @param withdrawalQueue_ The withdrawal queue module address.
     /// @param rewardsVault_ The rewards vault module address.
@@ -179,12 +201,13 @@ interface IOllaCore {
         IERC20 asset_,
         IStAztec stAztec_,
         IStakingManager stakingManager_,
+        uint256 protocolFeeBP_,
+        uint256 treasuryFeeSplitBP_,
         address governance_,
         address withdrawalQueue_,
         address rewardsVault_,
         address safetyModule_
     ) external;
-    // solhint-enable max-line-length
 
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
