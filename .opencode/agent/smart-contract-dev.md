@@ -143,6 +143,8 @@ Contract Files:
 - Interface prefix: `IMyContract.sol` (required by solhint)
 - Abstract prefix: `AbstractMyContract.sol`
 - Test suffix: `MyContract.t.sol`
+- Upgrade test suffix: `MyContract.upgrade.t.sol`
+- Reentrancy test suffix: `MyContract.reentrancy.t.sol`
 - Script suffix: `Deploy.s.sol`, `MyContractScript.s.sol`
 
 Functions and Variables:
