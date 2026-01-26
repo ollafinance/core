@@ -52,6 +52,8 @@ contract OllaCoreDeployer is BaseDeployer {
                 IERC20(asset),
                 IStAztec(stAztec),
                 IStakingManager(stakingManager),
+                config.protocolFeeBP,
+                config.treasuryFeeSplitBP,
                 config.governance,
                 config.withdrawalQueue,
                 config.rewardsVault,
