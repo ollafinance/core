@@ -123,8 +123,8 @@ Use this project's structure:
 
 - `contracts/test/core/` for core contract tests
 - Test suffix: `MyContract.t.sol`
-- Integration tests: `*.integration.sol`
-- Invariant tests: `*.invariant.sol`
+- Integration tests: `*.integration.t.sol`
+- Invariant tests: `*.invariant.t.sol`
 - Upgrade test suffix: `MyContract.upgrade.t.sol`
 - Reentrancy test suffix: `MyContract.reentrancy.t.sol`
 
@@ -363,15 +363,22 @@ olla-core/
 │   ├── remappings.txt            # Import remappings
 │   ├── src/                      # Smart contracts
 │   │   ├── core/                 # Core protocol contracts
-│   │   ├── modules/              # Modular components
-│   │   ├── mocks/                # Mock contracts for testing
-│   │   ├── interfaces/           # Interface definitions
-│   │   └── libraries/            # Reusable libraries
+│   │   │   ├── interfaces/       # Core module interfaces
+│   │   │   └── mocks/            # Core module mocks
+│   │   ├── safetymodule/         # Safety module contracts
+│   │   ├── staking/              # Staking module contracts
+│   │   │   ├── interfaces/       # Staking module interfaces
+│   │   │   ├── libraries/        # Staking module libraries
+│   │   │   └── mocks/            # Staking module mocks
+│   │   └── interfaces/           # Shared interfaces
 │   ├── test/                     # Test files
 │   │   ├── core/                 # Core contract tests
 │   │   │   ├── *.t.sol           # Unit tests
-│   │   │   └── *.invariant.sol   # Invariant tests
-│   │   └── *.integration.sol     # Integration tests
+│   │   │   └── *.invariant.t.sol # Invariant tests
+│   │   ├── safetymodule/          # Safety module tests
+│   │   ├── staking/               # Staking module tests
+│   │   ├── integration/           # Integration tests
+│   │   └── e2e/                   # End-to-end tests
 │   ├── script/                   # Deployment scripts
 │   ├── dependencies/             # Soldeer dependencies
 │   │   ├── @openzeppelin-contracts-5.5.0-rc.1/
