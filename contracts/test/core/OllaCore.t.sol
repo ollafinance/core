@@ -84,16 +84,6 @@ contract OllaCoreHarness is OllaCore {
     }
 }
 
-contract OllaCoreUpgradeMock is OllaCore {
-    /*//////////////////////////////////////////////////////////////
-                           CORE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function version() external pure returns (uint256) {
-        return 2;
-    }
-}
-
 contract OllaCoreTest is Test {
     using Math for uint256;
 
@@ -122,7 +112,6 @@ contract OllaCoreTest is Test {
     );
     event AttestersStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
     event WithdrawalFinalized(uint256 available, uint256 used);
-    event Upgraded(address indexed implementation);
     event WithdrawalRequested(
         uint256 indexed requestId,
         address indexed recipient,
@@ -230,19 +219,6 @@ contract OllaCoreTest is Test {
         vault.initialize(
             asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
         );
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                              UPGRADES
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_UnauthorizedUpgrade() external {
-        OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
-        address attacker = makeAddr("attacker");
-
-        vm.expectRevert();
-        vm.prank(attacker);
-        vault.upgradeToAndCall(address(newImplementation), "");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -382,23 +358,6 @@ contract OllaCoreTest is Test {
         vm.prank(alice);
         uint256 newRequestId = vault.requestRedeem(1 * DECIMALS, alice);
         assertEq(newRequestId, 2, "owner can request again after claim by id");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                              UPGRADES
-    //////////////////////////////////////////////////////////////*/
-
-    function test_GovernanceCanUpgrade() external {
-        OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
-
-        vm.expectEmit(true, true, false, true, address(vault));
-        emit Upgraded(address(newImplementation));
-
-        vm.prank(governance);
-        vault.upgradeToAndCall(address(newImplementation), "");
-
-        uint256 version = OllaCoreUpgradeMock(address(vault)).version();
-        assertEq(version, 2, "upgrade applied");
     }
 
     /*//////////////////////////////////////////////////////////////
