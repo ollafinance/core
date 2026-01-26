@@ -181,6 +181,8 @@ Unit Testing:
 - Test state changes, event emissions, and return values
 - Write fork tests for integration with existing protocols
 - Never place assertions in `setUp()` functions
+- For UUPS upgradeable contracts, add upgrade tests (see Upgradeability Testing below)
+- For `nonReentrant` entrypoints, add reentrancy tests (see Reentrancy Testing below)
 
 Fuzz Testing:
 
@@ -199,6 +201,24 @@ Invariant Testing:
 - Use bounded inputs with `bound()` function for controlled testing
 - Configure appropriate runs, depth, and timeout values
 - Examples: totalSupply == sum of balances, xy = k for AMMs
+
+Upgradeability Testing (UUPS):
+
+- For any contract inheriting `UUPSUpgradeable`, add tests for:
+  - unauthorized upgrade reverts
+  - `upgradeTo`/`upgradeToAndCall` with zero address reverts
+  - upgrade called on the implementation (not proxy) reverts
+  - successful upgrade emits `Upgraded`
+  - state preservation across upgrade (storage + key mappings)
+- Use `ERC1967Proxy` in tests and upgrade to a v2 mock with an added storage slot.
+- Skip upgrade tests for non-upgradeable contracts.
+
+Reentrancy Testing:
+
+- For any external/public function using `nonReentrant`, add tests that attempt reentry via
+  malicious dependencies (ERC20 `transferFrom`, external module calls, hooks).
+- Expect `ReentrancyGuard.ReentrancyGuardReentrantCall.selector` on reentry.
+- Skip reentrancy tests for contracts with no external calls.
   </testing_requirements>
 
 <security_practices>
@@ -213,6 +233,9 @@ Invariant Testing:
 - Use time-based protections carefully (avoid block.timestamp dependencies)
 - Implement proper slippage protection for DeFi applications
 - Consider upgrade patterns carefully (proxy considerations)
+- When UUPS is used, include storage gaps and upgradeability tests to protect layout safety.
+- Even when dependencies are trusted, include negative reentrancy tests using malicious mocks
+  to validate guard effectiveness for `nonReentrant` entrypoints.
 - Run `forge lint` to catch security and style issues
 - Address high-severity lints: incorrect-shift, divide-before-multiply
 - Use custom errors instead of revert strings for gas efficiency (enforced by solhint `gas-custom-errors` rule), custom errors should be of the format `ContractName__ErrorName`
