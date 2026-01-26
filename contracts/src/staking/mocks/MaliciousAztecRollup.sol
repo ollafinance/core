@@ -4,9 +4,9 @@ pragma solidity >=0.8.27 <0.9.0;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@oz/utils/Address.sol";
-import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/libraries/AztecTypes.sol";
-import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
-import { IMaliciousAztecRollup } from "src/mocks/IMaliciousAztecRollup.sol";
+import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
+import { IMaliciousAztecRollup } from "src/staking/mocks/IMaliciousAztecRollup.sol";
 
 /// @title MaliciousAztecRollup
 /// @notice Test-only rollup mock that attempts reentrancy on selected entrypoints.

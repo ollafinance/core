@@ -7,13 +7,13 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
-import { SafetyModule } from "src/core/SafetyModule.sol";
+import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
-import { IOllaCore } from "src/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/core/StAztec.sol";
-import { MockAztec } from "src/mocks/MockAztec.sol";
-import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 
 contract OllaCoreWithdrawalQueueHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////

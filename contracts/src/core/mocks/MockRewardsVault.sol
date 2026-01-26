@@ -3,8 +3,8 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-import { IRewardsVault } from "src/interfaces/IRewardsVault.sol";
-import { IMockRewardsVault } from "src/mocks/IMockRewardsVault.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { IMockRewardsVault } from "src/core/mocks/IMockRewardsVault.sol";
 
 /// @title MockRewardsVault
 /// @notice Mock rewards vault for testing StakingManager reward harvesting.

@@ -3,7 +3,7 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Address } from "@oz/utils/Address.sol";
-import { IMaliciousRewardsVault } from "src/mocks/IMaliciousRewardsVault.sol";
+import { IMaliciousRewardsVault } from "src/core/mocks/IMaliciousRewardsVault.sol";
 
 /// @title MaliciousRewardsVault
 /// @notice Test-only rewards vault that attempts reentrancy in postReceiveFundsHook.

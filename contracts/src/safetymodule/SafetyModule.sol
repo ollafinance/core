@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import { AccessControl } from "@oz/access/AccessControl.sol";
 
-import { ISafetyModule } from "src/interfaces/ISafetyModule.sol";
+import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 
 /// @title SafetyModule
 /// @notice Enforces deposit caps and circuit breaker checks.

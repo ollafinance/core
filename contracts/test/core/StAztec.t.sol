@@ -5,7 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
 import { StAztec } from "src/core/StAztec.sol";
-import { IStAztec } from "src/interfaces/IStAztec.sol";
+import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 
 contract StAztecTest is Test {
     /*//////////////////////////////////////////////////////////////

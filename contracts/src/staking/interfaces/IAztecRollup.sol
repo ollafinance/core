@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { AttesterView, Timestamp } from "src/libraries/AztecTypes.sol";
-import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
+import { AttesterView, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title IAztecRollup
 /// @notice Minimal interface for Aztec rollup

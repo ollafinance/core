@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 
 /// @title MockStakingManager
 /// @notice Minimal staking manager mock for message routing tests.

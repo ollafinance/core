@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { G1Point } from "src/libraries/BN254Lib.sol";
+import { G1Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title AztecTypes
 /// @notice Types for Aztec staking compatibility.

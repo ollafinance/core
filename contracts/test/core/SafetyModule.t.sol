@@ -5,8 +5,8 @@ import { Test } from "@forge-std/Test.sol";
 
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
-import { SafetyModule } from "src/core/SafetyModule.sol";
-import { ISafetyModule } from "src/interfaces/ISafetyModule.sol";
+import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
+import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 
 contract SafetyModuleTest is Test {
     /*//////////////////////////////////////////////////////////////

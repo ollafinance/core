@@ -9,11 +9,11 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IOllaCore } from "src/interfaces/IOllaCore.sol";
-import { ISafetyModule } from "src/interfaces/ISafetyModule.sol";
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
-import { IStAztec } from "src/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStAztec } from "src/core/interfaces/IStAztec.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.

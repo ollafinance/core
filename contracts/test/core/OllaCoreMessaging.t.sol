@@ -7,8 +7,8 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
-import { MockAztec } from "src/mocks/MockAztec.sol";
-import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 
 contract OllaCoreMessagingHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////

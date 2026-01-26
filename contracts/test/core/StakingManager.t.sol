@@ -7,13 +7,13 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
-import { StakingManager } from "src/core/StakingManager.sol";
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
-import { MockAztec } from "src/mocks/MockAztec.sol";
-import { MockAztecRollup } from "src/mocks/MockAztecRollup.sol";
-import { MockAztecRollupRegistry } from "src/mocks/MockAztecRollupRegistry.sol";
-import { MockRewardsVault } from "src/mocks/MockRewardsVault.sol";
-import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
+import { StakingManager } from "src/staking/StakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
+import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 contract StakingManagerTest is Test {
     /*//////////////////////////////////////////////////////////////

@@ -5,7 +5,7 @@ import { ERC20 } from "@oz/token/ERC20/ERC20.sol";
 import { Address } from "@oz/utils/Address.sol";
 
 import { IERC20Mintable } from "src/interfaces/IERC20Mintable.sol";
-import { IMaliciousAztec } from "src/mocks/IMaliciousAztec.sol";
+import { IMaliciousAztec } from "src/staking/mocks/IMaliciousAztec.sol";
 
 /// @title MaliciousAztec
 /// @notice Test-only ERC20 that attempts reentrancy during transferFrom.

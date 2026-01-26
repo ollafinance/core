@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 
 /// @notice Storage struct for a FIFO queue of attester KeyStores.
 struct Queue {

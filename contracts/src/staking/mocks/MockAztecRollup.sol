@@ -3,9 +3,9 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/libraries/AztecTypes.sol";
-import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
-import { IMockAztecRollup } from "src/mocks/IMockAztecRollup.sol";
+import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
+import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 
 /// @title MockAztecRollup
 /// @notice Mock Aztec rollup for testing staking flows.

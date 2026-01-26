@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { IMockAztecRollupRegistry } from "src/mocks/IMockAztecRollupRegistry.sol";
+import { IMockAztecRollupRegistry } from "src/staking/mocks/IMockAztecRollupRegistry.sol";
 
 /// @title MockRollupRegistry
 /// @notice Mock implementation of the Aztec Rollup Registry for testing.

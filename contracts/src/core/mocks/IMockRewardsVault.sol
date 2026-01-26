@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { IRewardsVault } from "src/interfaces/IRewardsVault.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 
 /// @title IMockRewardsVault
 /// @notice Interface for MockRewardsVault test helper contract.

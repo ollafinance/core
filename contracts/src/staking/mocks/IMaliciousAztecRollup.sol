@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { IMockAztecRollup } from "src/mocks/IMockAztecRollup.sol";
+import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 
 /// @title IMaliciousAztecRollup
 /// @notice Test-only interface for configuring reentrancy behavior on a mock rollup.

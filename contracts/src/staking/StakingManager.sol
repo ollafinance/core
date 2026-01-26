@@ -7,12 +7,12 @@ import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IAztecRollup } from "src/interfaces/IAztecRollup.sol";
-import { IAztecRollupRegistry } from "src/interfaces/IAztecRollupRegistry.sol";
-import { IRewardsVault } from "src/interfaces/IRewardsVault.sol";
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
-import { AttesterView, Status, Timestamp } from "src/libraries/AztecTypes.sol";
-import { Queue, QueueLib } from "src/libraries/QueueLib.sol";
+import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
+import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import { Queue, QueueLib } from "src/staking/libraries/QueueLib.sol";
 
 /// @title StakingManager
 /// @notice Manages staking delegation, attester keys, and reward harvesting.
