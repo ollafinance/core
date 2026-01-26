@@ -58,9 +58,9 @@ You are working in the `olla-core` repository which contains:
 
 3. **Explore Existing Code**
 
-   - Check existing interfaces in `contracts/src/interfaces/`
-   - Look for related contracts in `contracts/src/core/`
-   - Review existing mocks in `contracts/src/mocks/`
+   - Check existing interfaces alongside their module folders
+   - Look for related contracts in `contracts/src/core/`, `contracts/src/safetymodule/`, and `contracts/src/staking/`
+   - Review existing mocks in `contracts/src/core/mocks/`, `contracts/src/safetymodule/` (single mock), and `contracts/src/staking/mocks/`
 
 4. **Create Plan Documents**
    - Create a main plan file summarizing all phases
@@ -210,20 +210,23 @@ Existing Contract Layout:
 ```
 contracts/src/
 ├── core/
-│   ├── OllaCore.sol          # Main vault (exists)
-│   └── StAztec.sol           # LST token (exists)
-├── interfaces/
-│   ├── IOllaCore.sol         # Vault interface
-│   ├── IStAztec.sol          # Token interface
-│   └── IStakingManager.sol   # Staking interface (minimal)
-├── libraries/                 # Empty - add shared libs here
-├── modules/                   # Empty - add modules here
-└── mocks/
-    ├── MockAztec.sol         # Mock Aztec token
-    └── MockStakingManager.sol # Mock staking manager
+│   ├── OllaCore.sol           # Main vault (exists)
+│   ├── StAztec.sol            # LST token (exists)
+│   ├── interfaces/            # Core module interfaces
+│   └── mocks/                 # Core module mocks
+├── safetymodule/
+│   ├── SafetyModule.sol       # Safety module (exists)
+│   └── ISafetyModule.sol      # Safety interface
+├── staking/
+│   ├── StakingManager.sol     # Staking manager (exists)
+│   ├── interfaces/            # Staking module interfaces
+│   ├── libraries/             # Staking module libraries
+│   └── mocks/                 # Staking module mocks
+└── interfaces/
+    └── IERC20Mintable.sol     # Shared interface
 ```
 
-Test files: `contracts/test/core/*.t.sol`
+Test files: `contracts/test/core/*.t.sol`, `contracts/test/safetymodule/*.t.sol`, `contracts/test/staking/*.t.sol`, `contracts/test/integration/*.t.sol`
 </contract_structure>
 
 <example_plan_output>
@@ -263,9 +266,9 @@ The WithdrawalQueue manages withdrawal requests with:
 
 | File                                            | Description         |
 | ----------------------------------------------- | ------------------- |
-| `contracts/src/core/WithdrawalQueue.sol`        | Main implementation |
-| `contracts/src/interfaces/IWithdrawalQueue.sol` | Interface           |
-| `contracts/test/core/WithdrawalQueue.t.sol`     | Unit tests          |
+| `contracts/src/core/WithdrawalQueue.sol`            | Main implementation |
+| `contracts/src/core/interfaces/IWithdrawalQueue.sol` | Interface           |
+| `contracts/test/core/WithdrawalQueue.t.sol`         | Unit tests          |
 
 ## Verification
 

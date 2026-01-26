@@ -8,12 +8,15 @@ to grow into an open-source, auditable codebase.
 
 - `contracts/` Foundry project for the core contracts.
 - `contracts/src/core/` Protocol core contracts.
-- `contracts/src/modules/` Reusable modules (pause/roles/etc).
-- `contracts/src/interfaces/` External-facing interfaces.
-- `contracts/src/libraries/` Shared libraries.
-- `contracts/src/mocks/` Test/mocked contracts and fixtures.
+- `contracts/src/core/interfaces/` Core module interfaces.
+- `contracts/src/core/mocks/` Core module mocks and mock interfaces.
+- `contracts/src/safetymodule/` Safety module contracts and interface.
+- `contracts/src/staking/` Staking module contracts.
+- `contracts/src/staking/libraries/` Staking module libraries.
+- `contracts/src/staking/interfaces/` Staking module interfaces.
+- `contracts/src/staking/mocks/` Staking module mocks and mock interfaces.
 - `contracts/script/` Foundry scripts.
-- `contracts/test/` Component-based Foundry tests (e.g., `core/`, `modules/`).
+- `contracts/test/` Component-based Foundry tests (e.g., `core/`, `safetymodule/`, `staking/`, `integration/`, `e2e/`).
 - `research/` Protocol research and design notes (Obsidian vault).
 
 Key research index:
@@ -41,8 +44,16 @@ Invariant-only suite:
 
 ```bash
 cd contracts
-forge test --match-path "test/**/*.invariant.sol"
+forge test --match-path "test/**/*.invariant.t.sol"
 ```
+
+## Test layout and naming
+
+- Module-local tests live in `contracts/test/core/`, `contracts/test/safetymodule/`, and `contracts/test/staking/`.
+- Cross-module tests live in `contracts/test/integration/` and use `*.integration.t.sol`.
+- Invariant tests use `*.invariant.t.sol`.
+- E2E tests (if added) live in `contracts/test/e2e/` and use `*.e2e.t.sol`.
+- If E2E orchestration needs off-chain scripts, keep the harness in `contracts/test/e2e/` and place scripts in `contracts/script/e2e/`.
 
 ## Linting
 

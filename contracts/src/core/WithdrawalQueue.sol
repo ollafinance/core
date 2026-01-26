@@ -6,7 +6,7 @@ import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
-import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 
 /// @title WithdrawalQueue
 /// @notice FIFO queue for async withdrawal requests.
