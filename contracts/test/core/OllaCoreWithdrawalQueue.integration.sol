@@ -7,6 +7,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
+import { SafetyModule } from "src/core/SafetyModule.sol";
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { IOllaCore } from "src/interfaces/IOllaCore.sol";
 import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
@@ -50,7 +51,9 @@ contract OllaCoreWithdrawalQueueTest is Test {
     WithdrawalQueue internal queue;
     address internal governance;
     address internal rewardsVault;
-    address internal safetyModule;
+    SafetyModule internal safetyModule;
+    address internal admin;
+    address internal guardian;
     address internal alice;
     address internal bob;
 
@@ -69,13 +72,17 @@ contract OllaCoreWithdrawalQueueTest is Test {
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
         rewardsVault = makeAddr("rewardsVault");
-        safetyModule = makeAddr("safetyModule");
+        admin = makeAddr("admin");
+        guardian = makeAddr("guardian");
+        safetyModule = new SafetyModule(admin, guardian, address(vault), 1_000_000 ether, 500, 6_000, 1 days);
 
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
         queue = WithdrawalQueue(address(queueProxy));
 
-        vault.initialize(asset, stAztec, stakingManager, governance, address(queue), rewardsVault, safetyModule);
+        vault.initialize(
+            asset, stAztec, stakingManager, governance, address(queue), rewardsVault, address(safetyModule)
+        );
         queue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();

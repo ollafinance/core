@@ -3,13 +3,16 @@ pragma solidity ^0.8.27;
 
 import { Test } from "@forge-std/Test.sol";
 
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { StakingManager } from "src/core/StakingManager.sol";
 import { IStakingManager } from "src/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/mocks/MockAztec.sol";
 import { MockAztecRollupRegistry } from "src/mocks/MockAztecRollupRegistry.sol";
 import { MockAztecRollup } from "src/mocks/MockAztecRollup.sol";
+import { MockRewardsVault } from "src/mocks/MockRewardsVault.sol";
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title StakingManagerHandler
@@ -33,6 +36,8 @@ contract StakingManagerHandler is Test {
     uint256 public ghost_keysAdded;
     uint256 public ghost_keysDripped;
     uint256 public ghost_keysActivated;
+    uint256 public ghost_totalHarvested;
+    uint256 public ghost_totalRewardsSet;
 
     constructor(
         StakingManager _stakingManager,
@@ -200,15 +205,21 @@ contract StakingManagerHandler is Test {
     }
 
     /// @notice Harvest rewards (only core can call)
-    function harvestRewards() external {
-        vm.prank(core);
-        try stakingManager.harvestRewards() returns (
-            uint256
-        ) {
-        // Could track harvested amount if needed
+    /// @dev Sets random rewards for the rewards vault address before harvesting.
+    function harvestRewards(uint256 rewardSeed) external {
+        uint256 reward = bound(rewardSeed, 0, 10e18);
+        if (reward > 0) {
+            uint256 currentPending = rollup.pendingRewards(rewardsVault);
+            stakingAsset.mint(address(rollup), reward);
+            rollup.setRewards(rewardsVault, currentPending + reward);
+            ghost_totalRewardsSet += reward;
         }
-            catch {
-            // Expected if not authorized
+
+        vm.prank(core);
+        try stakingManager.harvestRewards() returns (uint256 harvested) {
+            ghost_totalHarvested += harvested;
+        } catch {
+            // Expected if not authorized or other errors
         }
     }
 }
@@ -222,35 +233,40 @@ contract StakingManagerInvariantTest is Test {
     MockAztec internal stakingAsset;
     MockAztecRollupRegistry internal rollupRegistry;
     MockAztecRollup internal rollup;
+    MockRewardsVault internal rewardsVault;
     StakingManagerHandler internal handler;
 
     address internal core;
     address internal providerAdmin;
-    address internal rewardsVault;
     address internal governance;
     address internal defaultAdmin;
+    address internal treasury;
 
     function setUp() external {
         // Setup addresses
         core = makeAddr("core");
         providerAdmin = makeAddr("providerAdmin");
-        rewardsVault = makeAddr("rewardsVault");
         governance = makeAddr("governance");
         defaultAdmin = makeAddr("defaultAdmin");
+        treasury = makeAddr("treasury");
 
         // Setup mock contracts
         stakingAsset = new MockAztec(address(this));
         rollupRegistry = new MockAztecRollupRegistry(address(0));
         rollup = new MockAztecRollup(stakingAsset, 100e18); // 100 AZTEC activation threshold
+        rewardsVault = new MockRewardsVault(IERC20(address(stakingAsset)), core, treasury);
 
         // Set canonical rollup
         rollupRegistry.setCanonicalRollup(address(rollup));
 
-        // Deploy StakingManager (non-upgradeable, constructor-based initialization)
-        stakingManager = new StakingManager(
+        // Deploy StakingManager behind an ERC1967 proxy
+        StakingManager implementation = new StakingManager();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        stakingManager = StakingManager(address(proxy));
+        stakingManager.initialize(
             stakingAsset,
             address(rollupRegistry),
-            rewardsVault,
+            address(rewardsVault),
             core,
             providerAdmin,
             makeAddr("providerRewardsRecipient"),
@@ -263,7 +279,7 @@ contract StakingManagerInvariantTest is Test {
 
         // Setup handler
         handler = new StakingManagerHandler(
-            stakingManager, stakingAsset, rollupRegistry, rollup, core, providerAdmin, rewardsVault
+            stakingManager, stakingAsset, rollupRegistry, rollup, core, providerAdmin, address(rewardsVault)
         );
 
         targetContract(address(handler));
@@ -406,12 +422,37 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Balance consistency across contract interactions
     function invariant_BalanceConsistency() external view {
-        // Check that staking manager doesn't hold unexpected token balances
-        uint256 stakingManagerBalance = stakingAsset.balanceOf(address(stakingManager));
+        // StakingManager accrues harvested rewards (RewardsVault only gets the accounting hook).
+        assertEq(
+            stakingAsset.balanceOf(address(stakingManager)),
+            handler.ghost_totalHarvested(),
+            "staking manager balance should equal harvested"
+        );
+    }
 
-        // Staking manager should generally not hold tokens except during transaction execution
-        // In steady state, balance should be minimal
-        assertLe(stakingManagerBalance, 1e18, "staking manager should not hold large token balances in steady state");
+    /*//////////////////////////////////////////////////////////////
+                       HARVEST REWARDS INVARIANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Harvested rewards should never be negative
+    function invariant_HarvestNeverNegative() external view {
+        assertGe(handler.ghost_totalHarvested(), 0, "total harvested should never be negative");
+    }
+
+    /// @notice Harvested rewards should not exceed total rewards set
+    function invariant_HarvestNotExceedRewardsSet() external view {
+        assertLe(
+            handler.ghost_totalHarvested(),
+            handler.ghost_totalRewardsSet(),
+            "harvested should not exceed total rewards set"
+        );
+    }
+
+    /// @notice RewardsVault balance consistency with harvested rewards
+    function invariant_RewardsVaultConsistency() external view {
+        assertEq(
+            rewardsVault.totalReceived(), handler.ghost_totalHarvested(), "vault hook total should match harvested"
+        );
     }
 
     /*//////////////////////////////////////////////////////////////

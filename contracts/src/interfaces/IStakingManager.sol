@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-// Import BN254 types - local definitions compatible with Aztec protocol
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { G1Point, G2Point } from "src/libraries/BN254Lib.sol";
 
 /// @title IStakingManager
@@ -93,8 +93,18 @@ interface IStakingManager {
     /// @param attester The attester address of the removed key.
     event QueueDripped(address indexed attester);
 
+    /// @notice Emitted when rewards are claimed for a specific attester.
+    /// @param attester The attester address.
+    /// @param amount The amount of rewards claimed.
+    event AttesterRewardsClaimed(address indexed attester, uint256 indexed amount);
+
+    /// @notice Emitted when reward claim fails for an attester.
+    /// @param attester The attester address.
+    /// @param reason The failure reason.
+    event RewardClaimFailed(address indexed attester, string reason);
+
     /*//////////////////////////////////////////////////////////////
-                                 ERRORS
+                                  ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when an address is zero.
@@ -122,7 +132,29 @@ interface IStakingManager {
     error StakingManager__UnstakeFailed(address attester);
 
     /*//////////////////////////////////////////////////////////////
-                            CORE FUNCTIONS
+                              INITIALIZER
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Initializes the StakingManager behind a proxy.
+    /// @param stakingAsset The staking asset token.
+    /// @param rollupRegistry The Aztec rollup registry contract.
+    /// @param rewardsVault The rewards vault address.
+    /// @param core The OllaCore contract address.
+    /// @param providerAdmin The provider admin address.
+    /// @param providerRewardsRecipient The provider rewards recipient address.
+    /// @param defaultAdmin The default admin for role management.
+    function initialize(
+        IERC20 stakingAsset,
+        address rollupRegistry,
+        address rewardsVault,
+        address core,
+        address providerAdmin,
+        address providerRewardsRecipient,
+        address defaultAdmin
+    ) external;
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Stakes assets with the staking provider.
@@ -144,7 +176,6 @@ interface IStakingManager {
     /// @notice Claims sequencer rewards to RewardsVault.
     /// @return harvested The amount of rewards harvested.
     function harvestRewards() external returns (uint256 harvested);
-
     /*//////////////////////////////////////////////////////////////
                         PROVIDER ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -164,6 +195,11 @@ interface IStakingManager {
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns claimable rewards.
+    /// @dev Only callable by CORE_ROLE. Does not actually claim rewards.
+    /// @return claimableRewards The total rewards claimalbe to rewards recipient.
+    function getClaimableRewards() external view returns (uint256 claimableRewards);
 
     /// @notice Returns the current staking state by querying the rollup.
     /// @dev Iterates through all attesters and queries getAttesterView for each.

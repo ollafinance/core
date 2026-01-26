@@ -30,6 +30,8 @@ contract MockAztecRollup is IMockAztecRollup {
     mapping(address attester => G1Point publicKey) private _publicKeys;
     /// @inheritdoc IMockAztecRollup
     mapping(address sequencer => uint256 rewards) public pendingRewards;
+    /// @inheritdoc IMockAztecRollup
+    mapping(address sequencer => bool shouldFail) public claimShouldFail;
 
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
@@ -89,9 +91,6 @@ contract MockAztecRollup is IMockAztecRollup {
         if (!exit.exists) {
             revert MockAztecRollup__NotExiting();
         }
-        if (!exit.isRecipient) {
-            revert MockAztecRollup__InitiateWithdrawNeeded();
-        }
         if (Timestamp.unwrap(exit.exitableAt) > block.timestamp) {
             revert MockAztecRollup__NotReady();
         }
@@ -105,12 +104,17 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
-    function claimSequencerRewards(address _recipient) external override returns (uint256) {
-        uint256 amount = pendingRewards[msg.sender];
+    /// @dev For testing: looks up rewards for _coinbase (the attester), transfers to msg.sender (StakingManager).
+    /// This allows StakingManager to claim rewards on behalf of attesters and forward them to RewardsVault.
+    function claimSequencerRewards(address _coinbase) external override returns (uint256) {
+        if (claimShouldFail[_coinbase]) {
+            revert MockAztecRollup__ClaimFailed();
+        }
+        uint256 amount = pendingRewards[_coinbase];
         if (amount > 0) {
-            pendingRewards[msg.sender] = 0;
-            STAKING_ASSET.safeTransfer(_recipient, amount);
-            emit RewardsClaimed(msg.sender, _recipient, amount);
+            pendingRewards[_coinbase] = 0;
+            STAKING_ASSET.safeTransfer(msg.sender, amount);
+            emit RewardsClaimed(_coinbase, msg.sender, amount);
         }
         return amount;
     }
@@ -138,14 +142,23 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function setExternalExit(address _attester, uint256 _amount, uint256 _exitableAt) external override {
+        address withdrawer = withdrawers[_attester];
+        if (withdrawer == address(0)) {
+            withdrawer = address(this);
+        }
         _exits[_attester] = Exit({
             withdrawalId: 0,
             amount: _amount,
             exitableAt: Timestamp.wrap(_exitableAt),
-            recipientOrWithdrawer: address(this),
+            recipientOrWithdrawer: withdrawer,
             isRecipient: false,
             exists: true
         });
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setClaimShouldFail(address _sequencer, bool _shouldFail) external override {
+        claimShouldFail[_sequencer] = _shouldFail;
     }
 
     /*//////////////////////////////////////////////////////////////
