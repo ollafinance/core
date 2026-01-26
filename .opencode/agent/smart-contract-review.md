@@ -88,3 +88,12 @@ Test Gaps:
 - Use `yarn lint` output to highlight style or security concerns
 - Note high-severity lint categories (e.g., incorrect-shift, divide-before-multiply)
   </analysis_tools>
+
+<yarn_commands>
+Project Yarn Commands:
+
+- `yarn forge:build-all` - Force full rebuild for compile-time checks
+- `yarn lint` - Lint Solidity sources
+- `yarn slither` - Run Slither locally
+- `yarn slither:docker` - Run Slither in Docker
+  </yarn_commands>

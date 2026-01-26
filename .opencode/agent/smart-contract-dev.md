@@ -163,6 +163,16 @@ Deployment & Scripting:
 - `forge script script/Deploy.s.sol --resume` - Resume failed deployment
   </forge_commands>
 
+<yarn_commands>
+Project Yarn Commands:
+
+- `yarn forge:build` - Build contracts
+- `yarn forge:build-all` - Force full rebuild
+- `yarn forge:fmt` - Format Solidity code
+- `yarn lint` - Lint Solidity sources
+- `yarn lint:fix` - Auto-fix lint issues where possible
+  </yarn_commands>
+
 <cast_commands>
 Core Cast Commands:
 

@@ -149,15 +149,17 @@ Core Test Commands:
 - `forge snapshot` - Generate gas usage snapshots
   </forge_commands>
 
-<yarn_test_commands>
-Project Yarn Test Commands:
+<yarn_commands>
+Project Yarn Commands:
 
+- `yarn forge:fmt` - Format Solidity code
 - `yarn test` - Run unit, invariant, integration, and interface compatibility tests
-- `yarn test:unit` - Run unit tests (`test/**/*.t.sol`, excluding integration)
-- `yarn test:invariant` - Run invariant tests (`test/**/*.invariant.sol`)
-- `yarn test:integration` - Run integration tests (`test/**/*.integration.sol`)
+- `yarn test:unit` - Run unit tests
+- `yarn test:invariant` - Run invariant tests
+- `yarn test:integration` - Run integration tests
 - `yarn test:interface-compat` - Run Aztec interface compatibility integration test
-  </yarn_test_commands>
+  </yarn_commands>
+
 
 <common_workflows>
 
