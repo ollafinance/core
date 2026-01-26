@@ -1,5 +1,5 @@
 {
-  "filter_paths": "lib|dependencies|test|script|src/mocks",
+  "filter_paths": "lib|dependencies|test|script|src/core/mocks|src/staking/mocks|src/safetymodule/MockSafetyModule.sol",
   "solc_remaps": [
     "@oz=dependencies/@openzeppelin-contracts/",
     "@oz-upgradeable=dependencies/@openzeppelin-contracts-upgradeable/",

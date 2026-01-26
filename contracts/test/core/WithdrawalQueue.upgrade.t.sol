@@ -6,7 +6,7 @@ import { Test } from "@forge-std/Test.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
-import { IWithdrawalQueue } from "src/interfaces/IWithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 
 interface IUpgradeTo {
     function upgradeTo(address newImplementation) external;

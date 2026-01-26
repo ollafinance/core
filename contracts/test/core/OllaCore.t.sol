@@ -9,14 +9,14 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
-import { IOllaCore } from "src/interfaces/IOllaCore.sol";
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
-import { IStAztec } from "src/interfaces/IStAztec.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
-import { MockAztec } from "src/mocks/MockAztec.sol";
-import { MockSafetyModule } from "src/mocks/MockSafetyModule.sol";
-import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
-import { MockWithdrawalQueue } from "src/mocks/MockWithdrawalQueue.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 
 contract OllaCoreHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////

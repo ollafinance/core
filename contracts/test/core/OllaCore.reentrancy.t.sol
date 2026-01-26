@@ -8,10 +8,10 @@ import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
-import { MockSafetyModule } from "src/mocks/MockSafetyModule.sol";
-import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
-import { MaliciousAztec } from "src/mocks/MaliciousAztec.sol";
-import { MaliciousWithdrawalQueue } from "src/mocks/MaliciousWithdrawalQueue.sol";
+import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
+import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
 
 contract OllaCoreReentrancyTest is Test {
     /*//////////////////////////////////////////////////////////////

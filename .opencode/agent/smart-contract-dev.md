@@ -281,8 +281,8 @@ remappings_generate = false  # Manual remappings in remappings.txt
 1. **New Contract Implementation**:
 
 ```text
-1) Define interface in contracts/src/interfaces/
-2) Implement contract in contracts/src/core/ or contracts/src/modules/
+1) Define interface alongside the owning module (use `<module>/interfaces/` when there is more than one)
+2) Implement contract in contracts/src/core/, contracts/src/safetymodule/, or contracts/src/staking/
 3) Add errors to interface, internal errors to contract
 4) Run forge fmt
 ```
@@ -332,15 +332,22 @@ olla-core/
 │   ├── remappings.txt            # Import remappings
 │   ├── src/                      # Smart contracts
 │   │   ├── core/                 # Core protocol contracts
-│   │   ├── modules/              # Modular components
-│   │   ├── mocks/                # Mock contracts for testing
-│   │   ├── interfaces/           # Interface definitions
-│   │   └── libraries/            # Reusable libraries
+│   │   │   ├── interfaces/       # Core module interfaces
+│   │   │   └── mocks/            # Core module mocks
+│   │   ├── safetymodule/         # Safety module contracts
+│   │   ├── staking/              # Staking module contracts
+│   │   │   ├── interfaces/       # Staking module interfaces
+│   │   │   ├── libraries/        # Staking module libraries
+│   │   │   └── mocks/            # Staking module mocks
+│   │   └── interfaces/           # Shared interfaces
 │   ├── test/                     # Test files
 │   │   ├── core/                 # Core contract tests
 │   │   │   ├── *.t.sol           # Unit tests
-│   │   │   └── *.invariant.sol   # Invariant tests
-│   │   └── *.integration.sol     # Integration tests
+│   │   │   └── *.invariant.t.sol # Invariant tests
+│   │   ├── safetymodule/          # Safety module tests
+│   │   ├── staking/               # Staking module tests
+│   │   ├── integration/           # Integration tests
+│   │   └── e2e/                   # End-to-end tests
 │   ├── script/                   # Deployment scripts
 │   ├── dependencies/             # Soldeer dependencies
 │   │   ├── @openzeppelin-contracts-5.5.0-rc.1/

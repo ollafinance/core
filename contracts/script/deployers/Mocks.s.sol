@@ -3,8 +3,8 @@ pragma solidity ^0.8.27;
 
 import { BaseDeployer, console2 } from "../base/BaseDeployer.s.sol";
 import { DeployConfig } from "../config/Config.s.sol";
-import { MockAztec } from "src/mocks/MockAztec.sol";
-import { MockStakingManager } from "src/mocks/MockStakingManager.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 
 /// @title MocksDeployer
 /// @notice Deploys mock contracts for local development

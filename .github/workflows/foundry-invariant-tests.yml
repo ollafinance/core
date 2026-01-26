@@ -22,6 +22,6 @@ jobs:
       - name: Setup Soldeer dependencies
         uses: ./.github/actions/setup-soldeer
       - name: Forge invariant tests
-        run: forge test --match-path "test/**/*.invariant.sol"
+        run: forge test --match-path "test/**/*.invariant.t.sol"
         env:
           FOUNDRY_PROFILE: ci
