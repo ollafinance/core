@@ -64,13 +64,13 @@ subgraph STAKING
     nodeServer -->|"validator produces rewards"| aztecRollup
     stkMan -->|"deposit<br/>(i.e. stake)"| aztecRollup
     stkMan -->|"claimSequencerRewards<br/>(i.e. harvest rewards)"| aztecRollup
-    stkMan -->|"initiateWithdrawal<br/>(i.e. unStake)"| aztecRollup
-    aztecRollup -.->|"AZTEC (withdrawls)"| stkMan
+    stkMan -->|"initiateWithdraw<br/>(i.e. unstake)"| aztecRollup
+    aztecRollup -.->|"AZTEC (withdrawals)"| stkMan
 end
-    core -->|query available rewards| stkMan
+    core -->|getClaimableRewards| stkMan
     core -->|harvestRewards| stkMan
     aztecRollup -.->|"AZTEC rewards (coinbase)"| rewards
-    core -->|get rewards| rewards
+    core -->|withdrawToCore| rewards
 
 style user fill:#900
 style protocolOperator fill:#090
@@ -140,14 +140,11 @@ sequenceDiagram
     participant RV as RewardsVault
 
     OP->>C: rebalance
-    C->>SM: harvestRewards
-    loop for each sequencer address
-        SM->>SM: isRewardWorthClaiming?<br/>rewards>threshold and gas etc.
-        alt isRewardWorthClaiming == true
-            SM->>AR: claimSequencerRewards<br/>(permisionless call)
-            AR-->>RV: rewards transferred to RewardsVault
-        end
-    end
+    C->>SM: harvestRewards()
+    SM->>AR: claimSequencerRewards(to=RewardsVault)
+    AR-->>RV: AZTEC transferred
+    AR-->>SM: returns harvestedAmount
+    SM->>RV: postReceiveFundsHook(harvestedAmount)
 ```
 
 #### Process user withdrawal requests
@@ -188,13 +185,16 @@ sequenceDiagram
     OP->>C: rebalance
     Note over C: targetBuffer is the amount we want to keep liquid for withdrawals
     C->>C: stakeable = bufferedAssets - targetBuffer
-    loop while stakeable >= VALIDATOR_STAKE_UNIT
-        C->>SR: stake(amount = VALIDATOR_STAKE_UNIT)
-        SR->>AR: stake(VALIDATOR_STAKE_UNIT,<br/>Attester: nextValidatorKey,<br/>Withdrawer: StakingManager,<br/>Coinbase: RewardsVault)
-        AR-->>SR: validator activated
-        SR-->>C: staking position recorded
-        C->>C: update bufferedAssets and stakeable
+    C->>SR: stake(amount = stakeable)
+    SR->>AR: getActivationThreshold()
+    Note over SR: actualStake = min(amount, activationThreshold * queuedKeys)
+    SR->>C: transferFrom(core, actualStake)
+    SR->>AR: approve(actualStake)
+    loop for each attester to stake
+        SR->>AR: deposit(attester,<br/>withdrawer=StakingManager,<br/>BLS keys, moveWithRollup=true)
+        AR-->>SR: attester activated
     end
+    SR-->>C: stake executed (may be partial)
 ```
 
 #### Unstake Aztec
@@ -211,15 +211,17 @@ sequenceDiagram
     C->>WQ: totalPendingAssets
     WQ-->>C: totalPendingAssets
     C->>C: amountToUnstake = max(0, withdrawalRequestsAmount - bufferedAssets)
-    C->>stkMan: unStake(amountToUnstake)
-    stkMan->>stkMan: actualAmountToUnstake = max(0, amountToUnstake - pendingUnstakes)
-    loop while actualAmountToUnstake > 0
-        stkMan->>AR: initiateWithdrawal
-        stkMan->>stkMan: update actualAmountToUnstake
-        stkMan->>stkMan: update pendingUnstakes
+    C->>stkMan: unstake(amountToUnstake)
+    loop over activated attesters until enough
+        stkMan->>AR: getAttesterView(attester)
+        stkMan->>AR: initiateWithdraw(attester,<br/>withdrawer=StakingManager)
+        stkMan->>stkMan: move attester to pendingUnstakeRequests
     end
-    Note over stkMan,AR: Later, when AztecRollup processes the withdrawal
-    loop for each initiated withdrawal
-        AR-->>stkMan: transfer Aztec
+    Note over stkMan,AR: Later, once exits are exitable
+    C->>stkMan: getUnstakedFunds()
+    loop for each exitable pending attester
+        stkMan->>AR: finalizeWithdraw(attester)
+        AR-->>stkMan: AZTEC transferred
     end
+    stkMan-->>C: transfer claimed AZTEC
 ```

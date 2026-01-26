@@ -2,9 +2,8 @@
 
 | Section | Specification |
 | --- | --- |
-| **Purpose** | Receives validator coinbase rewards and exposes balance to core. |
-| **State Variables (typed)** | `address core`; `address treasury`; `uint256 totalRewards` |
-| **Events** | `RewardsReceived(uint256)`; `RewardsWithdrawn(uint256)` |
-| **Roles and Permissions** | `CORE_ROLE`, `DEFAULT_ADMIN_ROLE` |
-| **Key Functions (typed and role scoped)** | `function receiveRewards(uint256 amount)` — callable by StakingManager or AztecRollup; `function withdrawToCore(uint256 amount)` — only `CORE_ROLE`; `function balance() view returns(uint256)` — view; `function setTreasury(address t)` — only `DEFAULT_ADMIN_ROLE` |
-
+| **Purpose** | Custodies AZTEC rewards/fees sent from the Aztec rollup (via `claimSequencerRewards`) and allows `OllaCore` to withdraw them; supports a configurable `treasury` address for future fee routing. |
+| **State Variables (typed)** | `IERC20 rewardsToken`; `address core`; `address treasury` |
+| **Events** | `FundsReceived(uint256 amount)`; `RewardsWithdrawn(uint256 amount)`; `TreasuryUpdated(address oldTreasury,address newTreasury)` |
+| **Roles and Permissions** | `CORE_ROLE` (withdraw to core); `DEFAULT_ADMIN_ROLE` (set treasury) |
+| **Key Functions (typed and role scoped)** | `postReceiveFundsHook(uint256 amount)` — callable by `StakingManager` (and potentially `AztecRollup`) after funds are transferred; `withdrawToCore(uint256 amount)` — only `CORE_ROLE`; `setTreasury(address newTreasury)` — only `DEFAULT_ADMIN_ROLE`; `getAvailableFunds() view returns(uint256)`; `treasury() view returns(address)`; `core() view returns(address)`; `rewardsToken() view returns(IERC20)` |
