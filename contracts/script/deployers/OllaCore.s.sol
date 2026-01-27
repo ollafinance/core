@@ -5,8 +5,8 @@ import { BaseDeployer, console2 } from "../base/BaseDeployer.s.sol";
 import { DeployConfig } from "../config/Config.s.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { IStAztec } from "src/interfaces/IStAztec.sol";
-import { IStakingManager } from "src/interfaces/IStakingManager.sol";
+import { IStAztec } from "src/core/interfaces/IStAztec.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 /// @title OllaCoreDeployer
@@ -52,6 +52,8 @@ contract OllaCoreDeployer is BaseDeployer {
                 IERC20(asset),
                 IStAztec(stAztec),
                 IStakingManager(stakingManager),
+                config.protocolFeeBP,
+                config.treasuryFeeSplitBP,
                 config.governance,
                 config.withdrawalQueue,
                 config.rewardsVault,

@@ -3,9 +3,9 @@
 ## Changes
 
 ## Testing
-- [ ] Unit tests (`forge test --match-path "test/**/*.t.sol" --no-match-path "test/**/*.integration.sol"`)
-- [ ] Integration tests (`forge test --match-path "test/**/*.integration.sol"`)
-- [ ] Invariant tests (`forge test --match-path "test/**/*.invariant.sol"`)
+- [ ] Unit tests (`forge test --match-path "test/**/*.t.sol" --no-match-path "test/**/*.{integration,invariant}.t.sol"`)
+- [ ] Integration tests (`forge test --match-path "test/**/*.integration.t.sol"`)
+- [ ] Invariant tests (`forge test --match-path "test/**/*.invariant.t.sol"`)
 - [ ] solhint "src/**/*.sol"
 - [ ] slither . --config-file slither.config.json
 

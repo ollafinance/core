@@ -22,4 +22,4 @@ jobs:
       - name: Setup Soldeer dependencies
         uses: ./.github/actions/setup-soldeer
       - name: Forge unit tests
-        run: forge test --match-path "test/**/*.t.sol" --no-match-path "test/**/*.integration.sol"
+        run: forge test --match-path "test/**/*.t.sol" --no-match-path "test/**/*.{integration,invariant}.t.sol"
