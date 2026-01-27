@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
@@ -12,21 +13,123 @@ import { StAztec } from "src/core/StAztec.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 
 contract OllaCoreSafetyModuleHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
-                            CORE FUNCTIONS
+                             CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function exposedIncreaseRewardsVaultBalance(uint256 amount) external {
-        _increaseRewardsVaultBalance(amount);
+    function exposedApplyAccountingUpdates(
+        uint256 newStakedPrincipal,
+        uint256 newRewardsVaultBalance,
+        uint256 newRewardsDelta,
+        uint256 newSlashingDelta
+    ) external {
+        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
+    }
+}
+
+contract MockAccountingStakingManager is IStakingManager {
+    /*//////////////////////////////////////////////////////////////
+                                STATE
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 public claimableRewards;
+    uint256 public slashingDelta;
+    uint256 public totalStakedAmount;
+
+    /*//////////////////////////////////////////////////////////////
+                          TEST HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function setClaimableRewards(uint256 value) external {
+        claimableRewards = value;
     }
 
-    function exposedSetSlashingDelta(uint256 amount) external {
-        _setSlashingDelta(amount);
+    function setSlashingDelta(uint256 value) external {
+        slashingDelta = value;
     }
+
+    function setTotalStaked(uint256 value) external {
+        totalStakedAmount = value;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         CORE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function stake(uint256) external pure override { }
+
+    function unstake(uint256) external pure override { }
+
+    function cleanActivatedAttesters() external pure override { }
+
+    function getUnstakedFunds() external pure override returns (uint256 received) {
+        return received;
+    }
+
+    function harvestRewards() external pure override returns (uint256 harvested) {
+        return harvested;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         PROVIDER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function addKeysToProvider(KeyStore[] calldata) external pure override { }
+
+    function dripQueue(uint256) external pure override { }
+
+    function setProviderRewardsRecipient(address) external pure override { }
+
+    /*//////////////////////////////////////////////////////////////
+                             VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function getClaimableRewards() external view override returns (uint256) {
+        return claimableRewards;
+    }
+
+    function getSlashingDelta() external view override returns (uint256) {
+        return slashingDelta;
+    }
+
+    function totalStaked() external view override returns (uint256) {
+        return totalStakedAmount;
+    }
+
+    function getStakingState() external view override returns (StakingState memory) {
+        return StakingState({ stakedAmount: totalStakedAmount, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
+    }
+
+    function getQueueLength() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getProviderConfig() external pure override returns (ProviderConfig memory) {
+        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+    }
+
+    function getActivatedAttesterCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getPendingUnstakeCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function isUnstakePending(address) external pure override returns (bool) {
+        return false;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              INITIALIZER
+    //////////////////////////////////////////////////////////////*/
+
+    function initialize(IERC20, address, address, address, address, address, address) external pure override { }
 }
 
 contract OllaCoreSafetyModuleTest is Test {
@@ -49,13 +152,13 @@ contract OllaCoreSafetyModuleTest is Test {
     MockAztec internal asset;
     OllaCoreSafetyModuleHarness internal vault;
     StAztec internal stAztec;
-    MockStakingManager internal stakingManager;
+    MockAccountingStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     address internal governance;
     address internal admin;
     address internal guardian;
-    address internal rewardsVault;
+    MockRewardsVault internal rewardsVault;
     address internal operator;
     address internal alice;
 
@@ -71,12 +174,12 @@ contract OllaCoreSafetyModuleTest is Test {
         vault = OllaCoreSafetyModuleHarness(address(proxy));
 
         stAztec = new StAztec(address(vault));
-        stakingManager = new MockStakingManager();
+        stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         governance = makeAddr("governance");
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
-        rewardsVault = makeAddr("rewardsVault");
+        rewardsVault = new MockRewardsVault(asset, address(vault));
         operator = makeAddr("operator");
         alice = makeAddr("alice");
 
@@ -90,7 +193,7 @@ contract OllaCoreSafetyModuleTest is Test {
             0,
             governance,
             address(withdrawalQueue),
-            rewardsVault,
+            address(rewardsVault),
             address(safetyModule)
         );
 
@@ -159,7 +262,7 @@ contract OllaCoreSafetyModuleTest is Test {
         safetyModule.setDepositCap(cap);
 
         vm.prank(operator);
-        vault.exposedIncreaseRewardsVaultBalance(60 * DECIMALS);
+        vault.exposedApplyAccountingUpdates(0, 60 * DECIMALS, 0, 0);
 
         uint256 depositAmount = 100 * DECIMALS;
         asset.mint(alice, depositAmount);
@@ -180,7 +283,7 @@ contract OllaCoreSafetyModuleTest is Test {
     function test_UpdateAccounting_TriggersRateDropBreaker() external {
         _performDeposit(alice, 100 * DECIMALS);
 
-        vault.exposedSetSlashingDelta(10 * DECIMALS);
+        stakingManager.setSlashingDelta(10 * DECIMALS);
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
         emit CircuitBreakerTriggered(safetyModule.RATE_DROP());
