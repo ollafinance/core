@@ -284,18 +284,16 @@ contract OllaCore is
         // checks before accounting updates are safe.
         safetyModuleRef.checkAccountingLiveness();
 
-        (IOllaCore.FlowCounters memory flowsSnapshot, uint256 netFlows) = _readFlowsSnapshot();
-        (uint256 oldTotalAssets, uint256 oldRate) = _readLatestReport();
-
+        (IOllaCore.FlowCounters memory flowsSnapshot, uint256 netFlows) = _getFlowsSnapshot();
         (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal) =
-            _readStakingManagerState();
+            _getStakingManagerState();
         _validateSlashingDelta(slashingDelta);
 
-        uint256 rewardsVaultBalance = _readRewardsVaultBalance();
+        uint256 rewardsVaultBalance = _getRewardsVaultBalance();
 
         _applyAccountingUpdates(stakedPrincipal, rewardsVaultBalance, rewardsDelta, slashingDelta);
 
-        _finalizeAccountingUpdate(safetyModuleRef, flowsSnapshot, netFlows, oldTotalAssets, oldRate, currentRewards);
+        _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
         // slither-disable-end reentrancy-events
         // slither-disable-end reentrancy-benign
         // slither-disable-end reentrancy-no-eth
@@ -563,7 +561,7 @@ contract OllaCore is
         _accountingState.bufferedAssets = newValue;
     }
 
-    function _readStakingManagerState()
+    function _getStakingManagerState()
         internal
         returns (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal)
     {
@@ -577,26 +575,24 @@ contract OllaCore is
         return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal);
     }
 
-    function _finalizeAccountingUpdate(
+    function _computeAndFinalizeAccounting(
         ISafetyModule safetyModuleRef,
         IOllaCore.FlowCounters memory flowsSnapshot,
         uint256 netFlows,
-        uint256 oldTotalAssets,
-        uint256 oldRate,
         uint256 currentRewards
     ) internal {
-        IOllaCore.AccountingState memory updatedBuckets = _accountingState;
+        (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
         (
+            IOllaCore.AccountingState memory updatedBuckets,
             uint256 newTotalAssets,
             uint256 grossRewards,
             uint256 protocolFeeAssets,
             uint256 treasuryShares,
             uint256 providerShares,
             uint256 rate
-        ) = _computeAccountingOutputs(updatedBuckets, oldTotalAssets, netFlows);
+        ) = _computeAccountingOutputs(oldTotalAssets, netFlows);
 
-        safetyModuleRef.checkRateDrop(oldRate, rate);
-
+        _validateRateDrop(safetyModuleRef, oldRate, rate);
         _updateReportingSnapshots(
             newTotalAssets,
             rate,
@@ -606,9 +602,57 @@ contract OllaCore is
             flowsSnapshot.cumulativeWithdrawals,
             currentRewards
         );
+        _updateAccountingTimestamp(safetyModuleRef);
+        _emitAccountingReport(
+            updatedBuckets,
+            newTotalAssets,
+            rate,
+            grossRewards,
+            netFlows,
+            protocolFeeAssets,
+            treasuryShares,
+            providerShares
+        );
+    }
 
+    function _computeAccountingOutputs(uint256 oldTotalAssets, uint256 netFlows)
+        internal
+        returns (
+            IOllaCore.AccountingState memory updatedBuckets,
+            uint256 newTotalAssets,
+            uint256 grossRewards,
+            uint256 protocolFeeAssets,
+            uint256 treasuryShares,
+            uint256 providerShares,
+            uint256 rate
+        )
+    {
+        updatedBuckets = _accountingState;
+        newTotalAssets = _computeTotalAssets(updatedBuckets);
+        grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        (protocolFeeAssets, treasuryShares, providerShares) = _payoutOllaProtocolFees(grossRewards);
+        rate = _exchangeRate();
+        return (updatedBuckets, newTotalAssets, grossRewards, protocolFeeAssets, treasuryShares, providerShares, rate);
+    }
+
+    function _validateRateDrop(ISafetyModule safetyModuleRef, uint256 oldRate, uint256 rate) internal {
+        safetyModuleRef.checkRateDrop(oldRate, rate);
+    }
+
+    function _updateAccountingTimestamp(ISafetyModule safetyModuleRef) internal {
         safetyModuleRef.setLastAccountingTimestamp(block.timestamp);
+    }
 
+    function _emitAccountingReport(
+        IOllaCore.AccountingState memory updatedBuckets,
+        uint256 newTotalAssets,
+        uint256 rate,
+        uint256 grossRewards,
+        uint256 netFlows,
+        uint256 protocolFeeAssets,
+        uint256 treasuryShares,
+        uint256 providerShares
+    ) internal {
         emit AttestersStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
         emit AccountingUpdated(
             newTotalAssets,
@@ -622,44 +666,18 @@ contract OllaCore is
         );
     }
 
-    function _computeAccountingOutputs(
-        IOllaCore.AccountingState memory updatedBuckets,
-        uint256 oldTotalAssets,
-        uint256 netFlows
-    )
-        internal
-        returns (
-            uint256 newTotalAssets,
-            uint256 grossRewards,
-            uint256 protocolFeeAssets,
-            uint256 treasuryShares,
-            uint256 providerShares,
-            uint256 rate
-        )
-    {
-        newTotalAssets = _computeTotalAssets(updatedBuckets);
-        grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
-        (protocolFeeAssets, treasuryShares, providerShares) = _payoutOllaProtocolFees(grossRewards);
-        rate = _exchangeRate();
-        return (newTotalAssets, grossRewards, protocolFeeAssets, treasuryShares, providerShares, rate);
-    }
-
-    function _readFlowsSnapshot()
-        internal
-        view
-        returns (IOllaCore.FlowCounters memory flowsSnapshot, uint256 netFlows)
-    {
+    function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, uint256 netFlows) {
         flowsSnapshot = _flowCounters;
         (netFlows,,) = _computeNetFlows(flowsSnapshot);
         return (flowsSnapshot, netFlows);
     }
 
-    function _readLatestReport() internal view returns (uint256 totalAssets, uint256 exchangeRate) {
+    function _getLatestReport() internal view returns (uint256 totalAssets, uint256 exchangeRate) {
         IOllaCore.LatestReport memory report = _latestReport;
         return (report.totalAssets, report.exchangeRate);
     }
 
-    function _readRewardsVaultBalance() internal view returns (uint256 rewardsVaultBalance) {
+    function _getRewardsVaultBalance() internal view returns (uint256 rewardsVaultBalance) {
         return IRewardsVault(_modules.rewardsVault).balance();
     }
 
