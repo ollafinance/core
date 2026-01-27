@@ -1118,21 +1118,6 @@ contract StakingManagerHarvestTest is Test {
         assertEq(vaultBalanceAfter, vaultBalanceBefore, "Vault balance should not change (hook only)");
     }
 
-    function test_HarvestRewards_CallsPostReceiveFundsHook() external {
-        uint256 rewardAmount = 10 ether;
-        _setupAttestersWithRewards(1, rewardAmount);
-
-        uint256 totalReceivedBefore = rewardsVault.totalReceived();
-
-        vm.prank(core);
-        stakingManager.harvestRewards();
-
-        uint256 totalReceivedAfter = rewardsVault.totalReceived();
-        assertEq(
-            totalReceivedAfter - totalReceivedBefore, rewardAmount, "Hook should be called with correct reward amount"
-        );
-    }
-
     function test_HarvestRewards_EmitsRewardsHarvestedEvent() external {
         uint256 rewardAmount = 10 ether;
         _setupAttestersWithRewards(1, rewardAmount);

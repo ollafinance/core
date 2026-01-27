@@ -18,6 +18,7 @@ import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { IMockRewardsVault } from "src/core/mocks/IMockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -838,6 +839,28 @@ contract OllaCoreTest is Test {
 
         vm.prank(operator);
         vault.updateAccounting();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            HARVEST REWARDS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_HarvestRewards_CallsRecordRewardsWithCorrectAmount() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 rewardAmount = 5 * DECIMALS;
+        stakingManager.setHarvestedRewards(rewardAmount);
+
+        uint256 totalReceivedBefore = rewardsVault.totalReceived();
+
+        vm.prank(operator);
+        vault.harvestRewards();
+
+        uint256 totalReceivedAfter = rewardsVault.totalReceived();
+        assertEq(
+            totalReceivedAfter - totalReceivedBefore, rewardAmount, "recordRewards should be called with correct amount"
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
