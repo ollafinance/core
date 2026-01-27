@@ -7,6 +7,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
@@ -66,7 +67,7 @@ contract OllaCoreReentrancyTest is Test {
             treasuryFeeSplitBP,
             governance,
             address(withdrawalQueue),
-            rewardsVault,
+            IRewardsVault(rewardsVault),
             address(safetyModule)
         );
         withdrawalQueue.initialize(address(vault), governance);

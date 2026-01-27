@@ -11,6 +11,7 @@ import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
@@ -259,7 +260,7 @@ contract OllaCoreTest is Test {
             0,
             governance,
             address(withdrawalQueue),
-            address(rewardsVault),
+            rewardsVault,
             address(safetyModule)
         );
 
@@ -322,7 +323,7 @@ contract OllaCoreTest is Test {
             0,
             governance,
             address(withdrawalQueue),
-            address(rewardsVault),
+            rewardsVault,
             address(safetyModule)
         );
     }
@@ -884,7 +885,7 @@ contract OllaCoreTest is Test {
         address newGovernance = makeAddr("governance");
 
         address newWithdrawalQueue = makeAddr("withdrawalQueue");
-        address newRewardsVault = makeAddr("rewardsVault");
+        MockRewardsVault newRewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         address newSafetyModule = makeAddr("safetyModule");
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "asset_"));
@@ -938,7 +939,15 @@ contract OllaCoreTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "rewardsVault_"));
         newVault.initialize(
-            asset, newStAztec, newStakingManager, 0, 0, newGovernance, newWithdrawalQueue, address(0), newSafetyModule
+            asset,
+            newStAztec,
+            newStakingManager,
+            0,
+            0,
+            newGovernance,
+            newWithdrawalQueue,
+            IRewardsVault(address(0)),
+            newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "safetyModule_"));
@@ -989,7 +998,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     address internal governance;
-    address internal rewardsVault;
+    MockRewardsVault internal rewardsVault;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal alice;
@@ -1008,7 +1017,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
-        rewardsVault = makeAddr("rewardsVault");
+        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         safetyModule = new MockSafetyModule();
         withdrawalQueue = new MockWithdrawalQueue();
 
@@ -1020,7 +1029,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
             INITIAL_TREASURY_SPLIT_BP,
             governance,
             address(withdrawalQueue),
-            rewardsVault,
+            IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
 
@@ -1068,7 +1077,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
             )
         );
         vm.prank(alice);
-        vault.setRewardsVault(alice);
+        vault.setRewardsVault(IRewardsVault(alice));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1096,7 +1105,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
     function test_RevertWhen_RewardsVaultIsZero() external {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newRewardsVault"));
         vm.prank(governance);
-        vault.setRewardsVault(address(0));
+        vault.setRewardsVault(IRewardsVault(address(0)));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1146,7 +1155,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
         emit RewardsVaultUpdated(oldRewardsVault, newRewardsVault);
 
         vm.prank(governance);
-        vault.setRewardsVault(newRewardsVault);
+        vault.setRewardsVault(IRewardsVault(newRewardsVault));
 
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault updated");
     }
@@ -1245,7 +1254,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
         emit RewardsVaultUpdated(oldRewardsVault, newRewardsVault);
 
         vm.prank(governance);
-        vault.setRewardsVault(newRewardsVault);
+        vault.setRewardsVault(IRewardsVault(newRewardsVault));
 
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault fuzz");
     }
@@ -1322,7 +1331,7 @@ contract OllaCoreProtocolFeesTest is Test {
             TREASURY_FEE_SPLIT_BP,
             governance,
             address(withdrawalQueue),
-            address(rewardsVault),
+            IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
 

@@ -9,6 +9,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
@@ -396,7 +397,7 @@ contract OllaCoreInvariantTest is Test {
             0,
             governance,
             address(withdrawalQueue),
-            address(rewardsVault),
+            IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
 
@@ -572,7 +573,7 @@ contract OllaCoreDepositInvariantTest is Test {
             0,
             governance,
             address(withdrawalQueue),
-            rewardsVault,
+            IRewardsVault(rewardsVault),
             address(safetyModule)
         );
 
