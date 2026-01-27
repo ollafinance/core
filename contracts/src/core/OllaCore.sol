@@ -786,10 +786,10 @@ contract OllaCore is
             revert OllaCore__ZeroAddress("stakingManager_");
         }
         if (protocolFeeBP_ > BP_DIVISOR) {
-            revert OllaCore__InvalidAmount();
+            revert OllaCore__InvalidFeeBP(protocolFeeBP_);
         }
         if (treasuryFeeSplitBP_ > BP_DIVISOR) {
-            revert OllaCore__InvalidAmount();
+            revert OllaCore__InvalidSplitBP(treasuryFeeSplitBP_);
         }
         if (governance_ == address(0)) {
             revert OllaCore__ZeroAddress("governance_");
