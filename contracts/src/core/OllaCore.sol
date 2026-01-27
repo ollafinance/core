@@ -8,8 +8,10 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
+import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -70,9 +72,6 @@ contract OllaCore is
 
     /// @notice The treasury fee split in basis points.
     uint256 public treasuryFeeSplitBP;
-
-    uint256 private _stakeMessageId;
-    uint256 private _unstakeMessageId;
 
     mapping(address owner => uint256 requestId) private _activeRequestIds;
     mapping(uint256 requestId => address owner) private _requestOwners;
@@ -152,6 +151,8 @@ contract OllaCore is
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
+        // Timestamp is used only for reporting/accounting liveness.
+        // slither-disable-next-line timestamp
         _latestReport.timestamp = block.timestamp;
 
         _grantRole(DEFAULT_ADMIN_ROLE, governance_);
@@ -334,61 +335,30 @@ contract OllaCore is
         emit Rebalanced(0, 0, 0, 0);
     }
 
+    // Slither: accept multiple storage reads for readability in hot-path accounting.
+    // Slither: accept multiple storage reads for readability in withdrawal finalization.
     // slither-disable-start pess-multiple-storage-read
     // solhint-disable function-max-lines
     /// @notice Updates accounting snapshots and publishes the latest exchange rate data.
-    function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
+    function updateAccounting() external override onlyRole(OPERATOR_ROLE) nonReentrant {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         // slither-disable-start reentrancy-no-eth
         // slither-disable-start reentrancy-benign
         // slither-disable-start reentrancy-events
-        // SafetyModule is a trusted immutable dependency; calls are role-gated and non-reentrant, so fail-fast
-        // checks before accounting updates are safe.
+        // SafetyModule is a trusted dependency; updateAccounting is nonReentrant and role-gated, so
+        // fail-fast checks before accounting updates are safe.
         safetyModuleRef.checkAccountingLiveness();
 
-        IOllaCore.FlowCounters memory flowsSnapshot = _flowCounters;
-        (uint256 netFlows,,) = _computeNetFlows(flowsSnapshot);
+        (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
+        (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal) =
+            _getStakingManagerState();
+        _validateSlashingDelta(slashingDelta);
 
-        uint256 oldTotalAssets = _latestReport.totalAssets;
-        uint256 oldRate = _latestReport.exchangeRate;
+        uint256 rewardsVaultBalance = _getRewardsVaultBalance();
 
-        IOllaCore.AccountingState storage buckets = _accountingState;
-        _applyAccountingUpdates(
-            buckets.stakedPrincipal, buckets.rewardsVaultBalance, buckets.rewardsDelta, buckets.slashingDelta
-        );
+        _applyAccountingUpdates(stakedPrincipal, rewardsVaultBalance, rewardsDelta, slashingDelta);
 
-        IOllaCore.AccountingState memory updatedBuckets = _accountingState;
-        uint256 newTotalAssets = _computeTotalAssets(updatedBuckets);
-
-        uint256 grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
-        (uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares) =
-            _payoutOllaProtocolFees(grossRewards);
-        uint256 rate = _exchangeRate();
-
-        safetyModuleRef.checkRateDrop(oldRate, rate);
-
-        _updateReportingSnapshots(
-            newTotalAssets,
-            rate,
-            grossRewards,
-            netFlows,
-            flowsSnapshot.cumulativeDeposits,
-            flowsSnapshot.cumulativeWithdrawals
-        );
-
-        safetyModuleRef.setLastAccountingTimestamp(block.timestamp);
-
-        emit AttestersStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
-        emit AccountingUpdated(
-            newTotalAssets,
-            rate,
-            grossRewards,
-            netFlows,
-            protocolFeeAssets,
-            treasuryShares,
-            providerShares,
-            _latestReport.timestamp
-        );
+        _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
         // slither-disable-end reentrancy-events
         // slither-disable-end reentrancy-benign
         // slither-disable-end reentrancy-no-eth
@@ -397,6 +367,28 @@ contract OllaCore is
     // solhint-enable function-max-lines
 
     // slither-disable-end pess-multiple-storage-read
+
+    // TODO: Make internal when implementing rebalance
+    /// @notice Harvests sequencer rewards and updates the cumulative rewards counter.
+    /// @return harvested The amount harvested.
+    function harvestRewards()
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 harvested)
+    {
+        // StakingManager is a trusted dependency; harvest is role-gated and nonReentrant.
+        // slither-disable-next-line reentrancy-benign
+        uint256 received = _modules.stakingManager.harvestRewards();
+        harvested = received;
+        if (harvested != 0) {
+            _accountingState.cumulativeRewards += harvested;
+        }
+        emit RewardsHarvested(harvested);
+        return harvested;
+    }
 
     // slither-disable-start pess-multiple-storage-read
     /// @notice Operator-triggered withdrawal finalization hook.
@@ -422,6 +414,7 @@ contract OllaCore is
         _syncBufferedWithBalance();
 
         uint256 bufferedAssets = _accountingState.bufferedAssets;
+        // slither-disable-next-line timestamp
         if (available > bufferedAssets) {
             revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, available, bufferedAssets);
         }
@@ -588,22 +581,6 @@ contract OllaCore is
         return assets;
     }
 
-    // slither-disable-next-line dead-code
-    function _stake(uint256 amount) internal {
-        uint256 messageId = ++_stakeMessageId;
-        emit StakeRequested(messageId, amount);
-        _modules.stakingManager.stake(amount);
-        _syncBufferedWithBalance();
-    }
-
-    // slither-disable-next-line dead-code
-    function _unstake(uint256 amount) internal {
-        uint256 messageId = ++_unstakeMessageId;
-        emit UnstakeRequested(messageId, amount);
-        _modules.stakingManager.unstake(amount);
-        _syncBufferedWithBalance();
-    }
-
     function _increaseCumulativeDeposits(uint256 amount) internal {
         _flowCounters.cumulativeDeposits += amount;
     }
@@ -612,20 +589,26 @@ contract OllaCore is
         _flowCounters.cumulativeWithdrawals += amount;
     }
 
+    // Slither: using storage refs is clearer for snapshot update.
     // slither-disable-next-line pess-multiple-storage-read
     function _updateReportingSnapshots(
         uint256 total,
         uint256 rate,
         uint256 grossRewards,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 updatedCumulativeDeposits,
-        uint256 updatedCumulativeWithdrawals
+        uint256 updatedCumulativeWithdrawals,
+        uint256 rewardsSnapshot
     ) internal {
         IOllaCore.LatestReport storage report = _latestReport;
         report.totalAssets = total;
         report.exchangeRate = rate;
         report.grossRewards = grossRewards;
         report.netFlows = netFlows;
+        report.rewardsSnapshot = rewardsSnapshot;
+
+        // Timestamp is used only for reporting/accounting liveness.
+        // slither-disable-next-line timestamp
         report.timestamp = block.timestamp;
 
         IOllaCore.FlowCounters storage flows = _flowCounters;
@@ -633,28 +616,19 @@ contract OllaCore is
         flows.latestReportCumulativeWithdrawals = updatedCumulativeWithdrawals;
     }
 
+    // Slither: storage updates are grouped for clarity.
+    // slither-disable-next-line pess-multiple-storage-read
     function _applyAccountingUpdates(
         uint256 newStakedPrincipal,
         uint256 newRewardsVaultBalance,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) internal {
-        uint256 currentStaked = _accountingState.stakedPrincipal;
-        if (newStakedPrincipal > currentStaked) {
-            _increaseStakedPrincipal(newStakedPrincipal - currentStaked);
-        } else if (newStakedPrincipal < currentStaked) {
-            _decreaseStakedPrincipal(currentStaked - newStakedPrincipal);
-        }
-
-        uint256 currentRewardsVault = _accountingState.rewardsVaultBalance;
-        if (newRewardsVaultBalance > currentRewardsVault) {
-            _increaseRewardsVaultBalance(newRewardsVaultBalance - currentRewardsVault);
-        } else if (newRewardsVaultBalance < currentRewardsVault) {
-            _decreaseRewardsVaultBalance(currentRewardsVault - newRewardsVaultBalance);
-        }
-
-        _setRewardsDelta(newRewardsDelta);
-        _setSlashingDelta(newSlashingDelta);
+        IOllaCore.AccountingState storage stateSnapshot = _accountingState;
+        stateSnapshot.stakedPrincipal = newStakedPrincipal;
+        stateSnapshot.rewardsVaultBalance = newRewardsVaultBalance;
+        stateSnapshot.rewardsDelta = newRewardsDelta;
+        stateSnapshot.slashingDelta = newSlashingDelta;
     }
 
     function _increaseBuffered(uint256 amount) internal {
@@ -666,60 +640,151 @@ contract OllaCore is
         _accountingState.bufferedAssets = newValue;
     }
 
-    // slither-disable-next-line dead-code
-    function _increaseStakedPrincipal(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
-        if (amount == 0) {
-            revert OllaCore__InvalidAmount();
+    function _getStakingManagerState()
+        internal
+        returns (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal)
+    {
+        IOllaCore.Modules memory modules = _modules;
+        IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
+        uint256 claimableRewards = modules.stakingManager.getClaimableRewards();
+        currentRewards = accountingSnapshot.cumulativeRewards + claimableRewards;
+
+        uint256 latestReportRewards = _latestReport.rewardsSnapshot;
+        // Clamp signed delta; no timestamp-based control flow.
+        // slither-disable-next-line timestamp
+        int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(latestReportRewards);
+        // slither-disable-next-line timestamp
+        // Defensive: currentRewards should be non-decreasing, but clamp if a downstream module reports a drop.
+        // slither-disable-next-line timestamp
+        if (rewardsDeltaSigned > 0) {
+            rewardsDelta = SafeCast.toUint256(rewardsDeltaSigned);
         }
-        uint256 oldValue = _accountingState.stakedPrincipal;
-        uint256 newValue = oldValue + amount;
-        _accountingState.stakedPrincipal = newValue;
+        slashingDelta = modules.stakingManager.getSlashingDelta();
+        stakedPrincipal = modules.stakingManager.totalStaked();
+        return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal);
     }
 
-    // slither-disable-next-line dead-code
-    function _decreaseStakedPrincipal(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
-        if (amount == 0) {
-            revert OllaCore__InvalidAmount();
-        }
-        uint256 oldValue = _accountingState.stakedPrincipal;
-        if (amount > oldValue) {
-            revert OllaCore__InsufficientBucketBalance(Bucket.StakedPrincipal, amount, oldValue);
-        }
-        uint256 newValue = oldValue - amount;
-        _accountingState.stakedPrincipal = newValue;
+    function _computeAndFinalizeAccounting(
+        ISafetyModule safetyModuleRef,
+        IOllaCore.FlowCounters memory flowsSnapshot,
+        int256 netFlows,
+        uint256 currentRewards
+    ) internal {
+        (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
+        // Slither: external calls (stAztec mint + safety module) are trusted and guarded by nonReentrant entrypoints.
+        // slither-disable-next-line reentrancy-no-eth
+        // slither-disable-next-line reentrancy-benign
+        (
+            IOllaCore.AccountingState memory updatedBuckets,
+            uint256 newTotalAssets,
+            uint256 grossRewards,
+            uint256 protocolFeeAssets,
+            uint256 treasuryShares,
+            uint256 providerShares,
+            uint256 rate
+        ) = _computeAccountingOutputs(oldTotalAssets, netFlows);
+
+        IOllaCore.Modules memory modules = _modules;
+        uint256 queued = modules.withdrawalQueue.totalPendingAssets();
+        // slither-disable-next-line reentrancy-no-eth
+        safetyModuleRef.checkQueueRatio(queued, newTotalAssets);
+        _validateRateDrop(safetyModuleRef, oldRate, rate);
+        _updateReportingSnapshots(
+            newTotalAssets,
+            rate,
+            grossRewards,
+            netFlows,
+            flowsSnapshot.cumulativeDeposits,
+            flowsSnapshot.cumulativeWithdrawals,
+            currentRewards
+        );
+        _updateAccountingTimestamp(safetyModuleRef);
+        _emitAccountingReport(
+            updatedBuckets,
+            newTotalAssets,
+            rate,
+            grossRewards,
+            netFlows,
+            protocolFeeAssets,
+            treasuryShares,
+            providerShares
+        );
     }
 
-    // slither-disable-next-line dead-code
-    function _increaseRewardsVaultBalance(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
-        if (amount == 0) {
-            revert OllaCore__InvalidAmount();
-        }
-        uint256 oldValue = _accountingState.rewardsVaultBalance;
-        uint256 newValue = oldValue + amount;
-        _accountingState.rewardsVaultBalance = newValue;
+    function _computeAccountingOutputs(uint256 oldTotalAssets, int256 netFlows)
+        internal
+        returns (
+            IOllaCore.AccountingState memory updatedBuckets,
+            uint256 newTotalAssets,
+            uint256 grossRewards,
+            uint256 protocolFeeAssets,
+            uint256 treasuryShares,
+            uint256 providerShares,
+            uint256 rate
+        )
+    {
+        updatedBuckets = _accountingState;
+        newTotalAssets = _computeTotalAssets(updatedBuckets);
+        grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        (protocolFeeAssets, treasuryShares, providerShares) = _payoutOllaProtocolFees(grossRewards);
+        rate = _exchangeRate();
+        return (updatedBuckets, newTotalAssets, grossRewards, protocolFeeAssets, treasuryShares, providerShares, rate);
     }
 
-    // slither-disable-next-line dead-code
-    function _decreaseRewardsVaultBalance(uint256 amount) internal onlyRole(OPERATOR_ROLE) {
-        if (amount == 0) {
-            revert OllaCore__InvalidAmount();
-        }
-        uint256 oldValue = _accountingState.rewardsVaultBalance;
-        if (amount > oldValue) {
-            revert OllaCore__InsufficientBucketBalance(Bucket.RewardsVault, amount, oldValue);
-        }
-        uint256 newValue = oldValue - amount;
-        _accountingState.rewardsVaultBalance = newValue;
+    function _validateRateDrop(ISafetyModule safetyModuleRef, uint256 oldRate, uint256 rate) internal {
+        safetyModuleRef.checkRateDrop(oldRate, rate);
     }
 
-    // slither-disable-next-line dead-code
-    function _setRewardsDelta(uint256 newValue) internal onlyRole(OPERATOR_ROLE) {
-        _accountingState.rewardsDelta = newValue;
+    function _updateAccountingTimestamp(ISafetyModule safetyModuleRef) internal {
+        // Timestamp is used only for reporting/accounting liveness.
+        // slither-disable-next-line timestamp
+        safetyModuleRef.setLatestAccountingTimestamp(block.timestamp);
     }
 
-    // slither-disable-next-line dead-code
-    function _setSlashingDelta(uint256 newValue) internal onlyRole(OPERATOR_ROLE) {
-        _accountingState.slashingDelta = newValue;
+    function _emitAccountingReport(
+        IOllaCore.AccountingState memory updatedBuckets,
+        uint256 newTotalAssets,
+        uint256 rate,
+        uint256 grossRewards,
+        int256 netFlows,
+        uint256 protocolFeeAssets,
+        uint256 treasuryShares,
+        uint256 providerShares
+    ) internal {
+        emit AttestersStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
+        emit AccountingUpdated(
+            newTotalAssets,
+            rate,
+            grossRewards,
+            netFlows,
+            protocolFeeAssets,
+            treasuryShares,
+            providerShares,
+            _latestReport.timestamp
+        );
+    }
+
+    function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) {
+        flowsSnapshot = _flowCounters;
+        (netFlows,,) = _computeNetFlows(flowsSnapshot);
+        return (flowsSnapshot, netFlows);
+    }
+
+    function _getLatestReport() internal view returns (uint256 reportedTotalAssets, uint256 reportedExchangeRate) {
+        IOllaCore.LatestReport memory report = _latestReport;
+        return (report.totalAssets, report.exchangeRate);
+    }
+
+    function _getRewardsVaultBalance() internal view returns (uint256 rewardsVaultBalance) {
+        return IRewardsVault(_modules.rewardsVault).balance();
+    }
+
+    function _validateSlashingDelta(uint256 slashingDelta) internal view {
+        uint256 previousSlashingDelta = _accountingState.slashingDelta;
+        // slither-disable-next-line timestamp
+        if (slashingDelta < previousSlashingDelta) {
+            revert OllaCore__InvalidSlashingDelta(previousSlashingDelta, slashingDelta);
+        }
     }
 
     function _calculateProtocolFees(uint256 grossAssetRewards)
@@ -733,7 +798,7 @@ contract OllaCore is
 
         uint256 currentRate = _exchangeRate();
         uint256 protocolSharesTotal =
-            ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Ceil);
+            ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Floor);
 
         treasuryShares = protocolSharesTotal * treasuryFeeSplitBP / BP_DIVISOR;
         providerShares = protocolSharesTotal - treasuryShares;
@@ -744,6 +809,7 @@ contract OllaCore is
     function _syncBufferedWithBalance() internal view {
         uint256 buffered = _accountingState.bufferedAssets;
         uint256 actual = _modules.asset.balanceOf(address(this));
+        // slither-disable-next-line timestamp
         if (buffered != actual) {
             revert OllaCore__BufferedBalanceMismatch(buffered, actual);
         }
@@ -823,7 +889,7 @@ contract OllaCore is
     function _computeNetFlows(IOllaCore.FlowCounters memory flows)
         internal
         pure
-        returns (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
+        returns (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
     {
         netDeposits = flows.cumulativeDeposits > flows.latestReportCumulativeDeposits
             ? flows.cumulativeDeposits - flows.latestReportCumulativeDeposits
@@ -831,7 +897,7 @@ contract OllaCore is
         netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
             ? flows.cumulativeWithdrawals - flows.latestReportCumulativeWithdrawals
             : 0;
-        netFlows = netDeposits > netWithdrawals ? netDeposits - netWithdrawals : 0;
+        netFlows = SafeCast.toInt256(netDeposits) - SafeCast.toInt256(netWithdrawals);
         return (netFlows, netDeposits, netWithdrawals);
     }
 
@@ -845,13 +911,20 @@ contract OllaCore is
         return totalAssets_;
     }
 
-    function _computeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, uint256 netFlows)
+    function _computeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, int256 netFlows)
         internal
         pure
         returns (uint256 grossRewards)
     {
-        uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
-        grossRewards = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
+        int256 changeInAssets = SafeCast.toInt256(newTotalAssets) - SafeCast.toInt256(oldTotalAssets);
+        // Clamp signed delta; no timestamp-based control flow.
+        // slither-disable-next-line timestamp
+        // slither-disable-next-line timestamp
+        int256 grossRewardsSigned = changeInAssets - netFlows;
+        // slither-disable-next-line timestamp
+        if (grossRewardsSigned > 0) {
+            grossRewards = SafeCast.toUint256(grossRewardsSigned);
+        }
         return grossRewards;
     }
 }

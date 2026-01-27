@@ -63,6 +63,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev List of activated attester addresses.
     address[] private _activatedAttesters;
 
+    // Store what the attester has originally staked, i.e. activation threshold (as this is a changeable)
     /// @dev Mapping from attester to index in _activatedAttesters.
     mapping(address attester => uint256 index) private _attesterIndex;
 
@@ -75,6 +76,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @dev Mapping to check if an attester has a pending unstake.
     mapping(address attester => bool isPending) private _isUnstakePending;
+
+    /// @dev Cumulative slashing delta tracked across rollup snapshots.
+    uint256 private _cumulativeSlashingDelta;
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
@@ -263,6 +267,17 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         emit ProviderSet(_provider.admin, rewardsRecipient);
     }
 
+    /// @notice Returns the cumulative slashing delta from the rollup.
+    /// @return slashingDelta The cumulative slashing delta.
+    function getSlashingDelta() external override onlyRole(CORE_ROLE) returns (uint256 slashingDelta) {
+        (, IAztecRollup rollup) = _getRollup();
+        uint256 currentSlashingDelta = _computeSlashed(rollup);
+        if (currentSlashingDelta > _cumulativeSlashingDelta) {
+            _cumulativeSlashingDelta = currentSlashingDelta;
+        }
+        return _cumulativeSlashingDelta;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -292,6 +307,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     // slither-disable-end calls-loop,timestamp
+
+    /// @inheritdoc IStakingManager
+    function totalStaked() external view override returns (uint256 stakedTotal) {
+        // TODO: research if we can assume moving with rollup is safe
+        (, IAztecRollup rollup) = _getRollup();
+        stakedTotal = _computeStaked(rollup);
+        return stakedTotal;
+    }
 
     /// @inheritdoc IStakingManager
     function getQueueLength() external view override returns (uint256) {
@@ -560,6 +583,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             }
 
             // slither-disable-next-line timestamp
+            // Timestamp used only to gate exit readiness from the rollup state.
+            // slither-disable-next-line timestamp
             if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                 ++i;
                 continue;
@@ -636,6 +661,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             //   ZOMBIE - attester has been slashed too much to continue validating
             //   EXITING - provider has initiated an exit outside of StakingManager
             if (view_.exit.exists) {
+                // Timestamp used only to gate exit readiness from the rollup state.
+                // slither-disable-next-line timestamp
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                     state.pendingUnstakeAmount += view_.exit.amount;
                 } else {
@@ -660,6 +687,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             AttesterView memory view_ = rollup.getAttesterView(attester);
 
             if (view_.exit.exists) {
+                // Timestamp used only to gate exit readiness from the rollup state.
+                // slither-disable-next-line timestamp
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                     state.pendingUnstakeAmount += view_.exit.amount;
                 } else {
@@ -672,6 +701,25 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // slither-disable-end calls-loop,timestamp
 
+    function _computeStaked(IAztecRollup rollup) internal view returns (uint256 stakedTotal) {
+        uint256 activationThreshold = rollup.getActivationThreshold();
+        address[] storage activatedAttesters = _activatedAttesters;
+        address[] storage pendingUnstakeRequests = _pendingUnstakeRequests;
+
+        (stakedTotal,) = _accumulateAttestersDelta(rollup, activationThreshold, activatedAttesters, 0, 0);
+        (stakedTotal,) = _accumulateAttestersDelta(rollup, activationThreshold, pendingUnstakeRequests, stakedTotal, 0);
+        return stakedTotal;
+    }
+
+    function _computeSlashed(IAztecRollup rollup) internal view returns (uint256 slashingDelta) {
+        uint256 activationThreshold = rollup.getActivationThreshold();
+
+        (, slashingDelta) = _accumulateAttestersDelta(rollup, activationThreshold, _activatedAttesters, 0, 0);
+        (, slashingDelta) =
+            _accumulateAttestersDelta(rollup, activationThreshold, _pendingUnstakeRequests, 0, slashingDelta);
+        return slashingDelta;
+    }
+
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (msg.sender != governance) {
             revert StakingManager__UnauthorizedGovernance(msg.sender);
@@ -679,6 +727,30 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (newImplementation == address(0)) {
             revert StakingManager__ZeroAddress("newImplementation");
         }
+    }
+
+    // Rollup is trusted and loop bounded by attester set size.
+    // slither-disable-next-line calls-loop
+    function _accumulateAttestersDelta(
+        IAztecRollup rollup,
+        uint256 activationThreshold,
+        address[] storage attesters,
+        uint256 stakedTotal,
+        uint256 slashingDelta
+    ) internal view returns (uint256 updatedTotalStaked, uint256 updatedSlashingDelta) {
+        uint256 length = attesters.length;
+        for (uint256 i; i < length; ++i) {
+            AttesterView memory view_ = rollup.getAttesterView(attesters[i]);
+            (bool eligible, uint256 remaining) = _remainingStake(view_);
+            if (!eligible) {
+                continue;
+            }
+            stakedTotal += activationThreshold;
+            if (activationThreshold > remaining) {
+                slashingDelta += activationThreshold - remaining;
+            }
+        }
+        return (stakedTotal, slashingDelta);
     }
 
     /// @notice Calculates the attester count to stake to, bounded by available keys.
@@ -699,5 +771,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             attestersToStakeTo = availableKeys;
         }
         return attestersToStakeTo;
+    }
+
+    function _remainingStake(AttesterView memory view_) internal pure returns (bool eligible, uint256 remaining) {
+        if (view_.effectiveBalance > 0) {
+            return (true, view_.effectiveBalance);
+        }
+        if (view_.exit.exists) {
+            return (true, view_.exit.amount);
+        }
+        return (false, 0);
     }
 }

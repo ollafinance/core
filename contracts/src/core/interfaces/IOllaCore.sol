@@ -21,6 +21,7 @@ interface IOllaCore {
         uint256 rewardsVaultBalance;
         uint256 rewardsDelta;
         uint256 slashingDelta;
+        uint256 cumulativeRewards;
     }
 
     struct FlowCounters {
@@ -34,7 +35,8 @@ interface IOllaCore {
         uint256 totalAssets;
         uint256 exchangeRate;
         uint256 grossRewards;
-        uint256 netFlows;
+        int256 netFlows;
+        uint256 rewardsSnapshot;
         uint256 timestamp;
     }
 
@@ -133,7 +135,7 @@ interface IOllaCore {
         uint256 totalAssets,
         uint256 exchangeRate,
         uint256 grossRewards,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 protocolFeeAssets,
         uint256 treasuryShares,
         uint256 providerShares,
@@ -198,6 +200,9 @@ interface IOllaCore {
 
     /// @notice Thrown when deposits are blocked by the safety module pause.
     error OllaCore__SafetyModulePaused();
+
+    /// @notice Thrown when a slashing delta is invalid.
+    error OllaCore__InvalidSlashingDelta(uint256 previous, uint256 current);
 
     /// @notice Thrown when a fee basis points value exceeds maximum.
     error OllaCore__InvalidFeeBP(uint256 feeBP);
@@ -268,6 +273,10 @@ interface IOllaCore {
 
     /// @notice Operator-triggered accounting update hook.
     function updateAccounting() external;
+
+    /// @notice Operator-triggered rewards harvest hook.
+    /// @return harvested The amount harvested.
+    function harvestRewards() external returns (uint256 harvested);
 
     /// @notice Operator-triggered withdrawal finalization hook.
     /// @param available The available assets for withdrawals.

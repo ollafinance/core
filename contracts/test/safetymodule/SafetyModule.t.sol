@@ -21,7 +21,7 @@ contract SafetyModuleTest is Test {
     event RateDropLimitUpdated(uint256 minRateDropBps);
     event QueueRatioLimitUpdated(uint256 maxQueueRatioBps);
     event AccountingDelayUpdated(uint256 maxAccountingDelay);
-    event AccountingTimestampUpdated(uint256 lastAccountingTimestamp);
+    event AccountingTimestampUpdated(uint256 latestAccountingTimestamp);
 
     /*//////////////////////////////////////////////////////////////
                                  STATE
@@ -130,7 +130,7 @@ contract SafetyModuleTest is Test {
             )
         );
         vm.prank(alice);
-        safetyModule.setLastAccountingTimestamp(123);
+        safetyModule.setLatestAccountingTimestamp(123);
     }
 
     function test_Pause_Unpause_Authorized() public {
@@ -204,7 +204,7 @@ contract SafetyModuleTest is Test {
         emit AccountingTimestampUpdated(555);
 
         vm.prank(core);
-        safetyModule.setLastAccountingTimestamp(555);
+        safetyModule.setLatestAccountingTimestamp(555);
 
         assertEq(safetyModule.lastAccountingTimestamp(), 555, "last accounting timestamp should update");
     }

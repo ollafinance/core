@@ -192,6 +192,11 @@ interface IStakingManager {
     /// @param rewardsRecipient The new rewards recipient.
     function setProviderRewardsRecipient(address rewardsRecipient) external;
 
+    /// @notice Returns the cumulative slashing delta from the rollup.
+    /// @dev Only callable by CORE_ROLE.
+    /// @return slashingDelta The cumulative slashing delta.
+    function getSlashingDelta() external returns (uint256 slashingDelta);
+
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -200,6 +205,10 @@ interface IStakingManager {
     /// @dev Only callable by CORE_ROLE. Does not actually claim rewards.
     /// @return claimableRewards The total rewards claimalbe to rewards recipient.
     function getClaimableRewards() external view returns (uint256 claimableRewards);
+
+    /// @notice Returns the total staked principal across validator states.
+    /// @return stakedTotal The total staked principal.
+    function totalStaked() external view returns (uint256 stakedTotal);
 
     /// @notice Returns the current staking state by querying the rollup.
     /// @dev Iterates through all attesters and queries getAttesterView for each.

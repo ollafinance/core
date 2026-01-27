@@ -18,23 +18,16 @@ import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 
 contract OllaCoreUpgradeHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
-                            CORE FUNCTIONS
+                             CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function exposedIncreaseStakedPrincipal(uint256 amount) external {
-        _increaseStakedPrincipal(amount);
-    }
-
-    function exposedIncreaseRewardsVaultBalance(uint256 amount) external {
-        _increaseRewardsVaultBalance(amount);
-    }
-
-    function exposedSetRewardsDelta(uint256 newValue) external {
-        _setRewardsDelta(newValue);
-    }
-
-    function exposedSetSlashingDelta(uint256 newValue) external {
-        _setSlashingDelta(newValue);
+    function exposedApplyAccountingUpdates(
+        uint256 newStakedPrincipal,
+        uint256 newRewardsVaultBalance,
+        uint256 newRewardsDelta,
+        uint256 newSlashingDelta
+    ) external {
+        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
     }
 }
 
@@ -200,13 +193,7 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(requestId, 1, "request id starts at 1");
 
         vm.prank(operator);
-        vault.exposedIncreaseStakedPrincipal(4 * DECIMALS);
-        vm.prank(operator);
-        vault.exposedIncreaseRewardsVaultBalance(2 * DECIMALS);
-        vm.prank(operator);
-        vault.exposedSetRewardsDelta(1 * DECIMALS);
-        vm.prank(operator);
-        vault.exposedSetSlashingDelta(1 * DECIMALS);
+        vault.exposedApplyAccountingUpdates(4 * DECIMALS, 2 * DECIMALS, 1 * DECIMALS, 1 * DECIMALS);
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 totalAssetsBefore = vault.totalAssets();

@@ -1244,7 +1244,7 @@ contract StakingManagerHarvestTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    GET CLAIMABLE REWARDS TESTS
+                     GET CLAIMABLE REWARDS TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_GetClaimableRewards_ReturnsZeroWithNoAttesters() external {
@@ -1307,6 +1307,73 @@ contract StakingManagerHarvestTest is Test {
         );
         vm.prank(alice);
         stakingManager.getClaimableRewards();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        SLASHING DELTA TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetSlashingDelta_ReturnsZeroWithNoAttesters() external {
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 0, "Should be 0 with no attesters");
+    }
+
+    function test_GetSlashingDelta_ComputesFromActivatedAttesters() external {
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(2);
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 10 ether, block.timestamp);
+
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 10 ether, "Should include slashing from activated attesters");
+        assertEq(
+            stakingManager.totalStaked(), 2 * ACTIVATION_THRESHOLD, "totalStaked counts eligible activated attesters"
+        );
+    }
+
+    function test_GetSlashingDelta_IncludesPendingUnstakeRequests() external {
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(2);
+
+        vm.startPrank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 15 ether, block.timestamp);
+
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 15 ether, "Should include slashing from pending attesters");
+        assertEq(
+            stakingManager.totalStaked(), 2 * ACTIVATION_THRESHOLD, "totalStaked counts activated and pending attesters"
+        );
+    }
+
+    function test_GetSlashingDelta_MonotonicCumulative() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingManager.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 10 ether, block.timestamp);
+
+        vm.prank(core);
+        uint256 first = stakingManager.getSlashingDelta();
+        assertEq(first, 10 ether, "initial slashing captured");
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        vm.prank(core);
+        uint256 second = stakingManager.getSlashingDelta();
+        assertEq(second, first, "cumulative slashing does not decrease");
     }
 
     /*//////////////////////////////////////////////////////////////
