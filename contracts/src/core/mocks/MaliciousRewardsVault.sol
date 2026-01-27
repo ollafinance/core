@@ -7,7 +7,7 @@ import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IMaliciousRewardsVault } from "src/core/mocks/IMaliciousRewardsVault.sol";
 
 /// @title MaliciousRewardsVault
-/// @notice Test-only rewards vault that attempts reentrancy in postReceiveFundsHook.
+/// @notice Test-only rewards vault that attempts reentrancy in recordRewards.
 /// @author Olla Core contributors
 contract MaliciousRewardsVault is IMaliciousRewardsVault {
     using Address for address;
@@ -35,7 +35,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         revert MaliciousRewardsVault__NoInitializer();
     }
 
-    /// @notice Configure the call attempted from `postReceiveFundsHook`.
+    /// @notice Configure the call attempted from `recordRewards`.
     /// @param target The contract to call.
     /// @param data The calldata to use.
     /// @param enabled Whether to enable the reentrancy attempt.
@@ -46,15 +46,15 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     }
 
     /// @notice Hook called after receiving rewards.
-    /// @param amount The amount received.
-    function postReceiveFundsHook(uint256 amount) external override {
+    /// @param expectedRewards The amount of rewards transferred.
+    function recordRewards(uint256 expectedRewards) external override {
         if (_reenterOnHook) {
             _reenterOnHook = false;
             _reentryTarget.functionCall(_reentryCalldata);
         }
-        _totalReceived += amount;
+        _totalReceived += expectedRewards;
         _latestRecordedRewardsAmount = REWARDS_TOKEN.balanceOf(address(this));
-        emit RewardsRecorded(amount);
+        emit RewardsRecorded(expectedRewards);
     }
 
     /// @notice Withdraw rewards to core.
@@ -83,7 +83,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         return REWARDS_TOKEN;
     }
 
-    /// @notice Return the total amount passed to `postReceiveFundsHook`.
+    /// @notice Return the total amount passed to `recordRewards`.
     /// @return The total received.
     function totalReceived() external view override returns (uint256) {
         return _totalReceived;

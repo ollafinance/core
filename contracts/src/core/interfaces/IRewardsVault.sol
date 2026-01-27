@@ -52,10 +52,10 @@ interface IRewardsVault {
     /// @param defaultAdmin_ The default admin for role management.
     function initialize(IERC20 rewardsToken_, address core_, address defaultAdmin_) external;
 
-    /// @notice Hook called after receiving funds from external sources.
-    /// @dev Can be called by StakingManager or AztecRollup directly after reward transfer.
-    /// @param amount The amount of funds received.
-    function postReceiveFundsHook(uint256 amount) external;
+    /// @notice Hook called after rewards are transferred to the vault. Updates internal accounting.
+    /// @dev Only callable by addresses with CORE_ROLE.
+    /// @param expectedRewards The amount of rewards transferred.
+    function recordRewards(uint256 expectedRewards) external;
 
     /// @notice Withdraws all available rewards to the core contract.
     /// @dev Only callable by addresses with CORE_ROLE.

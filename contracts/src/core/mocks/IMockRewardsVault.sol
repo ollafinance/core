@@ -22,11 +22,11 @@ interface IMockRewardsVault is IRewardsVault {
                           TEST HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets whether postReceiveFundsHook should fail (test helper).
+    /// @notice Sets whether recordRewards should fail (test helper).
     /// @param shouldFail Whether the hook should revert.
     function setHookShouldFail(bool shouldFail) external;
 
-    /// @notice Returns total funds received via postReceiveFundsHook (test helper).
+    /// @notice Returns total funds received via recordRewards (test helper).
     /// @return The total amount received.
     function totalReceived() external view returns (uint256);
 }

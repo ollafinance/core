@@ -16,7 +16,7 @@ interface IMaliciousRewardsVault is IRewardsVault {
     /// @param enabled Whether reentrancy is enabled.
     function configureReentry(address target, bytes calldata data, bool enabled) external;
 
-    /// @notice Returns the cumulative amount passed to `postReceiveFundsHook`.
+    /// @notice Returns the cumulative amount passed to `recordRewards`.
     /// @return The cumulative amount.
     function totalReceived() external view returns (uint256);
 }
