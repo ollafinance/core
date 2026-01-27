@@ -303,6 +303,7 @@ contract OllaCore is
 
     // slither-disable-end pess-multiple-storage-read
 
+    // TODO: Make internal when implementing rebalance
     /// @notice Harvests sequencer rewards and updates the cumulative rewards counter.
     /// @return harvested The amount harvested.
     function harvestRewards()

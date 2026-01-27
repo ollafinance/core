@@ -63,6 +63,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev List of activated attester addresses.
     address[] private _activatedAttesters;
 
+    // Store what the attester has originally staked, i.e. activation threshold (as this is a changeable)
     /// @dev Mapping from attester to index in _activatedAttesters.
     mapping(address attester => uint256 index) private _attesterIndex;
 
