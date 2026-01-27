@@ -62,13 +62,10 @@ contract MockRewardsVault is IMockRewardsVault {
     }
 
     /// @inheritdoc IRewardsVault
-    function withdrawToCore(uint256 amount) external override {
+    function withdrawToCore() external override {
         uint256 available = REWARDS_TOKEN.balanceOf(address(this));
-        if (amount > available) {
-            revert RewardsVault__InsufficientBalance(amount, available);
-        }
-        REWARDS_TOKEN.transfer(CORE_ADDRESS, amount);
-        emit RewardsWithdrawn(amount);
+        REWARDS_TOKEN.transfer(CORE_ADDRESS, available);
+        emit RewardsWithdrawn(available);
     }
 
     /// @inheritdoc IRewardsVault

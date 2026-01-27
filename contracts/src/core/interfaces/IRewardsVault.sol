@@ -49,10 +49,9 @@ interface IRewardsVault {
     /// @param amount The amount of funds received.
     function postReceiveFundsHook(uint256 amount) external;
 
-    /// @notice Withdraws rewards to the core contract.
+    /// @notice Withdraws all available rewards to the core contract.
     /// @dev Only callable by addresses with CORE_ROLE.
-    /// @param amount The amount of rewards to withdraw.
-    function withdrawToCore(uint256 amount) external;
+    function withdrawToCore() external;
 
     /// @notice Sets the treasury address.
     /// @dev Only callable by DEFAULT_ADMIN_ROLE.
