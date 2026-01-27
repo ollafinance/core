@@ -39,7 +39,7 @@ interface IRewardsVault {
     /// @notice Thrown when amount is zero.
     error RewardsVault__ZeroAmount();
 
-    /// @notice Thrown when a caller is not authorized governance.
+    /// @notice Thrown when there is a balance mismatch.
     error RewardsVault__BalanceMismatch();
 
     /*//////////////////////////////////////////////////////////////
