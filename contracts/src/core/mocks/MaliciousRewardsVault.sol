@@ -17,17 +17,15 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     /// @notice The core contract address.
     address public immutable CORE_ADDRESS;
 
-    address private _treasury;
     uint256 private _totalReceived;
 
     address private _reentryTarget;
     bytes private _reentryCalldata;
     bool private _reenterOnHook;
 
-    constructor(IERC20 rewardsToken_, address coreAddress_, address treasuryAddress_) {
+    constructor(IERC20 rewardsToken_, address coreAddress_)
         REWARDS_TOKEN = rewardsToken_;
         CORE_ADDRESS = coreAddress_;
-        _treasury = treasuryAddress_;
     }
 
     /// @notice Configure the call attempted from `postReceiveFundsHook`.
@@ -58,27 +56,10 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         emit RewardsWithdrawn(available);
     }
 
-    /// @notice Set the treasury address.
-    /// @param newTreasury The new treasury.
-    function setTreasury(address newTreasury) external override {
-        if (newTreasury == address(0)) {
-            revert RewardsVault__ZeroAddress("treasury");
-        }
-        address oldTreasury = _treasury;
-        _treasury = newTreasury;
-        emit TreasuryUpdated(oldTreasury, newTreasury);
-    }
-
     /// @notice Return the available rewards token balance.
     /// @return The available balance.
     function balance() external view override returns (uint256) {
         return REWARDS_TOKEN.balanceOf(address(this));
-    }
-
-    /// @notice Return the treasury address.
-    /// @return The treasury address.
-    function treasury() external view override returns (address) {
-        return _treasury;
     }
 
     /// @notice Return the core address.
