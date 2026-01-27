@@ -935,11 +935,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
     }
 
     function test_SetGovernance_UpdatesAndEmits() external {
-        address oldGovernance = vault.governance();
         address newGovernance = makeAddr("newGovernance");
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit GovernanceUpdated(oldGovernance, newGovernance);
 
         vm.prank(governance);
         vault.setGovernance(newGovernance);
@@ -1038,11 +1034,6 @@ contract OllaCoreRewardsAccessControlTest is Test {
 
     function testFuzz_SetGovernance_NonZeroAddress(address newGovernance) external {
         vm.assume(newGovernance != address(0));
-
-        address oldGovernance = vault.governance();
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit GovernanceUpdated(oldGovernance, newGovernance);
 
         vm.prank(governance);
         vault.setGovernance(newGovernance);

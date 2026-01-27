@@ -302,18 +302,18 @@ contract OllaCore is
         _modules.governance = newGovernance;
 
         // Transfer governance-related roles from the old governance to the new one
-        if (oldGovernance != address(0) && oldGovernance != newGovernance) {
-            // Revoke roles from the old governance address
-            revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-            revokeRole(GUARDIAN_ROLE, oldGovernance);
-            revokeRole(OPERATOR_ROLE, oldGovernance);
-        }
-
-        // Grant roles to the new governance address
         if (newGovernance != oldGovernance) {
-            grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-            grantRole(GUARDIAN_ROLE, newGovernance);
-            grantRole(OPERATOR_ROLE, newGovernance);
+            // Grant roles to the new governance address first (before revoking from old)
+            _grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            _grantRole(GUARDIAN_ROLE, newGovernance);
+            _grantRole(OPERATOR_ROLE, newGovernance);
+
+            // Revoke roles from the old governance address
+            if (oldGovernance != address(0)) {
+                _revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+                _revokeRole(GUARDIAN_ROLE, oldGovernance);
+                _revokeRole(OPERATOR_ROLE, oldGovernance);
+            }
         }
         emit GovernanceUpdated(oldGovernance, newGovernance);
     }
