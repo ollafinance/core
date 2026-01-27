@@ -48,7 +48,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
             _reentryTarget.functionCall(_reentryCalldata);
         }
         _totalReceived += amount;
-        emit FundsReceived(amount);
+        emit RewardsRecorded(amount);
     }
 
     /// @notice Withdraw rewards to core.
@@ -75,7 +75,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
 
     /// @notice Return the available rewards token balance.
     /// @return The available balance.
-    function getAvailableFunds() external view override returns (uint256) {
+    function balance() external view override returns (uint256) {
         return REWARDS_TOKEN.balanceOf(address(this));
     }
 
