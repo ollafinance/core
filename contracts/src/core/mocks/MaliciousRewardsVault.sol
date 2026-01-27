@@ -23,7 +23,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     bytes private _reentryCalldata;
     bool private _reenterOnHook;
 
-    constructor(IERC20 rewardsToken_, address coreAddress_)
+    constructor(IERC20 rewardsToken_, address coreAddress_) {
         REWARDS_TOKEN = rewardsToken_;
         CORE_ADDRESS = coreAddress_;
     }
