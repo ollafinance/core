@@ -79,6 +79,8 @@ contract OllaCoreUpgradeTest is Test {
     OllaCoreUpgradeHarness internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
+    uint256 internal protocolFeeBP;
+    uint256 internal treasuryFeeSplitBP;
     address internal governance;
     address internal alice;
     address internal bob;
@@ -106,8 +108,19 @@ contract OllaCoreUpgradeTest is Test {
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
 
+        protocolFeeBP = 500;
+        treasuryFeeSplitBP = 5_000;
+
         vault.initialize(
-            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
+            asset,
+            stAztec,
+            stakingManager,
+            protocolFeeBP,
+            treasuryFeeSplitBP,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
         );
 
         alice = makeAddr("alice");

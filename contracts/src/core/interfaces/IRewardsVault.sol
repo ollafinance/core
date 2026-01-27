@@ -11,9 +11,9 @@ interface IRewardsVault {
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Emitted when funds are received.
-    /// @param amount The amount of funds received.
-    event FundsReceived(uint256 indexed amount);
+    /// @notice Emitted when rewards are recorded.
+    /// @param amount The amount of rewards recorded.
+    event RewardsRecorded(uint256 indexed amount);
 
     /// @notice Emitted when rewards are withdrawn to core.
     /// @param amount The amount of rewards withdrawn.
@@ -61,7 +61,7 @@ interface IRewardsVault {
 
     /// @notice Returns the current available funds.
     /// @return The balance of funds held in the vault.
-    function getAvailableFunds() external view returns (uint256);
+    function balance() external view returns (uint256);
 
     /// @notice Returns the treasury address.
     /// @return The treasury address.

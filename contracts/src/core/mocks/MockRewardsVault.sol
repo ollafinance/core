@@ -58,7 +58,7 @@ contract MockRewardsVault is IMockRewardsVault {
             revert MockRewardsVault__HookFailed();
         }
         _totalReceived += amount;
-        emit FundsReceived(amount);
+        emit RewardsRecorded(amount);
     }
 
     /// @inheritdoc IRewardsVault
@@ -95,7 +95,7 @@ contract MockRewardsVault is IMockRewardsVault {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IRewardsVault
-    function getAvailableFunds() external view override returns (uint256) {
+    function balance() external view override returns (uint256) {
         return REWARDS_TOKEN.balanceOf(address(this));
     }
 

@@ -119,6 +119,7 @@ contract OllaCoreTest is Test {
         uint256 assetsExpected,
         uint256 exchangeRate
     );
+    event OllaProtocolFeesPaid(uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares);
 
     /*//////////////////////////////////////////////////////////////
                              CONSTANTS
@@ -162,7 +163,15 @@ contract OllaCoreTest is Test {
         withdrawalQueue = new MockWithdrawalQueue();
 
         vault.initialize(
-            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
         );
 
         alice = makeAddr("alice");
@@ -217,7 +226,15 @@ contract OllaCoreTest is Test {
     function test_RevertWhen_Reinitialize() external {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         vault.initialize(
-            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
         );
     }
 
@@ -696,6 +713,8 @@ contract OllaCoreTest is Test {
             IERC20(address(0)),
             newStAztec,
             newStakingManager,
+            0,
+            0,
             newGovernance,
             newWithdrawalQueue,
             newRewardsVault,
@@ -707,6 +726,8 @@ contract OllaCoreTest is Test {
             asset,
             IStAztec(address(0)),
             newStakingManager,
+            0,
+            0,
             newGovernance,
             newWithdrawalQueue,
             newRewardsVault,
@@ -718,6 +739,8 @@ contract OllaCoreTest is Test {
             asset,
             newStAztec,
             IStakingManager(address(0)),
+            0,
+            0,
             newGovernance,
             newWithdrawalQueue,
             newRewardsVault,
@@ -726,22 +749,22 @@ contract OllaCoreTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "governance_"));
         newVault.initialize(
-            asset, newStAztec, newStakingManager, address(0), newWithdrawalQueue, newRewardsVault, newSafetyModule
+            asset, newStAztec, newStakingManager, 0, 0, address(0), newWithdrawalQueue, newRewardsVault, newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "withdrawalQueue_"));
         newVault.initialize(
-            asset, newStAztec, newStakingManager, newGovernance, address(0), newRewardsVault, newSafetyModule
+            asset, newStAztec, newStakingManager, 0, 0, newGovernance, address(0), newRewardsVault, newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "rewardsVault_"));
         newVault.initialize(
-            asset, newStAztec, newStakingManager, newGovernance, newWithdrawalQueue, address(0), newSafetyModule
+            asset, newStAztec, newStakingManager, 0, 0, newGovernance, newWithdrawalQueue, address(0), newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "safetyModule_"));
         newVault.initialize(
-            asset, newStAztec, newStakingManager, newGovernance, newWithdrawalQueue, newRewardsVault, address(0)
+            asset, newStAztec, newStakingManager, 0, 0, newGovernance, newWithdrawalQueue, newRewardsVault, address(0)
         );
     }
 
@@ -757,5 +780,190 @@ contract OllaCoreTest is Test {
         assertEq(shares, assets, "shares minted at 1:1");
         assertEq(stAztec.balanceOf(alice), shares, "shares balance");
         assertEq(vault.totalAssets(), assets, "assets buffered");
+    }
+}
+
+contract OllaCoreProtocolFeesTest is Test {
+    using Math for uint256;
+
+    /*//////////////////////////////////////////////////////////////
+                               EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event AccountingUpdated(
+        uint256 totalAssets,
+        uint256 exchangeRate,
+        uint256 grossRewards,
+        uint256 netFlows,
+        uint256 protocolFeeAssets,
+        uint256 treasuryShares,
+        uint256 providerShares,
+        uint256 timestamp
+    );
+    event AttestersStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
+    event OllaProtocolFeesPaid(uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares);
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant DECIMALS = 1e18;
+    uint256 internal constant PROTOCOL_FEE_BP = 500;
+    uint256 internal constant TREASURY_FEE_SPLIT_BP = 5_000;
+    uint256 internal constant BP_DIVISOR = 10_000;
+
+    /*//////////////////////////////////////////////////////////////
+                           TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    MockAztec internal asset;
+    OllaCoreHarness internal vault;
+    StAztec internal stAztec;
+    MockStakingManager internal stakingManager;
+    address internal governance;
+    address internal rewardsVault;
+    MockSafetyModule internal safetyModule;
+    MockWithdrawalQueue internal withdrawalQueue;
+    address internal operator;
+    address internal alice;
+
+    /*//////////////////////////////////////////////////////////////
+                                 SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCoreHarness coreImplementation = new OllaCoreHarness();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCoreHarness(address(proxy));
+
+        stAztec = new StAztec(address(vault));
+        stakingManager = new MockStakingManager();
+        governance = makeAddr("governance");
+        rewardsVault = makeAddr("rewardsVault");
+        safetyModule = new MockSafetyModule();
+        operator = makeAddr("operator");
+        withdrawalQueue = new MockWithdrawalQueue();
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            PROTOCOL_FEE_BP,
+            TREASURY_FEE_SPLIT_BP,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        alice = makeAddr("alice");
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vault.grantRole(operatorRole, address(this));
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
+        asset.mint(owner, assets);
+        vm.prank(owner);
+        asset.approve(address(vault), assets);
+        vm.prank(owner);
+        shares = vault.deposit(assets, owner);
+        return shares;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                               TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_UpdateAccounting_PaysProtocolFeesAndMintsSplitShares() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 rewards = 20 * DECIMALS;
+
+        uint256 sharesMinted = _performDeposit(alice, depositAmount);
+        assertEq(sharesMinted, depositAmount, "deposit mints 1:1 at zero supply");
+
+        vm.prank(operator);
+        vault.exposedSetRewardsDelta(rewards);
+
+        uint256 oldSupply = stAztec.totalSupply();
+        uint256 oldGovShares = stAztec.balanceOf(governance);
+        uint256 oldProviderShares = stAztec.balanceOf(rewardsVault);
+
+        uint256 expectedTotalAssets = depositAmount + rewards;
+        uint256 grossRewards = rewards;
+        uint256 protocolFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+
+        uint256 rateBeforeRewards = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Ceil);
+        uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
+        uint256 providerShares = protocolSharesTotal - treasuryShares;
+
+        uint256 expectedRateAfter =
+            expectedTotalAssets.mulDiv(DECIMALS, oldSupply + protocolSharesTotal, Math.Rounding.Floor);
+        uint256 expectedTimestamp = block.timestamp;
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit OllaProtocolFeesPaid(protocolFeeAssets, treasuryShares, providerShares);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit AttestersStateRead(rewards, 0, expectedTimestamp);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit AccountingUpdated(
+            expectedTotalAssets,
+            expectedRateAfter,
+            grossRewards,
+            depositAmount,
+            protocolFeeAssets,
+            treasuryShares,
+            providerShares,
+            expectedTimestamp
+        );
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "protocol fee shares minted");
+        assertEq(stAztec.balanceOf(governance), oldGovShares + treasuryShares, "treasury shares minted");
+        assertEq(stAztec.balanceOf(rewardsVault), oldProviderShares + providerShares, "provider shares minted");
+    }
+
+    function test_UpdateAccounting_ProtocolFeeSplitRoundsDownTreasuryAndKeepsRemainder() external {
+        uint256 depositAmount = 100 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        // Pick rewards that are very likely to produce an odd protocolSharesTotal (ceil rounding)
+        // so treasury floor split leaves a remainder to the provider.
+        uint256 rewards = 1 * DECIMALS + 1;
+        vm.prank(operator);
+        vault.exposedSetRewardsDelta(rewards);
+
+        uint256 oldSupply = stAztec.totalSupply();
+
+        uint256 expectedTotalAssets = depositAmount + rewards;
+        uint256 protocolFeeAssets = rewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 rateBeforeRewards = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Ceil);
+
+        uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
+        uint256 providerShares = protocolSharesTotal - treasuryShares;
+
+        // Invariant: split adds up exactly, and provider keeps any remainder from floor split.
+        assertEq(treasuryShares + providerShares, protocolSharesTotal, "split sums to total");
+        assertLe(treasuryShares, providerShares + 1, "treasury floor split at 50/50");
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury minted (from zero)");
+        assertEq(stAztec.balanceOf(rewardsVault), providerShares, "provider minted (from zero)");
     }
 }
