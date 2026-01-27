@@ -300,6 +300,21 @@ contract OllaCore is
         }
         address oldGovernance = _modules.governance;
         _modules.governance = newGovernance;
+
+        // Transfer governance-related roles from the old governance to the new one
+        if (oldGovernance != address(0) && oldGovernance != newGovernance) {
+            // Revoke roles from the old governance address
+            revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+            revokeRole(GUARDIAN_ROLE, oldGovernance);
+            revokeRole(OPERATOR_ROLE, oldGovernance);
+        }
+
+        // Grant roles to the new governance address
+        if (newGovernance != oldGovernance) {
+            grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            grantRole(GUARDIAN_ROLE, newGovernance);
+            grantRole(OPERATOR_ROLE, newGovernance);
+        }
         emit GovernanceUpdated(oldGovernance, newGovernance);
     }
 
