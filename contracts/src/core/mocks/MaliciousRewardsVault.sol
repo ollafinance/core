@@ -31,8 +31,9 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         CORE_ADDRESS = coreAddress_;
     }
 
+    /// @inheritdoc IRewardsVault
     function initialize(IERC20, address, address) external override {
-        revert("MaliciousRewardsVault: no initializer");
+        revert MaliciousRewardsVault__NoInitializer();
     }
 
     /// @notice Configure the call attempted from `postReceiveFundsHook`.

@@ -49,8 +49,9 @@ contract MockRewardsVault is IMockRewardsVault {
         CORE_ADDRESS = coreAddress;
     }
 
+    /// @inheritdoc IRewardsVault
     function initialize(IERC20, address, address) external override {
-        revert("MockRewardsVault: no initializer");
+        revert MockRewardsVault__NoInitializer();
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -7,6 +7,9 @@ import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 /// @notice Test-only interface for configuring reentrancy behavior on a rewards vault.
 /// @author Olla Core contributors
 interface IMaliciousRewardsVault is IRewardsVault {
+    /// @notice Thrown when initialize is called (not allowed in mock).
+    error MaliciousRewardsVault__NoInitializer();
+
     /// @notice Configure the call to perform during a reentrancy attempt.
     /// @param target The contract to call.
     /// @param data The calldata to use.
