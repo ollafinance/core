@@ -27,7 +27,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     //////////////////////////////////////////////////////////////*/
 
     /// @notice The rewards token (same as staking asset).
-    IERC20 public immutable REWARDS_TOKEN;
+    IERC20 public rewardsToken;
 
     /// @notice The core contract address.
     address public core;
@@ -71,7 +71,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
         __AccessControl_init();
 
-        REWARDS_TOKEN = rewardsToken_;
+        rewardsToken = rewardsToken_;
         core = core_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
@@ -89,7 +89,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
         uint256 previousAmount = latestRecordedRewardsAmount;
         uint256 harvestedRewards = amount;
-        uint256 currentTokenBalance = REWARDS_TOKEN.balanceOf(address(this));
+        uint256 currentTokenBalance = rewardsToken.balanceOf(address(this));
         uint256 excessFundsAmount = currentTokenBalance - previousAmount - harvestedRewards;
         if (excessFundsAmount > 0) {
             emit ExcessFundsDetected(excessFundsAmount);
@@ -105,9 +105,10 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /// @inheritdoc IRewardsVault
     function withdrawToCore() external override onlyRole(CORE_ROLE) nonReentrant {
-        uint256 availableBalance = REWARDS_TOKEN.balanceOf(address(this));
+        uint256 availableBalance = rewardsToken.balanceOf(address(this));
+        // slither-disable-next-line incorrect-equality
         if (availableBalance == 0) revert RewardsVault__ZeroAmount();
-        REWARDS_TOKEN.safeTransfer(core, availableBalance);
+        rewardsToken.safeTransfer(core, availableBalance);
         cumulativeRewardsWithdrawn += availableBalance;
         emit RewardsWithdrawn(availableBalance);
     }
@@ -118,11 +119,11 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /// @inheritdoc IRewardsVault
     function balance() external view override returns (uint256) {
-        return REWARDS_TOKEN.balanceOf(address(this));
+        return rewardsToken.balanceOf(address(this));
     }
 
     /*//////////////////////////////////////////////////////////////
-                            UUPS UPGRADE
+                             UUPS UPGRADE
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Authorizes upgrade to new implementation.

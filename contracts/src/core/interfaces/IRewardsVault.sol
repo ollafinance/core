@@ -43,8 +43,14 @@ interface IRewardsVault {
     error RewardsVault__BalanceMismatch();
 
     /*//////////////////////////////////////////////////////////////
-                                FUNCTIONS
+                                 FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Initializes the vault when deployed behind a proxy.
+    /// @param rewardsToken_ The rewards token address.
+    /// @param core_ The core contract address.
+    /// @param defaultAdmin_ The default admin for role management.
+    function initialize(IERC20 rewardsToken_, address core_, address defaultAdmin_) external;
 
     /// @notice Hook called after receiving funds from external sources.
     /// @dev Can be called by StakingManager or AztecRollup directly after reward transfer.
