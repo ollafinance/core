@@ -584,10 +584,10 @@ contract OllaCore is
         uint256 claimableRewards = modules.stakingManager.getClaimableRewards();
         currentRewards = accountingSnapshot.cumulativeRewards + claimableRewards;
 
-        uint256 lastReportRewards = _latestReport.rewardsSnapshot;
+        uint256 latestReportRewards = _latestReport.rewardsSnapshot;
         // Clamp signed delta; no timestamp-based control flow.
         // slither-disable-next-line timestamp
-        int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(lastReportRewards);
+        int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(latestReportRewards);
         // slither-disable-next-line timestamp
         if (rewardsDeltaSigned > 0) {
             rewardsDelta = SafeCast.toUint256(rewardsDeltaSigned);
@@ -671,7 +671,7 @@ contract OllaCore is
     function _updateAccountingTimestamp(ISafetyModule safetyModuleRef) internal {
         // Timestamp is used only for reporting/accounting liveness.
         // slither-disable-next-line timestamp
-        safetyModuleRef.setLastAccountingTimestamp(block.timestamp);
+        safetyModuleRef.setLatestAccountingTimestamp(block.timestamp);
     }
 
     function _emitAccountingReport(

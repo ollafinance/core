@@ -830,7 +830,7 @@ contract OllaCoreTest is Test {
         );
         vm.expectCall(address(safetyModule), abi.encodeCall(ISafetyModule.checkRateDrop, (oldRate, expectedRate)));
         vm.expectCall(
-            address(safetyModule), abi.encodeCall(ISafetyModule.setLastAccountingTimestamp, (block.timestamp))
+            address(safetyModule), abi.encodeCall(ISafetyModule.setLatestAccountingTimestamp, (block.timestamp))
         );
 
         vm.prank(operator);

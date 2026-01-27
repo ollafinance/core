@@ -41,8 +41,8 @@ interface ISafetyModule {
     event AccountingDelayUpdated(uint256 maxAccountingDelay);
 
     /// @notice Emitted when the accounting timestamp is updated.
-    /// @param lastAccountingTimestamp The new accounting timestamp.
-    event AccountingTimestampUpdated(uint256 lastAccountingTimestamp);
+    /// @param latestAccountingTimestamp The new accounting timestamp.
+    event AccountingTimestampUpdated(uint256 latestAccountingTimestamp);
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
@@ -97,8 +97,8 @@ interface ISafetyModule {
     function setMaxAccountingDelay(uint256 maxAccountingDelay) external;
 
     /// @notice Updates the accounting timestamp.
-    /// @param lastAccountingTimestamp The new accounting timestamp.
-    function setLastAccountingTimestamp(uint256 lastAccountingTimestamp) external;
+    /// @param latestAccountingTimestamp The new accounting timestamp.
+    function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp) external;
 
     /// @notice Pauses the safety module.
     function pause() external;

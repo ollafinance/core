@@ -194,9 +194,9 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function setLastAccountingTimestamp(uint256 lastAccountingTimestamp_) external override onlyRole(CORE_ROLE) {
-        lastAccountingTimestamp = lastAccountingTimestamp_;
-        emit AccountingTimestampUpdated(lastAccountingTimestamp_);
+    function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp_) external override onlyRole(CORE_ROLE) {
+        lastAccountingTimestamp = latestAccountingTimestamp_;
+        emit AccountingTimestampUpdated(latestAccountingTimestamp_);
     }
 
     /// @inheritdoc ISafetyModule
