@@ -44,7 +44,7 @@ contract OllaCoreHarness is OllaCore {
     function exposedComputeNetFlows(IOllaCore.FlowCounters memory flows)
         external
         pure
-        returns (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
+        returns (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
     {
         return _computeNetFlows(flows);
     }
@@ -57,7 +57,7 @@ contract OllaCoreHarness is OllaCore {
         return _computeTotalAssets(buckets);
     }
 
-    function exposedComputeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, uint256 netFlows)
+    function exposedComputeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, int256 netFlows)
         external
         pure
         returns (uint256 grossRewards)
@@ -191,7 +191,7 @@ contract OllaCoreTest is Test {
         uint256 totalAssets,
         uint256 exchangeRate,
         uint256 grossRewards,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 protocolFeeAssets,
         uint256 treasuryShares,
         uint256 providerShares,
@@ -562,7 +562,7 @@ contract OllaCoreTest is Test {
             latestReportCumulativeWithdrawals: latestReportCumulativeWithdrawals
         });
 
-        (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
 
         uint256 expectedNetDeposits = cumulativeDeposits > latestReportCumulativeDeposits
             ? cumulativeDeposits - latestReportCumulativeDeposits
@@ -570,18 +570,18 @@ contract OllaCoreTest is Test {
         uint256 expectedNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals
             ? cumulativeWithdrawals - latestReportCumulativeWithdrawals
             : 0;
-        uint256 expectedNetFlows =
-            expectedNetDeposits > expectedNetWithdrawals ? expectedNetDeposits - expectedNetWithdrawals : 0;
+        int256 expectedNetFlows = int256(expectedNetDeposits) - int256(expectedNetWithdrawals);
 
         assertEq(netDeposits, expectedNetDeposits, "net deposits fuzz");
         assertEq(netWithdrawals, expectedNetWithdrawals, "net withdrawals fuzz");
         assertEq(netFlows, expectedNetFlows, "net flows fuzz");
     }
 
-    function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, uint96 netFlows) external view {
+    function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, int96 netFlows) external view {
         uint256 grossRewards = vault.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
-        uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
-        uint256 expectedGross = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
+        int256 changeInAssets = int256(uint256(newTotalAssets)) - int256(uint256(oldTotalAssets));
+        int256 expectedGrossSigned = changeInAssets - int256(netFlows);
+        uint256 expectedGross = expectedGrossSigned > 0 ? uint256(expectedGrossSigned) : 0;
 
         assertEq(grossRewards, expectedGross, "gross rewards fuzz");
     }
@@ -606,7 +606,7 @@ contract OllaCoreTest is Test {
         vm.expectEmit(true, true, true, true, address(vault));
         emit AttestersStateRead(0, 0, expectedTimestamp);
         vm.expectEmit(true, true, true, true, address(vault));
-        emit AccountingUpdated(depositAmount, expectedRate, 0, depositAmount, 0, 0, 0, expectedTimestamp);
+        emit AccountingUpdated(depositAmount, expectedRate, 0, int256(depositAmount), 0, 0, 0, expectedTimestamp);
         vm.prank(operator);
         vault.updateAccounting();
 
@@ -621,6 +621,28 @@ contract OllaCoreTest is Test {
         assertEq(reportAfter.timestamp, expectedTimestamp, "report timestamp updated");
     }
 
+    function test_UpdateAccounting_NetFlowsNegative_ComputesGrossRewards() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        uint256 sharesToRedeem = 40 * DECIMALS;
+        uint256 rate = vault.exchangeRate();
+        uint256 assetsExpected = sharesToRedeem * rate / DECIMALS;
+        vm.prank(alice);
+        vault.requestRedeem(sharesToRedeem, alice);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        assertEq(reportAfter.netFlows, -int256(assetsExpected), "net flows negative");
+        assertEq(reportAfter.grossRewards, assetsExpected, "gross rewards uses signed net flows");
+        assertEq(reportAfter.totalAssets, depositAmount, "total assets unchanged");
+    }
+
     /*//////////////////////////////////////////////////////////////
                        ACCOUNTING CALCULATIONS
     //////////////////////////////////////////////////////////////*/
@@ -633,11 +655,11 @@ contract OllaCoreTest is Test {
             latestReportCumulativeWithdrawals: 1 * DECIMALS
         });
 
-        (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
 
         assertEq(netDeposits, 7 * DECIMALS, "net deposits");
         assertEq(netWithdrawals, 3 * DECIMALS, "net withdrawals");
-        assertEq(netFlows, 4 * DECIMALS, "net flows");
+        assertEq(netFlows, int256(4 * DECIMALS), "net flows");
     }
 
     function test_ComputeTotalAssets() external view {
@@ -656,7 +678,7 @@ contract OllaCoreTest is Test {
     }
 
     function test_ComputeGrossRewards() external view {
-        uint256 grossRewards = vault.exposedComputeGrossRewards(100 * DECIMALS, 130 * DECIMALS, 20 * DECIMALS);
+        uint256 grossRewards = vault.exposedComputeGrossRewards(100 * DECIMALS, 130 * DECIMALS, int256(20 * DECIMALS));
 
         assertEq(grossRewards, 10 * DECIMALS, "gross rewards computed");
     }
@@ -709,7 +731,7 @@ contract OllaCoreTest is Test {
         emit AttestersStateRead(rewardsDelta, slashing, expectedTimestamp);
         vm.expectEmit(true, true, true, true, address(vault));
         emit AccountingUpdated(
-            expectedTotalAssets, expectedRate, expectedGrossRewards, depositAmount, 0, 0, 0, expectedTimestamp
+            expectedTotalAssets, expectedRate, expectedGrossRewards, int256(depositAmount), 0, 0, 0, expectedTimestamp
         );
         vm.prank(operator);
         vault.updateAccounting();
@@ -775,9 +797,19 @@ contract OllaCoreTest is Test {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
+        uint256 sharesToRedeem = 5 * DECIMALS;
+        uint256 rate = vault.exchangeRate();
+        uint256 assetsExpected = sharesToRedeem * rate / DECIMALS;
+        vm.prank(alice);
+        vault.requestRedeem(sharesToRedeem, alice);
+
         uint256 oldRate = 1e18;
-        uint256 expectedRate = 1e18;
+        uint256 expectedRate = vault.exchangeRate();
+        uint256 expectedTotalAssets = vault.totalAssets();
         vm.expectCall(address(safetyModule), abi.encodeCall(ISafetyModule.checkAccountingLiveness, ()));
+        vm.expectCall(
+            address(safetyModule), abi.encodeCall(ISafetyModule.checkQueueRatio, (assetsExpected, expectedTotalAssets))
+        );
         vm.expectCall(address(safetyModule), abi.encodeCall(ISafetyModule.checkRateDrop, (oldRate, expectedRate)));
         vm.expectCall(
             address(safetyModule), abi.encodeCall(ISafetyModule.setLastAccountingTimestamp, (block.timestamp))
@@ -921,7 +953,7 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 totalAssets,
         uint256 exchangeRate,
         uint256 grossRewards,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 protocolFeeAssets,
         uint256 treasuryShares,
         uint256 providerShares,
@@ -1029,7 +1061,7 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 protocolFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
 
         uint256 rateBeforeRewards = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
-        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Ceil);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Floor);
         uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
         uint256 providerShares = protocolSharesTotal - treasuryShares;
 
@@ -1046,7 +1078,7 @@ contract OllaCoreProtocolFeesTest is Test {
             expectedTotalAssets,
             expectedRateAfter,
             grossRewards,
-            depositAmount,
+            int256(depositAmount),
             protocolFeeAssets,
             treasuryShares,
             providerShares,
@@ -1066,8 +1098,8 @@ contract OllaCoreProtocolFeesTest is Test {
 
         _performDeposit(alice, depositAmount);
 
-        // Pick rewards that are very likely to produce an odd protocolSharesTotal (ceil rounding)
-        // so treasury floor split leaves a remainder to the provider.
+        // Pick rewards that are very likely to produce a fractional share result,
+        // so floor rounding differs from ceil and leaves a remainder to the provider split.
         uint256 rewards = 1 * DECIMALS + 1;
         stakingManager.setClaimableRewards(rewards);
 
@@ -1076,11 +1108,13 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 expectedTotalAssets = depositAmount + rewards;
         uint256 protocolFeeAssets = rewards * PROTOCOL_FEE_BP / BP_DIVISOR;
         uint256 rateBeforeRewards = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
-        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Ceil);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Floor);
+        uint256 protocolSharesCeil = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Ceil);
 
         uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
         uint256 providerShares = protocolSharesTotal - treasuryShares;
 
+        assertLt(protocolSharesTotal, protocolSharesCeil, "floor rounding applied");
         // Invariant: split adds up exactly, and provider keeps any remainder from floor split.
         assertEq(treasuryShares + providerShares, protocolSharesTotal, "split sums to total");
         assertLe(treasuryShares, providerShares + 1, "treasury floor split at 50/50");
@@ -1090,5 +1124,67 @@ contract OllaCoreProtocolFeesTest is Test {
 
         assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury minted (from zero)");
         assertEq(stAztec.balanceOf(address(rewardsVault)), providerShares, "provider minted (from zero)");
+    }
+
+    function test_UpdateAccounting_NetFlowsNegative_MintsFeesFromGrossRewards() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        uint256 sharesToRedeem = 40 * DECIMALS;
+        uint256 rate = vault.exchangeRate();
+        uint256 assetsExpected = sharesToRedeem * rate / DECIMALS;
+        vm.prank(alice);
+        vault.requestRedeem(sharesToRedeem, alice);
+
+        uint256 oldSupply = stAztec.totalSupply();
+        uint256 oldGovShares = stAztec.balanceOf(governance);
+        uint256 oldProviderShares = stAztec.balanceOf(address(rewardsVault));
+
+        uint256 expectedTotalAssets = depositAmount;
+        uint256 grossRewards = assetsExpected;
+        uint256 protocolFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 rateBeforeFees = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeFees, Math.Rounding.Floor);
+        uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
+        uint256 providerShares = protocolSharesTotal - treasuryShares;
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        assertEq(reportAfter.netFlows, -int256(assetsExpected), "net flows negative");
+        assertEq(reportAfter.grossRewards, grossRewards, "gross rewards includes negative net flows");
+        assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "protocol fee shares minted");
+        assertEq(stAztec.balanceOf(governance), oldGovShares + treasuryShares, "treasury shares minted");
+        assertEq(stAztec.balanceOf(address(rewardsVault)), oldProviderShares + providerShares, "provider shares minted");
+    }
+
+    function test_UpdateAccounting_GrossRewardsClamp_NoFeeMinting() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        uint256 extraDeposit = 10 * DECIMALS;
+        _performDeposit(alice, extraDeposit);
+        stakingManager.setSlashingDelta(30 * DECIMALS);
+
+        uint256 oldSupply = stAztec.totalSupply();
+        uint256 oldGovShares = stAztec.balanceOf(governance);
+        uint256 oldProviderShares = stAztec.balanceOf(address(rewardsVault));
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        assertEq(reportAfter.grossRewards, 0, "gross rewards clamped to zero");
+        assertEq(reportAfter.netFlows, int256(extraDeposit), "net flows positive");
+        assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");
+        assertEq(stAztec.balanceOf(governance), oldGovShares, "no treasury shares minted");
+        assertEq(stAztec.balanceOf(address(rewardsVault)), oldProviderShares, "no provider shares minted");
     }
 }

@@ -252,6 +252,7 @@ contract OllaCoreAccountingHandler is Test {
     uint256 public lastSlashingDelta;
     uint256 public lastClaimableRewards;
     uint256 public lastTotalStaked;
+    uint256 public lastReportTotalAssets;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -271,6 +272,7 @@ contract OllaCoreAccountingHandler is Test {
         stakingManager = _stakingManager;
         rewardsVault = _rewardsVault;
         operator = _operator;
+        lastReportTotalAssets = _vault.latestReport().totalAssets;
 
         for (uint256 i = 0; i < 5; i++) {
             actors.push(makeAddr(string(abi.encode("actor", i))));
@@ -345,6 +347,8 @@ contract OllaCoreAccountingHandler is Test {
     }
 
     function updateAccounting() external {
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        lastReportTotalAssets = report.totalAssets;
         vm.prank(operator);
         vault.updateAccounting();
     }
@@ -431,8 +435,7 @@ contract OllaCoreInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_StoredExchangeRateMatchesSnapshot() external {
-        vm.prank(operator);
-        vault.updateAccounting();
+        handler.updateAccounting();
 
         uint256 supply = stAztec.totalSupply();
         IOllaCore.LatestReport memory report = vault.latestReport();
@@ -455,8 +458,7 @@ contract OllaCoreInvariantTest is Test {
 
     function invariant_LatestReportTimestampMonotonic() external {
         vm.warp(block.timestamp + 1);
-        vm.prank(operator);
-        vault.updateAccounting();
+        handler.updateAccounting();
 
         IOllaCore.LatestReport memory report = vault.latestReport();
         uint256 latestTimestamp = report.timestamp;
@@ -490,6 +492,15 @@ contract OllaCoreInvariantTest is Test {
     function invariant_ConvertToSharesMatchesSpec() external view {
         uint256 assets = bound(uint256(block.timestamp), 1, type(uint96).max);
         assertEq(vault.convertToShares(assets), _expectedShares(assets), "convertToShares matches spec");
+    }
+
+    function invariant_GrossRewardsMatchesSignedFlows() external view {
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        int256 changeInAssets = int256(report.totalAssets) - int256(handler.lastReportTotalAssets());
+        int256 expectedGrossSigned = changeInAssets - report.netFlows;
+        uint256 expectedGross = expectedGrossSigned > 0 ? uint256(expectedGrossSigned) : 0;
+
+        assertEq(report.grossRewards, expectedGross, "gross rewards matches signed flows");
     }
 
     function invariant_ConvertToAssetsMatchesSpec() external view {

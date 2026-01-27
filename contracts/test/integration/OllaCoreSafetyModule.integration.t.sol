@@ -307,6 +307,20 @@ contract OllaCoreSafetyModuleTest is Test {
         assertTrue(safetyModule.isPaused(), "queue ratio breaker should pause");
     }
 
+    function test_UpdateAccounting_TriggersQueueRatioBreaker() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        _performRequestRedeem(alice, 80 * DECIMALS, alice);
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
+
+        vault.updateAccounting();
+
+        assertTrue(safetyModule.isPaused(), "queue ratio breaker should pause");
+    }
+
     function test_UpdateAccounting_TriggersAccountingLivenessBreaker() external {
         vm.warp(block.timestamp + 2 days);
 
