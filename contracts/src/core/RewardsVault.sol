@@ -109,8 +109,9 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         if (availableBalance == 0) {
             revert RewardsVault__ZeroAmount();
         }
+        // slither-disable-next-line incorrect-equality
         if (availableBalance != latestRecordedRewardsAmount) {
-            // NOTE: this practically forces to run postReceiveFundsHook before withdrawing
+            // NOTE: this practically forces to run postReceiveFundsHook in same tx before withdrawing
             revert RewardsVault__BalanceMismatch();
         }
         rewardsToken.safeTransfer(core, availableBalance);
