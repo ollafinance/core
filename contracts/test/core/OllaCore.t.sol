@@ -855,7 +855,9 @@ contract OllaCoreRewardsAccessControlTest is Test {
 
     function test_RevertWhen_NonAdminSetsProtocolFeeBP() external {
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE())
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
         );
         vm.prank(alice);
         vault.setProtocolFeeBP(100);
@@ -863,7 +865,9 @@ contract OllaCoreRewardsAccessControlTest is Test {
 
     function test_RevertWhen_NonAdminSetsTreasuryFeeSplitBP() external {
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE())
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
         );
         vm.prank(alice);
         vault.setTreasuryFeeSplitBP(100);
@@ -871,7 +875,9 @@ contract OllaCoreRewardsAccessControlTest is Test {
 
     function test_RevertWhen_NonAdminSetsGovernance() external {
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE())
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
         );
         vm.prank(alice);
         vault.setGovernance(alice);
@@ -879,7 +885,9 @@ contract OllaCoreRewardsAccessControlTest is Test {
 
     function test_RevertWhen_NonAdminSetsRewardsVault() external {
         vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE())
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
         );
         vm.prank(alice);
         vault.setRewardsVault(alice);
