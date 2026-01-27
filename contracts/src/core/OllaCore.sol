@@ -65,8 +65,11 @@ contract OllaCore is
     IOllaCore.FlowCounters private _flowCounters;
     IOllaCore.LatestReport private _latestReport;
 
-    uint256 private _protocolFeeBP;
-    uint256 private _treasuryFeeSplitBP;
+    /// @notice The protocol fee in basis points.
+    uint256 public protocolFeeBP;
+
+    /// @notice The treasury fee split in basis points.
+    uint256 public treasuryFeeSplitBP;
 
     uint256 private _stakeMessageId;
     uint256 private _unstakeMessageId;
@@ -145,8 +148,8 @@ contract OllaCore is
             safetyModule: safetyModule_
         });
 
-        _protocolFeeBP = protocolFeeBP_;
-        _treasuryFeeSplitBP = treasuryFeeSplitBP_;
+        protocolFeeBP = protocolFeeBP_;
+        treasuryFeeSplitBP = treasuryFeeSplitBP_;
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         _latestReport.timestamp = block.timestamp;
@@ -265,6 +268,65 @@ contract OllaCore is
     function unpause() external override onlyRole(GUARDIAN_ROLE) {
         _unpause();
         emit Unpaused();
+    }
+
+    /// @notice Sets the protocol fee in basis points.
+    /// @param newFeeBP The new fee (0-10000).
+    function setProtocolFeeBP(uint256 newFeeBP) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newFeeBP > BP_DIVISOR) {
+            revert OllaCore__InvalidFeeBP(newFeeBP);
+        }
+        uint256 oldFeeBP = protocolFeeBP;
+        protocolFeeBP = newFeeBP;
+        emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
+    }
+
+    /// @notice Sets the treasury fee split in basis points.
+    /// @param newSplitBP The new split (0-10000).
+    function setTreasuryFeeSplitBP(uint256 newSplitBP) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newSplitBP > BP_DIVISOR) {
+            revert OllaCore__InvalidSplitBP(newSplitBP);
+        }
+        uint256 oldSplitBP = treasuryFeeSplitBP;
+        treasuryFeeSplitBP = newSplitBP;
+        emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
+    }
+
+    /// @notice Sets the governance address.
+    /// @param newGovernance The new governance address.
+    function setGovernance(address newGovernance) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newGovernance == address(0)) {
+            revert OllaCore__ZeroAddress("newGovernance");
+        }
+        address oldGovernance = _modules.governance;
+        _modules.governance = newGovernance;
+
+        // Transfer governance-related roles from the old governance to the new one
+        if (newGovernance != oldGovernance) {
+            // Grant roles to the new governance address first (before revoking from old)
+            _grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            _grantRole(GUARDIAN_ROLE, newGovernance);
+            _grantRole(OPERATOR_ROLE, newGovernance);
+
+            // Revoke roles from the old governance address
+            if (oldGovernance != address(0)) {
+                _revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+                _revokeRole(GUARDIAN_ROLE, oldGovernance);
+                _revokeRole(OPERATOR_ROLE, oldGovernance);
+            }
+        }
+        emit GovernanceUpdated(oldGovernance, newGovernance);
+    }
+
+    /// @notice Sets the rewards vault address.
+    /// @param newRewardsVault The new rewards vault address.
+    function setRewardsVault(address newRewardsVault) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newRewardsVault == address(0)) {
+            revert OllaCore__ZeroAddress("newRewardsVault");
+        }
+        address oldRewardsVault = _modules.rewardsVault;
+        _modules.rewardsVault = newRewardsVault;
+        emit RewardsVaultUpdated(oldRewardsVault, newRewardsVault);
     }
 
     /// @notice Stubbed operator rebalance hook.
@@ -667,13 +729,13 @@ contract OllaCore is
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
         ollaProtocolFeeAssets =
-            grossAssetRewards * _protocolFeeBP / BP_DIVISOR;
+            grossAssetRewards * protocolFeeBP / BP_DIVISOR;
 
         uint256 currentRate = _exchangeRate();
         uint256 protocolSharesTotal =
             ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Ceil);
 
-        treasuryShares = protocolSharesTotal * _treasuryFeeSplitBP / BP_DIVISOR;
+        treasuryShares = protocolSharesTotal * treasuryFeeSplitBP / BP_DIVISOR;
         providerShares = protocolSharesTotal - treasuryShares;
 
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
@@ -739,10 +801,10 @@ contract OllaCore is
             revert OllaCore__ZeroAddress("stakingManager_");
         }
         if (protocolFeeBP_ > BP_DIVISOR) {
-            revert OllaCore__InvalidAmount();
+            revert OllaCore__InvalidFeeBP(protocolFeeBP_);
         }
         if (treasuryFeeSplitBP_ > BP_DIVISOR) {
-            revert OllaCore__InvalidAmount();
+            revert OllaCore__InvalidSplitBP(treasuryFeeSplitBP_);
         }
         if (governance_ == address(0)) {
             revert OllaCore__ZeroAddress("governance_");
