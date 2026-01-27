@@ -301,6 +301,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
 
         vm.startPrank(governance);
         vault.grantRole(vault.OPERATOR_ROLE(), governance);
+        vault.grantRole(vault.OPERATOR_ROLE(), address(rewardsVault));
         vm.stopPrank();
 
         alice = makeAddr("alice");
