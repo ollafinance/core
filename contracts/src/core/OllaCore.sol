@@ -120,10 +120,10 @@ contract OllaCore is
         uint256 treasuryFeeSplitBP_,
         address governance_,
         address withdrawalQueue_,
-        address rewardsVault_,
+        IRewardsVault rewardsVault_,
         address safetyModule_
     ) external override initializer {
-        _validateIntialilParams(
+        _validateInitialParams(
             asset_,
             stAztec_,
             stakingManager_,
@@ -321,13 +321,13 @@ contract OllaCore is
 
     /// @notice Sets the rewards vault address.
     /// @param newRewardsVault The new rewards vault address.
-    function setRewardsVault(address newRewardsVault) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newRewardsVault == address(0)) {
+    function setRewardsVault(IRewardsVault newRewardsVault) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (address(newRewardsVault) == address(0)) {
             revert OllaCore__ZeroAddress("newRewardsVault");
         }
-        address oldRewardsVault = _modules.rewardsVault;
+        IRewardsVault oldRewardsVault = _modules.rewardsVault;
         _modules.rewardsVault = newRewardsVault;
-        emit RewardsVaultUpdated(oldRewardsVault, newRewardsVault);
+        emit RewardsVaultUpdated(address(oldRewardsVault), address(newRewardsVault));
     }
 
     /// @notice Stubbed operator rebalance hook.
@@ -387,6 +387,7 @@ contract OllaCore is
             _accountingState.cumulativeRewards += harvested;
         }
         emit RewardsHarvested(harvested);
+        _modules.rewardsVault.recordRewards(harvested);
         return harvested;
     }
 
@@ -472,7 +473,7 @@ contract OllaCore is
     /// @notice Returns the rewards vault module address.
     /// @return The rewards vault address.
     function rewardsVault() external view override returns (address) {
-        return _modules.rewardsVault;
+        return address(_modules.rewardsVault);
     }
 
     /// @notice Returns the safety module address.
@@ -555,7 +556,8 @@ contract OllaCore is
         (ollaProtocolFeeAssets, treasuryShares, providerShares) = _calculateProtocolFees(grossAssetRewards);
         emit OllaProtocolFeesPaid(ollaProtocolFeeAssets, treasuryShares, providerShares);
         _modules.stAztec.mint(_modules.governance, treasuryShares);
-        _modules.stAztec.mint(_modules.rewardsVault, providerShares);
+        // TODO: this should go to the provider addressbe pr
+        _modules.stAztec.mint(address(_modules.rewardsVault), providerShares);
 
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
@@ -846,7 +848,7 @@ contract OllaCore is
         }
     }
 
-    function _validateIntialilParams(
+    function _validateInitialParams(
         IERC20 asset_,
         IStAztec stAztec_,
         IStakingManager stakingManager_,
@@ -854,7 +856,7 @@ contract OllaCore is
         uint256 treasuryFeeSplitBP_,
         address governance_,
         address withdrawalQueue_,
-        address rewardsVault_,
+        IRewardsVault rewardsVault_,
         address safetyModule_
     ) internal pure {
         if (address(asset_) == address(0)) {
@@ -878,7 +880,7 @@ contract OllaCore is
         if (withdrawalQueue_ == address(0)) {
             revert OllaCore__ZeroAddress("withdrawalQueue_");
         }
-        if (rewardsVault_ == address(0)) {
+        if (address(rewardsVault_) == address(0)) {
             revert OllaCore__ZeroAddress("rewardsVault_");
         }
         if (safetyModule_ == address(0)) {
