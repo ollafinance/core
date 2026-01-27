@@ -45,6 +45,15 @@ contract MockStakingManager is IStakingManager {
     }
 
     /*//////////////////////////////////////////////////////////////
+                        EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function getSlashingDelta() external override returns (uint256 slashingDelta) {
+        return 0;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                          EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -54,9 +63,13 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function totalStaked() external view override returns (uint256 totalStaked) {
+    function totalStaked() external view override returns (uint256 stakedTotal) {
         return _stakedAmount;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                         EXTERNAL PURE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice No-op initializer for interface compatibility.
     /// @param stakingAsset Unused.
@@ -85,17 +98,8 @@ contract MockStakingManager is IStakingManager {
         return;
     }
 
-    /*//////////////////////////////////////////////////////////////
-                        EXTERNAL PURE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
     /// @inheritdoc IStakingManager
     function getClaimableRewards() external pure override returns (uint256 claimableRewards) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
-    function getSlashingDelta() external override returns (uint256 slashingDelta) {
         return 0;
     }
 

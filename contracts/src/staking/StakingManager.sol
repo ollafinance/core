@@ -266,6 +266,17 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         emit ProviderSet(_provider.admin, rewardsRecipient);
     }
 
+    /// @notice Returns the cumulative slashing delta from the rollup.
+    /// @return slashingDelta The cumulative slashing delta.
+    function getSlashingDelta() external override onlyRole(CORE_ROLE) returns (uint256 slashingDelta) {
+        (, IAztecRollup rollup) = _getRollup();
+        uint256 currentSlashingDelta = _computeSlashed(rollup);
+        if (currentSlashingDelta > _cumulativeSlashingDelta) {
+            _cumulativeSlashingDelta = currentSlashingDelta;
+        }
+        return _cumulativeSlashingDelta;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -276,17 +287,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function getClaimableRewards() external view override onlyRole(CORE_ROLE) returns (uint256 claimableRewards) {
         (, IAztecRollup rollup) = _getRollup();
         return rollup.getSequencerRewards(address(rewardsVault));
-    }
-
-    /// @notice Returns the cumulative slashing delta from the rollup.
-    /// @return slashingDelta The cumulative slashing delta.
-    function getSlashingDelta() external override onlyRole(CORE_ROLE) returns (uint256 slashingDelta) {
-        (, IAztecRollup rollup) = _getRollup();
-        uint256 currentSlashingDelta = _computeSlashed(rollup);
-        if (currentSlashingDelta > _cumulativeSlashingDelta) {
-            _cumulativeSlashingDelta = currentSlashingDelta;
-        }
-        return _cumulativeSlashingDelta;
     }
 
     // slither-disable-start calls-loop,timestamp
@@ -308,11 +308,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end calls-loop,timestamp
 
     /// @inheritdoc IStakingManager
-    function totalStaked() external view override returns (uint256 totalStaked) {
+    function totalStaked() external view override returns (uint256 stakedTotal) {
         // TODO: research if we can assume moving with rollup is safe
         (, IAztecRollup rollup) = _getRollup();
-        totalStaked = _computeStaked(rollup);
-        return totalStaked;
+        stakedTotal = _computeStaked(rollup);
+        return stakedTotal;
     }
 
     /// @inheritdoc IStakingManager
@@ -582,6 +582,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             }
 
             // slither-disable-next-line timestamp
+            // Timestamp used only to gate exit readiness from the rollup state.
+            // slither-disable-next-line timestamp
             if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                 ++i;
                 continue;
@@ -658,6 +660,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             //   ZOMBIE - attester has been slashed too much to continue validating
             //   EXITING - provider has initiated an exit outside of StakingManager
             if (view_.exit.exists) {
+                // Timestamp used only to gate exit readiness from the rollup state.
+                // slither-disable-next-line timestamp
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                     state.pendingUnstakeAmount += view_.exit.amount;
                 } else {
@@ -682,6 +686,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             AttesterView memory view_ = rollup.getAttesterView(attester);
 
             if (view_.exit.exists) {
+                // Timestamp used only to gate exit readiness from the rollup state.
+                // slither-disable-next-line timestamp
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
                     state.pendingUnstakeAmount += view_.exit.amount;
                 } else {
@@ -694,14 +700,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // slither-disable-end calls-loop,timestamp
 
-    function _computeStaked(IAztecRollup rollup) internal view returns (uint256 totalStaked) {
+    function _computeStaked(IAztecRollup rollup) internal view returns (uint256 stakedTotal) {
         uint256 activationThreshold = rollup.getActivationThreshold();
         address[] storage activatedAttesters = _activatedAttesters;
         address[] storage pendingUnstakeRequests = _pendingUnstakeRequests;
 
-        (totalStaked,) = _accumulateAttestersDelta(rollup, activationThreshold, activatedAttesters, 0, 0);
-        (totalStaked,) = _accumulateAttestersDelta(rollup, activationThreshold, pendingUnstakeRequests, totalStaked, 0);
-        return totalStaked;
+        (stakedTotal,) = _accumulateAttestersDelta(rollup, activationThreshold, activatedAttesters, 0, 0);
+        (stakedTotal,) = _accumulateAttestersDelta(rollup, activationThreshold, pendingUnstakeRequests, stakedTotal, 0);
+        return stakedTotal;
     }
 
     function _computeSlashed(IAztecRollup rollup) internal view returns (uint256 slashingDelta) {
@@ -722,11 +728,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
     }
 
+    // Rollup is trusted and loop bounded by attester set size.
+    // slither-disable-next-line calls-loop
     function _accumulateAttestersDelta(
         IAztecRollup rollup,
         uint256 activationThreshold,
         address[] storage attesters,
-        uint256 totalStaked,
+        uint256 stakedTotal,
         uint256 slashingDelta
     ) internal view returns (uint256 updatedTotalStaked, uint256 updatedSlashingDelta) {
         uint256 length = attesters.length;
@@ -736,12 +744,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             if (!eligible) {
                 continue;
             }
-            totalStaked += activationThreshold;
+            stakedTotal += activationThreshold;
             if (activationThreshold > remaining) {
                 slashingDelta += activationThreshold - remaining;
             }
         }
-        return (totalStaked, slashingDelta);
+        return (stakedTotal, slashingDelta);
     }
 
     /// @notice Calculates the attester count to stake to, bounded by available keys.
