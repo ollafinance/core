@@ -284,7 +284,7 @@ contract OllaCore is
         // checks before accounting updates are safe.
         safetyModuleRef.checkAccountingLiveness();
 
-        (IOllaCore.FlowCounters memory flowsSnapshot, uint256 netFlows) = _getFlowsSnapshot();
+        (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
         (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal) =
             _getStakingManagerState();
         _validateSlashingDelta(slashingDelta);
@@ -522,7 +522,7 @@ contract OllaCore is
         uint256 total,
         uint256 rate,
         uint256 grossRewards,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 updatedCumulativeDeposits,
         uint256 updatedCumulativeWithdrawals,
         uint256 rewardsSnapshot
@@ -578,7 +578,7 @@ contract OllaCore is
     function _computeAndFinalizeAccounting(
         ISafetyModule safetyModuleRef,
         IOllaCore.FlowCounters memory flowsSnapshot,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 currentRewards
     ) internal {
         (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
@@ -592,6 +592,8 @@ contract OllaCore is
             uint256 rate
         ) = _computeAccountingOutputs(oldTotalAssets, netFlows);
 
+        uint256 queued = _modules.withdrawalQueue.totalPendingAssets();
+        safetyModuleRef.checkQueueRatio(queued, newTotalAssets);
         _validateRateDrop(safetyModuleRef, oldRate, rate);
         _updateReportingSnapshots(
             newTotalAssets,
@@ -615,7 +617,7 @@ contract OllaCore is
         );
     }
 
-    function _computeAccountingOutputs(uint256 oldTotalAssets, uint256 netFlows)
+    function _computeAccountingOutputs(uint256 oldTotalAssets, int256 netFlows)
         internal
         returns (
             IOllaCore.AccountingState memory updatedBuckets,
@@ -648,7 +650,7 @@ contract OllaCore is
         uint256 newTotalAssets,
         uint256 rate,
         uint256 grossRewards,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 protocolFeeAssets,
         uint256 treasuryShares,
         uint256 providerShares
@@ -666,7 +668,7 @@ contract OllaCore is
         );
     }
 
-    function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, uint256 netFlows) {
+    function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) {
         flowsSnapshot = _flowCounters;
         (netFlows,,) = _computeNetFlows(flowsSnapshot);
         return (flowsSnapshot, netFlows);
@@ -699,7 +701,7 @@ contract OllaCore is
 
         uint256 currentRate = _exchangeRate();
         uint256 protocolSharesTotal =
-            ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Ceil);
+            ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Floor);
 
         treasuryShares = protocolSharesTotal * _treasuryFeeSplitBP / BP_DIVISOR;
         providerShares = protocolSharesTotal - treasuryShares;
@@ -789,7 +791,7 @@ contract OllaCore is
     function _computeNetFlows(IOllaCore.FlowCounters memory flows)
         internal
         pure
-        returns (uint256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
+        returns (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
     {
         netDeposits = flows.cumulativeDeposits > flows.latestReportCumulativeDeposits
             ? flows.cumulativeDeposits - flows.latestReportCumulativeDeposits
@@ -797,7 +799,7 @@ contract OllaCore is
         netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
             ? flows.cumulativeWithdrawals - flows.latestReportCumulativeWithdrawals
             : 0;
-        netFlows = netDeposits > netWithdrawals ? netDeposits - netWithdrawals : 0;
+        netFlows = int256(netDeposits) - int256(netWithdrawals);
         return (netFlows, netDeposits, netWithdrawals);
     }
 
@@ -811,13 +813,16 @@ contract OllaCore is
         return totalAssets_;
     }
 
-    function _computeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, uint256 netFlows)
+    function _computeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, int256 netFlows)
         internal
         pure
         returns (uint256 grossRewards)
     {
-        uint256 changeInAssets = newTotalAssets > oldTotalAssets ? newTotalAssets - oldTotalAssets : 0;
-        grossRewards = changeInAssets > netFlows ? changeInAssets - netFlows : 0;
+        int256 changeInAssets = int256(newTotalAssets) - int256(oldTotalAssets);
+        int256 grossRewardsSigned = changeInAssets - netFlows;
+        if (grossRewardsSigned > 0) {
+            grossRewards = uint256(grossRewardsSigned);
+        }
         return grossRewards;
     }
 }

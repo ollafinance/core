@@ -35,7 +35,7 @@ interface IOllaCore {
         uint256 totalAssets;
         uint256 exchangeRate;
         uint256 grossRewards;
-        uint256 netFlows;
+        int256 netFlows;
         uint256 rewardsSnapshot;
         uint256 timestamp;
     }
@@ -119,7 +119,7 @@ interface IOllaCore {
         uint256 totalAssets,
         uint256 exchangeRate,
         uint256 grossRewards,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 protocolFeeAssets,
         uint256 treasuryShares,
         uint256 providerShares,
