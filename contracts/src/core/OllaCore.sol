@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
-import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-import { Math } from "@oz/utils/math/Math.sol";
-import { SafeCast } from "@oz/utils/math/SafeCast.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import {AccessControlUpgradeable} from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
+import {Initializable} from "@oz-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {PausableUpgradeable} from "@oz-upgradeable/utils/PausableUpgradeable.sol";
+import {IERC20} from "@oz/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@oz/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@oz/utils/math/Math.sol";
+import {SafeCast} from "@oz/utils/math/SafeCast.sol";
+import {ReentrancyGuard} from "@oz/utils/ReentrancyGuard.sol";
+import {IOllaCore} from "src/core/interfaces/IOllaCore.sol";
+import {IRewardsVault} from "src/core/interfaces/IRewardsVault.sol";
+import {IStAztec} from "src/core/interfaces/IStAztec.sol";
+import {IWithdrawalQueue} from "src/core/interfaces/IWithdrawalQueue.sol";
+import {ISafetyModule} from "src/safetymodule/ISafetyModule.sol";
+import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
@@ -589,6 +589,7 @@ contract OllaCore is
         // slither-disable-next-line timestamp
         int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(latestReportRewards);
         // slither-disable-next-line timestamp
+        // Defensive: currentRewards should be non-decreasing, but clamp if a downstream module reports a drop.
         if (rewardsDeltaSigned > 0) {
             rewardsDelta = SafeCast.toUint256(rewardsDeltaSigned);
         }
