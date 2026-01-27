@@ -106,6 +106,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     /// @inheritdoc IRewardsVault
     function withdrawToCore() external override onlyRole(CORE_ROLE) nonReentrant {
         uint256 availableBalance = rewardsToken.balanceOf(address(this));
+        // slither-disable-next-line incorrect-equality
         if (availableBalance == 0) {
             revert RewardsVault__ZeroAmount();
         }
