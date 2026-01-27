@@ -216,7 +216,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
         harvested = rollup.claimSequencerRewards(address(rewardsVault));
-        rewardsVault.postReceiveFundsHook(harvested);
+        rewardsVault.recordRewards(harvested);
         emit RewardsHarvested(harvested);
         return harvested;
     }

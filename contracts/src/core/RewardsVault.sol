@@ -79,20 +79,18 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    // TODO: rename this hook to "recordRewards" or similar
     /// @inheritdoc IRewardsVault
-    function postReceiveFundsHook(uint256 amount) external override onlyRole(CORE_ROLE) nonReentrant {
-        if (amount == 0) revert RewardsVault__ZeroAmount();
+    function recordRewards(uint256 expectedRewards) external override onlyRole(CORE_ROLE) nonReentrant {
+        if (expectedRewards == 0) revert RewardsVault__ZeroAmount();
 
         uint256 previousAmount = latestRecordedRewardsAmount;
-        uint256 harvestedRewards = amount;
         uint256 currentTokenBalance = rewardsToken.balanceOf(address(this));
-        uint256 excessFundsAmount = currentTokenBalance - previousAmount - harvestedRewards;
+        uint256 excessFundsAmount = currentTokenBalance - previousAmount - expectedRewards;
         if (excessFundsAmount > 0) {
             emit ExcessFundsDetected(excessFundsAmount);
         }
         // Total rewards is harvested rewards plus any excess funds detected
-        uint256 rewardsIsh = harvestedRewards + excessFundsAmount;
+        uint256 rewardsIsh = expectedRewards + excessFundsAmount;
         if (currentTokenBalance != previousAmount + rewardsIsh) {
             revert RewardsVault__BalanceMismatch();
         }
@@ -109,7 +107,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         }
         // slither-disable-next-line incorrect-equality
         if (availableBalance != latestRecordedRewardsAmount) {
-            // NOTE: this practically forces to run postReceiveFundsHook in same tx before withdrawing
+            // NOTE: this practically forces to run recordRewards in same tx before withdrawing
             revert RewardsVault__BalanceMismatch();
         }
         rewardsToken.safeTransfer(core, availableBalance);
