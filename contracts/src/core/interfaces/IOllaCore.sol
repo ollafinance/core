@@ -95,8 +95,24 @@ interface IOllaCore {
     event UnstakeRequested(uint256 indexed messageId, uint256 amount);
 
     /// @notice Emitted when the protocol fee is updated.
-    /// @param newFeeBP The new protocol fee in basis points.
-    event OllaProtocolFeeUpdated(uint256 newFeeBP);
+    /// @param oldFeeBP The old fee in basis points.
+    /// @param newFeeBP The new fee in basis points.
+    event ProtocolFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
+
+    /// @notice Emitted when the treasury fee split is updated.
+    /// @param oldSplitBP The old split in basis points.
+    /// @param newSplitBP The new split in basis points.
+    event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
+
+    /// @notice Emitted when the governance address is updated.
+    /// @param oldGovernance The old governance address.
+    /// @param newGovernance The new governance address.
+    event GovernanceUpdated(address oldGovernance, address newGovernance);
+
+    /// @notice Emitted when the rewards vault address is updated.
+    /// @param oldRewardsVault The old rewards vault address.
+    /// @param newRewardsVault The new rewards vault address.
+    event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
 
     /// @notice Emitted when protocol fees are paid.
     /// @param protocolFeeAssets Protocol fee amount in assets.
@@ -183,6 +199,12 @@ interface IOllaCore {
     /// @notice Thrown when deposits are blocked by the safety module pause.
     error OllaCore__SafetyModulePaused();
 
+    /// @notice Thrown when a fee basis points value exceeds maximum.
+    error OllaCore__InvalidFeeBP(uint256 feeBP);
+
+    /// @notice Thrown when a split basis points value exceeds maximum.
+    error OllaCore__InvalidSplitBP(uint256 splitBP);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -252,6 +274,22 @@ interface IOllaCore {
     /// @return used The assets used for finalization.
     function finalizeWithdrawals(uint256 available) external returns (uint256 used);
 
+    /// @notice Sets the protocol fee in basis points.
+    /// @param newFeeBP The new fee (0-10000).
+    function setProtocolFeeBP(uint256 newFeeBP) external;
+
+    /// @notice Sets the treasury fee split in basis points.
+    /// @param newSplitBP The new split (0-10000).
+    function setTreasuryFeeSplitBP(uint256 newSplitBP) external;
+
+    /// @notice Sets the governance address.
+    /// @param newGovernance The new governance address.
+    function setGovernance(address newGovernance) external;
+
+    /// @notice Sets the rewards vault address.
+    /// @param newRewardsVault The new rewards vault address.
+    function setRewardsVault(address newRewardsVault) external;
+
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -318,4 +356,12 @@ interface IOllaCore {
     /// @param assets The asset amount being deposited.
     /// @return shares The shares that would be minted.
     function previewDeposit(uint256 assets) external view returns (uint256 shares);
+
+    /// @notice Returns the protocol fee in basis points.
+    /// @return The protocol fee BP.
+    function protocolFeeBP() external view returns (uint256);
+
+    /// @notice Returns the treasury fee split in basis points.
+    /// @return The treasury fee split BP.
+    function treasuryFeeSplitBP() external view returns (uint256);
 }

@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
@@ -780,6 +781,295 @@ contract OllaCoreTest is Test {
         assertEq(shares, assets, "shares minted at 1:1");
         assertEq(stAztec.balanceOf(alice), shares, "shares balance");
         assertEq(vault.totalAssets(), assets, "assets buffered");
+    }
+}
+
+contract OllaCoreRewardsAccessControlTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event ProtocolFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
+    event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
+    event GovernanceUpdated(address oldGovernance, address newGovernance);
+    event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
+
+    /*//////////////////////////////////////////////////////////////
+                               CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant BP_DIVISOR = 10_000;
+    uint256 internal constant INITIAL_PROTOCOL_FEE_BP = 500;
+    uint256 internal constant INITIAL_TREASURY_SPLIT_BP = 5_000;
+
+    /*//////////////////////////////////////////////////////////////
+                           TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockStakingManager internal stakingManager;
+    address internal governance;
+    address internal rewardsVault;
+    MockSafetyModule internal safetyModule;
+    MockWithdrawalQueue internal withdrawalQueue;
+    address internal alice;
+
+    /*//////////////////////////////////////////////////////////////
+                                 SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCore(address(proxy));
+
+        stAztec = new StAztec(address(vault));
+        stakingManager = new MockStakingManager();
+        governance = makeAddr("governance");
+        rewardsVault = makeAddr("rewardsVault");
+        safetyModule = new MockSafetyModule();
+        withdrawalQueue = new MockWithdrawalQueue();
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            INITIAL_PROTOCOL_FEE_BP,
+            INITIAL_TREASURY_SPLIT_BP,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        alice = makeAddr("alice");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         ACCESS CONTROL TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_NonAdminSetsProtocolFeeBP() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(alice);
+        vault.setProtocolFeeBP(100);
+    }
+
+    function test_RevertWhen_NonAdminSetsTreasuryFeeSplitBP() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(alice);
+        vault.setTreasuryFeeSplitBP(100);
+    }
+
+    function test_RevertWhen_NonAdminSetsGovernance() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(alice);
+        vault.setGovernance(alice);
+    }
+
+    function test_RevertWhen_NonAdminSetsRewardsVault() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(alice);
+        vault.setRewardsVault(alice);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        INVALID VALUE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_ProtocolFeeBPExceedsMax() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, BP_DIVISOR + 1));
+        vm.prank(governance);
+        vault.setProtocolFeeBP(BP_DIVISOR + 1);
+    }
+
+    function test_RevertWhen_TreasuryFeeSplitBPExceedsMax() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, BP_DIVISOR + 1));
+        vm.prank(governance);
+        vault.setTreasuryFeeSplitBP(BP_DIVISOR + 1);
+    }
+
+    function test_RevertWhen_GovernanceIsZero() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newGovernance"));
+        vm.prank(governance);
+        vault.setGovernance(address(0));
+    }
+
+    function test_RevertWhen_RewardsVaultIsZero() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newRewardsVault"));
+        vm.prank(governance);
+        vault.setRewardsVault(address(0));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        SUCCESSFUL UPDATE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetProtocolFeeBP_UpdatesAndEmits() external {
+        uint256 oldFeeBP = vault.protocolFeeBP();
+        uint256 newFeeBP = 1000;
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
+
+        vm.prank(governance);
+        vault.setProtocolFeeBP(newFeeBP);
+
+        assertEq(vault.protocolFeeBP(), newFeeBP, "protocol fee updated");
+    }
+
+    function test_SetTreasuryFeeSplitBP_UpdatesAndEmits() external {
+        uint256 oldSplitBP = vault.treasuryFeeSplitBP();
+        uint256 newSplitBP = 7_000;
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
+
+        vm.prank(governance);
+        vault.setTreasuryFeeSplitBP(newSplitBP);
+
+        assertEq(vault.treasuryFeeSplitBP(), newSplitBP, "treasury split updated");
+    }
+
+    function test_SetGovernance_UpdatesAndEmits() external {
+        address newGovernance = makeAddr("newGovernance");
+
+        vm.prank(governance);
+        vault.setGovernance(newGovernance);
+
+        assertEq(vault.governance(), newGovernance, "governance updated");
+    }
+
+    function test_SetRewardsVault_UpdatesAndEmits() external {
+        address oldRewardsVault = vault.rewardsVault();
+        address newRewardsVault = makeAddr("newRewardsVault");
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RewardsVaultUpdated(oldRewardsVault, newRewardsVault);
+
+        vm.prank(governance);
+        vault.setRewardsVault(newRewardsVault);
+
+        assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault updated");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           BOUNDARY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetProtocolFeeBP_AllowsZero() external {
+        vm.prank(governance);
+        vault.setProtocolFeeBP(0);
+        assertEq(vault.protocolFeeBP(), 0, "protocol fee set to zero");
+    }
+
+    function test_SetProtocolFeeBP_AllowsMax() external {
+        vm.prank(governance);
+        vault.setProtocolFeeBP(BP_DIVISOR);
+        assertEq(vault.protocolFeeBP(), BP_DIVISOR, "protocol fee set to max");
+    }
+
+    function test_SetTreasuryFeeSplitBP_AllowsZero() external {
+        vm.prank(governance);
+        vault.setTreasuryFeeSplitBP(0);
+        assertEq(vault.treasuryFeeSplitBP(), 0, "treasury split set to zero");
+    }
+
+    function test_SetTreasuryFeeSplitBP_AllowsMax() external {
+        vm.prank(governance);
+        vault.setTreasuryFeeSplitBP(BP_DIVISOR);
+        assertEq(vault.treasuryFeeSplitBP(), BP_DIVISOR, "treasury split set to max");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function testFuzz_SetProtocolFeeBP_ValidRange(uint256 newFeeBP) external {
+        newFeeBP = bound(newFeeBP, 0, BP_DIVISOR);
+
+        uint256 oldFeeBP = vault.protocolFeeBP();
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
+
+        vm.prank(governance);
+        vault.setProtocolFeeBP(newFeeBP);
+
+        assertEq(vault.protocolFeeBP(), newFeeBP, "protocol fee fuzz");
+    }
+
+    function testFuzz_SetProtocolFeeBP_InvalidRange(uint256 newFeeBP) external {
+        newFeeBP = bound(newFeeBP, BP_DIVISOR + 1, type(uint256).max);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, newFeeBP));
+        vm.prank(governance);
+        vault.setProtocolFeeBP(newFeeBP);
+    }
+
+    function testFuzz_SetTreasuryFeeSplitBP_ValidRange(uint256 newSplitBP) external {
+        newSplitBP = bound(newSplitBP, 0, BP_DIVISOR);
+
+        uint256 oldSplitBP = vault.treasuryFeeSplitBP();
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
+
+        vm.prank(governance);
+        vault.setTreasuryFeeSplitBP(newSplitBP);
+
+        assertEq(vault.treasuryFeeSplitBP(), newSplitBP, "treasury split fuzz");
+    }
+
+    function testFuzz_SetTreasuryFeeSplitBP_InvalidRange(uint256 newSplitBP) external {
+        newSplitBP = bound(newSplitBP, BP_DIVISOR + 1, type(uint256).max);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, newSplitBP));
+        vm.prank(governance);
+        vault.setTreasuryFeeSplitBP(newSplitBP);
+    }
+
+    function testFuzz_SetGovernance_NonZeroAddress(address newGovernance) external {
+        vm.assume(newGovernance != address(0));
+
+        vm.prank(governance);
+        vault.setGovernance(newGovernance);
+
+        assertEq(vault.governance(), newGovernance, "governance fuzz");
+    }
+
+    function testFuzz_SetRewardsVault_NonZeroAddress(address newRewardsVault) external {
+        vm.assume(newRewardsVault != address(0));
+
+        address oldRewardsVault = vault.rewardsVault();
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RewardsVaultUpdated(oldRewardsVault, newRewardsVault);
+
+        vm.prank(governance);
+        vault.setRewardsVault(newRewardsVault);
+
+        assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault fuzz");
     }
 }
 
