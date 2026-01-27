@@ -36,7 +36,7 @@ contract StakingManagerReentrancyTest is Test {
         aztec = new MockAztec(address(this));
         rollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
-        rewardsVault = new MaliciousRewardsVault(IERC20(address(aztec)), core, makeAddr("treasury"));
+        rewardsVault = new MaliciousRewardsVault(IERC20(address(aztec)), core);
 
         StakingManager implementation = new StakingManager();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
