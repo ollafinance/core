@@ -77,8 +77,4 @@ interface IRewardsVault {
     /// @notice Returns the latest recorded rewards amount.
     /// @return The latest recorded rewards amount.
     function latestRecordedRewardsAmount() external view returns (uint256);
-
-    /// @notice Returns the cumulative rewards amount withdrawn.
-    /// @return The cumulative rewards amount withdrawn.
-    function cumulativeRewardsWithdrawn() external view returns (uint256);
 }

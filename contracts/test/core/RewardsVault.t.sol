@@ -125,7 +125,6 @@ contract RewardsVaultTest is Test {
         vault.postReceiveFundsHook(amount);
 
         assertEq(vault.latestRecordedRewardsAmount(), amount);
-        assertEq(vault.cumulativeRewardsWithdrawn(), 0);
         assertEq(vault.balance(), amount);
     }
 
@@ -212,7 +211,6 @@ contract RewardsVaultTest is Test {
         vault.withdrawToCore();
 
         assertEq(aztec.balanceOf(core) - coreBalanceBefore, amount);
-        assertEq(vault.cumulativeRewardsWithdrawn(), amount);
         assertEq(vault.latestRecordedRewardsAmount(), 0);
         assertEq(vault.balance(), 0);
     }
@@ -232,7 +230,6 @@ contract RewardsVaultTest is Test {
         vm.prank(core);
         vault.withdrawToCore();
 
-        assertEq(vault.cumulativeRewardsWithdrawn(), first + second);
         assertEq(vault.latestRecordedRewardsAmount(), 0);
         assertEq(vault.balance(), 0);
     }

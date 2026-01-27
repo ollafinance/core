@@ -20,7 +20,6 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
 
     uint256 private _totalReceived;
     uint256 private _latestRecordedRewardsAmount;
-    uint256 private _cumulativeRewardsWithdrawn;
 
     address private _reentryTarget;
     bytes private _reentryCalldata;
@@ -61,7 +60,6 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     /// @notice Withdraw rewards to core.
     function withdrawToCore() external override {
         uint256 available = REWARDS_TOKEN.balanceOf(address(this));
-        _cumulativeRewardsWithdrawn += available;
         _latestRecordedRewardsAmount = 0;
         REWARDS_TOKEN.transfer(CORE_ADDRESS, available);
         emit RewardsWithdrawn(available);
@@ -94,10 +92,5 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     /// @inheritdoc IRewardsVault
     function latestRecordedRewardsAmount() external view override returns (uint256) {
         return _latestRecordedRewardsAmount;
-    }
-
-    /// @inheritdoc IRewardsVault
-    function cumulativeRewardsWithdrawn() external view override returns (uint256) {
-        return _cumulativeRewardsWithdrawn;
     }
 }

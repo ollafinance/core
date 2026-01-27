@@ -35,9 +35,6 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     /// @notice The latest recorded rewards amount.
     uint256 public latestRecordedRewardsAmount;
 
-    /// @notice The cumulative rewards amount withdrawn.
-    uint256 public cumulativeRewardsWithdrawn;
-
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
@@ -116,7 +113,6 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
             revert RewardsVault__BalanceMismatch();
         }
         rewardsToken.safeTransfer(core, availableBalance);
-        cumulativeRewardsWithdrawn += availableBalance;
         latestRecordedRewardsAmount = 0;
         emit RewardsWithdrawn(availableBalance);
     }

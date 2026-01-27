@@ -31,9 +31,6 @@ contract MockRewardsVault is IMockRewardsVault {
     /// @notice Latest recorded rewards amount (for interface compliance).
     uint256 private _latestRecordedRewardsAmount;
 
-    /// @notice Total cumulative rewards withdrawn (for interface compliance).
-    uint256 private _cumulativeRewardsWithdrawn;
-
     /// @notice Whether postReceiveFundsHook should fail.
     bool private _hookShouldFail;
 
@@ -71,7 +68,6 @@ contract MockRewardsVault is IMockRewardsVault {
     /// @inheritdoc IRewardsVault
     function withdrawToCore() external override {
         uint256 available = REWARDS_TOKEN.balanceOf(address(this));
-        _cumulativeRewardsWithdrawn += available;
         _latestRecordedRewardsAmount = 0;
         REWARDS_TOKEN.transfer(CORE_ADDRESS, available);
         emit RewardsWithdrawn(available);
@@ -113,10 +109,5 @@ contract MockRewardsVault is IMockRewardsVault {
     /// @inheritdoc IRewardsVault
     function latestRecordedRewardsAmount() external view override returns (uint256) {
         return _latestRecordedRewardsAmount;
-    }
-
-    /// @inheritdoc IRewardsVault
-    function cumulativeRewardsWithdrawn() external view override returns (uint256) {
-        return _cumulativeRewardsWithdrawn;
     }
 }
