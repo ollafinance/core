@@ -25,9 +25,6 @@ contract MockRewardsVault is IMockRewardsVault {
                                   STATE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Treasury address.
-    address private _treasury;
-
     /// @notice Total funds received via postReceiveFundsHook.
     uint256 private _totalReceived;
 
@@ -41,11 +38,9 @@ contract MockRewardsVault is IMockRewardsVault {
     /// @notice Constructs the MockRewardsVault.
     /// @param rewardsToken_ The rewards token address.
     /// @param coreAddress The core contract address.
-    /// @param treasuryAddress The treasury address.
-    constructor(IERC20 rewardsToken_, address coreAddress, address treasuryAddress) {
+    constructor(IERC20 rewardsToken_, address coreAddress) {
         REWARDS_TOKEN = rewardsToken_;
         CORE_ADDRESS = coreAddress;
-        _treasury = treasuryAddress;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -62,23 +57,10 @@ contract MockRewardsVault is IMockRewardsVault {
     }
 
     /// @inheritdoc IRewardsVault
-    function withdrawToCore(uint256 amount) external override {
+    function withdrawToCore() external override {
         uint256 available = REWARDS_TOKEN.balanceOf(address(this));
-        if (amount > available) {
-            revert RewardsVault__InsufficientBalance(amount, available);
-        }
-        REWARDS_TOKEN.transfer(CORE_ADDRESS, amount);
-        emit RewardsWithdrawn(amount);
-    }
-
-    /// @inheritdoc IRewardsVault
-    function setTreasury(address newTreasury) external override {
-        if (newTreasury == address(0)) {
-            revert RewardsVault__ZeroAddress("treasury");
-        }
-        address oldTreasury = _treasury;
-        _treasury = newTreasury;
-        emit TreasuryUpdated(oldTreasury, newTreasury);
+        REWARDS_TOKEN.transfer(CORE_ADDRESS, available);
+        emit RewardsWithdrawn(available);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -97,11 +79,6 @@ contract MockRewardsVault is IMockRewardsVault {
     /// @inheritdoc IRewardsVault
     function balance() external view override returns (uint256) {
         return REWARDS_TOKEN.balanceOf(address(this));
-    }
-
-    /// @inheritdoc IRewardsVault
-    function treasury() external view override returns (address) {
-        return _treasury;
     }
 
     /// @inheritdoc IRewardsVault

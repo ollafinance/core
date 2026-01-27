@@ -19,11 +19,6 @@ interface IRewardsVault {
     /// @param amount The amount of rewards withdrawn.
     event RewardsWithdrawn(uint256 indexed amount);
 
-    /// @notice Emitted when treasury address is updated.
-    /// @param oldTreasury The previous treasury address.
-    /// @param newTreasury The new treasury address.
-    event TreasuryUpdated(address indexed oldTreasury, address indexed newTreasury);
-
     /*//////////////////////////////////////////////////////////////
                                   ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -49,23 +44,13 @@ interface IRewardsVault {
     /// @param amount The amount of funds received.
     function postReceiveFundsHook(uint256 amount) external;
 
-    /// @notice Withdraws rewards to the core contract.
+    /// @notice Withdraws all available rewards to the core contract.
     /// @dev Only callable by addresses with CORE_ROLE.
-    /// @param amount The amount of rewards to withdraw.
-    function withdrawToCore(uint256 amount) external;
-
-    /// @notice Sets the treasury address.
-    /// @dev Only callable by DEFAULT_ADMIN_ROLE.
-    /// @param newTreasury The new treasury address.
-    function setTreasury(address newTreasury) external;
+    function withdrawToCore() external;
 
     /// @notice Returns the current available funds.
     /// @return The balance of funds held in the vault.
     function balance() external view returns (uint256);
-
-    /// @notice Returns the treasury address.
-    /// @return The treasury address.
-    function treasury() external view returns (address);
 
     /// @notice Returns the core address.
     /// @return The core contract address.

@@ -50,7 +50,7 @@ contract StakingManagerUpgradeTest is Test {
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
-        rewardsVault = new MockRewardsVault(IERC20(address(aztec)), core, makeAddr("treasury"));
+        rewardsVault = new MockRewardsVault(IERC20(address(aztec)), core);
 
         StakingManager implementation = new StakingManager();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
