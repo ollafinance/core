@@ -240,7 +240,6 @@ contract StakingManagerInvariantTest is Test {
     address internal providerAdmin;
     address internal governance;
     address internal defaultAdmin;
-    address internal treasury;
 
     function setUp() external {
         // Setup addresses
@@ -248,13 +247,12 @@ contract StakingManagerInvariantTest is Test {
         providerAdmin = makeAddr("providerAdmin");
         governance = makeAddr("governance");
         defaultAdmin = makeAddr("defaultAdmin");
-        treasury = makeAddr("treasury");
 
         // Setup mock contracts
         stakingAsset = new MockAztec(address(this));
         rollupRegistry = new MockAztecRollupRegistry(address(0));
         rollup = new MockAztecRollup(stakingAsset, 100e18); // 100 AZTEC activation threshold
-        rewardsVault = new MockRewardsVault(IERC20(address(stakingAsset)), core, treasury);
+        rewardsVault = new MockRewardsVault(IERC20(address(stakingAsset)), core);
 
         // Set canonical rollup
         rollupRegistry.setCanonicalRollup(address(rollup));
