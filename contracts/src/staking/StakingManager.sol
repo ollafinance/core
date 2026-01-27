@@ -76,6 +76,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Mapping to check if an attester has a pending unstake.
     mapping(address attester => bool isPending) private _isUnstakePending;
 
+    /// @dev Cumulative slashing delta tracked across rollup snapshots.
+    uint256 private _cumulativeSlashingDelta;
+
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
     uint256[48] private __gap;
@@ -277,10 +280,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Returns the cumulative slashing delta from the rollup.
     /// @return slashingDelta The cumulative slashing delta.
-    function getSlashingDelta() external view override onlyRole(CORE_ROLE) returns (uint256 slashingDelta) {
+    function getSlashingDelta() external override onlyRole(CORE_ROLE) returns (uint256 slashingDelta) {
         (, IAztecRollup rollup) = _getRollup();
-        slashingDelta = _computeSlashed(rollup);
-        return slashingDelta;
+        uint256 currentSlashingDelta = _computeSlashed(rollup);
+        if (currentSlashingDelta > _cumulativeSlashingDelta) {
+            _cumulativeSlashingDelta = currentSlashingDelta;
+        }
+        return _cumulativeSlashingDelta;
     }
 
     // slither-disable-start calls-loop,timestamp

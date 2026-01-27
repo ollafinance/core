@@ -95,7 +95,7 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function getSlashingDelta() external pure override returns (uint256 slashingDelta) {
+    function getSlashingDelta() external override returns (uint256 slashingDelta) {
         return 0;
     }
 

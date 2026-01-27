@@ -1352,6 +1352,30 @@ contract StakingManagerHarvestTest is Test {
         );
     }
 
+    function test_GetSlashingDelta_MonotonicCumulative() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingManager.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 10 ether, block.timestamp);
+
+        vm.prank(core);
+        uint256 first = stakingManager.getSlashingDelta();
+        assertEq(first, 10 ether, "initial slashing captured");
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        vm.prank(core);
+        uint256 second = stakingManager.getSlashingDelta();
+        assertEq(second, first, "cumulative slashing does not decrease");
+    }
+
     /*//////////////////////////////////////////////////////////////
                             FUZZ TESTS
     //////////////////////////////////////////////////////////////*/

@@ -204,7 +204,7 @@ interface IStakingManager {
     /// @notice Returns the cumulative slashing delta from the rollup.
     /// @dev Only callable by CORE_ROLE.
     /// @return slashingDelta The cumulative slashing delta.
-    function getSlashingDelta() external view returns (uint256 slashingDelta);
+    function getSlashingDelta() external returns (uint256 slashingDelta);
 
     /// @notice Returns the total staked principal across validator states.
     /// @return totalStaked The total staked principal.

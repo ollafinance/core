@@ -569,7 +569,10 @@ contract OllaCore is
         currentRewards = _accountingState.cumulativeRewards + claimableRewards;
 
         uint256 lastReportRewards = _latestReport.rewardsSnapshot;
-        rewardsDelta = currentRewards - lastReportRewards;
+        int256 rewardsDeltaSigned = int256(currentRewards) - int256(lastReportRewards);
+        if (rewardsDeltaSigned > 0) {
+            rewardsDelta = uint256(rewardsDeltaSigned);
+        }
         slashingDelta = _modules.stakingManager.getSlashingDelta();
         stakedPrincipal = _modules.stakingManager.totalStaked();
         return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal);

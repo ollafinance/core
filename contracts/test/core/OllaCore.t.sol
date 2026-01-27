@@ -132,7 +132,7 @@ contract MockAccountingStakingManager is IStakingManager {
         return claimableRewards;
     }
 
-    function getSlashingDelta() external view override returns (uint256) {
+    function getSlashingDelta() external override returns (uint256) {
         return slashingDelta;
     }
 
@@ -776,6 +776,24 @@ contract OllaCoreTest is Test {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
         assertEq(accounting.rewardsDelta, expectedDelta, "rewards delta stored");
         assertEq(secondReport.rewardsSnapshot, 14 * DECIMALS, "rewards snapshot advanced");
+    }
+
+    function test_UpdateAccounting_RewardsDeltaClampsWhenClaimableDecreases() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setClaimableRewards(10 * DECIMALS);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        stakingManager.setClaimableRewards(5 * DECIMALS);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        assertEq(accounting.rewardsDelta, 0, "rewards delta clamps to zero");
+        assertEq(reportAfter.rewardsSnapshot, 5 * DECIMALS, "rewards snapshot tracks current rewards");
     }
 
     function test_RevertWhen_UpdateAccountingSlashingDeltaDecreases() external {

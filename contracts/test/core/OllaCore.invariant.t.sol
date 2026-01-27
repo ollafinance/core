@@ -194,7 +194,7 @@ contract MockAccountingStakingManager is IStakingManager {
         return claimableRewards;
     }
 
-    function getSlashingDelta() external view override returns (uint256) {
+    function getSlashingDelta() external override returns (uint256) {
         return slashingDelta;
     }
 
