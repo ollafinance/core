@@ -3,6 +3,7 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Address } from "@oz/utils/Address.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IMaliciousRewardsVault } from "src/core/mocks/IMaliciousRewardsVault.sol";
 
 /// @title MaliciousRewardsVault
@@ -18,6 +19,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     address public immutable CORE_ADDRESS;
 
     uint256 private _totalReceived;
+    uint256 private _latestRecordedRewardsAmount;
 
     address private _reentryTarget;
     bytes private _reentryCalldata;
@@ -26,6 +28,11 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     constructor(IERC20 rewardsToken_, address coreAddress_) {
         REWARDS_TOKEN = rewardsToken_;
         CORE_ADDRESS = coreAddress_;
+    }
+
+    /// @inheritdoc IRewardsVault
+    function initialize(IERC20, address, address) external override {
+        revert MaliciousRewardsVault__NoInitializer();
     }
 
     /// @notice Configure the call attempted from `postReceiveFundsHook`.
@@ -46,12 +53,14 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
             _reentryTarget.functionCall(_reentryCalldata);
         }
         _totalReceived += amount;
+        _latestRecordedRewardsAmount = REWARDS_TOKEN.balanceOf(address(this));
         emit RewardsRecorded(amount);
     }
 
     /// @notice Withdraw rewards to core.
     function withdrawToCore() external override {
         uint256 available = REWARDS_TOKEN.balanceOf(address(this));
+        _latestRecordedRewardsAmount = 0;
         REWARDS_TOKEN.transfer(CORE_ADDRESS, available);
         emit RewardsWithdrawn(available);
     }
@@ -78,5 +87,10 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     /// @return The total received.
     function totalReceived() external view override returns (uint256) {
         return _totalReceived;
+    }
+
+    /// @inheritdoc IRewardsVault
+    function latestRecordedRewardsAmount() external view override returns (uint256) {
+        return _latestRecordedRewardsAmount;
     }
 }

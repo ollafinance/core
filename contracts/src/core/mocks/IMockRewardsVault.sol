@@ -15,6 +15,9 @@ interface IMockRewardsVault is IRewardsVault {
     /// @notice Thrown when hook should fail (for testing).
     error MockRewardsVault__HookFailed();
 
+    /// @notice Thrown when initialize is called (not allowed in mock).
+    error MockRewardsVault__NoInitializer();
+
     /*//////////////////////////////////////////////////////////////
                           TEST HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/

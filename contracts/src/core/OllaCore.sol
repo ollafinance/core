@@ -273,6 +273,7 @@ contract OllaCore is
     }
 
     // slither-disable-start pess-multiple-storage-read
+    // solhint-disable function-max-lines
     /// @notice Updates accounting snapshots and publishes the latest exchange rate data.
     function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
@@ -330,6 +331,8 @@ contract OllaCore is
         // slither-disable-end reentrancy-benign
         // slither-disable-end reentrancy-no-eth
     }
+
+    // solhint-enable function-max-lines
 
     // slither-disable-end pess-multiple-storage-read
 
