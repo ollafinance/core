@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
@@ -853,25 +854,33 @@ contract OllaCoreRewardsAccessControlTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_NonAdminSetsProtocolFeeBP() external {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE())
+        );
         vm.prank(alice);
         vault.setProtocolFeeBP(100);
     }
 
     function test_RevertWhen_NonAdminSetsTreasuryFeeSplitBP() external {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE())
+        );
         vm.prank(alice);
         vault.setTreasuryFeeSplitBP(100);
     }
 
     function test_RevertWhen_NonAdminSetsGovernance() external {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE())
+        );
         vm.prank(alice);
         vault.setGovernance(alice);
     }
 
     function test_RevertWhen_NonAdminSetsRewardsVault() external {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE())
+        );
         vm.prank(alice);
         vault.setRewardsVault(alice);
     }
