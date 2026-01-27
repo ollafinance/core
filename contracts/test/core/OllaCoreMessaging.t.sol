@@ -58,7 +58,7 @@ contract OllaCoreMessagingTest is Test {
         address withdrawalQueue = makeAddr("withdrawalQueue");
         address rewardsVault = makeAddr("rewardsVault");
         address safetyModule = makeAddr("safetyModule");
-        vault.initialize(asset, stAztec, stakingManager, governance, withdrawalQueue, rewardsVault, safetyModule);
+        vault.initialize(asset, stAztec, stakingManager, 0, 0, governance, withdrawalQueue, rewardsVault, safetyModule);
     }
 
     /*//////////////////////////////////////////////////////////////

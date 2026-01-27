@@ -50,23 +50,23 @@ contract OllaCore is
     /// @notice Role for core module callbacks.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
 
+    /// @notice Basis points divisor.
+    uint256 public constant BP_DIVISOR = 10_000;
+
     /*//////////////////////////////////////////////////////////////
                                  STATE
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Contract related interfaces and addresses
-    IERC20 private _asset;
-    IStAztec private _stAztec;
-    IStakingManager private _stakingManager;
-    address private _governance;
-    IWithdrawalQueue private _withdrawalQueue;
-    address private _rewardsVault;
-    address private _safetyModule;
+    IOllaCore.Modules private _modules;
 
     /// @notice Accounting and reporting values
     IOllaCore.AccountingState private _accountingState;
     IOllaCore.FlowCounters private _flowCounters;
     IOllaCore.LatestReport private _latestReport;
+
+    uint256 private _protocolFeeBP;
+    uint256 private _treasuryFeeSplitBP;
 
     uint256 private _stakeMessageId;
     uint256 private _unstakeMessageId;
@@ -109,55 +109,45 @@ contract OllaCore is
                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the vault with asset and module addresses.
-    /// @param asset_ The underlying Aztec asset.
-    /// @param stAztec_ The stAztec share token.
-    /// @param stakingManager_ The staking manager for delegation messaging.
-    /// @param governance_ The governance address authorized to upgrade.
-    /// @param withdrawalQueue_ The withdrawal queue module address.
-    /// @param rewardsVault_ The rewards vault module address.
-    /// @param safetyModule_ The safety module address.
+    /// @inheritdoc IOllaCore
     function initialize(
         IERC20 asset_,
         IStAztec stAztec_,
         IStakingManager stakingManager_,
+        uint256 protocolFeeBP_,
+        uint256 treasuryFeeSplitBP_,
         address governance_,
         address withdrawalQueue_,
         address rewardsVault_,
         address safetyModule_
     ) external override initializer {
-        if (address(asset_) == address(0)) {
-            revert OllaCore__ZeroAddress("asset_");
-        }
-        if (address(stAztec_) == address(0)) {
-            revert OllaCore__ZeroAddress("stAztec_");
-        }
-        if (address(stakingManager_) == address(0)) {
-            revert OllaCore__ZeroAddress("stakingManager_");
-        }
-        if (governance_ == address(0)) {
-            revert OllaCore__ZeroAddress("governance_");
-        }
-        if (withdrawalQueue_ == address(0)) {
-            revert OllaCore__ZeroAddress("withdrawalQueue_");
-        }
-        if (rewardsVault_ == address(0)) {
-            revert OllaCore__ZeroAddress("rewardsVault_");
-        }
-        if (safetyModule_ == address(0)) {
-            revert OllaCore__ZeroAddress("safetyModule_");
-        }
-
+        _validateIntialilParams(
+            asset_,
+            stAztec_,
+            stakingManager_,
+            protocolFeeBP_,
+            treasuryFeeSplitBP_,
+            governance_,
+            withdrawalQueue_,
+            rewardsVault_,
+            safetyModule_
+        );
         __AccessControl_init();
         __Pausable_init();
 
-        _asset = asset_;
-        _stAztec = stAztec_;
-        _stakingManager = stakingManager_;
-        _governance = governance_;
-        _withdrawalQueue = IWithdrawalQueue(withdrawalQueue_);
-        _rewardsVault = rewardsVault_;
-        _safetyModule = safetyModule_;
+        _modules = IOllaCore.Modules({
+            asset: asset_,
+            stAztec: stAztec_,
+            stakingManager: stakingManager_,
+            governance: governance_,
+            withdrawalQueue: IWithdrawalQueue(withdrawalQueue_),
+            rewardsVault: rewardsVault_,
+            safetyModule: safetyModule_
+        });
+
+        _protocolFeeBP = protocolFeeBP_;
+        _treasuryFeeSplitBP = treasuryFeeSplitBP_;
+
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         _latestReport.timestamp = block.timestamp;
 
@@ -182,22 +172,24 @@ contract OllaCore is
             revert OllaCore__ZeroAddress("recipient");
         }
 
-        if (ISafetyModule(_safetyModule).isPaused()) {
+        Modules memory modules = _modules;
+
+        if (ISafetyModule(modules.safetyModule).isPaused()) {
             revert OllaCore__SafetyModulePaused();
         }
 
         uint256 currentTotalAssets = totalAssets();
-        if (!ISafetyModule(_safetyModule).checkDepositAllowed(assets, currentTotalAssets)) {
+        if (!ISafetyModule(modules.safetyModule).checkDepositAllowed(assets, currentTotalAssets)) {
             revert OllaCore__DepositCapExceeded(assets, currentTotalAssets);
         }
 
         shares = _convertToSharesForDeposit(assets);
         _increaseBuffered(assets);
-        _asset.safeTransferFrom(msg.sender, address(this), assets);
+        modules.asset.safeTransferFrom(msg.sender, address(this), assets);
         _syncBufferedWithBalance();
         _increaseCumulativeDeposits(assets);
 
-        _stAztec.mint(recipient, shares);
+        modules.stAztec.mint(recipient, shares);
         emit Deposit(msg.sender, recipient, assets, shares);
         return shares;
     }
@@ -221,17 +213,19 @@ contract OllaCore is
             revert OllaCore__PendingWithdrawalExists(owner);
         }
 
+        Modules memory modules = _modules;
+
         uint256 rate = _exchangeRate();
         uint256 assetsExpected = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
-        ISafetyModule(_safetyModule).checkWithdrawalMinimum(shares);
-        uint256 expectedRequestId = _withdrawalQueue.nextRequestId();
+        ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
+        uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
 
         _activeRequestIds[owner] = expectedRequestId;
         _requestOwners[expectedRequestId] = owner;
         _increaseCumulativeWithdrawals(assetsExpected);
-        _stAztec.burn(owner, shares);
+        modules.stAztec.burn(owner, shares);
 
-        requestId = _withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
+        requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
         if (requestId != expectedRequestId) {
             revert OllaCore__UnexpectedRequestId(expectedRequestId, requestId);
         }
@@ -281,7 +275,7 @@ contract OllaCore is
     // slither-disable-start pess-multiple-storage-read
     /// @notice Updates accounting snapshots and publishes the latest exchange rate data.
     function updateAccounting() external override onlyRole(OPERATOR_ROLE) {
-        ISafetyModule safetyModuleRef = ISafetyModule(_safetyModule);
+        ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         // slither-disable-start reentrancy-no-eth
         // slither-disable-start reentrancy-benign
         // slither-disable-start reentrancy-events
@@ -302,7 +296,10 @@ contract OllaCore is
 
         IOllaCore.AccountingState memory updatedBuckets = _accountingState;
         uint256 newTotalAssets = _computeTotalAssets(updatedBuckets);
+
         uint256 grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        (uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares) =
+            _payoutOllaProtocolFees(grossRewards);
         uint256 rate = _exchangeRate();
 
         safetyModuleRef.checkRateDrop(oldRate, rate);
@@ -319,7 +316,16 @@ contract OllaCore is
         safetyModuleRef.setLastAccountingTimestamp(block.timestamp);
 
         emit AttestersStateRead(updatedBuckets.rewardsDelta, updatedBuckets.slashingDelta, _latestReport.timestamp);
-        emit AccountingUpdated(newTotalAssets, rate, grossRewards, netFlows, 0, 0, 0, _latestReport.timestamp);
+        emit AccountingUpdated(
+            newTotalAssets,
+            rate,
+            grossRewards,
+            netFlows,
+            protocolFeeAssets,
+            treasuryShares,
+            providerShares,
+            _latestReport.timestamp
+        );
         // slither-disable-end reentrancy-events
         // slither-disable-end reentrancy-benign
         // slither-disable-end reentrancy-no-eth
@@ -339,8 +345,8 @@ contract OllaCore is
         nonReentrant
         returns (uint256 used)
     {
-        ISafetyModule safetyModuleRef = ISafetyModule(_safetyModule);
-        uint256 queued = _withdrawalQueue.totalPendingAssets();
+        ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
+        uint256 queued = _modules.withdrawalQueue.totalPendingAssets();
         uint256 total = totalAssets();
         // slither-disable-start reentrancy-no-eth
         // slither-disable-start reentrancy-events
@@ -355,10 +361,10 @@ contract OllaCore is
             revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, available, bufferedAssets);
         }
 
-        used = _withdrawalQueue.previewFinalizeWithdrawals(available);
+        used = _modules.withdrawalQueue.previewFinalizeWithdrawals(available);
         _accountingState.bufferedAssets = bufferedAssets - used;
 
-        uint256 finalized = _withdrawalQueue.finalizeWithdrawals(available);
+        uint256 finalized = _modules.withdrawalQueue.finalizeWithdrawals(available);
         if (finalized != used) {
             revert OllaCore__FinalizeAmountMismatch(used, finalized);
         }
@@ -378,43 +384,43 @@ contract OllaCore is
     /// @notice Returns the underlying asset address.
     /// @return The underlying asset address.
     function asset() external view override returns (address) {
-        return address(_asset);
+        return address(_modules.asset);
     }
 
     /// @notice Returns the stAztec share token address.
     /// @return The stAztec share token address.
     function stAztec() external view override returns (address) {
-        return address(_stAztec);
+        return address(_modules.stAztec);
     }
 
     /// @notice Returns the staking manager address.
     /// @return The staking manager address.
     function stakingManager() external view override returns (address) {
-        return address(_stakingManager);
+        return address(_modules.stakingManager);
     }
 
     /// @notice Returns the governance address.
     /// @return The governance address.
     function governance() external view override returns (address) {
-        return _governance;
+        return _modules.governance;
     }
 
     /// @notice Returns the withdrawal queue module address.
     /// @return The withdrawal queue address.
     function withdrawalQueue() external view override returns (address) {
-        return address(_withdrawalQueue);
+        return address(_modules.withdrawalQueue);
     }
 
     /// @notice Returns the rewards vault module address.
     /// @return The rewards vault address.
     function rewardsVault() external view override returns (address) {
-        return _rewardsVault;
+        return _modules.rewardsVault;
     }
 
     /// @notice Returns the safety module address.
     /// @return The safety module address.
     function safetyModule() external view override returns (address) {
-        return _safetyModule;
+        return _modules.safetyModule;
     }
 
     /// @notice Returns the latest accounting report snapshot.
@@ -478,8 +484,26 @@ contract OllaCore is
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Payout protocol fees through minting shares.
+    /// @param grossAssetRewards The gross asset rewards to charge fees on.
+    /// @return ollaProtocolFeeAssets The asset amount paid as protocol fees.
+    /// @return treasuryShares The shares minted to the treasury.
+    /// @return providerShares The shares minted to the provider.
+    function _payoutOllaProtocolFees(uint256 grossAssetRewards)
+        internal
+        onlyRole(OPERATOR_ROLE)
+        returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
+    {
+        (ollaProtocolFeeAssets, treasuryShares, providerShares) = _calculateProtocolFees(grossAssetRewards);
+        emit OllaProtocolFeesPaid(ollaProtocolFeeAssets, treasuryShares, providerShares);
+        _modules.stAztec.mint(_modules.governance, treasuryShares);
+        _modules.stAztec.mint(_modules.rewardsVault, providerShares);
+
+        return (ollaProtocolFeeAssets, treasuryShares, providerShares);
+    }
+
     function _claimWithdrawal(uint256 requestId) internal returns (uint256 assets) {
-        IWithdrawalQueue queue = _withdrawalQueue;
+        IWithdrawalQueue queue = _modules.withdrawalQueue;
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         address receiver = request.recipient;
         assets = request.assetsExpected;
@@ -494,7 +518,7 @@ contract OllaCore is
             revert OllaCore__ClaimAssetsMismatch(requestId, assets, assetsClaimed);
         }
 
-        _asset.safeTransfer(receiver, assets);
+        _modules.asset.safeTransfer(receiver, assets);
         emit WithdrawalClaimed(requestId, receiver, assets);
         return assets;
     }
@@ -503,7 +527,7 @@ contract OllaCore is
     function _stake(uint256 amount) internal {
         uint256 messageId = ++_stakeMessageId;
         emit StakeRequested(messageId, amount);
-        _stakingManager.stake(amount);
+        _modules.stakingManager.stake(amount);
         _syncBufferedWithBalance();
     }
 
@@ -511,7 +535,7 @@ contract OllaCore is
     function _unstake(uint256 amount) internal {
         uint256 messageId = ++_unstakeMessageId;
         emit UnstakeRequested(messageId, amount);
-        _stakingManager.unstake(amount);
+        _modules.stakingManager.unstake(amount);
         _syncBufferedWithBalance();
     }
 
@@ -633,16 +657,35 @@ contract OllaCore is
         _accountingState.slashingDelta = newValue;
     }
 
+    function _calculateProtocolFees(uint256 grossAssetRewards)
+        internal
+        view
+        onlyRole(OPERATOR_ROLE)
+        returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
+    {
+        ollaProtocolFeeAssets =
+            grossAssetRewards * _protocolFeeBP / BP_DIVISOR;
+
+        uint256 currentRate = _exchangeRate();
+        uint256 protocolSharesTotal =
+            ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Ceil);
+
+        treasuryShares = protocolSharesTotal * _treasuryFeeSplitBP / BP_DIVISOR;
+        providerShares = protocolSharesTotal - treasuryShares;
+
+        return (ollaProtocolFeeAssets, treasuryShares, providerShares);
+    }
+
     function _syncBufferedWithBalance() internal view {
         uint256 buffered = _accountingState.bufferedAssets;
-        uint256 actual = _asset.balanceOf(address(this));
+        uint256 actual = _modules.asset.balanceOf(address(this));
         if (buffered != actual) {
             revert OllaCore__BufferedBalanceMismatch(buffered, actual);
         }
     }
 
     function _exchangeRate() internal view returns (uint256) {
-        IStAztec stAztecToken = _stAztec;
+        IStAztec stAztecToken = _modules.stAztec;
         uint256 supply = stAztecToken.totalSupply();
         if (supply == 0) {
             return _EXCHANGE_RATE_SCALE;
@@ -655,7 +698,7 @@ contract OllaCore is
     }
 
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
-        IStAztec stAztecToken = _stAztec;
+        IStAztec stAztecToken = _modules.stAztec;
         uint256 supply = stAztecToken.totalSupply();
         if (supply == 0) {
             return assets;
@@ -664,11 +707,51 @@ contract OllaCore is
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != _governance) {
+        if (msg.sender != _modules.governance) {
             revert OllaCore__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {
             revert OllaCore__ZeroAddress("newImplementation");
+        }
+    }
+
+    function _validateIntialilParams(
+        IERC20 asset_,
+        IStAztec stAztec_,
+        IStakingManager stakingManager_,
+        uint256 protocolFeeBP_,
+        uint256 treasuryFeeSplitBP_,
+        address governance_,
+        address withdrawalQueue_,
+        address rewardsVault_,
+        address safetyModule_
+    ) internal pure {
+        if (address(asset_) == address(0)) {
+            revert OllaCore__ZeroAddress("asset_");
+        }
+        if (address(stAztec_) == address(0)) {
+            revert OllaCore__ZeroAddress("stAztec_");
+        }
+        if (address(stakingManager_) == address(0)) {
+            revert OllaCore__ZeroAddress("stakingManager_");
+        }
+        if (protocolFeeBP_ > BP_DIVISOR) {
+            revert OllaCore__InvalidAmount();
+        }
+        if (treasuryFeeSplitBP_ > BP_DIVISOR) {
+            revert OllaCore__InvalidAmount();
+        }
+        if (governance_ == address(0)) {
+            revert OllaCore__ZeroAddress("governance_");
+        }
+        if (withdrawalQueue_ == address(0)) {
+            revert OllaCore__ZeroAddress("withdrawalQueue_");
+        }
+        if (rewardsVault_ == address(0)) {
+            revert OllaCore__ZeroAddress("rewardsVault_");
+        }
+        if (safetyModule_ == address(0)) {
+            revert OllaCore__ZeroAddress("safetyModule_");
         }
     }
 

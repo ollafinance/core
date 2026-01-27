@@ -16,6 +16,9 @@ struct DeployConfig {
     // External addresses (used when deployMocks is false)
     address asset;
     address stakingManager;
+    // Protocol fee config
+    uint256 protocolFeeBP;
+    uint256 treasuryFeeSplitBP;
     // Governance addresses
     address governance;
     address withdrawalQueue;

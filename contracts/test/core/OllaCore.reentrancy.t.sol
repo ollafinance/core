@@ -28,6 +28,8 @@ contract OllaCoreReentrancyTest is Test {
     OllaCore internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
+    uint256 internal protocolFeeBP;
+    uint256 internal treasuryFeeSplitBP;
     MaliciousWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     address internal governance;
@@ -53,8 +55,19 @@ contract OllaCoreReentrancyTest is Test {
         safetyModule = new MockSafetyModule();
         withdrawalQueue = new MaliciousWithdrawalQueue();
 
+        protocolFeeBP = 500;
+        treasuryFeeSplitBP = 5_000;
+
         vault.initialize(
-            asset, stAztec, stakingManager, governance, address(withdrawalQueue), rewardsVault, address(safetyModule)
+            asset,
+            stAztec,
+            stakingManager,
+            protocolFeeBP,
+            treasuryFeeSplitBP,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
         );
         withdrawalQueue.initialize(address(vault), governance);
 
