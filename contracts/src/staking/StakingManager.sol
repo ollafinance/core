@@ -275,6 +275,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return rollup.getSequencerRewards(address(rewardsVault));
     }
 
+    /// @notice Returns the cumulative slashing delta from the rollup.
+    /// @return slashingDelta The cumulative slashing delta.
+    function getSlashingDelta() external view override onlyRole(CORE_ROLE) returns (uint256 slashingDelta) {
+        (, IAztecRollup rollup) = _getRollup();
+        slashingDelta = _computeSlashed(rollup);
+        return slashingDelta;
+    }
+
     // slither-disable-start calls-loop,timestamp
     /// @notice Returns aggregated staking state from the rollup.
     /// @return state The aggregated staking state.
@@ -292,6 +300,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     // slither-disable-end calls-loop,timestamp
+
+    /// @inheritdoc IStakingManager
+    function totalStaked() external view override returns (uint256 totalStaked) {
+        // TODO: research if we can assume moving with rollup is safe
+        (, IAztecRollup rollup) = _getRollup();
+        totalStaked = _computeStaked(rollup);
+        return totalStaked;
+    }
 
     /// @inheritdoc IStakingManager
     function getQueueLength() external view override returns (uint256) {
@@ -672,6 +688,25 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // slither-disable-end calls-loop,timestamp
 
+    function _computeStaked(IAztecRollup rollup) internal view returns (uint256 totalStaked) {
+        uint256 activationThreshold = rollup.getActivationThreshold();
+        address[] storage activatedAttesters = _activatedAttesters;
+        address[] storage pendingUnstakeRequests = _pendingUnstakeRequests;
+
+        (totalStaked,) = _accumulateAttestersDelta(rollup, activationThreshold, activatedAttesters, 0, 0);
+        (totalStaked,) = _accumulateAttestersDelta(rollup, activationThreshold, pendingUnstakeRequests, totalStaked, 0);
+        return totalStaked;
+    }
+
+    function _computeSlashed(IAztecRollup rollup) internal view returns (uint256 slashingDelta) {
+        uint256 activationThreshold = rollup.getActivationThreshold();
+
+        (, slashingDelta) = _accumulateAttestersDelta(rollup, activationThreshold, _activatedAttesters, 0, 0);
+        (, slashingDelta) =
+            _accumulateAttestersDelta(rollup, activationThreshold, _pendingUnstakeRequests, 0, slashingDelta);
+        return slashingDelta;
+    }
+
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (msg.sender != governance) {
             revert StakingManager__UnauthorizedGovernance(msg.sender);
@@ -679,6 +714,28 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (newImplementation == address(0)) {
             revert StakingManager__ZeroAddress("newImplementation");
         }
+    }
+
+    function _accumulateAttestersDelta(
+        IAztecRollup rollup,
+        uint256 activationThreshold,
+        address[] storage attesters,
+        uint256 totalStaked,
+        uint256 slashingDelta
+    ) internal view returns (uint256 updatedTotalStaked, uint256 updatedSlashingDelta) {
+        uint256 length = attesters.length;
+        for (uint256 i; i < length; ++i) {
+            AttesterView memory view_ = rollup.getAttesterView(attesters[i]);
+            (bool eligible, uint256 remaining) = _remainingStake(view_);
+            if (!eligible) {
+                continue;
+            }
+            totalStaked += activationThreshold;
+            if (activationThreshold > remaining) {
+                slashingDelta += activationThreshold - remaining;
+            }
+        }
+        return (totalStaked, slashingDelta);
     }
 
     /// @notice Calculates the attester count to stake to, bounded by available keys.
@@ -699,5 +756,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             attestersToStakeTo = availableKeys;
         }
         return attestersToStakeTo;
+    }
+
+    function _remainingStake(AttesterView memory view_) internal pure returns (bool eligible, uint256 remaining) {
+        if (view_.effectiveBalance > 0) {
+            return (true, view_.effectiveBalance);
+        }
+        if (view_.exit.exists) {
+            return (true, view_.exit.amount);
+        }
+        return (false, 0);
     }
 }

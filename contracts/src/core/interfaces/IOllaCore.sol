@@ -34,6 +34,7 @@ interface IOllaCore {
         uint256 exchangeRate;
         uint256 grossRewards;
         uint256 netFlows;
+        uint256 rewardsSnapshot;
         uint256 timestamp;
     }
 
@@ -161,6 +162,9 @@ interface IOllaCore {
 
     /// @notice Thrown when deposits are blocked by the safety module pause.
     error OllaCore__SafetyModulePaused();
+
+    /// @notice Thrown when a slashing delta is invalid.
+    error OllaCore__InvalidSlashingDelta(uint256 previous, uint256 current);
 
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS

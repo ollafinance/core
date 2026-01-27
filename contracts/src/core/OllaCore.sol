@@ -10,6 +10,7 @@ import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -289,16 +290,16 @@ contract OllaCore is
         // checks before accounting updates are safe.
         safetyModuleRef.checkAccountingLiveness();
 
-        IOllaCore.FlowCounters memory flowsSnapshot = _flowCounters;
-        (uint256 netFlows,,) = _computeNetFlows(flowsSnapshot);
+        (IOllaCore.FlowCounters memory flowsSnapshot, uint256 netFlows) = _readFlowsSnapshot();
+        (uint256 oldTotalAssets, uint256 oldRate) = _readLatestReport();
 
-        uint256 oldTotalAssets = _latestReport.totalAssets;
-        uint256 oldRate = _latestReport.exchangeRate;
+        (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal) =
+            _readStakingManagerState();
+        _validateSlashingDelta(slashingDelta);
 
-        IOllaCore.AccountingState storage buckets = _accountingState;
-        _applyAccountingUpdates(
-            buckets.stakedPrincipal, buckets.rewardsVaultBalance, buckets.rewardsDelta, buckets.slashingDelta
-        );
+        uint256 rewardsVaultBalance = _readRewardsVaultBalance();
+
+        _applyAccountingUpdates(stakedPrincipal, rewardsVaultBalance, rewardsDelta, slashingDelta);
 
         IOllaCore.AccountingState memory updatedBuckets = _accountingState;
         uint256 newTotalAssets = _computeTotalAssets(updatedBuckets);
@@ -313,7 +314,8 @@ contract OllaCore is
             grossRewards,
             netFlows,
             flowsSnapshot.cumulativeDeposits,
-            flowsSnapshot.cumulativeWithdrawals
+            flowsSnapshot.cumulativeWithdrawals,
+            currentRewards
         );
 
         safetyModuleRef.setLastAccountingTimestamp(block.timestamp);
@@ -530,13 +532,15 @@ contract OllaCore is
         uint256 grossRewards,
         uint256 netFlows,
         uint256 updatedCumulativeDeposits,
-        uint256 updatedCumulativeWithdrawals
+        uint256 updatedCumulativeWithdrawals,
+        uint256 rewardsSnapshot
     ) internal {
         IOllaCore.LatestReport storage report = _latestReport;
         report.totalAssets = total;
         report.exchangeRate = rate;
         report.grossRewards = grossRewards;
         report.netFlows = netFlows;
+        report.rewardsSnapshot = rewardsSnapshot;
         report.timestamp = block.timestamp;
 
         IOllaCore.FlowCounters storage flows = _flowCounters;
@@ -631,6 +635,45 @@ contract OllaCore is
     // slither-disable-next-line dead-code
     function _setSlashingDelta(uint256 newValue) internal onlyRole(OPERATOR_ROLE) {
         _accountingState.slashingDelta = newValue;
+    }
+
+    function _readStakingManagerState()
+        internal
+        view
+        returns (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal)
+    {
+        currentRewards = _stakingManager.getClaimableRewards();
+        uint256 lastReportRewards = _latestReport.rewardsSnapshot;
+        rewardsDelta = currentRewards > lastReportRewards ? currentRewards - lastReportRewards : 0;
+        slashingDelta = _stakingManager.getSlashingDelta();
+        stakedPrincipal = _stakingManager.totalStaked();
+        return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal);
+    }
+
+    function _readFlowsSnapshot()
+        internal
+        view
+        returns (IOllaCore.FlowCounters memory flowsSnapshot, uint256 netFlows)
+    {
+        flowsSnapshot = _flowCounters;
+        (netFlows,,) = _computeNetFlows(flowsSnapshot);
+        return (flowsSnapshot, netFlows);
+    }
+
+    function _readLatestReport() internal view returns (uint256 totalAssets, uint256 exchangeRate) {
+        IOllaCore.LatestReport memory report = _latestReport;
+        return (report.totalAssets, report.exchangeRate);
+    }
+
+    function _readRewardsVaultBalance() internal view returns (uint256 rewardsVaultBalance) {
+        return IRewardsVault(_rewardsVault).getAvailableFunds();
+    }
+
+    function _validateSlashingDelta(uint256 slashingDelta) internal view {
+        uint256 previousSlashingDelta = _accountingState.slashingDelta;
+        if (slashingDelta < previousSlashingDelta) {
+            revert OllaCore__InvalidSlashingDelta(previousSlashingDelta, slashingDelta);
+        }
     }
 
     function _syncBufferedWithBalance() internal view {
