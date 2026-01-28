@@ -46,11 +46,6 @@ contract MockRewardsVault is IMockRewardsVault {
         CORE_ADDRESS = coreAddress;
     }
 
-    /// @inheritdoc IRewardsVault
-    function initialize(IERC20, address, address) external override {
-        revert MockRewardsVault__NoInitializer();
-    }
-
     /*//////////////////////////////////////////////////////////////
                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -109,5 +104,10 @@ contract MockRewardsVault is IMockRewardsVault {
     /// @inheritdoc IRewardsVault
     function latestRecordedRewardsAmount() external view override returns (uint256) {
         return _latestRecordedRewardsAmount;
+    }
+
+    /// @inheritdoc IRewardsVault
+    function initialize(IERC20, address, address) external pure override {
+        revert MockRewardsVault__NoInitializer();
     }
 }
