@@ -5,6 +5,7 @@ import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUp
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
+import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
@@ -172,29 +173,27 @@ contract OllaCore is
         whenNotPaused
         returns (uint256 shares)
     {
-        if (recipient == address(0)) {
-            revert OllaCore__ZeroAddress("recipient");
-        }
+        shares = _deposit(msg.sender, assets, recipient);
+        return shares;
+    }
 
-        Modules memory modules = _modules;
-
-        if (ISafetyModule(modules.safetyModule).isPaused()) {
-            revert OllaCore__SafetyModulePaused();
-        }
-
-        uint256 currentTotalAssets = totalAssets();
-        if (!ISafetyModule(modules.safetyModule).checkDepositAllowed(assets, currentTotalAssets)) {
-            revert OllaCore__DepositCapExceeded(assets, currentTotalAssets);
-        }
-
-        shares = _convertToSharesForDeposit(assets);
-        _increaseBuffered(assets);
-        modules.asset.safeTransferFrom(msg.sender, address(this), assets);
-        _syncBufferedWithBalance();
-        _increaseCumulativeDeposits(assets);
-
-        modules.stAztec.mint(recipient, shares);
-        emit Deposit(msg.sender, recipient, assets, shares);
+    /// @notice Deposits assets with a permit signature and mints stAztec shares.
+    /// @param assets The amount of assets to deposit.
+    /// @param recipient The recipient of the stAztec shares.
+    /// @param deadline The permit deadline timestamp.
+    /// @param v The permit signature v.
+    /// @param r The permit signature r.
+    /// @param s The permit signature s.
+    /// @return shares The shares minted to the recipient.
+    function depositWithPermit(uint256 assets, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        override
+        nonReentrant
+        whenNotPaused
+        returns (uint256 shares)
+    {
+        IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
+        shares = _deposit(msg.sender, assets, recipient);
         return shares;
     }
 
@@ -208,33 +207,26 @@ contract OllaCore is
         nonReentrant
         returns (uint256 requestId)
     {
-        address owner = msg.sender;
-        if (recipient == address(0)) {
-            revert OllaCore__ZeroAddress("recipient");
-        }
+        requestId = _requestRedeem(msg.sender, shares, recipient);
+        return requestId;
+    }
 
-        if (_activeRequestIds[owner] != 0) {
-            revert OllaCore__PendingWithdrawalExists(owner);
-        }
-
-        Modules memory modules = _modules;
-
-        uint256 rate = _exchangeRate();
-        uint256 assetsExpected = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
-        ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
-        uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
-
-        _activeRequestIds[owner] = expectedRequestId;
-        _requestOwners[expectedRequestId] = owner;
-        _increaseCumulativeWithdrawals(assetsExpected);
-        modules.stAztec.burn(owner, shares);
-
-        requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
-        if (requestId != expectedRequestId) {
-            revert OllaCore__UnexpectedRequestId(expectedRequestId, requestId);
-        }
-
-        emit WithdrawalRequested(requestId, recipient, shares, assetsExpected, rate);
+    /// @notice Requests a redemption in shares with a permit signature.
+    /// @param shares The number of shares to redeem.
+    /// @param recipient The recipient of the assets.
+    /// @param deadline The permit deadline timestamp.
+    /// @param v The permit signature v.
+    /// @param r The permit signature r.
+    /// @param s The permit signature s.
+    /// @return requestId The withdrawal request id.
+    function requestRedeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        override
+        nonReentrant
+        returns (uint256 requestId)
+    {
+        _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
+        requestId = _requestRedeem(msg.sender, shares, recipient);
         return requestId;
     }
 
@@ -544,8 +536,65 @@ contract OllaCore is
     }
 
     /*//////////////////////////////////////////////////////////////
-                           INTERNAL FUNCTIONS
+                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    function _deposit(address caller, uint256 assets, address recipient) internal returns (uint256 shares) {
+        if (recipient == address(0)) {
+            revert OllaCore__ZeroAddress("recipient");
+        }
+
+        Modules memory modules = _modules;
+
+        if (ISafetyModule(modules.safetyModule).isPaused()) {
+            revert OllaCore__SafetyModulePaused();
+        }
+
+        uint256 currentTotalAssets = totalAssets();
+        if (!ISafetyModule(modules.safetyModule).checkDepositAllowed(assets, currentTotalAssets)) {
+            revert OllaCore__DepositCapExceeded(assets, currentTotalAssets);
+        }
+
+        shares = _convertToSharesForDeposit(assets);
+        _increaseBuffered(assets);
+        modules.asset.safeTransferFrom(caller, address(this), assets);
+        _syncBufferedWithBalance();
+        _increaseCumulativeDeposits(assets);
+
+        modules.stAztec.mint(recipient, shares);
+        emit Deposit(caller, recipient, assets, shares);
+        return shares;
+    }
+
+    function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {
+        if (recipient == address(0)) {
+            revert OllaCore__ZeroAddress("recipient");
+        }
+
+        if (_activeRequestIds[owner] != 0) {
+            revert OllaCore__PendingWithdrawalExists(owner);
+        }
+
+        Modules memory modules = _modules;
+
+        uint256 rate = _exchangeRate();
+        uint256 assetsExpected = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
+        uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
+
+        _activeRequestIds[owner] = expectedRequestId;
+        _requestOwners[expectedRequestId] = owner;
+        _increaseCumulativeWithdrawals(assetsExpected);
+        modules.stAztec.burn(owner, shares);
+
+        requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
+        if (requestId != expectedRequestId) {
+            revert OllaCore__UnexpectedRequestId(expectedRequestId, requestId);
+        }
+
+        emit WithdrawalRequested(requestId, recipient, shares, assetsExpected, rate);
+        return requestId;
+    }
 
     /// @notice Payout protocol fees through minting shares.
     /// @param grossAssetRewards The gross asset rewards to charge fees on.

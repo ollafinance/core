@@ -242,11 +242,35 @@ interface IOllaCore {
     /// @return shares The shares minted to the recipient.
     function deposit(uint256 assets, address recipient) external returns (uint256 shares);
 
+    /// @notice Deposits assets with a permit signature and mints stAztec shares.
+    /// @param assets The amount of assets to deposit.
+    /// @param recipient The recipient of the stAztec shares.
+    /// @param deadline The permit deadline timestamp.
+    /// @param v The permit signature v.
+    /// @param r The permit signature r.
+    /// @param s The permit signature s.
+    /// @return shares The shares minted to the recipient.
+    function depositWithPermit(uint256 assets, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        returns (uint256 shares);
+
     /// @notice Requests a redemption in shares.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the assets.
     /// @return requestId The withdrawal request id.
     function requestRedeem(uint256 shares, address recipient) external returns (uint256 requestId);
+
+    /// @notice Requests a redemption in shares with a permit signature.
+    /// @param shares The number of shares to redeem.
+    /// @param recipient The recipient of the assets.
+    /// @param deadline The permit deadline timestamp.
+    /// @param v The permit signature v.
+    /// @param r The permit signature r.
+    /// @param s The permit signature s.
+    /// @return requestId The withdrawal request id.
+    function requestRedeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        returns (uint256 requestId);
 
     /// @notice Claims a finalized withdrawal request for a controller.
     /// @param owner The request owner.
