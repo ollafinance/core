@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
 
-subgraph "Actors"
+subgraph "Actors / Roles"
     user[User]
     governanceMultisig[Governance/Admin multisig]
     guardianMultisig[Guardian multisig]
@@ -19,7 +19,6 @@ end
 
 subgraph "On-chain modules"
     core[OllaCore]
-    stAztec[StAztec]
     safety[SafetyModule]
     withdrawQ[WithdrawalQueue]
     rewards[RewardsVault]
@@ -50,17 +49,16 @@ core -. "CORE_ROLE" .-> withdrawQ
 core -. "CORE_ROLE" .-> stkMan
 
 %% User flows (asset + call-path)
-user -->|"AZTEC: deposit(assets, recipient)"| core
-core -->|"stAztec: mint(recipient, shares)"| stAztec
-stAztec -->|"stAztec"| user
+user -->|"deposit > Aztec < transferFrom(user, core, assets)"| core
+core -->|"deposit > StAztec < mint(recipient, shares)"| user
 
 user -->|"requestRedeem(shares, recipient)"| core
-core -->|"stAztec: burn(owner, shares)"| stAztec
+core -->|"withdrawal > StAztec < burn(owner, shares)"| user
 core -->|"requestWithdrawal(recipient, shares, assetsExpected, rate)"| withdrawQ
 
 user -->|"claimRequestById(requestId)"| core
 core -->|"claimWithdrawal(requestId)"| withdrawQ
-core -->|"AZTEC: transfer(recipient, assetsExpected)"| user
+core -->|"withdrawal payout > Aztec < transferFrom(core, user, assetsExpected)"| user
 
 %% Safety checks (control-plane)
 core -->|"checkDepositAllowed / checkWithdrawalMinimum"| safety
@@ -76,7 +74,7 @@ core -->|"harvestRewards()"| stkMan
 stkMan -->|"getCanonicalRollup()"| rollupRegistry
 rollupRegistry -->|"canonical rollup"| rollup
 stkMan -->|"claimSequencerRewards(coinbase=rewardsVault)"| rollup
-rollup -->|"AZTEC rewards"| rewards
+rollup -->|"rewards > Aztec < transferFrom(rollup, rewardsVault, amount)"| rewards
 core -->|"recordRewards(expectedRewards)"| rewards
 
 core -->|"finalizeWithdrawals(available)"| withdrawQ
@@ -84,20 +82,18 @@ core -->|"finalizeWithdrawals(available)"| withdrawQ
 core -->|"getClaimableRewards / getSlashingDelta / totalStaked"| stkMan
 core -->|"balance()"| rewards
 
-core -->|"mint(governance, treasuryShares)"| stAztec
-core -->|"mint(providerRewardsRecipient, providerShares)"| stAztec
-stAztec -->|"stAztec fees"| governanceMultisig
-stAztec -->|"stAztec fees"| providerRewardsRecipient
+core -->|"pay staking fees > StAztec < mint(governance, treasuryShares)"| governanceMultisig
+core -->|"pay staking fees > StAztec < mint(providerRewardsRecipient, providerShares)"| providerRewardsRecipient
 
 %% Emphasis
-linkStyle 0,1,2,3,4,5,6,7,8,9,10,11 stroke:#c0392b,stroke-width:4px,stroke-dasharray: 5 3;
+linkStyle 13,15,35,36 stroke:purple,stroke-width:3px,color:purple;
+linkStyle 12,19,30 stroke:orange,stroke-width:3px,color:orange;
 
 style user fill:#900
 style operatorKey fill:#090
 style providerAdmin fill:#009
 style rollup stroke:#ff6,stroke-width:2px
 style core stroke:#090,stroke-width:4px
-style stAztec stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
 style rewards stroke:#090,stroke-width:3px
 style stkMan stroke:#090,stroke-width:3px
