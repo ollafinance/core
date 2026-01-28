@@ -70,6 +70,12 @@ operatorKey -->|"harvestRewards()"| core
 operatorKey -->|"finalizeWithdrawals(available)"| core
 operatorKey -->|"updateAccounting()"| core
 
+%% Staking principal (AZTEC token) movements
+core -->|"stake principal > Aztec < transferFrom(core, StakingManager, stakeAmount)"| stkMan
+stkMan -->|"stake principal > Aztec < transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
+rollup -->|"unstake principal > Aztec < transferFrom(AztecRollup, StakingManager, unstakedAmount)"| stkMan
+stkMan -->|"unstake principal > Aztec < transferFrom(StakingManager, core, unstakedAmount)"| core
+
 core -->|"harvestRewards()"| stkMan
 stkMan -->|"getCanonicalRollup()"| rollupRegistry
 rollupRegistry -->|"canonical rollup"| rollup
@@ -86,8 +92,8 @@ core -->|"pay staking fees > StAztec < mint(governance, treasuryShares)"| govern
 core -->|"pay staking fees > StAztec < mint(providerRewardsRecipient, providerShares)"| providerRewardsRecipient
 
 %% Emphasis
-linkStyle 13,15,35,36 stroke:purple,stroke-width:3px,color:purple;
-linkStyle 12,19,30 stroke:orange,stroke-width:3px,color:orange;
+linkStyle 13,15,39,40 stroke:purple,stroke-width:3px,color:purple;
+linkStyle 12,19,26,27,28,29,34 stroke:orange,stroke-width:3px,color:orange;
 
 style user fill:#900
 style operatorKey fill:#090
