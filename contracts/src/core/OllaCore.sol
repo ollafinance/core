@@ -350,13 +350,18 @@ contract OllaCore is
         safetyModuleRef.checkAccountingLiveness();
 
         (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
-        (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal) =
-            _getStakingManagerState();
+        (
+            uint256 currentRewards,
+            uint256 rewardsDelta,
+            uint256 slashingDelta,
+            uint256 stakedPrincipal,
+            uint256 claimableRewards
+        ) = _getStakingManagerState();
         _validateSlashingDelta(slashingDelta);
 
         uint256 rewardsVaultBalance = _getRewardsVaultBalance();
 
-        _applyAccountingUpdates(stakedPrincipal, rewardsVaultBalance, rewardsDelta, slashingDelta);
+        _applyAccountingUpdates(stakedPrincipal, rewardsVaultBalance, claimableRewards, rewardsDelta, slashingDelta);
 
         _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
         // slither-disable-end reentrancy-events
@@ -539,7 +544,7 @@ contract OllaCore is
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
         IOllaCore.AccountingState storage buckets = _accountingState;
-        return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.rewardsDelta
+        return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.claimableRewards
             - buckets.slashingDelta;
     }
 
@@ -628,12 +633,14 @@ contract OllaCore is
     function _applyAccountingUpdates(
         uint256 newStakedPrincipal,
         uint256 newRewardsVaultBalance,
+        uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) internal {
         IOllaCore.AccountingState storage stateSnapshot = _accountingState;
         stateSnapshot.stakedPrincipal = newStakedPrincipal;
         stateSnapshot.rewardsVaultBalance = newRewardsVaultBalance;
+        stateSnapshot.claimableRewards = newClaimableRewards;
         stateSnapshot.rewardsDelta = newRewardsDelta;
         stateSnapshot.slashingDelta = newSlashingDelta;
     }
@@ -649,11 +656,17 @@ contract OllaCore is
 
     function _getStakingManagerState()
         internal
-        returns (uint256 currentRewards, uint256 rewardsDelta, uint256 slashingDelta, uint256 stakedPrincipal)
+        returns (
+            uint256 currentRewards,
+            uint256 rewardsDelta,
+            uint256 slashingDelta,
+            uint256 stakedPrincipal,
+            uint256 claimableRewards
+        )
     {
         IOllaCore.Modules memory modules = _modules;
         IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
-        uint256 claimableRewards = modules.stakingManager.getClaimableRewards();
+        claimableRewards = modules.stakingManager.getClaimableRewards();
         currentRewards = accountingSnapshot.cumulativeRewards + claimableRewards;
 
         uint256 latestReportRewards = _latestReport.rewardsSnapshot;
@@ -668,7 +681,7 @@ contract OllaCore is
         }
         slashingDelta = modules.stakingManager.getSlashingDelta();
         stakedPrincipal = modules.stakingManager.totalStaked();
-        return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal);
+        return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal, claimableRewards);
     }
 
     function _computeAndFinalizeAccounting(
@@ -912,7 +925,7 @@ contract OllaCore is
         returns (uint256 totalAssets_)
     {
         totalAssets_ = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
-            + buckets.rewardsDelta - buckets.slashingDelta;
+            + buckets.claimableRewards - buckets.slashingDelta;
         return totalAssets_;
     }
 
