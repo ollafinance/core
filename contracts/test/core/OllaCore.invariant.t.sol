@@ -142,6 +142,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public claimableRewards;
     uint256 public slashingDelta;
     uint256 public totalStakedAmount;
+    address public providerRewardsRecipient;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -157,6 +158,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setTotalStaked(uint256 value) external {
         totalStakedAmount = value;
+    }
+
+    function setProviderRewardsRecipient(address recipient) external override {
+        providerRewardsRecipient = recipient;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -185,8 +190,6 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function dripQueue(uint256) external pure override { }
 
-    function setProviderRewardsRecipient(address) external pure override { }
-
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -211,8 +214,8 @@ contract MockAccountingStakingManager is IStakingManager {
         return 0;
     }
 
-    function getProviderConfig() external pure override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+    function getProviderConfig() external view override returns (ProviderConfig memory) {
+        return ProviderConfig({ admin: address(0), rewardsRecipient: providerRewardsRecipient });
     }
 
     function getActivatedAttesterCount() external pure override returns (uint256) {
@@ -389,6 +392,8 @@ contract OllaCoreInvariantTest is Test {
         withdrawalQueue = new MockWithdrawalQueue();
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule();
+        address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
+        stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
         vault.initialize(
             asset,
             stAztec,

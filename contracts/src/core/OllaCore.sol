@@ -553,11 +553,12 @@ contract OllaCore is
         onlyRole(OPERATOR_ROLE)
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
+        Modules memory modules = _modules;
         (ollaProtocolFeeAssets, treasuryShares, providerShares) = _calculateProtocolFees(grossAssetRewards);
         emit OllaProtocolFeesPaid(ollaProtocolFeeAssets, treasuryShares, providerShares);
-        _modules.stAztec.mint(_modules.governance, treasuryShares);
-        // TODO: this should go to the provider address, not the rewards vault
-        _modules.stAztec.mint(address(_modules.rewardsVault), providerShares);
+        modules.stAztec.mint(modules.governance, treasuryShares);
+        address providerRewardsRecipient = modules.stakingManager.getProviderConfig().rewardsRecipient;
+        modules.stAztec.mint(providerRewardsRecipient, providerShares);
 
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }

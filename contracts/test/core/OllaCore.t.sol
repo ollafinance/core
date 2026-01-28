@@ -79,6 +79,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public slashingDelta;
     uint256 public totalStakedAmount;
     uint256 public harvestedRewards;
+    address public providerRewardsRecipient;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -98,6 +99,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setHarvestedRewards(uint256 value) external {
         harvestedRewards = value;
+    }
+
+    function setProviderRewardsRecipient(address recipient) external override {
+        providerRewardsRecipient = recipient;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -126,8 +131,6 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function dripQueue(uint256) external pure override { }
 
-    function setProviderRewardsRecipient(address) external pure override { }
-
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -152,8 +155,8 @@ contract MockAccountingStakingManager is IStakingManager {
         return 0;
     }
 
-    function getProviderConfig() external pure override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+    function getProviderConfig() external view override returns (ProviderConfig memory) {
+        return ProviderConfig({ admin: address(0), rewardsRecipient: providerRewardsRecipient });
     }
 
     function getActivatedAttesterCount() external pure override returns (uint256) {
@@ -233,6 +236,7 @@ contract OllaCoreTest is Test {
     MockRewardsVault internal rewardsVault;
     MockSafetyModule internal safetyModule;
     address internal operator;
+    address internal providerRewardsRecipient;
 
     /*//////////////////////////////////////////////////////////////
                                 SETUP
@@ -252,6 +256,8 @@ contract OllaCoreTest is Test {
         safetyModule = new MockSafetyModule();
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
+        providerRewardsRecipient = makeAddr("providerRewardsRecipient");
+        stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
         vault.initialize(
             asset,
@@ -1326,6 +1332,7 @@ contract OllaCoreProtocolFeesTest is Test {
     MockWithdrawalQueue internal withdrawalQueue;
     address internal operator;
     address internal alice;
+    address internal providerRewardsRecipient;
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP
@@ -1345,6 +1352,8 @@ contract OllaCoreProtocolFeesTest is Test {
         safetyModule = new MockSafetyModule();
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
+        providerRewardsRecipient = makeAddr("providerRewardsRecipient");
+        stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
         vault.initialize(
             asset,
@@ -1395,7 +1404,7 @@ contract OllaCoreProtocolFeesTest is Test {
 
         uint256 oldSupply = stAztec.totalSupply();
         uint256 oldGovShares = stAztec.balanceOf(governance);
-        uint256 oldProviderShares = stAztec.balanceOf(address(rewardsVault));
+        uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
 
         uint256 expectedTotalAssets = depositAmount + rewards;
         uint256 grossRewards = rewards;
@@ -1431,7 +1440,9 @@ contract OllaCoreProtocolFeesTest is Test {
 
         assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "protocol fee shares minted");
         assertEq(stAztec.balanceOf(governance), oldGovShares + treasuryShares, "treasury shares minted");
-        assertEq(stAztec.balanceOf(address(rewardsVault)), oldProviderShares + providerShares, "provider shares minted");
+        assertEq(
+            stAztec.balanceOf(providerRewardsRecipient), oldProviderShares + providerShares, "provider shares minted"
+        );
     }
 
     function test_UpdateAccounting_ProtocolFeeSplitRoundsDownTreasuryAndKeepsRemainder() external {
@@ -1464,7 +1475,7 @@ contract OllaCoreProtocolFeesTest is Test {
         vault.updateAccounting();
 
         assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury minted (from zero)");
-        assertEq(stAztec.balanceOf(address(rewardsVault)), providerShares, "provider minted (from zero)");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider minted (from zero)");
     }
 
     function test_UpdateAccounting_NetFlowsNegative_MintsFeesFromGrossRewards() external {
@@ -1482,7 +1493,7 @@ contract OllaCoreProtocolFeesTest is Test {
 
         uint256 oldSupply = stAztec.totalSupply();
         uint256 oldGovShares = stAztec.balanceOf(governance);
-        uint256 oldProviderShares = stAztec.balanceOf(address(rewardsVault));
+        uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
 
         uint256 expectedTotalAssets = depositAmount;
         uint256 grossRewards = assetsExpected;
@@ -1500,7 +1511,9 @@ contract OllaCoreProtocolFeesTest is Test {
         assertEq(reportAfter.grossRewards, grossRewards, "gross rewards includes negative net flows");
         assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "protocol fee shares minted");
         assertEq(stAztec.balanceOf(governance), oldGovShares + treasuryShares, "treasury shares minted");
-        assertEq(stAztec.balanceOf(address(rewardsVault)), oldProviderShares + providerShares, "provider shares minted");
+        assertEq(
+            stAztec.balanceOf(providerRewardsRecipient), oldProviderShares + providerShares, "provider shares minted"
+        );
     }
 
     function test_UpdateAccounting_GrossRewardsClamp_NoFeeMinting() external {
@@ -1516,7 +1529,7 @@ contract OllaCoreProtocolFeesTest is Test {
 
         uint256 oldSupply = stAztec.totalSupply();
         uint256 oldGovShares = stAztec.balanceOf(governance);
-        uint256 oldProviderShares = stAztec.balanceOf(address(rewardsVault));
+        uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
 
         vm.prank(operator);
         vault.updateAccounting();
@@ -1526,6 +1539,6 @@ contract OllaCoreProtocolFeesTest is Test {
         assertEq(reportAfter.netFlows, int256(extraDeposit), "net flows positive");
         assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");
         assertEq(stAztec.balanceOf(governance), oldGovShares, "no treasury shares minted");
-        assertEq(stAztec.balanceOf(address(rewardsVault)), oldProviderShares, "no provider shares minted");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), oldProviderShares, "no provider shares minted");
     }
 }
