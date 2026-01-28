@@ -22,6 +22,7 @@ import { IMockRewardsVault } from "src/core/mocks/IMockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
+import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 
 contract OllaCoreHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
@@ -68,114 +69,6 @@ contract OllaCoreHarness is OllaCore {
     {
         return _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
     }
-}
-
-contract MockAccountingStakingManager is IStakingManager {
-    /*//////////////////////////////////////////////////////////////
-                                STATE
-    //////////////////////////////////////////////////////////////*/
-
-    uint256 public claimableRewards;
-    uint256 public slashingDelta;
-    uint256 public totalStakedAmount;
-    uint256 public harvestedRewards;
-    address public providerRewardsRecipient;
-
-    /*//////////////////////////////////////////////////////////////
-                          TEST HELPERS
-    //////////////////////////////////////////////////////////////*/
-
-    function setClaimableRewards(uint256 value) external {
-        claimableRewards = value;
-    }
-
-    function setSlashingDelta(uint256 value) external {
-        slashingDelta = value;
-    }
-
-    function setTotalStaked(uint256 value) external {
-        totalStakedAmount = value;
-    }
-
-    function setHarvestedRewards(uint256 value) external {
-        harvestedRewards = value;
-    }
-
-    function setProviderRewardsRecipient(address recipient) external override {
-        providerRewardsRecipient = recipient;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                         CORE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function stake(uint256) external pure override { }
-
-    function unstake(uint256) external pure override { }
-
-    function cleanActivatedAttesters() external pure override { }
-
-    function getUnstakedFunds() external pure override returns (uint256 received) {
-        return received;
-    }
-
-    function harvestRewards() external override returns (uint256 harvested) {
-        return harvestedRewards;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                         PROVIDER FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function addKeysToProvider(KeyStore[] calldata) external pure override { }
-
-    function dripQueue(uint256) external pure override { }
-
-    /*//////////////////////////////////////////////////////////////
-                             VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function getClaimableRewards() external view override returns (uint256) {
-        return claimableRewards;
-    }
-
-    function getSlashingDelta() external override returns (uint256) {
-        return slashingDelta;
-    }
-
-    function totalStaked() external view override returns (uint256) {
-        return totalStakedAmount;
-    }
-
-    function getStakingState() external view override returns (StakingState memory) {
-        return StakingState({ stakedAmount: totalStakedAmount, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
-    }
-
-    function getQueueLength() external pure override returns (uint256) {
-        return 0;
-    }
-
-    function getProviderConfig() external view override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: providerRewardsRecipient });
-    }
-
-    function getActivatedAttesterCount() external pure override returns (uint256) {
-        return 0;
-    }
-
-    function getPendingUnstakeCount() external pure override returns (uint256) {
-        return 0;
-    }
-
-    function isUnstakePending(address) external pure override returns (bool) {
-        return false;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                              INITIALIZER
-    //////////////////////////////////////////////////////////////*/
-
-    function initialize(IERC20, address, address, address, address, address, address) external pure override { }
 }
 
 contract OllaCoreTest is Test {
