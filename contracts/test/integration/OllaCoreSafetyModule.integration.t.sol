@@ -5,27 +5,32 @@ import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 
 contract OllaCoreSafetyModuleHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
-                            CORE FUNCTIONS
+                             CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function exposedIncreaseRewardsVaultBalance(uint256 amount) external {
-        _increaseRewardsVaultBalance(amount);
-    }
-
-    function exposedSetSlashingDelta(uint256 amount) external {
-        _setSlashingDelta(amount);
+    function exposedApplyAccountingUpdates(
+        uint256 newStakedPrincipal,
+        uint256 newRewardsVaultBalance,
+        uint256 newRewardsDelta,
+        uint256 newSlashingDelta
+    ) external {
+        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
     }
 }
 
@@ -49,15 +54,16 @@ contract OllaCoreSafetyModuleTest is Test {
     MockAztec internal asset;
     OllaCoreSafetyModuleHarness internal vault;
     StAztec internal stAztec;
-    MockStakingManager internal stakingManager;
+    MockAccountingStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     address internal governance;
     address internal admin;
     address internal guardian;
-    address internal rewardsVault;
+    MockRewardsVault internal rewardsVault;
     address internal operator;
     address internal alice;
+    address internal providerRewardsRecipient;
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP
@@ -71,14 +77,16 @@ contract OllaCoreSafetyModuleTest is Test {
         vault = OllaCoreSafetyModuleHarness(address(proxy));
 
         stAztec = new StAztec(address(vault));
-        stakingManager = new MockStakingManager();
+        stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         governance = makeAddr("governance");
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
-        rewardsVault = makeAddr("rewardsVault");
+        rewardsVault = new MockRewardsVault(asset, address(vault));
         operator = makeAddr("operator");
         alice = makeAddr("alice");
+        providerRewardsRecipient = makeAddr("providerRewardsRecipient");
+        stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
         safetyModule = new SafetyModule(admin, guardian, address(vault), 1_000_000 * DECIMALS, 500, 6_000, 1 days);
 
@@ -90,7 +98,7 @@ contract OllaCoreSafetyModuleTest is Test {
             0,
             governance,
             address(withdrawalQueue),
-            rewardsVault,
+            IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
 
@@ -159,7 +167,7 @@ contract OllaCoreSafetyModuleTest is Test {
         safetyModule.setDepositCap(cap);
 
         vm.prank(operator);
-        vault.exposedIncreaseRewardsVaultBalance(60 * DECIMALS);
+        vault.exposedApplyAccountingUpdates(0, 60 * DECIMALS, 0, 0);
 
         uint256 depositAmount = 100 * DECIMALS;
         asset.mint(alice, depositAmount);
@@ -180,7 +188,7 @@ contract OllaCoreSafetyModuleTest is Test {
     function test_UpdateAccounting_TriggersRateDropBreaker() external {
         _performDeposit(alice, 100 * DECIMALS);
 
-        vault.exposedSetSlashingDelta(10 * DECIMALS);
+        stakingManager.setSlashingDelta(10 * DECIMALS);
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
         emit CircuitBreakerTriggered(safetyModule.RATE_DROP());
@@ -200,6 +208,20 @@ contract OllaCoreSafetyModuleTest is Test {
         emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
 
         vault.finalizeWithdrawals(0);
+
+        assertTrue(safetyModule.isPaused(), "queue ratio breaker should pause");
+    }
+
+    function test_UpdateAccounting_TriggersQueueRatioBreaker() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        _performRequestRedeem(alice, 80 * DECIMALS, alice);
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
+
+        vault.updateAccounting();
 
         assertTrue(safetyModule.isPaused(), "queue ratio breaker should pause");
     }

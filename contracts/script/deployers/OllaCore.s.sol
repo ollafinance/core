@@ -7,6 +7,7 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 /// @title OllaCoreDeployer
@@ -56,7 +57,7 @@ contract OllaCoreDeployer is BaseDeployer {
                 config.treasuryFeeSplitBP,
                 config.governance,
                 config.withdrawalQueue,
-                config.rewardsVault,
+                IRewardsVault(config.rewardsVault),
                 config.safetyModule
             );
         console2.log("OllaCore initialized");

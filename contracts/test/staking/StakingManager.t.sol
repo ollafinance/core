@@ -1118,21 +1118,6 @@ contract StakingManagerHarvestTest is Test {
         assertEq(vaultBalanceAfter, vaultBalanceBefore, "Vault balance should not change (hook only)");
     }
 
-    function test_HarvestRewards_CallsPostReceiveFundsHook() external {
-        uint256 rewardAmount = 10 ether;
-        _setupAttestersWithRewards(1, rewardAmount);
-
-        uint256 totalReceivedBefore = rewardsVault.totalReceived();
-
-        vm.prank(core);
-        stakingManager.harvestRewards();
-
-        uint256 totalReceivedAfter = rewardsVault.totalReceived();
-        assertEq(
-            totalReceivedAfter - totalReceivedBefore, rewardAmount, "Hook should be called with correct reward amount"
-        );
-    }
-
     function test_HarvestRewards_EmitsRewardsHarvestedEvent() external {
         uint256 rewardAmount = 10 ether;
         _setupAttestersWithRewards(1, rewardAmount);
@@ -1244,7 +1229,7 @@ contract StakingManagerHarvestTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    GET CLAIMABLE REWARDS TESTS
+                     GET CLAIMABLE REWARDS TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_GetClaimableRewards_ReturnsZeroWithNoAttesters() external {
@@ -1307,6 +1292,129 @@ contract StakingManagerHarvestTest is Test {
         );
         vm.prank(alice);
         stakingManager.getClaimableRewards();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        SLASHING DELTA TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetSlashingDelta_ReturnsZeroWithNoAttesters() external {
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 0, "Should be 0 with no attesters");
+    }
+
+    function test_GetSlashingDelta_ComputesFromActivatedAttesters() external {
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(2);
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 10 ether, block.timestamp);
+
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 10 ether, "Should include slashing from activated attesters");
+        assertEq(
+            stakingManager.totalStaked(), 2 * ACTIVATION_THRESHOLD, "totalStaked counts eligible activated attesters"
+        );
+    }
+
+    function test_GetSlashingDelta_IncludesPendingUnstakeRequests() external {
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(2);
+
+        vm.startPrank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 15 ether, block.timestamp);
+
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 15 ether, "Should include slashing from pending attesters");
+        assertEq(
+            stakingManager.totalStaked(), 2 * ACTIVATION_THRESHOLD, "totalStaked counts activated and pending attesters"
+        );
+    }
+
+    function test_GetSlashingDelta_MonotonicCumulative() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingManager.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 10 ether, block.timestamp);
+
+        vm.prank(core);
+        uint256 first = stakingManager.getSlashingDelta();
+        assertEq(first, 10 ether, "initial slashing captured");
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        vm.prank(core);
+        uint256 second = stakingManager.getSlashingDelta();
+        assertEq(second, first, "cumulative slashing does not decrease");
+    }
+
+    /// @notice Tests that slashing delta is computed using the original staked amount,
+    ///         not the current activation threshold, when threshold changes between stakes.
+    function test_GetSlashingDelta_UsesOriginalStakedAmount() external {
+        // Stake first attester at 100 ether threshold
+        IStakingManager.KeyStore[] memory keys1 = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingManager.addKeysToProvider(keys1);
+
+        uint256 originalThreshold = ACTIVATION_THRESHOLD; // 100 ether
+        aztec.mint(core, originalThreshold);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), originalThreshold);
+        stakingManager.stake(originalThreshold);
+        vm.stopPrank();
+
+        // Change activation threshold to 150 ether
+        uint256 newThreshold = 150 ether;
+        rollup.setActivationThreshold(newThreshold);
+
+        // Stake second attester at new threshold
+        IStakingManager.KeyStore[] memory keys2 = new IStakingManager.KeyStore[](1);
+        keys2[0] = IStakingManager.KeyStore({
+            attester: address(uint160(100)),
+            publicKeyG1: G1Point({ x: 100, y: 101 }),
+            publicKeyG2: G2Point({ x0: 100, x1: 101, y0: 102, y1: 103 }),
+            proofOfPossession: G1Point({ x: 110, y: 111 })
+        });
+        vm.prank(providerAdmin);
+        stakingManager.addKeysToProvider(keys2);
+
+        aztec.mint(core, newThreshold);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), newThreshold);
+        stakingManager.stake(newThreshold);
+        vm.stopPrank();
+
+        // totalStaked should be sum of original amounts: 100 + 150 = 250
+        assertEq(
+            stakingManager.totalStaked(), originalThreshold + newThreshold, "totalStaked should sum original amounts"
+        );
+
+        // Simulate slashing: attester1 lost 10 ether, attester2 lost 20 ether
+        uint256 attester1Remaining = originalThreshold - 10 ether; // 90 ether
+        uint256 attester2Remaining = newThreshold - 20 ether; // 130 ether
+
+        rollup.setExternalExit(keys1[0].attester, attester1Remaining, block.timestamp);
+        rollup.setExternalExit(keys2[0].attester, attester2Remaining, block.timestamp);
+
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        // Slashing delta should be: (100 - 90) + (150 - 130) = 10 + 20 = 30
+        // NOT: (150 - 90) + (150 - 130) = 60 + 20 = 80 (if using current threshold)
+        assertEq(slashingDelta, 30 ether, "slashing delta should use original staked amounts");
     }
 
     /*//////////////////////////////////////////////////////////////

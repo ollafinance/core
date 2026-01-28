@@ -24,23 +24,20 @@ interface IStakingManager {
         G1Point proofOfPossession;
     }
 
+    /// @notice Tracks an attester with their originally staked amount.
+    /// @param attester The attester address.
+    /// @param stakedAmount The amount originally staked (activation threshold at stake time).
+    struct AttesterStake {
+        address attester;
+        uint256 stakedAmount;
+    }
+
     /// @notice Configuration for the staking provider.
     /// @param admin The provider admin address.
     /// @param rewardsRecipient The address to receive sequencer rewards.
     struct ProviderConfig {
         address admin;
         address rewardsRecipient;
-    }
-
-    /// @notice Tracks a pending unstake request.
-    /// @param attester The attester address being unstaked.
-    /// @param amount The amount being unstaked.
-    /// @param initiatedAt The timestamp when unstake was initiated.
-    /// @dev Kept for interface compatibility but not used in _pendingUnstakeRequests.
-    struct UnstakeRequest {
-        address attester;
-        uint256 amount;
-        uint256 initiatedAt;
     }
 
     /// @notice Aggregated staking state from on-chain queries.
@@ -192,6 +189,11 @@ interface IStakingManager {
     /// @param rewardsRecipient The new rewards recipient.
     function setProviderRewardsRecipient(address rewardsRecipient) external;
 
+    /// @notice Returns the cumulative slashing delta from the rollup.
+    /// @dev Only callable by CORE_ROLE.
+    /// @return slashingDelta The cumulative slashing delta.
+    function getSlashingDelta() external returns (uint256 slashingDelta);
+
     /*//////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -200,6 +202,10 @@ interface IStakingManager {
     /// @dev Only callable by CORE_ROLE. Does not actually claim rewards.
     /// @return claimableRewards The total rewards claimalbe to rewards recipient.
     function getClaimableRewards() external view returns (uint256 claimableRewards);
+
+    /// @notice Returns the total staked principal across validator states.
+    /// @return stakedTotal The total staked principal.
+    function totalStaked() external view returns (uint256 stakedTotal);
 
     /// @notice Returns the current staking state by querying the rollup.
     /// @dev Iterates through all attesters and queries getAttesterView for each.

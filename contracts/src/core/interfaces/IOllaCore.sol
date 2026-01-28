@@ -2,7 +2,7 @@
 pragma solidity ^0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -21,6 +21,7 @@ interface IOllaCore {
         uint256 rewardsVaultBalance;
         uint256 rewardsDelta;
         uint256 slashingDelta;
+        uint256 cumulativeRewards;
     }
 
     struct FlowCounters {
@@ -34,7 +35,8 @@ interface IOllaCore {
         uint256 totalAssets;
         uint256 exchangeRate;
         uint256 grossRewards;
-        uint256 netFlows;
+        int256 netFlows;
+        uint256 rewardsSnapshot;
         uint256 timestamp;
     }
 
@@ -44,7 +46,7 @@ interface IOllaCore {
         IStakingManager stakingManager;
         address governance;
         IWithdrawalQueue withdrawalQueue;
-        address rewardsVault;
+        IRewardsVault rewardsVault;
         address safetyModule;
     }
 
@@ -133,7 +135,7 @@ interface IOllaCore {
         uint256 totalAssets,
         uint256 exchangeRate,
         uint256 grossRewards,
-        uint256 netFlows,
+        int256 netFlows,
         uint256 protocolFeeAssets,
         uint256 treasuryShares,
         uint256 providerShares,
@@ -199,6 +201,9 @@ interface IOllaCore {
     /// @notice Thrown when deposits are blocked by the safety module pause.
     error OllaCore__SafetyModulePaused();
 
+    /// @notice Thrown when a slashing delta is invalid.
+    error OllaCore__InvalidSlashingDelta(uint256 previous, uint256 current);
+
     /// @notice Thrown when a fee basis points value exceeds maximum.
     error OllaCore__InvalidFeeBP(uint256 feeBP);
 
@@ -227,7 +232,7 @@ interface IOllaCore {
         uint256 treasuryFeeSplitBP_,
         address governance_,
         address withdrawalQueue_,
-        address rewardsVault_,
+        IRewardsVault rewardsVault_,
         address safetyModule_
     ) external;
 
@@ -269,6 +274,10 @@ interface IOllaCore {
     /// @notice Operator-triggered accounting update hook.
     function updateAccounting() external;
 
+    /// @notice Operator-triggered rewards harvest hook.
+    /// @return harvested The amount harvested.
+    function harvestRewards() external returns (uint256 harvested);
+
     /// @notice Operator-triggered withdrawal finalization hook.
     /// @param available The available assets for withdrawals.
     /// @return used The assets used for finalization.
@@ -288,7 +297,7 @@ interface IOllaCore {
 
     /// @notice Sets the rewards vault address.
     /// @param newRewardsVault The new rewards vault address.
-    function setRewardsVault(address newRewardsVault) external;
+    function setRewardsVault(IRewardsVault newRewardsVault) external;
 
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS

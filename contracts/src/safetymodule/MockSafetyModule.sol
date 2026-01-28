@@ -87,9 +87,9 @@ contract MockSafetyModule is ISafetyModule {
     }
 
     /// @notice No-op accounting timestamp setter for tests.
-    /// @param lastAccountingTimestamp The accounting timestamp.
-    function setLastAccountingTimestamp(uint256 lastAccountingTimestamp) external pure override {
-        _noop(lastAccountingTimestamp);
+    /// @param latestAccountingTimestamp The accounting timestamp.
+    function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp) external pure override {
+        _noop(latestAccountingTimestamp);
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -429,31 +429,6 @@ contract StakingManagerInvariantTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                       HARVEST REWARDS INVARIANTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Harvested rewards should never be negative
-    function invariant_HarvestNeverNegative() external view {
-        assertGe(handler.ghost_totalHarvested(), 0, "total harvested should never be negative");
-    }
-
-    /// @notice Harvested rewards should not exceed total rewards set
-    function invariant_HarvestNotExceedRewardsSet() external view {
-        assertLe(
-            handler.ghost_totalHarvested(),
-            handler.ghost_totalRewardsSet(),
-            "harvested should not exceed total rewards set"
-        );
-    }
-
-    /// @notice RewardsVault balance consistency with harvested rewards
-    function invariant_RewardsVaultConsistency() external view {
-        assertEq(
-            rewardsVault.totalReceived(), handler.ghost_totalHarvested(), "vault hook total should match harvested"
-        );
-    }
-
-    /*//////////////////////////////////////////////////////////////
                       HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 

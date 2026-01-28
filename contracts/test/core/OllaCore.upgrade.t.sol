@@ -12,29 +12,23 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 
 contract OllaCoreUpgradeHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
-                            CORE FUNCTIONS
+                             CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function exposedIncreaseStakedPrincipal(uint256 amount) external {
-        _increaseStakedPrincipal(amount);
-    }
-
-    function exposedIncreaseRewardsVaultBalance(uint256 amount) external {
-        _increaseRewardsVaultBalance(amount);
-    }
-
-    function exposedSetRewardsDelta(uint256 newValue) external {
-        _setRewardsDelta(newValue);
-    }
-
-    function exposedSetSlashingDelta(uint256 newValue) external {
-        _setSlashingDelta(newValue);
+    function exposedApplyAccountingUpdates(
+        uint256 newStakedPrincipal,
+        uint256 newRewardsVaultBalance,
+        uint256 newRewardsDelta,
+        uint256 newSlashingDelta
+    ) external {
+        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
     }
 }
 
@@ -85,7 +79,7 @@ contract OllaCoreUpgradeTest is Test {
     address internal alice;
     address internal bob;
     MockWithdrawalQueue internal withdrawalQueue;
-    address internal rewardsVault;
+    MockRewardsVault internal rewardsVault;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -103,7 +97,7 @@ contract OllaCoreUpgradeTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
-        rewardsVault = makeAddr("rewardsVault");
+        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         safetyModule = new MockSafetyModule();
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
@@ -200,13 +194,7 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(requestId, 1, "request id starts at 1");
 
         vm.prank(operator);
-        vault.exposedIncreaseStakedPrincipal(4 * DECIMALS);
-        vm.prank(operator);
-        vault.exposedIncreaseRewardsVaultBalance(2 * DECIMALS);
-        vm.prank(operator);
-        vault.exposedSetRewardsDelta(1 * DECIMALS);
-        vm.prank(operator);
-        vault.exposedSetSlashingDelta(1 * DECIMALS);
+        vault.exposedApplyAccountingUpdates(4 * DECIMALS, 2 * DECIMALS, 1 * DECIMALS, 1 * DECIMALS);
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 totalAssetsBefore = vault.totalAssets();

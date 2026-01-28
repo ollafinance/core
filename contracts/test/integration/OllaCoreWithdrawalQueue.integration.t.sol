@@ -13,15 +13,21 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 
 contract OllaCoreWithdrawalQueueHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
-                           CORE FUNCTIONS
+                            CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function exposedIncreaseRewardsVaultBalance(uint256 amount) external {
-        _increaseRewardsVaultBalance(amount);
+    function exposedApplyAccountingUpdates(
+        uint256 newStakedPrincipal,
+        uint256 newRewardsVaultBalance,
+        uint256 newRewardsDelta,
+        uint256 newSlashingDelta
+    ) external {
+        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
     }
 }
 
@@ -50,7 +56,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
     MockStakingManager internal stakingManager;
     WithdrawalQueue internal queue;
     address internal governance;
-    address internal rewardsVault;
+    MockRewardsVault internal rewardsVault;
     SafetyModule internal safetyModule;
     address internal admin;
     address internal guardian;
@@ -71,7 +77,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
-        rewardsVault = makeAddr("rewardsVault");
+        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         safetyModule = new SafetyModule(admin, guardian, address(vault), 1_000_000 ether, 500, 6_000, 1 days);
@@ -121,7 +127,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(request.assetsExpected, expectedAssets, "assetsExpected locked at request rate");
         assertEq(request.rate, rate, "rate locked at request time");
 
-        vault.exposedIncreaseRewardsVaultBalance(3 ether);
+        vault.exposedApplyAccountingUpdates(0, 3 ether, 0, 0);
         uint256 updatedRate = vault.exchangeRate();
         assertGt(updatedRate, rate, "exchange rate should increase after rewards");
         request = queue.getRequest(requestId);
@@ -167,7 +173,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
     function test_RequestRedeem_AssetsExpectedMatchesRate() external {
         _deposit(alice, 18 ether);
-        vault.exposedIncreaseRewardsVaultBalance(6 ether);
+        vault.exposedApplyAccountingUpdates(0, 6 ether, 0, 0);
 
         uint256 rate = vault.exchangeRate();
         uint256 shares = 9 ether;
