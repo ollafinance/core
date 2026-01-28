@@ -7,6 +7,9 @@ import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
+import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
+import { ECDSA } from "@oz/utils/cryptography/ECDSA.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
@@ -121,6 +124,8 @@ contract OllaCoreTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     uint256 internal constant DECIMALS = 1e18;
+    bytes32 internal constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
     /*//////////////////////////////////////////////////////////////
                           TEST FIXTURES
@@ -133,6 +138,9 @@ contract OllaCoreTest is Test {
     address internal governance;
     address internal alice;
     address internal bob;
+    address internal permitOwner;
+    uint256 internal permitOwnerKey;
+    uint256 internal permitAttackerKey;
     MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsVault internal rewardsVault;
     MockSafetyModule internal safetyModule;
@@ -174,6 +182,9 @@ contract OllaCoreTest is Test {
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
+        permitOwnerKey = 0xA11CE;
+        permitOwner = vm.addr(permitOwnerKey);
+        permitAttackerKey = 0xB0B;
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -202,6 +213,33 @@ contract OllaCoreTest is Test {
     {
         (user,,, shares, assetsExpected, rate) = withdrawalQueue.lastRequest();
         return (user, shares, assetsExpected, rate);
+    }
+
+    function _signPermit(
+        IERC20Permit token,
+        address owner,
+        uint256 ownerKey,
+        address spender,
+        uint256 value,
+        uint256 deadline
+    ) internal returns (uint8 v, bytes32 r, bytes32 s) {
+        uint256 nonce = token.nonces(owner);
+        bytes32 digest = _buildPermitDigest(token, owner, spender, value, nonce, deadline);
+        (v, r, s) = vm.sign(ownerKey, digest);
+        return (v, r, s);
+    }
+
+    function _buildPermitDigest(
+        IERC20Permit token,
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 nonce,
+        uint256 deadline
+    ) internal view returns (bytes32 digest) {
+        bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonce, deadline));
+        digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
+        return digest;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -404,6 +442,219 @@ contract OllaCoreTest is Test {
         assertEq(vault.totalAssets(), 10 * DECIMALS, "assets buffered");
         IOllaCore.FlowCounters memory flows = vault.flowCounters();
         assertEq(flows.cumulativeDeposits, 10 * DECIMALS, "cumulative deposits updated");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           PERMIT DEPOSITS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_DepositWithPermit_MintsAndClearsExactAllowance() external {
+        uint256 assets = 10 * DECIMALS;
+        asset.mint(permitOwner, assets);
+
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Deposit(permitOwner, permitOwner, assets, assets);
+
+        vm.prank(permitOwner);
+        uint256 shares = vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+
+        assertEq(shares, assets, "shares minted");
+        assertEq(stAztec.balanceOf(permitOwner), assets, "shares balance");
+        assertEq(asset.allowance(permitOwner, address(vault)), 0, "allowance consumed");
+        assertEq(IERC20Permit(address(asset)).nonces(permitOwner), 1, "nonce incremented");
+    }
+
+    function test_DepositWithPermit_AllowsMaxAllowance() external {
+        uint256 assets = type(uint256).max;
+        asset.mint(permitOwner, assets);
+
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+
+        vm.prank(permitOwner);
+        uint256 shares = vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+
+        assertEq(shares, assets, "shares minted");
+        assertEq(asset.allowance(permitOwner, address(vault)), type(uint256).max, "allowance remains max");
+    }
+
+    function test_RevertWhen_DepositWithPermit_ExpiredSignature() external {
+        uint256 assets = 5 * DECIMALS;
+        asset.mint(permitOwner, assets);
+
+        uint256 deadline = block.timestamp - 1;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_DepositWithPermit_InvalidSignature() external {
+        uint256 assets = 5 * DECIMALS;
+        asset.mint(permitOwner, assets);
+
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitAttackerKey, address(vault), assets, deadline);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner)
+        );
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_DepositWithPermit_ReplayedNonce() external {
+        uint256 assets = 6 * DECIMALS;
+        asset.mint(permitOwner, assets * 2);
+
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+
+        uint256 nonce = IERC20Permit(address(asset)).nonces(permitOwner);
+        bytes32 digest =
+            _buildPermitDigest(IERC20Permit(address(asset)), permitOwner, address(vault), assets, nonce, deadline);
+        address signer = ECDSA.recover(digest, v, r, s);
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner));
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      PERMIT WITHDRAWAL REQUESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RequestRedeemWithPermit_CallsQueueAndEmits() external {
+        _performDeposit(permitOwner, 20 * DECIMALS);
+
+        uint256 shares = 6 * DECIMALS;
+        uint256 rate = vault.exchangeRate();
+        uint256 assetsExpected = shares * rate / DECIMALS;
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
+
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit WithdrawalRequested(1, bob, shares, assetsExpected, rate);
+
+        vm.prank(permitOwner);
+        uint256 requestId = vault.requestRedeemWithPermit(shares, bob, deadline, v, r, s);
+
+        assertEq(requestId, 1, "request id should start at 1");
+        (address recipient, uint256 recordedShares, uint256 recordedAssets, uint256 recordedRate) =
+            _queueRequestSnapshot();
+        assertEq(recipient, bob, "queue receives recipient");
+        assertEq(recordedShares, shares, "queue receives share amount");
+        assertEq(recordedAssets, assetsExpected, "queue receives assetsExpected");
+        assertEq(recordedRate, rate, "queue receives exchange rate");
+        assertEq(stAztec.allowance(permitOwner, address(vault)), shares, "allowance set by permit");
+        assertEq(IERC20Permit(address(stAztec)).nonces(permitOwner), 1, "nonce incremented");
+    }
+
+    function test_RequestRedeemWithPermit_AllowsMaxAllowance() external {
+        uint256 assets = type(uint256).max;
+        asset.mint(permitOwner, assets);
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 depositV, bytes32 depositR, bytes32 depositS) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, depositV, depositR, depositS);
+
+        uint256 shares = type(uint256).max;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
+
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+
+        assertEq(stAztec.allowance(permitOwner, address(vault)), type(uint256).max, "allowance remains max");
+    }
+
+    function test_RevertWhen_RequestRedeemWithPermit_ExpiredSignature() external {
+        _performDeposit(permitOwner, 20 * DECIMALS);
+
+        uint256 shares = 4 * DECIMALS;
+        uint256 deadline = block.timestamp - 1;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
+
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_RequestRedeemWithPermit_InvalidSignature() external {
+        _performDeposit(permitOwner, 20 * DECIMALS);
+
+        uint256 shares = 4 * DECIMALS;
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(
+            IERC20Permit(address(stAztec)), permitOwner, permitAttackerKey, address(vault), shares, deadline
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner)
+        );
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_RequestRedeemWithPermit_ReplayedNonce() external {
+        _performDeposit(permitOwner, 20 * DECIMALS);
+
+        uint256 shares = 4 * DECIMALS;
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
+
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+
+        uint256 nonce = IERC20Permit(address(stAztec)).nonces(permitOwner);
+        bytes32 digest =
+            _buildPermitDigest(IERC20Permit(address(stAztec)), permitOwner, address(vault), shares, nonce, deadline);
+        address signer = ECDSA.recover(digest, v, r, s);
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner));
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         NON-PERMIT FLOWS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Deposit_StillWorks() external {
+        uint256 assets = 9 * DECIMALS;
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+
+        vm.prank(alice);
+        uint256 shares = vault.deposit(assets, alice);
+
+        assertEq(shares, assets, "deposit shares");
+        assertEq(stAztec.balanceOf(alice), assets, "shares minted");
+    }
+
+    function test_RequestRedeem_StillWorks() external {
+        _performDeposit(alice, 15 * DECIMALS);
+
+        uint256 shares = 5 * DECIMALS;
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, alice);
+
+        assertEq(requestId, 1, "request id should start at 1");
     }
 
     /*//////////////////////////////////////////////////////////////
