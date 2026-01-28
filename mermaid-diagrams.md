@@ -5,11 +5,14 @@
 ```mermaid
 flowchart LR
 
-subgraph "Actors / Roles"
+subgraph "Actors"
     user[User]
     governanceMultisig[Governance/Admin multisig]
     guardianMultisig[Guardian multisig]
     operatorKey[Operator key/bot]
+end
+
+subgraph "StakingProvider"
     providerAdmin[Staking provider admin]
     providerRewardsRecipient[Provider rewards recipient]
 end
