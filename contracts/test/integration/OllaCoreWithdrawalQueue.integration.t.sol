@@ -77,7 +77,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
-        rewardsVault = new MockRewardsVault(asset, address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         safetyModule = new SafetyModule(admin, guardian, address(vault), 1_000_000 ether, 500, 6_000, 1 days);

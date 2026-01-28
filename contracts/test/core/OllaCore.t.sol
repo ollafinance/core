@@ -1052,7 +1052,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
             INITIAL_TREASURY_SPLIT_BP,
             governance,
             address(withdrawalQueue),
-            IRewardsVault(address(rewardsVault)),
+            rewardsVault,
             address(safetyModule)
         );
 

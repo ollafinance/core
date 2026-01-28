@@ -556,7 +556,7 @@ contract OllaCore is
         (ollaProtocolFeeAssets, treasuryShares, providerShares) = _calculateProtocolFees(grossAssetRewards);
         emit OllaProtocolFeesPaid(ollaProtocolFeeAssets, treasuryShares, providerShares);
         _modules.stAztec.mint(_modules.governance, treasuryShares);
-        // TODO: this should go to the provider addressbe pr
+        // TODO: this should go to the provider address, not the rewards vault
         _modules.stAztec.mint(address(_modules.rewardsVault), providerShares);
 
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
