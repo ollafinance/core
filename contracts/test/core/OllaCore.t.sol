@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import {Test} from "@forge-std/Test.sol";
 
-import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
-import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { Math } from "@oz/utils/math/Math.sol";
+import {Initializable} from "@oz-upgradeable/proxy/utils/Initializable.sol";
+import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import {IAccessControl} from "@oz/access/IAccessControl.sol";
+import {IERC20} from "@oz/token/ERC20/IERC20.sol";
+import {Math} from "@oz/utils/math/Math.sol";
 
-import { OllaCore } from "src/core/OllaCore.sol";
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { IMockRewardsVault } from "src/core/mocks/IMockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
-import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
-import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import {OllaCore} from "src/core/OllaCore.sol";
+import {IOllaCore} from "src/core/interfaces/IOllaCore.sol";
+import {IRewardsVault} from "src/core/interfaces/IRewardsVault.sol";
+import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
+import {IStAztec} from "src/core/interfaces/IStAztec.sol";
+import {StAztec} from "src/core/StAztec.sol";
+import {MockAztec} from "src/staking/mocks/MockAztec.sol";
+import {MockStakingManager} from "src/staking/mocks/MockStakingManager.sol";
+import {MockRewardsVault} from "src/core/mocks/MockRewardsVault.sol";
+import {IMockRewardsVault} from "src/core/mocks/IMockRewardsVault.sol";
+import {MockSafetyModule} from "src/safetymodule/MockSafetyModule.sol";
+import {MockWithdrawalQueue} from "src/core/mocks/MockWithdrawalQueue.sol";
+import {ISafetyModule} from "src/safetymodule/ISafetyModule.sol";
+import {MockAccountingStakingManager} from "test/mocks/MockAccountingStakingManager.sol";
 
 contract OllaCoreHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
@@ -68,6 +68,14 @@ contract OllaCoreHarness is OllaCore {
         returns (uint256 grossRewards)
     {
         return _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+    }
+
+    function exposedCalculateProtocolFees(uint256 grossAssetRewards)
+        external
+        view
+        returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
+    {
+        return _calculateProtocolFees(grossAssetRewards);
     }
 }
 
@@ -1283,8 +1291,48 @@ contract OllaCoreProtocolFeesTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                               TESTS
+                                TESTS
     //////////////////////////////////////////////////////////////*/
+
+    function test_CalculateProtocolFees_ZeroSupply_MatchesConvertToShares() external {
+        uint256 grossRewards = 100 * DECIMALS;
+
+        assertEq(stAztec.totalSupply(), 0, "supply zero");
+
+        (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
+            vault.exposedCalculateProtocolFees(grossRewards);
+
+        uint256 expectedFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 expectedSharesTotal = vault.convertToShares(expectedFeeAssets);
+
+        assertEq(feeAssets, expectedFeeAssets, "fee assets");
+        assertEq(expectedSharesTotal, expectedFeeAssets, "zero supply shares");
+        assertEq(treasuryShares + providerShares, expectedSharesTotal, "fee shares match convertToShares");
+    }
+
+    function test_CalculateProtocolFees_LargeAssetsTinyRewards_MatchesConvertToShares() external {
+        uint256 depositAmount = 1e24;
+        _performDeposit(alice, depositAmount);
+        vault.exposedApplyAccountingUpdates(1, 0, 0, 0);
+
+        uint256 grossRewards = 20;
+        (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
+            vault.exposedCalculateProtocolFees(grossRewards);
+
+        uint256 expectedFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 expectedSharesTotal = vault.convertToShares(expectedFeeAssets);
+        uint256 supply = stAztec.totalSupply();
+        uint256 totalAssets = vault.totalAssets();
+
+        assertEq(feeAssets, expectedFeeAssets, "fee assets");
+        assertEq(supply, depositAmount, "supply from deposit");
+        assertEq(totalAssets, depositAmount + 1, "total assets updated");
+        assertEq(treasuryShares + providerShares, expectedSharesTotal, "fee shares match convertToShares");
+        assertEq(
+            expectedSharesTotal, expectedFeeAssets.mulDiv(supply, totalAssets, Math.Rounding.Floor), "shares floor"
+        );
+        assertEq(expectedSharesTotal, 0, "tiny fee rounds down");
+    }
 
     function test_UpdateAccounting_PaysProtocolFeesAndMintsSplitShares() external {
         uint256 depositAmount = 100 * DECIMALS;
