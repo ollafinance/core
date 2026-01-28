@@ -24,23 +24,20 @@ interface IStakingManager {
         G1Point proofOfPossession;
     }
 
+    /// @notice Tracks an attester with their originally staked amount.
+    /// @param attester The attester address.
+    /// @param stakedAmount The amount originally staked (activation threshold at stake time).
+    struct AttesterStake {
+        address attester;
+        uint256 stakedAmount;
+    }
+
     /// @notice Configuration for the staking provider.
     /// @param admin The provider admin address.
     /// @param rewardsRecipient The address to receive sequencer rewards.
     struct ProviderConfig {
         address admin;
         address rewardsRecipient;
-    }
-
-    /// @notice Tracks a pending unstake request.
-    /// @param attester The attester address being unstaked.
-    /// @param amount The amount being unstaked.
-    /// @param initiatedAt The timestamp when unstake was initiated.
-    /// @dev Kept for interface compatibility but not used in _pendingUnstakeRequests.
-    struct UnstakeRequest {
-        address attester;
-        uint256 amount;
-        uint256 initiatedAt;
     }
 
     /// @notice Aggregated staking state from on-chain queries.
