@@ -1528,4 +1528,44 @@ contract OllaCoreProtocolFeesTest is Test {
         assertEq(stAztec.balanceOf(governance), oldGovShares, "no treasury shares minted");
         assertEq(stAztec.balanceOf(address(rewardsVault)), oldProviderShares, "no provider shares minted");
     }
+
+    /// @notice Reproduces rounding error from invariant test failure.
+    /// The contract's convertToAssets uses two mulDiv operations (via exchangeRate),
+    /// while the spec expects a single mulDiv: shares * totalAssets / totalSupply.
+    /// This causes a 1 wei difference at large values.
+    function test_ConvertToAssets_RoundingError_ReproducesInvariantFailure() external {
+        // Reproduce the exact shrunk sequence from the failing invariant test:
+        // 1. setTotalStaked(10135855071863320976892102731)
+        // 2. updateAccounting()
+        // 3. deposit(3, 0)
+
+        // Step 1: Set a large totalStaked value
+        uint256 largeStaked = 10135855071863320976892102731;
+        stakingManager.setTotalStaked(largeStaked);
+
+        // Step 2: Update accounting to apply the staked principal
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        // Step 3: Small deposit to create shares
+        uint256 depositAmount = 3;
+        _performDeposit(alice, depositAmount);
+
+        // Now check the invariant: convertToAssets should match the spec
+        uint256 supply = stAztec.totalSupply();
+        uint256 total = vault.totalAssets();
+
+        // Use a shares value that triggers the rounding difference
+        // The invariant test uses block.number bounded to [1, type(uint96).max]
+        uint256 shares = supply; // Use total supply as test shares
+
+        // Contract's implementation (two-step via exchange rate)
+        uint256 contractResult = vault.convertToAssets(shares);
+
+        // Spec's expected result (single-step direct calculation)
+        uint256 expectedResult = shares.mulDiv(total, supply, Math.Rounding.Floor);
+
+        // This assertion will fail, demonstrating the rounding error
+        assertEq(contractResult, expectedResult, "convertToAssets matches spec");
+    }
 }
