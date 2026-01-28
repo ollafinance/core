@@ -2,7 +2,7 @@
 pragma solidity ^0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -46,7 +46,7 @@ interface IOllaCore {
         IStakingManager stakingManager;
         address governance;
         IWithdrawalQueue withdrawalQueue;
-        address rewardsVault;
+        IRewardsVault rewardsVault;
         address safetyModule;
     }
 
@@ -232,7 +232,7 @@ interface IOllaCore {
         uint256 treasuryFeeSplitBP_,
         address governance_,
         address withdrawalQueue_,
-        address rewardsVault_,
+        IRewardsVault rewardsVault_,
         address safetyModule_
     ) external;
 
@@ -297,7 +297,7 @@ interface IOllaCore {
 
     /// @notice Sets the rewards vault address.
     /// @param newRewardsVault The new rewards vault address.
-    function setRewardsVault(address newRewardsVault) external;
+    function setRewardsVault(IRewardsVault newRewardsVault) external;
 
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS

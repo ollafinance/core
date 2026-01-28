@@ -124,20 +124,6 @@ contract StakingManagerReentrancyTest is Test {
         stakingManager.getUnstakedFunds();
     }
 
-    function test_RevertWhen_HarvestRewards_ReenteredFromRewardsVaultHook() external {
-        _stakeOne();
-
-        uint256 rewardAmount = 10 ether;
-        aztec.mint(address(rollup), rewardAmount);
-        rollup.setRewards(address(rewardsVault), rewardAmount);
-
-        rewardsVault.configureReentry(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()), true);
-
-        vm.prank(core);
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        stakingManager.harvestRewards();
-    }
-
     function test_RevertWhen_CleanActivatedAttesters_ReenteredFromRollupDeposit() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);

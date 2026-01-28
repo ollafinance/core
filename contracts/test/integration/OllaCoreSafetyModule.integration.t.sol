@@ -11,6 +11,7 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
@@ -193,7 +194,7 @@ contract OllaCoreSafetyModuleTest is Test {
             0,
             governance,
             address(withdrawalQueue),
-            address(rewardsVault),
+            IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
 

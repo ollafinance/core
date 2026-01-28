@@ -3,15 +3,82 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { Test } from "@forge-std/Test.sol";
 
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
+import { MaliciousRewardsVault } from "src/core/mocks/MaliciousRewardsVault.sol";
+import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+
+/// @notice Mock staking manager that returns configurable harvested rewards.
+contract MockHarvestStakingManager is IStakingManager {
+    uint256 public harvestedRewards;
+
+    function setHarvestedRewards(uint256 value) external {
+        harvestedRewards = value;
+    }
+
+    function harvestRewards() external override returns (uint256 harvested) {
+        return harvestedRewards;
+    }
+
+    function stake(uint256) external pure override { }
+    function unstake(uint256) external pure override { }
+    function cleanActivatedAttesters() external pure override { }
+
+    function getUnstakedFunds() external pure override returns (uint256) {
+        return 0;
+    }
+    function addKeysToProvider(KeyStore[] calldata) external pure override { }
+    function dripQueue(uint256) external pure override { }
+    function setProviderRewardsRecipient(address) external pure override { }
+
+    function getClaimableRewards() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getSlashingDelta() external override returns (uint256) {
+        return 0;
+    }
+
+    function totalStaked() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getStakingState() external pure override returns (StakingState memory) {
+        return StakingState({ stakedAmount: 0, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
+    }
+
+    function getQueueLength() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getProviderConfig() external pure override returns (ProviderConfig memory) {
+        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+    }
+
+    function getActivatedAttesterCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getPendingUnstakeCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function isUnstakePending(address) external pure override returns (bool) {
+        return false;
+    }
+    function initialize(IERC20, address, address, address, address, address, address) external pure override { }
+}
 
 contract OllaCoreReentrancyTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -66,7 +133,7 @@ contract OllaCoreReentrancyTest is Test {
             treasuryFeeSplitBP,
             governance,
             address(withdrawalQueue),
-            rewardsVault,
+            IRewardsVault(rewardsVault),
             address(safetyModule)
         );
         withdrawalQueue.initialize(address(vault), governance);
@@ -173,5 +240,99 @@ contract OllaCoreReentrancyTest is Test {
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(governance);
         vault.finalizeWithdrawals(available);
+    }
+}
+
+contract OllaCoreHarvestReentrancyTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                              CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant DECIMALS = 1e18;
+
+    /*//////////////////////////////////////////////////////////////
+                           TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockHarvestStakingManager internal stakingManager;
+    uint256 internal protocolFeeBP;
+    uint256 internal treasuryFeeSplitBP;
+    MockWithdrawalQueue internal withdrawalQueue;
+    MockSafetyModule internal safetyModule;
+    MaliciousRewardsVault internal rewardsVault;
+    address internal governance;
+    address internal alice;
+
+    /*//////////////////////////////////////////////////////////////
+                                 SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCore implementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        vault = OllaCore(address(proxy));
+
+        stAztec = new StAztec(address(vault));
+        stakingManager = new MockHarvestStakingManager();
+        governance = makeAddr("governance");
+        rewardsVault = new MaliciousRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule();
+        withdrawalQueue = new MockWithdrawalQueue();
+
+        protocolFeeBP = 500;
+        treasuryFeeSplitBP = 5_000;
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            protocolFeeBP,
+            treasuryFeeSplitBP,
+            governance,
+            address(withdrawalQueue),
+            IRewardsVault(address(rewardsVault)),
+            address(safetyModule)
+        );
+
+        vm.startPrank(governance);
+        vault.grantRole(vault.OPERATOR_ROLE(), governance);
+        vault.grantRole(vault.OPERATOR_ROLE(), address(rewardsVault));
+        vm.stopPrank();
+
+        alice = makeAddr("alice");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _deposit(address owner, uint256 assets) internal {
+        asset.mint(owner, assets);
+        vm.prank(owner);
+        asset.approve(address(vault), assets);
+        vm.prank(owner);
+        vault.deposit(assets, owner);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            HARVEST REWARDS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_HarvestRewards_ReenteredFromRewardsVaultHook() external {
+        _deposit(alice, 10 * DECIMALS);
+
+        uint256 rewardAmount = 5 * DECIMALS;
+        stakingManager.setHarvestedRewards(rewardAmount);
+
+        rewardsVault.configureReentry(address(vault), abi.encodeCall(vault.harvestRewards, ()), true);
+
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.prank(governance);
+        vault.harvestRewards();
     }
 }

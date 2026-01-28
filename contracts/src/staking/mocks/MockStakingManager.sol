@@ -45,15 +45,6 @@ contract MockStakingManager is IStakingManager {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        EXTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IStakingManager
-    function getSlashingDelta() external override returns (uint256 slashingDelta) {
-        return 0;
-    }
-
-    /*//////////////////////////////////////////////////////////////
                          EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -96,6 +87,11 @@ contract MockStakingManager is IStakingManager {
         providerRewardsRecipient;
         defaultAdmin;
         return;
+    }
+
+    /// @inheritdoc IStakingManager
+    function getSlashingDelta() external pure override returns (uint256 slashingDelta) {
+        return 0;
     }
 
     /// @inheritdoc IStakingManager

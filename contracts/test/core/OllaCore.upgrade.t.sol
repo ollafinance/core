@@ -12,6 +12,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
@@ -78,7 +79,7 @@ contract OllaCoreUpgradeTest is Test {
     address internal alice;
     address internal bob;
     MockWithdrawalQueue internal withdrawalQueue;
-    address internal rewardsVault;
+    MockRewardsVault internal rewardsVault;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -96,7 +97,7 @@ contract OllaCoreUpgradeTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
-        rewardsVault = makeAddr("rewardsVault");
+        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         safetyModule = new MockSafetyModule();
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();

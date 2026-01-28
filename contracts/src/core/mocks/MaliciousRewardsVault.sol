@@ -30,11 +30,6 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         CORE_ADDRESS = coreAddress_;
     }
 
-    /// @inheritdoc IRewardsVault
-    function initialize(IERC20, address, address) external override {
-        revert MaliciousRewardsVault__NoInitializer();
-    }
-
     /// @notice Configure the call attempted from `recordRewards`.
     /// @param target The contract to call.
     /// @param data The calldata to use.
@@ -92,5 +87,10 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     /// @inheritdoc IRewardsVault
     function latestRecordedRewardsAmount() external view override returns (uint256) {
         return _latestRecordedRewardsAmount;
+    }
+
+    /// @inheritdoc IRewardsVault
+    function initialize(IERC20, address, address) external pure override {
+        revert MaliciousRewardsVault__NoInitializer();
     }
 }

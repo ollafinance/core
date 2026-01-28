@@ -7,7 +7,6 @@ import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -46,7 +45,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     IAztecRollupRegistry public rollupRegistry;
 
     /// @notice The rewards vault contract.
-    IRewardsVault public rewardsVault;
+    address public rewardsVault;
 
     /// @notice The OllaCore contract address.
     address public core;
@@ -146,7 +145,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         stakingAsset = stakingAsset_;
         rollupRegistry = IAztecRollupRegistry(rollupRegistry_);
-        rewardsVault = IRewardsVault(rewardsVault_);
+        rewardsVault = rewardsVault_;
         core = core_;
         governance = defaultAdmin_;
 
@@ -215,8 +214,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
-        harvested = rollup.claimSequencerRewards(address(rewardsVault));
-        rewardsVault.recordRewards(harvested);
+        harvested = rollup.claimSequencerRewards(rewardsVault);
         emit RewardsHarvested(harvested);
         return harvested;
     }
