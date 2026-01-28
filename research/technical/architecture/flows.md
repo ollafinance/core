@@ -4,86 +4,112 @@
 
 ```mermaid
 flowchart LR
-    protocolOperator -.PROTOCOL_OPERATOR_ROLE.- protocolOperator
-    nodeOperator -.STAKING_PROVIDER_ADMIN_ROLE.- nodeOperator
-    guardianMultisig -.GUARDIAN_ROLE.- guardianMultisig
-    guardianMultisig -.DEFAULT_ADMIN_ROLE.- guardianMultisig
-    linkStyle 0,1,2,3 stroke:#c0392b,stroke-width:5px,stroke-dasharray: 5 3;
 
-subgraph "Users"
+subgraph "Actors / Roles"
     user[User]
-    protocolOperator[Protocol Operator]
-    nodeOperator[Node Operator]
-    guardianSigner[Guardian Signer]
-    treasurySigner[Treasury Signer]
+    governanceMultisig[Governance/Admin multisig]
+    guardianMultisig[Guardian multisig]
+    operatorKey[Operator key/bot]
+    providerAdmin[Staking provider admin]
+    treasuryMultisig[Treasury multisig]
+    providerRewardsRecipient[Provider rewards recipient]
 end
 
-    nodeServer["Physical Node Server"]
-    nodeRewardsAddress["Node Rewards Address"]
-    core["OllaCore"]
-    stAztec["stAztec"]
-
-    aztecRollup["AztecRollupContract"]
-    rewards["RewardsVault"]
-    stkMan["StakingManager"]
-    withdrawQ["WithdrawalQueue"]
-
-    treasuryMultisig["Treasury Multisig"]
-    treasurySigner -->|signs| treasuryMultisig
-
-    guardianMultisig["Guardian Multisig"]
-
-    guardianSigner -->|signs| guardianMultisig
-    guardianMultisig -->|"emergency actions"| core
-    guardianMultisig -->|"manage roles"| core
-
-    core -->|"mint on deposit"| stAztec
-    core -->|"mint protocol fee"| stAztec
-    stAztec --->|"minted stAztec"| treasuryMultisig
-    stAztec --->|"minted stAztec"| nodeRewardsAddress
-    core -->|"burn on withdrawal request"| stAztec
-
-    protocolOperator -->|"rebalance: stake, unstake, claim, compound, finalize"| core
-    protocolOperator -->|update accounting| core
-
-    user -->|"deposit Aztec for stAztec"| core
-
-    user -->|"requestWithdrawal"| core
-    core -->|"create withdrawal request - lock rate"| withdrawQ
-    core -->|"finalize withdrawal requests"| withdrawQ
-    core -->|"stake/unstake"| stkMan
-    core -->|"getUnstakedFunds"| stkMan
-    user -->|"claim finalized withdrawal"| withdrawQ
-
-    nodeOperator -->|owns| nodeRewardsAddress
-subgraph STAKING
-    nodeOperator -->|"addKeysToProvider"| stkMan
-    nodeOperator -->|"dripQueue"| stkMan
-    nodeOperator -->|"set reward address"| stkMan
-    nodeOperator -->|"configure keys"| nodeServer
-    nodeServer -->|"validator produces rewards"| aztecRollup
-    stkMan -->|"deposit<br/>(i.e. stake)"| aztecRollup
-    stkMan -->|"claimSequencerRewards<br/>(i.e. harvest rewards)"| aztecRollup
-    stkMan -->|"initiateWithdraw<br/>(i.e. unstake)"| aztecRollup
-    aztecRollup -.->|"AZTEC (withdrawals)"| stkMan
+subgraph "On-chain modules"
+    core[OllaCore]
+    stAztec[StAztec]
+    safety[SafetyModule]
+    withdrawQ[WithdrawalQueue]
+    rewards[RewardsVault]
+    stkMan[StakingManager]
 end
-    core -->|getClaimableRewards| stkMan
-    core -->|harvestRewards| stkMan
-    aztecRollup -.->|"AZTEC rewards (coinbase)"| rewards
-    core -->|withdrawToCore| rewards
+
+subgraph "Aztec"
+    rollupRegistry[AztecRollupRegistry]
+    rollup["AztecRollup (canonical)"]
+end
+
+%% Role bindings (control-plane)
+governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> core
+governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> safety
+governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> rewards
+governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
+governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> stkMan
+
+guardianMultisig -. "GUARDIAN_ROLE" .-> core
+guardianMultisig -. "GUARDIAN_ROLE" .-> safety
+
+operatorKey -. "OPERATOR_ROLE" .-> core
+providerAdmin -. "STAKING_PROVIDER_ADMIN_ROLE" .-> stkMan
+
+%% Inter-module authority (control-plane)
+core -. "CORE_ROLE" .-> rewards
+core -. "CORE_ROLE" .-> withdrawQ
+core -. "CORE_ROLE" .-> stkMan
+
+%% User flows (asset + call-path)
+user -->|"AZTEC: deposit(assets, recipient)"| core
+core -->|"stAztec: mint(recipient, shares)"| stAztec
+stAztec -->|"stAztec"| user
+
+user -->|"requestRedeem(shares, recipient)"| core
+core -->|"stAztec: burn(owner, shares)"| stAztec
+core -->|"requestWithdrawal(recipient, shares, assetsExpected, rate)"| withdrawQ
+
+user -->|"claimRequestById(requestId)"| core
+core -->|"claimWithdrawal(requestId)"| withdrawQ
+core -->|"AZTEC: transfer(recipient, assetsExpected)"| user
+
+%% Safety checks (control-plane)
+core -->|"checkDepositAllowed / checkWithdrawalMinimum"| safety
+core -->|"checkQueueRatio / checkAccountingLiveness"| safety
+
+%% Operator cycle (end-state orchestration)
+operatorKey -->|"rebalance()"| core
+operatorKey -->|"harvestRewards()"| core
+operatorKey -->|"finalizeWithdrawals(available)"| core
+operatorKey -->|"updateAccounting()"| core
+
+core -->|"harvestRewards()"| stkMan
+stkMan -->|"getCanonicalRollup()"| rollupRegistry
+rollupRegistry -->|"canonical rollup"| rollup
+stkMan -->|"claimSequencerRewards(coinbase=rewardsVault)"| rollup
+rollup -->|"AZTEC rewards"| rewards
+core -->|"recordRewards(expectedRewards)"| rewards
+core -->|"withdrawToCore()"| rewards
+rewards -->|"AZTEC rewards"| core
+
+core -->|"finalizeWithdrawals(available)"| withdrawQ
+
+core -->|"stake(amount) / unstake(amount)"| stkMan
+core -->|"cleanActivatedAttesters() / getUnstakedFunds()"| stkMan
+stkMan -->|"deposit(...)"| rollup
+stkMan -->|"initiateWithdraw(...) / finalizeWithdraw(attester)"| rollup
+rollup -->|"AZTEC (unstaked)"| stkMan
+stkMan -->|"AZTEC"| core
+
+core -->|"mint(governance, treasuryShares)"| stAztec
+core -->|"mint(providerRewardsRecipient, providerShares)"| stAztec
+stAztec -->|"stAztec fees"| treasuryMultisig
+stAztec -->|"stAztec fees"| providerRewardsRecipient
+
+%% Emphasis
+linkStyle 0,1,2,3,4,5,6,7,8,9,10,11 stroke:#c0392b,stroke-width:4px,stroke-dasharray: 5 3;
 
 style user fill:#900
-style protocolOperator fill:#090
-style nodeOperator fill:#009
-style nodeServer stroke:#00f,stroke-width:2px,stroke-dasharray: 5
-style aztecRollup stroke:#ff6,stroke-width:2px
+style operatorKey fill:#090
+style providerAdmin fill:#009
+style rollup stroke:#ff6,stroke-width:2px
 style core stroke:#090,stroke-width:4px
 style stAztec stroke:#090,stroke-width:4px
-style rewards stroke:#090,stroke-width:4px
-style stkMan stroke:#090,stroke-width:4px
-style withdrawQ stroke:#090,stroke-width:4px
+style safety stroke:#090,stroke-width:3px
+style rewards stroke:#090,stroke-width:3px
+style stkMan stroke:#090,stroke-width:3px
+style withdrawQ stroke:#090,stroke-width:3px
+style rollupRegistry stroke:#ff6,stroke-width:2px
 style treasuryMultisig stroke:#050,stroke-width:2px
 style guardianMultisig stroke:#050,stroke-width:2px
+style governanceMultisig stroke:#050,stroke-width:2px
 ```
 
 ## Activity diagrams
