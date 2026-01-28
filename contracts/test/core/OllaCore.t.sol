@@ -36,10 +36,13 @@ contract OllaCoreHarness is OllaCore {
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
         uint256 newRewardsVaultBalance,
+        uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
-        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
+        _applyAccountingUpdates(
+            newStakedPrincipal, newRewardsVaultBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+        );
     }
 
     function exposedSyncBufferedWithBalance() external view {
@@ -384,7 +387,7 @@ contract OllaCoreTest is Test {
         uint256 firstShares = _performDeposit(alice, depositAssetAmountAlice);
         assertEq(firstShares, depositAssetAmountAlice, "first deposit: 1:1 shares at zero supply");
 
-        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0);
+        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
 
         uint256 totalAssetsBeforeSecondDeposit = vault.totalAssets();
         uint256 totalSharesBeforeSecondDeposit = stAztec.totalSupply();
@@ -414,21 +417,23 @@ contract OllaCoreTest is Test {
         uint256 assets = 10 * DECIMALS;
         uint256 staked = 6 * DECIMALS;
         uint256 rewardsVaultBalance = 4 * DECIMALS;
+        uint256 claimableRewards = 3 * DECIMALS;
         uint256 rewardsDelta = 2 * DECIMALS;
         uint256 slashingDelta = 1 * DECIMALS;
 
         _performDeposit(alice, assets);
-        vault.exposedApplyAccountingUpdates(staked, rewardsVaultBalance, rewardsDelta, slashingDelta);
+        vault.exposedApplyAccountingUpdates(staked, rewardsVaultBalance, claimableRewards, rewardsDelta, slashingDelta);
 
         IOllaCore.AccountingState memory accounting = vault.accountingState();
         assertEq(accounting.bufferedAssets, assets, "bufferedAssets matches deposited assets");
         assertEq(accounting.stakedPrincipal, staked, "stakedPrincipal matches staked amount");
         assertEq(accounting.rewardsVaultBalance, rewardsVaultBalance, "rewardsVaultBalance matches rewards vault");
+        assertEq(accounting.claimableRewards, claimableRewards, "claimableRewards matches claimable rewards");
         assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
         assertEq(
             vault.totalAssets(),
-            assets + staked + rewardsVaultBalance + rewardsDelta - slashingDelta,
+            assets + staked + rewardsVaultBalance + claimableRewards - slashingDelta,
             "totalAssets sums buckets"
         );
     }
@@ -441,21 +446,23 @@ contract OllaCoreTest is Test {
         uint96 buffered,
         uint96 staked,
         uint96 rewardsVaultBalance,
+        uint96 claimableRewards,
         uint96 rewardsDelta,
         uint96 slashingDeltaSeed
     ) external {
         buffered = uint96(bound(buffered, 1, type(uint96).max));
         staked = uint96(bound(staked, 1, type(uint96).max));
         rewardsVaultBalance = uint96(bound(rewardsVaultBalance, 1, type(uint96).max));
+        claimableRewards = uint96(bound(claimableRewards, 0, type(uint96).max));
         rewardsDelta = uint96(bound(rewardsDelta, 0, type(uint96).max));
 
         uint256 positiveTotal =
-            uint256(buffered) + uint256(staked) + uint256(rewardsVaultBalance) + uint256(rewardsDelta);
+            uint256(buffered) + uint256(staked) + uint256(rewardsVaultBalance) + uint256(claimableRewards);
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
         asset.mint(address(vault), buffered);
         vault.exposedIncreaseBuffered(buffered);
-        vault.exposedApplyAccountingUpdates(staked, rewardsVaultBalance, rewardsDelta, slashingDelta);
+        vault.exposedApplyAccountingUpdates(staked, rewardsVaultBalance, claimableRewards, rewardsDelta, slashingDelta);
 
         assertEq(vault.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
     }
@@ -578,6 +585,7 @@ contract OllaCoreTest is Test {
             bufferedAssets: 3 * DECIMALS,
             stakedPrincipal: 4 * DECIMALS,
             rewardsVaultBalance: 2 * DECIMALS,
+            claimableRewards: 5 * DECIMALS,
             rewardsDelta: 1 * DECIMALS,
             slashingDelta: 5 * DECIMALS,
             cumulativeRewards: 0
@@ -585,7 +593,7 @@ contract OllaCoreTest is Test {
 
         uint256 totalAssets = vault.exposedComputeTotalAssets(buckets);
 
-        assertEq(totalAssets, 5 * DECIMALS, "total assets computed");
+        assertEq(totalAssets, 9 * DECIMALS, "total assets computed");
     }
 
     function test_ComputeGrossRewards() external view {
@@ -633,7 +641,8 @@ contract OllaCoreTest is Test {
         stakingManager.setSlashingDelta(slashing);
 
         uint256 rewardsDelta = harvestedRewards + claimableRewards;
-        uint256 expectedTotalAssets = depositAmount + stakedPrincipal + rewardsVaultBalance + rewardsDelta - slashing;
+        uint256 expectedTotalAssets =
+            depositAmount + stakedPrincipal + rewardsVaultBalance + claimableRewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
         uint256 expectedGrossRewards = expectedTotalAssets > depositAmount ? expectedTotalAssets - depositAmount : 0;
 
@@ -705,6 +714,31 @@ contract OllaCoreTest is Test {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
         assertEq(accounting.rewardsDelta, 0, "rewards delta clamps to zero");
         assertEq(reportAfter.rewardsSnapshot, 5 * DECIMALS, "rewards snapshot tracks current rewards");
+    }
+
+    function test_UpdateAccounting_ClaimableRewardsPersistWithoutHarvest() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 claimableRewards = 5 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setClaimableRewards(claimableRewards);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.AccountingState memory accountingAfterFirst = vault.accountingState();
+        assertEq(accountingAfterFirst.claimableRewards, claimableRewards, "claimable rewards stored");
+        assertEq(vault.totalAssets(), depositAmount + claimableRewards, "total assets include claimable rewards");
+
+        stakingManager.setClaimableRewards(claimableRewards);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.AccountingState memory accountingAfterSecond = vault.accountingState();
+        IOllaCore.LatestReport memory reportAfterSecond = vault.latestReport();
+        assertEq(accountingAfterSecond.claimableRewards, claimableRewards, "claimable rewards persist");
+        assertEq(accountingAfterSecond.rewardsDelta, 0, "rewards delta resets to zero");
+        assertEq(reportAfterSecond.rewardsSnapshot, claimableRewards, "rewards snapshot unchanged");
+        assertEq(vault.totalAssets(), depositAmount + claimableRewards, "total assets remain stable");
     }
 
     function test_RevertWhen_UpdateAccountingSlashingDeltaDecreases() external {
@@ -1313,7 +1347,7 @@ contract OllaCoreProtocolFeesTest is Test {
     function test_CalculateProtocolFees_LargeAssetsTinyRewards_MatchesConvertToShares() external {
         uint256 depositAmount = 1e24;
         _performDeposit(alice, depositAmount);
-        vault.exposedApplyAccountingUpdates(1, 0, 0, 0);
+        vault.exposedApplyAccountingUpdates(1, 0, 0, 0, 0);
 
         uint256 grossRewards = 20;
         (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =

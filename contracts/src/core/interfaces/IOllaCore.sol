@@ -19,6 +19,7 @@ interface IOllaCore {
         uint256 bufferedAssets;
         uint256 stakedPrincipal;
         uint256 rewardsVaultBalance;
+        uint256 claimableRewards;
         uint256 rewardsDelta;
         uint256 slashingDelta;
         uint256 cumulativeRewards;

@@ -27,10 +27,13 @@ contract OllaCoreSafetyModuleHarness is OllaCore {
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
         uint256 newRewardsVaultBalance,
+        uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
-        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
+        _applyAccountingUpdates(
+            newStakedPrincipal, newRewardsVaultBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+        );
     }
 }
 
@@ -167,7 +170,7 @@ contract OllaCoreSafetyModuleTest is Test {
         safetyModule.setDepositCap(cap);
 
         vm.prank(operator);
-        vault.exposedApplyAccountingUpdates(0, 60 * DECIMALS, 0, 0);
+        vault.exposedApplyAccountingUpdates(0, 60 * DECIMALS, 0, 0, 0);
 
         uint256 depositAmount = 100 * DECIMALS;
         asset.mint(alice, depositAmount);

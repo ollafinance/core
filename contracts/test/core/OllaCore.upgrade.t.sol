@@ -25,10 +25,13 @@ contract OllaCoreUpgradeHarness is OllaCore {
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
         uint256 newRewardsVaultBalance,
+        uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
-        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
+        _applyAccountingUpdates(
+            newStakedPrincipal, newRewardsVaultBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+        );
     }
 }
 
@@ -194,7 +197,7 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(requestId, 1, "request id starts at 1");
 
         vm.prank(operator);
-        vault.exposedApplyAccountingUpdates(4 * DECIMALS, 2 * DECIMALS, 1 * DECIMALS, 1 * DECIMALS);
+        vault.exposedApplyAccountingUpdates(4 * DECIMALS, 2 * DECIMALS, 3 * DECIMALS, 1 * DECIMALS, 1 * DECIMALS);
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 totalAssetsBefore = vault.totalAssets();
@@ -217,6 +220,7 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered preserved");
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked preserved");
         assertEq(accountingAfter.rewardsVaultBalance, accountingBefore.rewardsVaultBalance, "rewards vault preserved");
+        assertEq(accountingAfter.claimableRewards, accountingBefore.claimableRewards, "claimable rewards preserved");
         assertEq(accountingAfter.rewardsDelta, accountingBefore.rewardsDelta, "rewards delta preserved");
         assertEq(accountingAfter.slashingDelta, accountingBefore.slashingDelta, "slashing delta preserved");
 

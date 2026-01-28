@@ -24,10 +24,13 @@ contract OllaCoreWithdrawalQueueHarness is OllaCore {
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
         uint256 newRewardsVaultBalance,
+        uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
-        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
+        _applyAccountingUpdates(
+            newStakedPrincipal, newRewardsVaultBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+        );
     }
 }
 
@@ -127,7 +130,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(request.assetsExpected, expectedAssets, "assetsExpected locked at request rate");
         assertEq(request.rate, rate, "rate locked at request time");
 
-        vault.exposedApplyAccountingUpdates(0, 3 ether, 0, 0);
+        vault.exposedApplyAccountingUpdates(0, 3 ether, 0, 0, 0);
         uint256 updatedRate = vault.exchangeRate();
         assertGt(updatedRate, rate, "exchange rate should increase after rewards");
         request = queue.getRequest(requestId);
@@ -173,7 +176,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
     function test_RequestRedeem_AssetsExpectedMatchesRate() external {
         _deposit(alice, 18 ether);
-        vault.exposedApplyAccountingUpdates(0, 6 ether, 0, 0);
+        vault.exposedApplyAccountingUpdates(0, 6 ether, 0, 0, 0);
 
         uint256 rate = vault.exchangeRate();
         uint256 shares = 9 ether;
