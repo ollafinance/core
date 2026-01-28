@@ -519,8 +519,12 @@ contract OllaCore is
     /// @return assets The assets that would be returned.
     /// Formula: shares * totalAssets / totalSupply (floor), shares if supply == 0.
     function convertToAssets(uint256 shares) external view override returns (uint256 assets) {
-        uint256 rate = _exchangeRate();
-        assets = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        IStAztec stAztecToken = _modules.stAztec;
+        uint256 supply = stAztecToken.totalSupply();
+        if (supply == 0) {
+            return shares;
+        }
+        assets = shares.mulDiv(totalAssets(), supply, Math.Rounding.Floor);
         return assets;
     }
 
@@ -799,9 +803,7 @@ contract OllaCore is
         ollaProtocolFeeAssets =
             grossAssetRewards * protocolFeeBP / BP_DIVISOR;
 
-        uint256 currentRate = _exchangeRate();
-        uint256 protocolSharesTotal =
-            ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = _convertToShares(ollaProtocolFeeAssets, Math.Rounding.Floor);
 
         treasuryShares = protocolSharesTotal * treasuryFeeSplitBP / BP_DIVISOR;
         providerShares = protocolSharesTotal - treasuryShares;
