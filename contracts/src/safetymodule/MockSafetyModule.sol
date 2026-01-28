@@ -63,9 +63,9 @@ contract MockSafetyModule is ISafetyModule {
     }
 
     /// @notice No-op withdrawal minimum setter for tests.
-    /// @param minimum The new withdrawal minimum.
-    function setWithdrawalMinimum(uint256 minimum) external pure override {
-        _noop(minimum);
+    /// @param minimumShares The new withdrawal minimum in shares.
+    function setWithdrawalMinimum(uint256 minimumShares) external pure override {
+        _noop(minimumShares);
     }
 
     /// @notice No-op rate-drop threshold setter for tests.
@@ -106,9 +106,9 @@ contract MockSafetyModule is ISafetyModule {
     }
 
     /// @notice No-op withdrawal minimum check for tests.
-    /// @param assets The withdrawal amount in assets.
-    function checkWithdrawalMinimum(uint256 assets) external pure override {
-        _noop(assets);
+    /// @param shares The withdrawal amount in shares.
+    function checkWithdrawalMinimum(uint256 shares) external pure override {
+        _noop(shares);
     }
 
     /*//////////////////////////////////////////////////////////////

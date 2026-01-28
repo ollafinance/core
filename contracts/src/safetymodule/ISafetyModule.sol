@@ -21,8 +21,8 @@ interface ISafetyModule {
     event DepositCapUpdated(uint256 cap);
 
     /// @notice Emitted when the withdrawal minimum is updated.
-    /// @param minimum The new withdrawal minimum.
-    event WithdrawalMinimumUpdated(uint256 minimum);
+    /// @param minimumShares The new withdrawal minimum in shares.
+    event WithdrawalMinimumUpdated(uint256 minimumShares);
 
     /// @notice Emitted when a circuit breaker condition is triggered.
     /// @param reason The breaker reason identifier.
@@ -52,8 +52,8 @@ interface ISafetyModule {
     /// @notice Thrown when a zero address is provided.
     error SafetyModule__ZeroAddress(string param);
 
-    /// @notice Thrown when a withdrawal amount is below the minimum.
-    error SafetyModule__BelowWithdrawalMinimum(uint256 assets, uint256 minimum);
+    /// @notice Thrown when a withdrawal share amount is below the minimum.
+    error SafetyModule__BelowWithdrawalMinimum(uint256 shares, uint256 minimumShares);
 
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
@@ -81,8 +81,8 @@ interface ISafetyModule {
     function setDepositCap(uint256 cap) external;
 
     /// @notice Updates the withdrawal minimum.
-    /// @param minimum The new withdrawal minimum.
-    function setWithdrawalMinimum(uint256 minimum) external;
+    /// @param minimumShares The new withdrawal minimum in shares.
+    function setWithdrawalMinimum(uint256 minimumShares) external;
 
     /// @notice Updates the rate-drop threshold.
     /// @param minRateDropBps The new rate-drop threshold in basis points.
@@ -121,6 +121,6 @@ interface ISafetyModule {
     function checkDepositAllowed(uint256 deposit, uint256 total) external view returns (bool allowed);
 
     /// @notice Checks whether a withdrawal meets the minimum requirement.
-    /// @param assets The withdrawal amount in assets.
-    function checkWithdrawalMinimum(uint256 assets) external view;
+    /// @param shares The withdrawal amount in shares.
+    function checkWithdrawalMinimum(uint256 shares) external view;
 }
