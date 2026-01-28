@@ -803,9 +803,7 @@ contract OllaCore is
         ollaProtocolFeeAssets =
             grossAssetRewards * protocolFeeBP / BP_DIVISOR;
 
-        uint256 currentRate = _exchangeRate();
-        uint256 protocolSharesTotal =
-            ollaProtocolFeeAssets.mulDiv(_EXCHANGE_RATE_SCALE, currentRate, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = _convertToShares(ollaProtocolFeeAssets, Math.Rounding.Floor);
 
         treasuryShares = protocolSharesTotal * treasuryFeeSplitBP / BP_DIVISOR;
         providerShares = protocolSharesTotal - treasuryShares;
