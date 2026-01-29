@@ -51,14 +51,28 @@ contract DeployScript is BaseDeployer {
         string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
         bool isFirstAddress = true;
 
-        // 1. Deploy or use existing mocks/external contracts
+        // Always write Asset and StakingManager to JSON (regardless of mock or real)
+        console2.log("Asset:", asset);
+        console2.log("StakingManager:", stakingManager);
+        json = _addAddressToJson(json, "Asset", asset, isFirstAddress);
+        isFirstAddress = false;
+        json = _addAddressToJson(json, "StakingManager", stakingManager, false);
+
+        // 1. Deploy OllaCore (implementation + proxy)
+        console2.log("\n--- Deploying OllaCore ---");
+        (ollaCoreImpl, ollaCoreProxy) = ollaCoreDeployer.deploy(config);
+        json = _addAddressToJson(json, "OllaCoreImplementation", ollaCoreImpl, isFirstAddress);
+        if (isFirstAddress) isFirstAddress = false;
+        json = _addAddressToJson(json, "OllaCoreProxy", ollaCoreProxy, false);
+
+        // 2. Deploy or use existing mocks/external contracts
         if (config.deployMocks) {
             console2.log("\n--- Deploying Mocks ---");
             (asset, stakingManager) = mocksDeployer.deploy(config);
 
             // Local safety module stub: allows deposits/withdrawals without role setup.
             vm.startBroadcast(config.deployerPrivateKey);
-            safetyModule = address(new MockSafetyModule());
+            safetyModule = address(new MockSafetyModule(ollaCoreImpl));
             vm.stopBroadcast();
             _logDeployment("MockSafetyModule", safetyModule);
         } else {
@@ -70,20 +84,6 @@ contract DeployScript is BaseDeployer {
             require(stakingManager != address(0), "Deploy: stakingManager address required for non-mock deployment");
             require(safetyModule != address(0), "Deploy: safetyModule address required for non-mock deployment");
         }
-
-        // Always write Asset and StakingManager to JSON (regardless of mock or real)
-        console2.log("Asset:", asset);
-        console2.log("StakingManager:", stakingManager);
-        json = _addAddressToJson(json, "Asset", asset, isFirstAddress);
-        isFirstAddress = false;
-        json = _addAddressToJson(json, "StakingManager", stakingManager, false);
-
-        // 2. Deploy OllaCore (implementation + proxy)
-        console2.log("\n--- Deploying OllaCore ---");
-        (ollaCoreImpl, ollaCoreProxy) = ollaCoreDeployer.deploy(config);
-        json = _addAddressToJson(json, "OllaCoreImplementation", ollaCoreImpl, isFirstAddress);
-        if (isFirstAddress) isFirstAddress = false;
-        json = _addAddressToJson(json, "OllaCoreProxy", ollaCoreProxy, false);
 
         // 3. Deploy StAztec (linked to OllaCore proxy)
         console2.log("\n--- Deploying StAztec ---");

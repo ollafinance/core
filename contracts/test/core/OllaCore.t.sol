@@ -226,7 +226,7 @@ contract OllaCoreTest is Test {
         address spender,
         uint256 value,
         uint256 deadline
-    ) internal returns (uint8 v, bytes32 r, bytes32 s) {
+    ) internal view returns (uint8 v, bytes32 r, bytes32 s) {
         uint256 nonce = token.nonces(owner);
         bytes32 digest = _buildPermitDigest(token, owner, spender, value, nonce, deadline);
         (v, r, s) = vm.sign(ownerKey, digest);

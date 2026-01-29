@@ -27,11 +27,11 @@ contract MockHarvestStakingManager is IStakingManager {
         harvestedRewards = value;
     }
 
-    function harvestRewards() external override returns (uint256 harvested) {
+    function harvestRewards() external view override returns (uint256 harvested) {
         return harvestedRewards;
     }
 
-    function core() external view override returns (address) {
+    function core() external pure override returns (address) {
         return address(0);
     }
 
@@ -50,7 +50,7 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function getSlashingDelta() external override returns (uint256) {
+    function getSlashingDelta() external pure override returns (uint256) {
         return 0;
     }
 
