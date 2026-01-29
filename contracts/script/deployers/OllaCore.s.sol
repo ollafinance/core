@@ -44,7 +44,8 @@ contract OllaCoreDeployer is BaseDeployer {
         address proxyAddress,
         address asset,
         address stAztec,
-        address stakingManager
+        address stakingManager,
+        address safetyModule
     ) external {
         vm.startBroadcast(config.deployerPrivateKey);
 
@@ -58,7 +59,7 @@ contract OllaCoreDeployer is BaseDeployer {
                 config.governance,
                 config.withdrawalQueue,
                 IRewardsVault(config.rewardsVault),
-                config.safetyModule
+                safetyModule
             );
         console2.log("OllaCore initialized");
 
