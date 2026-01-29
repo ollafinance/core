@@ -39,6 +39,7 @@ contract OllaCoreDeployer is BaseDeployer {
     /// @param asset The asset token address (MockAztec or real)
     /// @param stAztec The StAztec token address
     /// @param stakingManager The staking manager address
+    /// @param safetyModule The safety module address
     function initialize(
         DeployConfig memory config,
         address proxyAddress,

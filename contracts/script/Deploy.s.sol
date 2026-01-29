@@ -65,9 +65,10 @@ contract DeployScript is BaseDeployer {
             console2.log("\n--- Using External Contracts ---");
             asset = config.asset;
             stakingManager = config.stakingManager;
+            safetyModule = config.safetyModule;
             require(asset != address(0), "Deploy: asset address required for non-mock deployment");
             require(stakingManager != address(0), "Deploy: stakingManager address required for non-mock deployment");
-            safetyModule = config.safetyModule;
+            require(safetyModule != address(0), "Deploy: safetyModule address required for non-mock deployment");
         }
 
         // Always write Asset and StakingManager to JSON (regardless of mock or real)
