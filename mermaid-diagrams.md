@@ -116,10 +116,20 @@ style governanceMultisig stroke:#050,stroke-width:2px
 sequenceDiagram
     participant U as User
     participant C as OllaCore
+    participant SAF as SafetyModule
+    participant AZ as AssetToken
     participant ST as StAztec
 
     U->>C: deposit(assets, recipient)
-    Note right of C: Check SafetyModule (paused + deposit cap)
+    C->>SAF: isPaused()
+    SAF-->>C: false
+    C->>SAF: checkDepositAllowed(assets, totalAssets)
+    SAF-->>C: true
+    C->>C: shares = convertToShares(assets)
+    C->>C: bufferedAssets += assets
+    U->>AZ: approve(C, assets)
+    C->>AZ: transferFrom(U, C, assets)
+    C->>C: syncBufferedWithBalance()
     C->>ST: mint(to=recipient, amount=shares)
     ST-->>U: stAztec balance updated
 ```
@@ -130,24 +140,30 @@ sequenceDiagram
 sequenceDiagram
     participant U as User
     participant C as OllaCore
+    participant SAF as SafetyModule
     participant ST as StAztec
     participant WQ as WithdrawalQueue
+    participant AZ as AssetToken
 
-    Note over U,C: Phase 1 – user requests withdrawal
+    Note over U,C: Phase 1 - user requests withdrawal
 
     U->>C: requestRedeem(shares, recipient)
-    Note right of C: checkWithdrawalMinimum(shares)
-    Note right of C: assetsExpected = shares * exchangeRate
+    C->>C: require no active request for U
+    C->>C: rate = exchangeRate
+    C->>C: assetsExpected = shares * rate / 1e18
+    C->>SAF: checkWithdrawalMinimum(shares)
+    C->>WQ: nextRequestId()
     C->>ST: burn(owner=U, amount=shares)
     C->>WQ: requestWithdrawal(recipient, shares, assetsExpected, rate)
     WQ->>WQ: enqueue withdrawalRequest (FIFO)
 
-    Note over U,WQ: Phase 2 – later, after liquidity and operator action
+    Note over U,WQ: Phase 2 - later, after liquidity and operator action
 
     U->>C: claimRequestById(requestId)
     C->>WQ: claimWithdrawal(requestId)
-    WQ->>WQ: mark request as claimed
-    C->>U: transfer assetsExpected
+    WQ-->>C: assetsClaimed
+    Note right of C: require assetsClaimed == assetsExpected
+    C->>AZ: transfer(recipient, assetsExpected)
 ```
 
 ### Rebalance use cases
@@ -180,15 +196,47 @@ sequenceDiagram
 sequenceDiagram
     participant OP as Operator
     participant C as OllaCore
-    participant SM as SafetyModule
+    participant SAF as SafetyModule
     participant WQ as WithdrawalQueue
 
     Note over OP,WQ: User has an existing withdrawalRequest in FIFO queue
-    Note over OP,WQ: Core already has liquidity buffered (available <= bufferedAssets)
+    Note over OP,WQ: Core already has liquidity buffered
 
     OP->>C: finalizeWithdrawals(available)
-    C->>SM: checkQueueRatio(totalPendingAssets, totalAssets)
+    C->>SAF: checkQueueRatio(queued, total)
+    Note right of C: queued = WQ.totalPendingAssets()
+    Note right of C: total = C.totalAssets()
+    C->>C: syncBufferedWithBalance()
+    C->>C: require available <= bufferedAssets
     C->>WQ: previewFinalizeWithdrawals(available)
-    C->>WQ: finalizeWithdrawals(available)
     WQ-->>C: used
+    C->>WQ: finalizeWithdrawals(available)
+    WQ-->>C: finalized
+    Note right of C: require finalized == used
+```
+
+#### Update accounting
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant C as OllaCore
+    participant SAF as SafetyModule
+    participant SM as StakingManager
+    participant RV as RewardsVault
+    participant WQ as WithdrawalQueue
+    participant ST as StAztec
+
+    OP->>C: updateAccounting()
+    C->>SAF: checkAccountingLiveness()
+    C->>SM: getClaimableRewards()
+    C->>SM: getSlashingDelta()
+    C->>SM: totalStaked()
+    C->>RV: balance()
+    C->>ST: mint(governance/provider fee shares)
+    C->>WQ: totalPendingAssets()
+    C->>SAF: checkQueueRatio(queued, newTotalAssets)
+    C->>SAF: checkRateDrop(oldRate, nextRate)
+    C->>SAF: setLatestAccountingTimestamp(block.timestamp)
+    Note right of C: emits AccountingUpdated + AttestersStateRead
 ```
