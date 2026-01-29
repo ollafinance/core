@@ -211,6 +211,9 @@ interface IOllaCore {
     /// @notice Thrown when a split basis points value exceeds maximum.
     error OllaCore__InvalidSplitBP(uint256 splitBP);
 
+    /// @notice Thrown when no active withdrawal request exists.
+    error OllaCore__NoActiveWithdrawal(address owner);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -339,6 +342,24 @@ interface IOllaCore {
     /// @notice Returns the staking manager address.
     /// @return The staking manager address.
     function stakingManager() external view returns (address);
+
+    /// @notice Returns the active withdrawal request id for an owner.
+    /// @param owner The request owner.
+    /// @return requestId The active request id or zero if none.
+    function activeRequestId(address owner) external view returns (uint256 requestId);
+
+    /// @notice Returns the recorded owner for a withdrawal request id.
+    /// @param requestId The withdrawal request id.
+    /// @return owner The request owner.
+    function requestOwner(uint256 requestId) external view returns (address owner);
+
+    /// @notice Returns the active withdrawal request for an owner.
+    /// @param owner The request owner.
+    /// @return request The withdrawal request struct.
+    function getActiveWithdrawalRequest(address owner)
+        external
+        view
+        returns (IWithdrawalQueue.WithdrawalRequest memory request);
 
     /// @notice Returns the governance address.
     /// @return The governance address.

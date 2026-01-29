@@ -15,6 +15,7 @@ import { Math } from "@oz/utils/math/Math.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
@@ -313,7 +314,7 @@ contract OllaCoreTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        WITHDRAWAL REQUESTS
+                         WITHDRAWAL REQUESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_RequestRedeem_CallsQueueWithExpectedValues() external {
@@ -336,6 +337,44 @@ contract OllaCoreTest is Test {
         assertEq(recordedShares, shares, "queue receives share amount");
         assertEq(recordedAssets, expectedAssets, "queue receives assetsExpected");
         assertEq(recordedRate, rate, "queue receives exchange rate");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      WITHDRAWAL REQUEST VIEWS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ActiveRequestId_ReturnsZeroWhenNoRequest() external view {
+        assertEq(vault.activeRequestId(alice), 0, "active request id is zero without request");
+    }
+
+    function test_RequestRedeem_SetsActiveRequestIdAndActiveRequest() external {
+        _performDeposit(alice, 20 * DECIMALS);
+
+        uint256 rate = vault.exchangeRate();
+        uint256 shares = 7 * DECIMALS;
+        uint256 expectedAssets = shares * rate / DECIMALS;
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, bob);
+
+        assertEq(vault.activeRequestId(alice), requestId, "active request id matches request");
+
+        IWithdrawalQueue.WithdrawalRequest memory request = vault.getActiveWithdrawalRequest(alice);
+        assertEq(request.recipient, bob, "active request recipient matches");
+        assertEq(request.shares, shares, "active request shares match");
+        assertEq(request.assetsExpected, expectedAssets, "active request assets expected match");
+        assertEq(request.rate, rate, "active request exchange rate matches");
+        assertEq(request.finalized, false, "active request not finalized");
+        assertEq(request.claimed, false, "active request not claimed");
+    }
+
+    function test_RequestOwner_ReturnsOwnerWhenRecipientDiffers() external {
+        _performDeposit(alice, 12 * DECIMALS);
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(4 * DECIMALS, bob);
+
+        assertEq(vault.requestOwner(requestId), alice, "request owner tracked separately from recipient");
     }
 
     /*//////////////////////////////////////////////////////////////
