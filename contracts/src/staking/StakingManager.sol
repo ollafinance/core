@@ -10,26 +10,17 @@ import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
-import { RolesLib } from "src/shared/RolesLib.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
-import { Queue, QueueLib } from "src/staking/libraries/QueueLib.sol";
 
 /// @title StakingManager
 /// @notice Manages staking delegation, attester keys, and reward harvesting.
 /// @author Olla Core contributors
 contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuard, IStakingManager {
     using SafeERC20 for IERC20;
-    using QueueLib for Queue;
-
-    /*//////////////////////////////////////////////////////////////
-                                 CONSTANTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Role for staking provider admin to manage keys.
-    bytes32 public constant STAKING_PROVIDER_ADMIN_ROLE = RolesLib.STAKING_PROVIDER_ADMIN_ROLE;
 
     /*//////////////////////////////////////////////////////////////
                                    STATE
@@ -54,11 +45,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Address authorized to perform upgrades.
     address public governance;
 
-    /// @dev Provider configuration.
-    ProviderConfig private _provider;
-
-    /// @dev FIFO queue of attester keys.
-    Queue private _providerQueue;
+    /// @notice The StakingProviderRegistry contract.
+    IStakingProviderRegistry public stakingProviderRegistry;
 
     /// @dev List of activated attester stakes.
     AttesterStake[] private _activatedAttesters;
@@ -119,8 +107,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         address rollupRegistry_,
         address rewardsVault_,
         address core_,
-        address providerAdmin_,
-        address providerRewardsRecipient_,
+        address stakingProviderRegistry_,
         address defaultAdmin_
     ) external override initializer {
         if (address(stakingAsset_) == address(0)) {
@@ -135,11 +122,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (core_ == address(0)) {
             revert StakingManager__ZeroAddress("core");
         }
-        if (providerAdmin_ == address(0)) {
-            revert StakingManager__ZeroAddress("providerAdmin");
-        }
-        if (providerRewardsRecipient_ == address(0)) {
-            revert StakingManager__ZeroAddress("providerRewardsRecipient");
+        if (stakingProviderRegistry_ == address(0)) {
+            revert StakingManager__ZeroAddress("stakingProviderRegistry");
         }
         if (defaultAdmin_ == address(0)) {
             revert StakingManager__ZeroAddress("defaultAdmin");
@@ -152,15 +136,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         rewardsVault = rewardsVault_;
         core = core_;
         governance = defaultAdmin_;
-
-        _provider = ProviderConfig({ admin: providerAdmin_, rewardsRecipient: providerRewardsRecipient_ });
-
-        _providerQueue.init();
+        stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
-        _grantRole(STAKING_PROVIDER_ADMIN_ROLE, providerAdmin_);
-
-        emit ProviderSet(providerAdmin_, providerRewardsRecipient_);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -220,52 +198,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return harvested;
     }
 
-    /*//////////////////////////////////////////////////////////////
-                        PROVIDER ADMIN FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IStakingManager
-    function addKeysToProvider(KeyStore[] calldata keyStores) external override onlyRole(STAKING_PROVIDER_ADMIN_ROLE) {
-        uint256 length = keyStores.length;
-        if (length == 0) revert StakingManager__ZeroAmount();
-
-        address[] memory attesters = new address[](length);
-        for (uint256 i; i < length; ++i) {
-            // Return value intentionally ignored - enqueue always succeeds for valid inputs
-            // slither-disable-next-line unused-return
-            _providerQueue.enqueue(keyStores[i]);
-            attesters[i] = keyStores[i].attester;
-        }
-
-        emit KeysAddedToProvider(attesters);
-    }
-
-    /// @inheritdoc IStakingManager
-    function dripQueue(uint256 count) external override onlyRole(STAKING_PROVIDER_ADMIN_ROLE) {
-        if (count == 0) revert StakingManager__ZeroAmount();
-        uint256 queueLength = _providerQueue.length();
-        if (queueLength == 0) revert StakingManager__QueueEmpty();
-
-        uint256 toDrip = count > queueLength ? queueLength : count;
-        for (uint256 i; i < toDrip; ++i) {
-            KeyStore memory keyStore = _providerQueue.dequeue();
-            emit QueueDripped(keyStore.attester);
-        }
-    }
-
-    /// @inheritdoc IStakingManager
-    function setProviderRewardsRecipient(address rewardsRecipient)
-        external
-        override
-        onlyRole(STAKING_PROVIDER_ADMIN_ROLE)
-    {
-        if (rewardsRecipient == address(0)) {
-            revert StakingManager__ZeroAddress("rewardsRecipient");
-        }
-        _provider.rewardsRecipient = rewardsRecipient;
-        emit ProviderSet(_provider.admin, rewardsRecipient);
-    }
-
     /// @notice Returns the cumulative slashing delta from the rollup.
     /// @return slashingDelta The cumulative slashing delta.
     function getSlashingDelta() external override onlyCore returns (uint256 slashingDelta) {
@@ -316,13 +248,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
-    function getQueueLength() external view override returns (uint256) {
-        return _providerQueue.length();
-    }
-
-    /// @inheritdoc IStakingManager
     function getProviderConfig() external view override returns (ProviderConfig memory) {
-        return _provider;
+        return stakingProviderRegistry.getStakingProviderConfig();
     }
 
     /// @inheritdoc IStakingManager
@@ -354,7 +281,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-start reentrancy-no-eth
     // slither-disable-next-line ordering
     function _stake(uint256 amount) internal {
-        uint256 availableKeys = _providerQueue.length();
+        uint256 availableKeys = stakingProviderRegistry.getQueueLength();
         if (availableKeys == 0) {
             revert StakingManager__InsufficientKeys();
         }
@@ -472,7 +399,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-start reentrancy-benign
     function _stakeAttesters(IAztecRollup rollup, uint256 attestersToStakeTo, uint256 activationThreshold) internal {
         for (uint256 i; i < attestersToStakeTo; ++i) {
-            KeyStore memory keyStore = _providerQueue.dequeue();
+            KeyStore memory keyStore = stakingProviderRegistry.getAttesterKeystore();
             _addActivatedAttester(keyStore.attester, activationThreshold);
             emit StakedWithProvider(keyStore.attester, activationThreshold);
             // External call is safe:

@@ -8,7 +8,9 @@ import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
+import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
@@ -30,6 +32,7 @@ contract StakingManagerTest is Test {
     MockAztecRollup internal rollup;
     MockAztecRollupRegistry internal rollupRegistry;
     StakingManager internal stakingManager;
+    StakingProviderRegistry internal stakingProviderRegistry;
 
     address internal core;
     address internal providerAdmin;
@@ -72,13 +75,24 @@ contract StakingManagerTest is Test {
         StakingManager implementation = new StakingManager();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         stakingManager = StakingManager(address(proxy));
+
+        StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+        ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+        stakingProviderRegistry = StakingProviderRegistry(address(registryProxy));
+
+        stakingProviderRegistry.initialize(
+            address(stakingManager),
+            providerAdmin,
+            providerAdmin, // rewardsRecipient same as admin for simplicity
+            defaultAdmin
+        );
+
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
             core,
-            providerAdmin,
-            providerAdmin, // rewardsRecipient same as admin for simplicity
+            address(stakingProviderRegistry),
             defaultAdmin
         );
     }
@@ -105,7 +119,7 @@ contract StakingManagerTest is Test {
     function _setupStakedAttester() internal {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
 
@@ -118,7 +132,7 @@ contract StakingManagerTest is Test {
     function _setupMultipleStakedAttesters(uint256 count) internal {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         uint256 stakeAmount = ACTIVATION_THRESHOLD * count;
         aztec.mint(core, stakeAmount);
@@ -133,7 +147,7 @@ contract StakingManagerTest is Test {
         require(exited <= total, "exited cannot be more than total");
         IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD * total);
 
@@ -167,7 +181,9 @@ contract StakingManagerTest is Test {
 
     function test_Initialize_GrantsRoles() external view {
         assertTrue(stakingManager.hasRole(stakingManager.DEFAULT_ADMIN_ROLE(), defaultAdmin));
-        assertTrue(stakingManager.hasRole(stakingManager.STAKING_PROVIDER_ADMIN_ROLE(), providerAdmin));
+        assertTrue(
+            stakingProviderRegistry.hasRole(stakingProviderRegistry.STAKING_PROVIDER_ADMIN_ROLE(), providerAdmin)
+        );
     }
 
     function test_Initialize_EmitsProviderSet() external {
@@ -175,16 +191,21 @@ contract StakingManagerTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         StakingManager mgr = StakingManager(address(proxy));
 
-        vm.expectEmit(true, true, true, true, address(mgr));
+        StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+        ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+        StakingProviderRegistry registry = StakingProviderRegistry(address(registryProxy));
+
+        vm.expectEmit(true, true, true, true, address(registry));
         emit ProviderSet(providerAdmin, providerAdmin);
+
+        registry.initialize(address(mgr), providerAdmin, providerAdmin, defaultAdmin);
 
         mgr.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
             core,
-            providerAdmin,
-            providerAdmin,
+            address(registry),
             defaultAdmin
         );
     }
@@ -195,6 +216,11 @@ contract StakingManagerTest is Test {
         {
             ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
             StakingManager mgr = StakingManager(address(proxy));
+
+            StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+            ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+            StakingProviderRegistry registry = StakingProviderRegistry(address(registryProxy));
+            registry.initialize(address(mgr), providerAdmin, providerAdmin, defaultAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "stakingAsset")
             );
@@ -203,8 +229,7 @@ contract StakingManagerTest is Test {
                 address(rollupRegistry),
                 address(rewardsVault),
                 core,
-                providerAdmin,
-                providerAdmin,
+                address(registry),
                 defaultAdmin
             );
         }
@@ -212,48 +237,50 @@ contract StakingManagerTest is Test {
         {
             ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
             StakingManager mgr = StakingManager(address(proxy));
+
+            StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+            ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+            StakingProviderRegistry registry = StakingProviderRegistry(address(registryProxy));
+            registry.initialize(address(mgr), providerAdmin, providerAdmin, defaultAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rollupRegistry")
             );
             mgr.initialize(
-                IERC20(address(aztec)),
-                address(0),
-                address(rewardsVault),
-                core,
-                providerAdmin,
-                providerAdmin,
-                defaultAdmin
+                IERC20(address(aztec)), address(0), address(rewardsVault), core, address(registry), defaultAdmin
             );
         }
 
         {
             ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
             StakingManager mgr = StakingManager(address(proxy));
+
+            StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+            ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+            StakingProviderRegistry registry = StakingProviderRegistry(address(registryProxy));
+            registry.initialize(address(mgr), providerAdmin, providerAdmin, defaultAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsVault")
             );
             mgr.initialize(
-                IERC20(address(aztec)),
-                address(rollupRegistry),
-                address(0),
-                core,
-                providerAdmin,
-                providerAdmin,
-                defaultAdmin
+                IERC20(address(aztec)), address(rollupRegistry), address(0), core, address(registry), defaultAdmin
             );
         }
 
         {
             ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
             StakingManager mgr = StakingManager(address(proxy));
+
+            StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+            ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+            StakingProviderRegistry registry = StakingProviderRegistry(address(registryProxy));
+            registry.initialize(address(mgr), providerAdmin, providerAdmin, defaultAdmin);
             vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "core"));
             mgr.initialize(
                 IERC20(address(aztec)),
                 address(rollupRegistry),
                 address(rewardsVault),
                 address(0),
-                providerAdmin,
-                providerAdmin,
+                address(registry),
                 defaultAdmin
             );
         }
@@ -262,39 +289,21 @@ contract StakingManagerTest is Test {
             ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
             StakingManager mgr = StakingManager(address(proxy));
             vm.expectRevert(
-                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "providerAdmin")
+                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "stakingProviderRegistry")
             );
             mgr.initialize(
-                IERC20(address(aztec)),
-                address(rollupRegistry),
-                address(rewardsVault),
-                core,
-                address(0),
-                providerAdmin,
-                defaultAdmin
+                IERC20(address(aztec)), address(rollupRegistry), address(rewardsVault), core, address(0), defaultAdmin
             );
         }
 
         {
             ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
             StakingManager mgr = StakingManager(address(proxy));
-            vm.expectRevert(
-                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "providerRewardsRecipient")
-            );
-            mgr.initialize(
-                IERC20(address(aztec)),
-                address(rollupRegistry),
-                address(rewardsVault),
-                core,
-                providerAdmin,
-                address(0),
-                defaultAdmin
-            );
-        }
 
-        {
-            ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-            StakingManager mgr = StakingManager(address(proxy));
+            StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+            ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+            StakingProviderRegistry registry = StakingProviderRegistry(address(registryProxy));
+            registry.initialize(address(mgr), providerAdmin, providerAdmin, defaultAdmin);
             vm.expectRevert(
                 abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "defaultAdmin")
             );
@@ -303,8 +312,7 @@ contract StakingManagerTest is Test {
                 address(rollupRegistry),
                 address(rewardsVault),
                 core,
-                providerAdmin,
-                providerAdmin,
+                address(registry),
                 address(0)
             );
         }
@@ -318,9 +326,9 @@ contract StakingManagerTest is Test {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(3);
 
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
-        assertEq(stakingManager.getQueueLength(), 3);
+        assertEq(stakingProviderRegistry.getQueueLength(), 3);
     }
 
     function test_AddKeysToProvider_EmitsEvent() external {
@@ -334,7 +342,7 @@ contract StakingManagerTest is Test {
         emit KeysAddedToProvider(expectedAttesters);
 
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
     }
 
     function test_RevertWhen_AddKeysToProvider_Unauthorized() external {
@@ -344,36 +352,36 @@ contract StakingManagerTest is Test {
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector,
                 alice,
-                stakingManager.STAKING_PROVIDER_ADMIN_ROLE()
+                stakingProviderRegistry.STAKING_PROVIDER_ADMIN_ROLE()
             )
         );
         vm.prank(alice);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
     }
 
     function test_RevertWhen_AddKeysToProvider_EmptyArray() external {
         IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](0);
 
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAmount.selector);
+        vm.expectRevert(IStakingProviderRegistry.StakingProviderRegistry__ZeroAmount.selector);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
     }
 
     function test_DripQueue_RemovesKeys() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(5);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         vm.prank(providerAdmin);
-        stakingManager.dripQueue(2);
+        stakingProviderRegistry.dripQueue(2);
 
-        assertEq(stakingManager.getQueueLength(), 3);
+        assertEq(stakingProviderRegistry.getQueueLength(), 3);
     }
 
     function test_DripQueue_EmitsEvents() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         vm.expectEmit(true, true, true, true);
         emit QueueDripped(keys[0].attester);
@@ -381,13 +389,13 @@ contract StakingManagerTest is Test {
         emit QueueDripped(keys[1].attester);
 
         vm.prank(providerAdmin);
-        stakingManager.dripQueue(2);
+        stakingProviderRegistry.dripQueue(2);
     }
 
     function test_RevertWhen_DripQueue_Empty() external {
-        vm.expectRevert(IStakingManager.StakingManager__QueueEmpty.selector);
+        vm.expectRevert(IStakingProviderRegistry.StakingProviderRegistry__QueueEmpty.selector);
         vm.prank(providerAdmin);
-        stakingManager.dripQueue(1);
+        stakingProviderRegistry.dripQueue(1);
     }
 
     function test_SetProviderRewardsRecipient() external {
@@ -395,7 +403,7 @@ contract StakingManagerTest is Test {
         emit ProviderSet(providerAdmin, alice);
 
         vm.prank(providerAdmin);
-        stakingManager.setProviderRewardsRecipient(alice);
+        stakingProviderRegistry.setProviderRewardsRecipient(alice);
 
         IStakingManager.ProviderConfig memory config = stakingManager.getProviderConfig();
         assertEq(config.rewardsRecipient, alice);
@@ -403,10 +411,12 @@ contract StakingManagerTest is Test {
 
     function test_RevertWhen_SetProviderRewardsRecipient_ZeroAddress() external {
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsRecipient")
+            abi.encodeWithSelector(
+                IStakingProviderRegistry.StakingProviderRegistry__ZeroAddress.selector, "rewardsRecipient"
+            )
         );
         vm.prank(providerAdmin);
-        stakingManager.setProviderRewardsRecipient(address(0));
+        stakingProviderRegistry.setProviderRewardsRecipient(address(0));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -416,7 +426,7 @@ contract StakingManagerTest is Test {
     function test_Stake_RoutesAssetsToRollup() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         uint256 stakeAmount = ACTIVATION_THRESHOLD * 2;
         aztec.mint(core, stakeAmount);
@@ -428,7 +438,7 @@ contract StakingManagerTest is Test {
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, stakeAmount);
-        assertEq(stakingManager.getQueueLength(), 0);
+        assertEq(stakingProviderRegistry.getQueueLength(), 0);
         assertEq(stakingManager.getActivatedAttesterCount(), 2);
         assertEq(aztec.balanceOf(address(rollup)), stakeAmount);
     }
@@ -437,7 +447,7 @@ contract StakingManagerTest is Test {
         // Add only 1 key but try to stake for 2
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         uint256 stakeAmount = ACTIVATION_THRESHOLD * 2;
         aztec.mint(core, stakeAmount);
@@ -460,7 +470,7 @@ contract StakingManagerTest is Test {
     function test_Stake_EmitsEvent() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         uint256 stakeAmount = ACTIVATION_THRESHOLD;
         aztec.mint(core, stakeAmount);
@@ -501,7 +511,7 @@ contract StakingManagerTest is Test {
     function test_RevertWhen_Stake_BelowThreshold() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         uint256 stakeAmount = ACTIVATION_THRESHOLD - 1;
         aztec.mint(core, stakeAmount);
@@ -534,7 +544,7 @@ contract StakingManagerTest is Test {
     function test_Unstake_EmitsEvent() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
         vm.startPrank(core);
@@ -587,7 +597,7 @@ contract StakingManagerTest is Test {
     function test_IsUnstakePending() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
         vm.startPrank(core);
@@ -740,7 +750,7 @@ contract StakingManagerTest is Test {
     }
 
     function test_GetQueueLength_InitiallyZero() external view {
-        assertEq(stakingManager.getQueueLength(), 0);
+        assertEq(stakingProviderRegistry.getQueueLength(), 0);
     }
 
     function test_GetActivatedAttesterCount_InitiallyZero() external view {
@@ -760,7 +770,7 @@ contract StakingManagerTest is Test {
 
         IStakingManager.KeyStore[] memory keys = _createMockKeys(attesterCount);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         uint256 stakeAmount = ACTIVATION_THRESHOLD * attesterCount;
         aztec.mint(core, stakeAmount);
@@ -869,7 +879,7 @@ contract StakingManagerTest is Test {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
 
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD * total);
         vm.startPrank(core);
@@ -946,6 +956,7 @@ contract StakingManagerHarvestTest is Test {
     MockAztecRollupRegistry internal rollupRegistry;
     MockRewardsVault internal rewardsVault;
     StakingManager internal stakingManager;
+    StakingProviderRegistry internal stakingProviderRegistry;
 
     address internal core;
     address internal providerAdmin;
@@ -978,13 +989,19 @@ contract StakingManagerHarvestTest is Test {
         StakingManager implementation = new StakingManager();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         stakingManager = StakingManager(address(proxy));
+
+        StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+        ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+        stakingProviderRegistry = StakingProviderRegistry(address(registryProxy));
+
+        stakingProviderRegistry.initialize(address(stakingManager), providerAdmin, providerAdmin, defaultAdmin);
+
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
             core,
-            providerAdmin,
-            providerAdmin,
+            address(stakingProviderRegistry),
             defaultAdmin
         );
     }
@@ -1009,7 +1026,7 @@ contract StakingManagerHarvestTest is Test {
     function _setupStakedAttesters(uint256 count) internal returns (IStakingManager.KeyStore[] memory keys) {
         keys = _createMockKeys(count);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         uint256 stakeAmount = ACTIVATION_THRESHOLD * count;
         aztec.mint(core, stakeAmount);
@@ -1315,7 +1332,7 @@ contract StakingManagerHarvestTest is Test {
     function test_GetSlashingDelta_MonotonicCumulative() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
         vm.startPrank(core);
@@ -1342,7 +1359,7 @@ contract StakingManagerHarvestTest is Test {
         // Stake first attester at 100 ether threshold
         IStakingManager.KeyStore[] memory keys1 = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys1);
+        stakingProviderRegistry.addKeysToProvider(keys1);
 
         uint256 originalThreshold = ACTIVATION_THRESHOLD; // 100 ether
         aztec.mint(core, originalThreshold);
@@ -1364,7 +1381,7 @@ contract StakingManagerHarvestTest is Test {
             proofOfPossession: G1Point({ x: 110, y: 111 })
         });
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys2);
+        stakingProviderRegistry.addKeysToProvider(keys2);
 
         aztec.mint(core, newThreshold);
         vm.startPrank(core);

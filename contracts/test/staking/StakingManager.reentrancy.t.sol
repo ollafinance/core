@@ -8,6 +8,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
+import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
@@ -23,6 +24,7 @@ contract StakingManagerReentrancyTest is Test {
     MockAztecRollupRegistry internal rollupRegistry;
     MaliciousRewardsVault internal rewardsVault;
     StakingManager internal stakingManager;
+    StakingProviderRegistry internal stakingProviderRegistry;
 
     address internal core;
     address internal providerAdmin;
@@ -38,16 +40,26 @@ contract StakingManagerReentrancyTest is Test {
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
         rewardsVault = new MaliciousRewardsVault(IERC20(address(aztec)), core);
 
-        StakingManager implementation = new StakingManager();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        stakingManager = StakingManager(address(proxy));
+        // Deploy StakingManager behind proxy
+        StakingManager stakingManagerImpl = new StakingManager();
+        ERC1967Proxy stakingManagerProxy = new ERC1967Proxy(address(stakingManagerImpl), "");
+        stakingManager = StakingManager(address(stakingManagerProxy));
+
+        // Deploy StakingProviderRegistry behind proxy
+        StakingProviderRegistry registryImpl = new StakingProviderRegistry();
+        ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImpl), "");
+        stakingProviderRegistry = StakingProviderRegistry(address(registryProxy));
+
+        // Initialize StakingProviderRegistry first
+        stakingProviderRegistry.initialize(address(stakingManager), providerAdmin, providerAdmin, defaultAdmin);
+
+        // Initialize StakingManager
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
             core,
-            providerAdmin,
-            providerAdmin,
+            address(stakingProviderRegistry),
             defaultAdmin
         );
 
@@ -72,7 +84,7 @@ contract StakingManagerReentrancyTest is Test {
     function _stakeOne() internal {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
         vm.prank(core);
@@ -82,7 +94,7 @@ contract StakingManagerReentrancyTest is Test {
     function test_RevertWhen_Stake_ReenteredFromRollupDeposit() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
 
@@ -128,7 +140,7 @@ contract StakingManagerReentrancyTest is Test {
     function test_RevertWhen_CleanActivatedAttesters_ReenteredFromRollupDeposit() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
 

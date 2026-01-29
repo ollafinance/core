@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 
 /// @title MockAccountingStakingManager
 /// @notice Test mock for IStakingManager that allows setting claimable rewards, slashing delta, and staked amounts.
@@ -17,6 +18,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public totalStakedAmount;
     uint256 public harvestedRewards;
     address public providerRewardsRecipient;
+    address public providerAdmin;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -38,12 +40,16 @@ contract MockAccountingStakingManager is IStakingManager {
         harvestedRewards = value;
     }
 
-    function setProviderRewardsRecipient(address recipient) external override {
+    function setProviderRewardsRecipient(address recipient) external {
         providerRewardsRecipient = recipient;
     }
 
+    function setProviderAdmin(address admin) external {
+        providerAdmin = admin;
+    }
+
     /*//////////////////////////////////////////////////////////////
-                         CORE FUNCTIONS
+                          CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     function stake(uint256) external pure override { }
@@ -60,13 +66,9 @@ contract MockAccountingStakingManager is IStakingManager {
         return harvestedRewards;
     }
 
-    /*//////////////////////////////////////////////////////////////
-                         PROVIDER FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function addKeysToProvider(KeyStore[] calldata) external pure override { }
-
-    function dripQueue(uint256) external pure override { }
+    function getSlashingDelta() external view override returns (uint256) {
+        return slashingDelta;
+    }
 
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
@@ -74,10 +76,6 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function getClaimableRewards() external view override returns (uint256) {
         return claimableRewards;
-    }
-
-    function getSlashingDelta() external view override returns (uint256) {
-        return slashingDelta;
     }
 
     function totalStaked() external view override returns (uint256) {
@@ -92,12 +90,12 @@ contract MockAccountingStakingManager is IStakingManager {
         return address(0);
     }
 
-    function getQueueLength() external pure override returns (uint256) {
-        return 0;
+    function stakingProviderRegistry() external pure override returns (IStakingProviderRegistry) {
+        return IStakingProviderRegistry(address(0));
     }
 
     function getProviderConfig() external view override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: providerRewardsRecipient });
+        return ProviderConfig({ admin: providerAdmin, rewardsRecipient: providerRewardsRecipient });
     }
 
     function getActivatedAttesterCount() external pure override returns (uint256) {
@@ -116,5 +114,5 @@ contract MockAccountingStakingManager is IStakingManager {
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(IERC20, address, address, address, address, address, address) external pure override { }
+    function initialize(IERC20, address, address, address, address, address) external pure override { }
 }

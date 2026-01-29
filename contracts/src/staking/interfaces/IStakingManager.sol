@@ -2,14 +2,15 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title IStakingManager
-/// @notice Interface for staking delegation and attester key management.
+/// @notice Interface for staking delegation and rollup coordination.
 /// @author Olla Core contributors
 interface IStakingManager {
     /*//////////////////////////////////////////////////////////////
-                                 STRUCTS
+                                  STRUCTS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Attester key information for staking.
@@ -51,17 +52,8 @@ interface IStakingManager {
     }
 
     /*//////////////////////////////////////////////////////////////
-                                 EVENTS
+                                  EVENTS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Emitted when a provider is configured.
-    /// @param admin The provider admin address.
-    /// @param rewardsRecipient The rewards recipient address.
-    event ProviderSet(address indexed admin, address indexed rewardsRecipient);
-
-    /// @notice Emitted when attester keys are added to the queue.
-    /// @param attesters The attester addresses of the added keys.
-    event KeysAddedToProvider(address[] attesters);
 
     /// @notice Emitted when assets are staked with a attester.
     /// @param attester The attester address.
@@ -86,10 +78,6 @@ interface IStakingManager {
     /// @param amount The amount harvested.
     event RewardsHarvested(uint256 indexed amount);
 
-    /// @notice Emitted when keys are removed from the queue.
-    /// @param attester The attester address of the removed key.
-    event QueueDripped(address indexed attester);
-
     /// @notice Emitted when rewards are claimed for a specific attester.
     /// @param attester The attester address.
     /// @param amount The amount of rewards claimed.
@@ -101,7 +89,7 @@ interface IStakingManager {
     event RewardClaimFailed(address indexed attester, string reason);
 
     /*//////////////////////////////////////////////////////////////
-                                  ERRORS
+                                   ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when an address is zero.
@@ -112,9 +100,6 @@ interface IStakingManager {
 
     /// @notice Thrown when trying to unstake more than staked.
     error StakingManager__InsufficientStake();
-
-    /// @notice Thrown when the key queue is empty.
-    error StakingManager__QueueEmpty();
 
     /// @notice Thrown when there are not enough keys for the stake amount.
     error StakingManager__InsufficientKeys();
@@ -132,7 +117,7 @@ interface IStakingManager {
     error StakingManager__UnauthorizedCore(address caller);
 
     /*//////////////////////////////////////////////////////////////
-                              INITIALIZER
+                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the StakingManager behind a proxy.
@@ -140,21 +125,19 @@ interface IStakingManager {
     /// @param rollupRegistry_ The Aztec rollup registry contract.
     /// @param rewardsVault_ The rewards vault address.
     /// @param core_ The OllaCore contract address.
-    /// @param providerAdmin_ The provider admin address.
-    /// @param providerRewardsRecipient_ The provider rewards recipient address.
+    /// @param stakingProviderRegistry_ The StakingProviderRegistry contract address.
     /// @param defaultAdmin_ The default admin for role management.
     function initialize(
         IERC20 stakingAsset_,
         address rollupRegistry_,
         address rewardsVault_,
         address core_,
-        address providerAdmin_,
-        address providerRewardsRecipient_,
+        address stakingProviderRegistry_,
         address defaultAdmin_
     ) external;
 
     /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
+                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Stakes assets with the staking provider.
@@ -176,21 +159,6 @@ interface IStakingManager {
     /// @notice Claims sequencer rewards to RewardsVault.
     /// @return harvested The amount of rewards harvested.
     function harvestRewards() external returns (uint256 harvested);
-    /*//////////////////////////////////////////////////////////////
-                        PROVIDER ADMIN FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Adds attester keys to the provider queue.
-    /// @param keyStores The attester key stores to add.
-    function addKeysToProvider(KeyStore[] calldata keyStores) external;
-
-    /// @notice Removes keys from the front of the queue.
-    /// @param count The number of keys to remove.
-    function dripQueue(uint256 count) external;
-
-    /// @notice Sets the provider rewards recipient address.
-    /// @param rewardsRecipient The new rewards recipient.
-    function setProviderRewardsRecipient(address rewardsRecipient) external;
 
     /// @notice Returns the cumulative slashing delta from the rollup.
     /// @dev Only callable by the configured core address.
@@ -198,7 +166,7 @@ interface IStakingManager {
     function getSlashingDelta() external returns (uint256 slashingDelta);
 
     /*//////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
+                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns claimable rewards.
@@ -215,11 +183,8 @@ interface IStakingManager {
     /// @return state The aggregated staking state.
     function getStakingState() external view returns (StakingState memory state);
 
-    /// @notice Returns the provider queue length.
-    /// @return The number of keys in the queue.
-    function getQueueLength() external view returns (uint256);
-
     /// @notice Returns the provider configuration.
+    /// @dev Delegates to the StakingProviderRegistry.
     /// @return The provider config struct.
     function getProviderConfig() external view returns (ProviderConfig memory);
 
@@ -239,4 +204,8 @@ interface IStakingManager {
     /// @notice Returns the core address.
     /// @return The core contract address.
     function core() external view returns (address);
+
+    /// @notice Returns the staking provider registry address.
+    /// @return The staking provider registry contract.
+    function stakingProviderRegistry() external view returns (IStakingProviderRegistry);
 }
