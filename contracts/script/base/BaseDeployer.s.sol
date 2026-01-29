@@ -124,6 +124,15 @@ abstract contract BaseDeployer is Script {
         return string.concat(currentJson, "\n  }");
     }
 
+    /// @notice Add a metadata key-value pair to the JSON (after addresses)
+    function _addMetadataToJson(string memory currentJson, string memory key, string memory value)
+        internal
+        pure
+        returns (string memory)
+    {
+        return string.concat(currentJson, ',\n  "', key, '": "', value, '"');
+    }
+
     /// @notice Log deployment of a contract
     function _logDeployment(string memory name, address addr) internal pure {
         console2.log(string.concat(name, " deployed at:"), addr);
