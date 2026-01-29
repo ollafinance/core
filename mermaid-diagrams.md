@@ -71,10 +71,14 @@ operatorKey -->|"finalizeWithdrawals(available)"| core
 operatorKey -->|"updateAccounting()"| core
 
 %% Staking principal (AZTEC token) movements
-core -->|"stake principal > Aztec < transferFrom(core, StakingManager, stakeAmount)"| stkMan
-stkMan -->|"stake principal > Aztec < transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
-rollup -->|"unstake principal > Aztec < transferFrom(AztecRollup, StakingManager, unstakedAmount)"| stkMan
-stkMan -->|"unstake principal > Aztec < transferFrom(StakingManager, core, unstakedAmount)"| core
+core -->|"stake > Aztec < transferFrom(core, StakingManager, stakeAmount)"| stkMan
+stkMan -->|"deposit > Aztec < transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
+
+core -->|"unstake(amount)"| stkMan
+stkMan -->|"initiateWithdraw"| rollup
+
+core -->|"claimUnstakedFunds > Aztec < transferFrom(StakingManager, core, unstakedAmount)"| stkMan
+stkMan -->|"finalizeWithdraw > Aztec < transferFrom(rollup, StakingManager, unstakedAmount)"| rollup
 
 core -->|"harvestRewards()"| stkMan
 stkMan -->|"getCanonicalRollup()"| rollupRegistry
@@ -85,15 +89,10 @@ core -->|"recordRewards(expectedRewards)"| rewards
 
 core -->|"finalizeWithdrawals(available)"| withdrawQ
 
-core -->|"getClaimableRewards / getSlashingDelta / totalStaked"| stkMan
 core -->|"balance()"| rewards
 
 core -->|"pay staking fees > StAztec < mint(governance, treasuryShares)"| governanceMultisig
 core -->|"pay staking fees > StAztec < mint(providerRewardsRecipient, providerShares)"| providerRewardsRecipient
-
-%% Emphasis
-linkStyle 13,15,39,40 stroke:purple,stroke-width:3px,color:purple;
-linkStyle 12,19,26,27,28,29,34 stroke:orange,stroke-width:3px,color:orange;
 
 style user fill:#900
 style operatorKey fill:#090
