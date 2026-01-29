@@ -9,6 +9,9 @@ import { TestnetConfig } from "./config/Testnet.s.sol";
 import { MocksDeployer } from "./deployers/Mocks.s.sol";
 import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
 import { StAztecDeployer } from "./deployers/StAztec.s.sol";
+import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { StAztec } from "src/core/StAztec.sol";
+import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 
 /// @title DeployScript
 /// @notice Main deployment orchestrator - deploys all contracts based on environment
@@ -42,6 +45,7 @@ contract DeployScript is BaseDeployer {
         address ollaCoreImpl;
         address ollaCoreProxy;
         address stAztec;
+        address safetyModule;
 
         // Initialize deployment JSON
         string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
@@ -51,12 +55,19 @@ contract DeployScript is BaseDeployer {
         if (config.deployMocks) {
             console2.log("\n--- Deploying Mocks ---");
             (asset, stakingManager) = mocksDeployer.deploy(config);
+
+            // Local safety module stub: allows deposits/withdrawals without role setup.
+            vm.startBroadcast(config.deployerPrivateKey);
+            safetyModule = address(new MockSafetyModule());
+            vm.stopBroadcast();
+            _logDeployment("MockSafetyModule", safetyModule);
         } else {
             console2.log("\n--- Using External Contracts ---");
             asset = config.asset;
             stakingManager = config.stakingManager;
             require(asset != address(0), "Deploy: asset address required for non-mock deployment");
             require(stakingManager != address(0), "Deploy: stakingManager address required for non-mock deployment");
+            safetyModule = config.safetyModule;
         }
 
         // Always write Asset and StakingManager to JSON (regardless of mock or real)
@@ -78,12 +89,25 @@ contract DeployScript is BaseDeployer {
         stAztec = stAztecDeployer.deploy(config, ollaCoreProxy);
         json = _addAddressToJson(json, "StAztec", stAztec, false);
 
+        // Safety module (required by OllaCore deposit/withdraw paths)
+        json = _addAddressToJson(json, "SafetyModule", safetyModule, false);
+
         // 4. Initialize OllaCore with all dependencies
         console2.log("\n--- Initializing OllaCore ---");
-        ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager);
+        ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager, safetyModule);
 
         // 5. Write deployment JSON
         json = _closeAddressesJson(json);
+
+        // Add StAztec metadata for frontend signature generation
+        string memory stAztecName = StAztec(stAztec).name();
+
+        // Get version from EIP712 domain
+        (,, string memory stAztecVersion,,,,) = IERC5267(stAztec).eip712Domain();
+
+        json = _addMetadataToJson(json, "stAztecName", stAztecName);
+        json = _addMetadataToJson(json, "stAztecVersion", stAztecVersion);
+
         _writeDeploymentJson(config.name, json);
 
         console2.log("\n===========================================");
