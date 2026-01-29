@@ -124,11 +124,7 @@ contract SafetyModuleTest is Test {
     }
 
     function test_RevertWhen_SetLastAccountingTimestampUnauthorized() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, safetyModule.CORE_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISafetyModule.SafetyModule__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         safetyModule.setLatestAccountingTimestamp(123);
     }

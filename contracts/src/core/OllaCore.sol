@@ -16,6 +16,7 @@ import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
+import { RolesLib } from "src/shared/RolesLib.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 
 /// @title OllaCore
@@ -47,11 +48,9 @@ contract OllaCore is
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
 
     /// @notice Role for guardian pause/unpause actions.
-    bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
+    bytes32 public constant GUARDIAN_ROLE = RolesLib.GUARDIAN_ROLE;
     /// @notice Role for operator accounting actions.
-    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
-    /// @notice Role for core module callbacks.
-    bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
+    bytes32 public constant OPERATOR_ROLE = RolesLib.OPERATOR_ROLE;
 
     /// @notice Basis points divisor.
     uint256 public constant BP_DIVISOR = 10_000;
@@ -158,7 +157,6 @@ contract OllaCore is
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governance_);
         _grantRole(GUARDIAN_ROLE, governance_);
-        _grantRole(CORE_ROLE, address(this));
         _grantRole(OPERATOR_ROLE, governance_);
     }
 

@@ -19,15 +19,8 @@ contract WithdrawalQueue is
     IWithdrawalQueue
 {
     /*//////////////////////////////////////////////////////////////
-                                CONSTANTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Role assigned to OllaCore for queue operations.
-    bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
-
-    /*//////////////////////////////////////////////////////////////
-                                 STATE
-    //////////////////////////////////////////////////////////////*/
+                                  STATE
+     //////////////////////////////////////////////////////////////*/
 
     /// @notice OllaCore address.
     address public override core;
@@ -47,6 +40,17 @@ contract WithdrawalQueue is
     /// @notice Storage gap for upgradability.
     // slither-disable-next-line unused-state
     uint256[45] private __gap;
+
+    /*//////////////////////////////////////////////////////////////
+                                 MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    modifier onlyCore() {
+        if (msg.sender != core) {
+            revert WithdrawalQueue__Unauthorized(msg.sender);
+        }
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -78,7 +82,6 @@ contract WithdrawalQueue is
         nextPendingId = 1;
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, admin_);
-        _grantRole(CORE_ROLE, core_);
     }
 
     /// @notice Enqueues a new withdrawal request.
@@ -90,7 +93,7 @@ contract WithdrawalQueue is
     function requestWithdrawal(address recipient, uint256 shares, uint256 assetsExpected, uint256 rate)
         external
         override
-        onlyRole(CORE_ROLE)
+        onlyCore
         returns (uint256 requestId)
     {
         if (recipient == address(0)) {
@@ -124,13 +127,7 @@ contract WithdrawalQueue is
     /// @notice Finalizes withdrawals using available liquidity.
     /// @param available The available assets to finalize.
     /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available)
-        external
-        override
-        onlyRole(CORE_ROLE)
-        nonReentrant
-        returns (uint256 used)
-    {
+    function finalizeWithdrawals(uint256 available) external override onlyCore nonReentrant returns (uint256 used) {
         uint256 requestId;
         uint256 pendingAssets;
         (used, requestId, pendingAssets) = _previewFinalize(available);

@@ -8,10 +8,27 @@ import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 /// @author Olla Core contributors
 contract MockSafetyModule is ISafetyModule {
     /*//////////////////////////////////////////////////////////////
+                                IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The core contract address.
+    address public immutable CORE_ADDRESS;
+
+    /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
 
     bool internal _paused;
+
+    /*//////////////////////////////////////////////////////////////
+                               CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Constructs the MockSafetyModule.
+    /// @param coreAddress The core contract address.
+    constructor(address coreAddress) {
+        CORE_ADDRESS = coreAddress;
+    }
 
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
@@ -31,6 +48,12 @@ contract MockSafetyModule is ISafetyModule {
     /// @return pausedState True if paused.
     function isPaused() external view override returns (bool pausedState) {
         return _paused;
+    }
+
+    /// @notice Returns the core address.
+    /// @return The core contract address.
+    function core() external view override returns (address) {
+        return CORE_ADDRESS;
     }
 
     /// @notice No-op rate drop check for tests.

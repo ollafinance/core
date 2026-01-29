@@ -31,6 +31,10 @@ contract MockHarvestStakingManager is IStakingManager {
         return harvestedRewards;
     }
 
+    function core() external view override returns (address) {
+        return address(0);
+    }
+
     function stake(uint256) external pure override { }
     function unstake(uint256) external pure override { }
     function cleanActivatedAttesters() external pure override { }
@@ -119,7 +123,7 @@ contract OllaCoreReentrancyTest is Test {
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
         rewardsVault = makeAddr("rewardsVault");
-        safetyModule = new MockSafetyModule();
+        safetyModule = new MockSafetyModule(address(implementation));
         withdrawalQueue = new MaliciousWithdrawalQueue();
 
         protocolFeeBP = 500;
@@ -281,7 +285,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
         stakingManager = new MockHarvestStakingManager();
         governance = makeAddr("governance");
         rewardsVault = new MaliciousRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule();
+        safetyModule = new MockSafetyModule(address(implementation));
         withdrawalQueue = new MockWithdrawalQueue();
 
         protocolFeeBP = 500;

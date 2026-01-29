@@ -51,11 +51,6 @@ contract StakingManagerReentrancyTest is Test {
             defaultAdmin
         );
 
-        vm.startPrank(defaultAdmin);
-        stakingManager.grantRole(stakingManager.CORE_ROLE(), address(rollup));
-        stakingManager.grantRole(stakingManager.CORE_ROLE(), address(rewardsVault));
-        vm.stopPrank();
-
         vm.prank(core);
         aztec.approve(address(stakingManager), type(uint256).max);
     }
@@ -95,7 +90,9 @@ contract StakingManagerReentrancyTest is Test {
         rollup.setReenterOnDeposit(true);
 
         vm.prank(core);
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
+        );
         stakingManager.stake(ACTIVATION_THRESHOLD);
     }
 
@@ -106,7 +103,9 @@ contract StakingManagerReentrancyTest is Test {
         rollup.setReenterOnInitiateWithdraw(true);
 
         vm.prank(core);
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
+        );
         stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
@@ -120,7 +119,9 @@ contract StakingManagerReentrancyTest is Test {
         rollup.setReenterOnFinalizeWithdraw(true);
 
         vm.prank(core);
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
+        );
         stakingManager.getUnstakedFunds();
     }
 
@@ -135,7 +136,9 @@ contract StakingManagerReentrancyTest is Test {
         rollup.setReenterOnDeposit(true);
 
         vm.prank(core);
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
+        );
         stakingManager.stake(ACTIVATION_THRESHOLD);
     }
 }

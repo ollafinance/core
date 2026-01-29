@@ -66,7 +66,6 @@ contract RewardsVaultTest is Test {
         assertEq(address(vault.rewardsToken()), address(aztec));
         assertEq(vault.core(), core);
 
-        assertTrue(vault.hasRole(vault.CORE_ROLE(), core));
         assertTrue(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), defaultAdmin));
     }
 
@@ -101,9 +100,7 @@ contract RewardsVaultTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_PostReceiveFundsHook_Unauthorized() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.CORE_ROLE())
-        );
+        vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         vault.recordRewards(1);
     }
@@ -174,9 +171,7 @@ contract RewardsVaultTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_WithdrawToCore_Unauthorized() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.CORE_ROLE())
-        );
+        vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         vault.withdrawToCore();
     }

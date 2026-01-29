@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import { AccessControl } from "@oz/access/AccessControl.sol";
 
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
+import { RolesLib } from "src/shared/RolesLib.sol";
 
 /// @title SafetyModule
 /// @notice Enforces deposit caps and circuit breaker checks.
@@ -14,10 +15,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Role for guardian pause/unpause actions.
-    bytes32 public constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
-
-    /// @notice Role for core module checks.
-    bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
+    bytes32 public constant GUARDIAN_ROLE = RolesLib.GUARDIAN_ROLE;
 
     /// @notice Circuit breaker reason: rate drop.
     bytes32 public constant RATE_DROP = keccak256("RATE_DROP");
@@ -32,8 +30,14 @@ contract SafetyModule is AccessControl, ISafetyModule {
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
     /*//////////////////////////////////////////////////////////////
-                                  STATE
+                                   STATE
     //////////////////////////////////////////////////////////////*/
+
+    // by convention, the other contracts has "core" as non-immutable
+    // slither-disable-start immutable-states
+    /// @notice The core address allowed to call checks.
+    address public core;
+    // slither-disable-end immutable-states
 
     /// @notice Maximum total assets allowed.
     uint256 public depositCap;
@@ -57,13 +61,24 @@ contract SafetyModule is AccessControl, ISafetyModule {
     uint256 public lastAccountingTimestamp;
 
     /*//////////////////////////////////////////////////////////////
+                                 MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    modifier onlyCore() {
+        if (msg.sender != core) {
+            revert SafetyModule__UnauthorizedCore(msg.sender);
+        }
+        _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Constructs the SafetyModule with initial configuration.
     /// @param admin The default admin address.
     /// @param guardian The guardian address.
-    /// @param core The core address allowed to call checks.
+    /// @param core_ The core address allowed to call checks.
     /// @param depositCap_ The initial deposit cap.
     /// @param minRateDropBps_ The minimum rate drop threshold in basis points.
     /// @param maxQueueRatioBps_ The maximum queue ratio threshold in basis points.
@@ -71,7 +86,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     constructor(
         address admin,
         address guardian,
-        address core,
+        address core_,
         uint256 depositCap_,
         uint256 minRateDropBps_,
         uint256 maxQueueRatioBps_,
@@ -83,7 +98,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         if (guardian == address(0)) {
             revert SafetyModule__ZeroAddress("guardian");
         }
-        if (core == address(0)) {
+        if (core_ == address(0)) {
             revert SafetyModule__ZeroAddress("core");
         }
 
@@ -94,9 +109,10 @@ contract SafetyModule is AccessControl, ISafetyModule {
         maxAccountingDelay = maxAccountingDelay_;
         lastAccountingTimestamp = block.timestamp;
 
-        _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, admin);
+        core = core_;
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(GUARDIAN_ROLE, guardian);
-        _grantRole(CORE_ROLE, core);
 
         emit DepositCapUpdated(depositCap_);
         emit RateDropLimitUpdated(minRateDropBps_);
@@ -110,7 +126,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ISafetyModule
-    function checkRateDrop(uint256 oldRate, uint256 nextRate) external override onlyRole(CORE_ROLE) {
+    function checkRateDrop(uint256 oldRate, uint256 nextRate) external override onlyCore {
         // solhint-disable-next-line gas-strict-inequalities
         if (nextRate >= oldRate) {
             return;
@@ -129,7 +145,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function checkQueueRatio(uint256 queued, uint256 total) external override onlyRole(CORE_ROLE) {
+    function checkQueueRatio(uint256 queued, uint256 total) external override onlyCore {
         if (total == 0) {
             if (queued > 0) {
                 _triggerBreaker(QUEUE_RATIO);
@@ -145,7 +161,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function checkAccountingLiveness() external override onlyRole(CORE_ROLE) {
+    function checkAccountingLiveness() external override onlyCore {
         // slither-disable-next-line timestamp
         // solhint-disable-next-line gas-strict-inequalities
         if (block.timestamp <= lastAccountingTimestamp) {
@@ -194,7 +210,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp_) external override onlyRole(CORE_ROLE) {
+    function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp_) external override onlyCore {
         lastAccountingTimestamp = latestAccountingTimestamp_;
         emit AccountingTimestampUpdated(latestAccountingTimestamp_);
     }
@@ -231,7 +247,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         external
         view
         override
-        onlyRole(CORE_ROLE)
+        onlyCore
         returns (bool allowed)
     {
         if (deposit + total > depositCap) {
@@ -241,7 +257,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function checkWithdrawalMinimum(uint256 shares) external view override onlyRole(CORE_ROLE) {
+    function checkWithdrawalMinimum(uint256 shares) external view override onlyCore {
         if (shares < withdrawalMinimum) {
             revert SafetyModule__BelowWithdrawalMinimum(shares, withdrawalMinimum);
         }

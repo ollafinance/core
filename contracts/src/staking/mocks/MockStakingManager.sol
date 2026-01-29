@@ -7,6 +7,9 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 /// @notice Minimal staking manager mock for message routing tests.
 /// @author Olla Core contributors
 contract MockStakingManager is IStakingManager {
+    /// @notice The core contract address.
+    address public core;
+
     /// @notice Last amount requested to stake.
     uint256 public lastStakeAmount;
 
@@ -25,6 +28,33 @@ contract MockStakingManager is IStakingManager {
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice No-op initializer for interface compatibility.
+    /// @param stakingAsset Unused.
+    /// @param rollupRegistry Unused.
+    /// @param rewardsVault Unused.
+    /// @param core_ The core contract address.
+    /// @param providerAdmin Unused.
+    /// @param providerRewardsRecipient Unused.
+    /// @param defaultAdmin Unused.
+    function initialize(
+        IERC20 stakingAsset,
+        address rollupRegistry,
+        address rewardsVault,
+        address core_,
+        address providerAdmin,
+        address providerRewardsRecipient,
+        address defaultAdmin
+    ) external override {
+        stakingAsset;
+        rollupRegistry;
+        rewardsVault;
+        core = core_;
+        providerAdmin;
+        providerRewardsRecipient;
+        defaultAdmin;
+        return;
+    }
 
     /// @notice Records a stake request.
     /// @param amount The amount to stake.
@@ -61,33 +91,6 @@ contract MockStakingManager is IStakingManager {
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice No-op initializer for interface compatibility.
-    /// @param stakingAsset Unused.
-    /// @param rollupRegistry Unused.
-    /// @param rewardsVault Unused.
-    /// @param core Unused.
-    /// @param providerAdmin Unused.
-    /// @param providerRewardsRecipient Unused.
-    /// @param defaultAdmin Unused.
-    function initialize(
-        IERC20 stakingAsset,
-        address rollupRegistry,
-        address rewardsVault,
-        address core,
-        address providerAdmin,
-        address providerRewardsRecipient,
-        address defaultAdmin
-    ) external pure override {
-        stakingAsset;
-        rollupRegistry;
-        rewardsVault;
-        core;
-        providerAdmin;
-        providerRewardsRecipient;
-        defaultAdmin;
-        return;
-    }
 
     /// @inheritdoc IStakingManager
     function getSlashingDelta() external pure override returns (uint256 slashingDelta) {

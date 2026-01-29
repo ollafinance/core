@@ -42,6 +42,9 @@ interface IRewardsVault {
     /// @notice Thrown when there is a balance mismatch.
     error RewardsVault__BalanceMismatch();
 
+    /// @notice Thrown when caller is not authorized core.
+    error RewardsVault__UnauthorizedCore(address caller);
+
     /*//////////////////////////////////////////////////////////////
                                  FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -53,12 +56,12 @@ interface IRewardsVault {
     function initialize(IERC20 rewardsToken_, address core_, address defaultAdmin_) external;
 
     /// @notice Hook called after rewards are transferred to the vault. Updates internal accounting.
-    /// @dev Only callable by addresses with CORE_ROLE.
+    /// @dev Only callable by the configured core address.
     /// @param expectedRewards The amount of rewards transferred.
     function recordRewards(uint256 expectedRewards) external;
 
     /// @notice Withdraws all available rewards to the core contract.
-    /// @dev Only callable by addresses with CORE_ROLE.
+    /// @dev Only callable by the configured core address.
     function withdrawToCore() external;
 
     // TODO: evaluate to replace with ERC-balance?
