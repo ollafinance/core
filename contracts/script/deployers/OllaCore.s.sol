@@ -39,6 +39,7 @@ contract OllaCoreDeployer is BaseDeployer {
     /// @param asset The asset token address (MockAztec or real)
     /// @param stAztec The StAztec token address
     /// @param stakingManager The staking manager address
+    /// @param safetyModule The safety module address
     function initialize(
         DeployConfig memory config,
         address proxyAddress,
@@ -66,7 +67,8 @@ contract OllaCoreDeployer is BaseDeployer {
         // Approve core to spend deployer's tokens (for local dev convenience)
         if (config.deployMocks) {
             IERC20(asset).approve(proxyAddress, type(uint256).max);
-            console2.log("Approved OllaCore to spend deployer's tokens");
+            IERC20(stAztec).approve(proxyAddress, type(uint256).max);
+            console2.log("Approved OllaCore to spend deployer's tokens (Asset & StAztec)");
         }
 
         vm.stopBroadcast();
