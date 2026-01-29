@@ -38,7 +38,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     /// @notice Maximum total assets allowed.
     uint256 public depositCap;
 
-    /// @notice Minimum withdrawal amount in assets.
+    /// @notice Minimum withdrawal amount in shares.
     uint256 public withdrawalMinimum;
 
     /// @notice Whether the module is paused.
@@ -170,9 +170,9 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function setWithdrawalMinimum(uint256 minimum) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        withdrawalMinimum = minimum;
-        emit WithdrawalMinimumUpdated(minimum);
+    function setWithdrawalMinimum(uint256 minimumShares) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        withdrawalMinimum = minimumShares;
+        emit WithdrawalMinimumUpdated(minimumShares);
     }
 
     /// @inheritdoc ISafetyModule
@@ -241,9 +241,9 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function checkWithdrawalMinimum(uint256 assets) external view override onlyRole(CORE_ROLE) {
-        if (assets < withdrawalMinimum) {
-            revert SafetyModule__BelowWithdrawalMinimum(assets, withdrawalMinimum);
+    function checkWithdrawalMinimum(uint256 shares) external view override onlyRole(CORE_ROLE) {
+        if (shares < withdrawalMinimum) {
+            revert SafetyModule__BelowWithdrawalMinimum(shares, withdrawalMinimum);
         }
     }
 

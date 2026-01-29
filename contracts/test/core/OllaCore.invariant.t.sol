@@ -322,7 +322,7 @@ contract OllaCoreInvariantTest is Test {
     function invariant_TotalAssetsEqualBuckets() external view {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
         uint256 expectedTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
-            + accounting.rewardsDelta - accounting.slashingDelta;
+            + accounting.claimableRewards - accounting.slashingDelta;
 
         assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
     }

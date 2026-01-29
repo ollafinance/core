@@ -7,11 +7,15 @@ import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
+import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
+import { ECDSA } from "@oz/utils/cryptography/ECDSA.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { StAztec } from "src/core/StAztec.sol";
@@ -36,10 +40,13 @@ contract OllaCoreHarness is OllaCore {
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
         uint256 newRewardsVaultBalance,
+        uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
-        _applyAccountingUpdates(newStakedPrincipal, newRewardsVaultBalance, newRewardsDelta, newSlashingDelta);
+        _applyAccountingUpdates(
+            newStakedPrincipal, newRewardsVaultBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+        );
     }
 
     function exposedSyncBufferedWithBalance() external view {
@@ -121,6 +128,8 @@ contract OllaCoreTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     uint256 internal constant DECIMALS = 1e18;
+    bytes32 internal constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
     /*//////////////////////////////////////////////////////////////
                           TEST FIXTURES
@@ -133,6 +142,9 @@ contract OllaCoreTest is Test {
     address internal governance;
     address internal alice;
     address internal bob;
+    address internal permitOwner;
+    uint256 internal permitOwnerKey;
+    uint256 internal permitAttackerKey;
     MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsVault internal rewardsVault;
     MockSafetyModule internal safetyModule;
@@ -174,6 +186,9 @@ contract OllaCoreTest is Test {
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
+        permitOwnerKey = 0xA11CE;
+        permitOwner = vm.addr(permitOwnerKey);
+        permitAttackerKey = 0xB0B;
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -202,6 +217,33 @@ contract OllaCoreTest is Test {
     {
         (user,,, shares, assetsExpected, rate) = withdrawalQueue.lastRequest();
         return (user, shares, assetsExpected, rate);
+    }
+
+    function _signPermit(
+        IERC20Permit token,
+        address owner,
+        uint256 ownerKey,
+        address spender,
+        uint256 value,
+        uint256 deadline
+    ) internal returns (uint8 v, bytes32 r, bytes32 s) {
+        uint256 nonce = token.nonces(owner);
+        bytes32 digest = _buildPermitDigest(token, owner, spender, value, nonce, deadline);
+        (v, r, s) = vm.sign(ownerKey, digest);
+        return (v, r, s);
+    }
+
+    function _buildPermitDigest(
+        IERC20Permit token,
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 nonce,
+        uint256 deadline
+    ) internal view returns (bytes32 digest) {
+        bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, nonce, deadline));
+        digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
+        return digest;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -272,7 +314,7 @@ contract OllaCoreTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                        WITHDRAWAL REQUESTS
+                         WITHDRAWAL REQUESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_RequestRedeem_CallsQueueWithExpectedValues() external {
@@ -295,6 +337,44 @@ contract OllaCoreTest is Test {
         assertEq(recordedShares, shares, "queue receives share amount");
         assertEq(recordedAssets, expectedAssets, "queue receives assetsExpected");
         assertEq(recordedRate, rate, "queue receives exchange rate");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      WITHDRAWAL REQUEST VIEWS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ActiveRequestId_ReturnsZeroWhenNoRequest() external view {
+        assertEq(vault.activeRequestId(alice), 0, "active request id is zero without request");
+    }
+
+    function test_RequestRedeem_SetsActiveRequestIdAndActiveRequest() external {
+        _performDeposit(alice, 20 * DECIMALS);
+
+        uint256 rate = vault.exchangeRate();
+        uint256 shares = 7 * DECIMALS;
+        uint256 expectedAssets = shares * rate / DECIMALS;
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, bob);
+
+        assertEq(vault.activeRequestId(alice), requestId, "active request id matches request");
+
+        IWithdrawalQueue.WithdrawalRequest memory request = vault.getActiveWithdrawalRequest(alice);
+        assertEq(request.recipient, bob, "active request recipient matches");
+        assertEq(request.shares, shares, "active request shares match");
+        assertEq(request.assetsExpected, expectedAssets, "active request assets expected match");
+        assertEq(request.rate, rate, "active request exchange rate matches");
+        assertEq(request.finalized, false, "active request not finalized");
+        assertEq(request.claimed, false, "active request not claimed");
+    }
+
+    function test_RequestOwner_ReturnsOwnerWhenRecipientDiffers() external {
+        _performDeposit(alice, 12 * DECIMALS);
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(4 * DECIMALS, bob);
+
+        assertEq(vault.requestOwner(requestId), alice, "request owner tracked separately from recipient");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -384,7 +464,7 @@ contract OllaCoreTest is Test {
         uint256 firstShares = _performDeposit(alice, depositAssetAmountAlice);
         assertEq(firstShares, depositAssetAmountAlice, "first deposit: 1:1 shares at zero supply");
 
-        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0);
+        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
 
         uint256 totalAssetsBeforeSecondDeposit = vault.totalAssets();
         uint256 totalSharesBeforeSecondDeposit = stAztec.totalSupply();
@@ -407,6 +487,219 @@ contract OllaCoreTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                           PERMIT DEPOSITS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_DepositWithPermit_MintsAndClearsExactAllowance() external {
+        uint256 assets = 10 * DECIMALS;
+        asset.mint(permitOwner, assets);
+
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Deposit(permitOwner, permitOwner, assets, assets);
+
+        vm.prank(permitOwner);
+        uint256 shares = vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+
+        assertEq(shares, assets, "shares minted");
+        assertEq(stAztec.balanceOf(permitOwner), assets, "shares balance");
+        assertEq(asset.allowance(permitOwner, address(vault)), 0, "allowance consumed");
+        assertEq(IERC20Permit(address(asset)).nonces(permitOwner), 1, "nonce incremented");
+    }
+
+    function test_DepositWithPermit_AllowsMaxAllowance() external {
+        uint256 assets = type(uint256).max;
+        asset.mint(permitOwner, assets);
+
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+
+        vm.prank(permitOwner);
+        uint256 shares = vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+
+        assertEq(shares, assets, "shares minted");
+        assertEq(asset.allowance(permitOwner, address(vault)), type(uint256).max, "allowance remains max");
+    }
+
+    function test_RevertWhen_DepositWithPermit_ExpiredSignature() external {
+        uint256 assets = 5 * DECIMALS;
+        asset.mint(permitOwner, assets);
+
+        uint256 deadline = block.timestamp - 1;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_DepositWithPermit_InvalidSignature() external {
+        uint256 assets = 5 * DECIMALS;
+        asset.mint(permitOwner, assets);
+
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitAttackerKey, address(vault), assets, deadline);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner)
+        );
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_DepositWithPermit_ReplayedNonce() external {
+        uint256 assets = 6 * DECIMALS;
+        asset.mint(permitOwner, assets * 2);
+
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+
+        uint256 nonce = IERC20Permit(address(asset)).nonces(permitOwner);
+        bytes32 digest =
+            _buildPermitDigest(IERC20Permit(address(asset)), permitOwner, address(vault), assets, nonce, deadline);
+        address signer = ECDSA.recover(digest, v, r, s);
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner));
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                      PERMIT WITHDRAWAL REQUESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RequestRedeemWithPermit_CallsQueueAndEmits() external {
+        _performDeposit(permitOwner, 20 * DECIMALS);
+
+        uint256 shares = 6 * DECIMALS;
+        uint256 rate = vault.exchangeRate();
+        uint256 assetsExpected = shares * rate / DECIMALS;
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
+
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit WithdrawalRequested(1, bob, shares, assetsExpected, rate);
+
+        vm.prank(permitOwner);
+        uint256 requestId = vault.requestRedeemWithPermit(shares, bob, deadline, v, r, s);
+
+        assertEq(requestId, 1, "request id should start at 1");
+        (address recipient, uint256 recordedShares, uint256 recordedAssets, uint256 recordedRate) =
+            _queueRequestSnapshot();
+        assertEq(recipient, bob, "queue receives recipient");
+        assertEq(recordedShares, shares, "queue receives share amount");
+        assertEq(recordedAssets, assetsExpected, "queue receives assetsExpected");
+        assertEq(recordedRate, rate, "queue receives exchange rate");
+        assertEq(stAztec.allowance(permitOwner, address(vault)), shares, "allowance set by permit");
+        assertEq(IERC20Permit(address(stAztec)).nonces(permitOwner), 1, "nonce incremented");
+    }
+
+    function test_RequestRedeemWithPermit_AllowsMaxAllowance() external {
+        uint256 assets = type(uint256).max;
+        asset.mint(permitOwner, assets);
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 depositV, bytes32 depositR, bytes32 depositS) =
+            _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
+        vm.prank(permitOwner);
+        vault.depositWithPermit(assets, permitOwner, deadline, depositV, depositR, depositS);
+
+        uint256 shares = type(uint256).max;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
+
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+
+        assertEq(stAztec.allowance(permitOwner, address(vault)), type(uint256).max, "allowance remains max");
+    }
+
+    function test_RevertWhen_RequestRedeemWithPermit_ExpiredSignature() external {
+        _performDeposit(permitOwner, 20 * DECIMALS);
+
+        uint256 shares = 4 * DECIMALS;
+        uint256 deadline = block.timestamp - 1;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
+
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_RequestRedeemWithPermit_InvalidSignature() external {
+        _performDeposit(permitOwner, 20 * DECIMALS);
+
+        uint256 shares = 4 * DECIMALS;
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(
+            IERC20Permit(address(stAztec)), permitOwner, permitAttackerKey, address(vault), shares, deadline
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner)
+        );
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+    }
+
+    function test_RevertWhen_RequestRedeemWithPermit_ReplayedNonce() external {
+        _performDeposit(permitOwner, 20 * DECIMALS);
+
+        uint256 shares = 4 * DECIMALS;
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
+
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+
+        uint256 nonce = IERC20Permit(address(stAztec)).nonces(permitOwner);
+        bytes32 digest =
+            _buildPermitDigest(IERC20Permit(address(stAztec)), permitOwner, address(vault), shares, nonce, deadline);
+        address signer = ECDSA.recover(digest, v, r, s);
+        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner));
+        vm.prank(permitOwner);
+        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         NON-PERMIT FLOWS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Deposit_StillWorks() external {
+        uint256 assets = 9 * DECIMALS;
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+
+        vm.prank(alice);
+        uint256 shares = vault.deposit(assets, alice);
+
+        assertEq(shares, assets, "deposit shares");
+        assertEq(stAztec.balanceOf(alice), assets, "shares minted");
+    }
+
+    function test_RequestRedeem_StillWorks() external {
+        _performDeposit(alice, 15 * DECIMALS);
+
+        uint256 shares = 5 * DECIMALS;
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, alice);
+
+        assertEq(requestId, 1, "request id should start at 1");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                           ACCOUNTING STATE
     //////////////////////////////////////////////////////////////*/
 
@@ -414,21 +707,23 @@ contract OllaCoreTest is Test {
         uint256 assets = 10 * DECIMALS;
         uint256 staked = 6 * DECIMALS;
         uint256 rewardsVaultBalance = 4 * DECIMALS;
+        uint256 claimableRewards = 3 * DECIMALS;
         uint256 rewardsDelta = 2 * DECIMALS;
         uint256 slashingDelta = 1 * DECIMALS;
 
         _performDeposit(alice, assets);
-        vault.exposedApplyAccountingUpdates(staked, rewardsVaultBalance, rewardsDelta, slashingDelta);
+        vault.exposedApplyAccountingUpdates(staked, rewardsVaultBalance, claimableRewards, rewardsDelta, slashingDelta);
 
         IOllaCore.AccountingState memory accounting = vault.accountingState();
         assertEq(accounting.bufferedAssets, assets, "bufferedAssets matches deposited assets");
         assertEq(accounting.stakedPrincipal, staked, "stakedPrincipal matches staked amount");
         assertEq(accounting.rewardsVaultBalance, rewardsVaultBalance, "rewardsVaultBalance matches rewards vault");
+        assertEq(accounting.claimableRewards, claimableRewards, "claimableRewards matches claimable rewards");
         assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
         assertEq(
             vault.totalAssets(),
-            assets + staked + rewardsVaultBalance + rewardsDelta - slashingDelta,
+            assets + staked + rewardsVaultBalance + claimableRewards - slashingDelta,
             "totalAssets sums buckets"
         );
     }
@@ -441,21 +736,23 @@ contract OllaCoreTest is Test {
         uint96 buffered,
         uint96 staked,
         uint96 rewardsVaultBalance,
+        uint96 claimableRewards,
         uint96 rewardsDelta,
         uint96 slashingDeltaSeed
     ) external {
         buffered = uint96(bound(buffered, 1, type(uint96).max));
         staked = uint96(bound(staked, 1, type(uint96).max));
         rewardsVaultBalance = uint96(bound(rewardsVaultBalance, 1, type(uint96).max));
+        claimableRewards = uint96(bound(claimableRewards, 0, type(uint96).max));
         rewardsDelta = uint96(bound(rewardsDelta, 0, type(uint96).max));
 
         uint256 positiveTotal =
-            uint256(buffered) + uint256(staked) + uint256(rewardsVaultBalance) + uint256(rewardsDelta);
+            uint256(buffered) + uint256(staked) + uint256(rewardsVaultBalance) + uint256(claimableRewards);
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
         asset.mint(address(vault), buffered);
         vault.exposedIncreaseBuffered(buffered);
-        vault.exposedApplyAccountingUpdates(staked, rewardsVaultBalance, rewardsDelta, slashingDelta);
+        vault.exposedApplyAccountingUpdates(staked, rewardsVaultBalance, claimableRewards, rewardsDelta, slashingDelta);
 
         assertEq(vault.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
     }
@@ -578,6 +875,7 @@ contract OllaCoreTest is Test {
             bufferedAssets: 3 * DECIMALS,
             stakedPrincipal: 4 * DECIMALS,
             rewardsVaultBalance: 2 * DECIMALS,
+            claimableRewards: 5 * DECIMALS,
             rewardsDelta: 1 * DECIMALS,
             slashingDelta: 5 * DECIMALS,
             cumulativeRewards: 0
@@ -585,7 +883,7 @@ contract OllaCoreTest is Test {
 
         uint256 totalAssets = vault.exposedComputeTotalAssets(buckets);
 
-        assertEq(totalAssets, 5 * DECIMALS, "total assets computed");
+        assertEq(totalAssets, 9 * DECIMALS, "total assets computed");
     }
 
     function test_ComputeGrossRewards() external view {
@@ -633,7 +931,8 @@ contract OllaCoreTest is Test {
         stakingManager.setSlashingDelta(slashing);
 
         uint256 rewardsDelta = harvestedRewards + claimableRewards;
-        uint256 expectedTotalAssets = depositAmount + stakedPrincipal + rewardsVaultBalance + rewardsDelta - slashing;
+        uint256 expectedTotalAssets =
+            depositAmount + stakedPrincipal + rewardsVaultBalance + claimableRewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
         uint256 expectedGrossRewards = expectedTotalAssets > depositAmount ? expectedTotalAssets - depositAmount : 0;
 
@@ -705,6 +1004,31 @@ contract OllaCoreTest is Test {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
         assertEq(accounting.rewardsDelta, 0, "rewards delta clamps to zero");
         assertEq(reportAfter.rewardsSnapshot, 5 * DECIMALS, "rewards snapshot tracks current rewards");
+    }
+
+    function test_UpdateAccounting_ClaimableRewardsPersistWithoutHarvest() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 claimableRewards = 5 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setClaimableRewards(claimableRewards);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.AccountingState memory accountingAfterFirst = vault.accountingState();
+        assertEq(accountingAfterFirst.claimableRewards, claimableRewards, "claimable rewards stored");
+        assertEq(vault.totalAssets(), depositAmount + claimableRewards, "total assets include claimable rewards");
+
+        stakingManager.setClaimableRewards(claimableRewards);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.AccountingState memory accountingAfterSecond = vault.accountingState();
+        IOllaCore.LatestReport memory reportAfterSecond = vault.latestReport();
+        assertEq(accountingAfterSecond.claimableRewards, claimableRewards, "claimable rewards persist");
+        assertEq(accountingAfterSecond.rewardsDelta, 0, "rewards delta resets to zero");
+        assertEq(reportAfterSecond.rewardsSnapshot, claimableRewards, "rewards snapshot unchanged");
+        assertEq(vault.totalAssets(), depositAmount + claimableRewards, "total assets remain stable");
     }
 
     function test_RevertWhen_UpdateAccountingSlashingDeltaDecreases() external {
@@ -1313,7 +1637,7 @@ contract OllaCoreProtocolFeesTest is Test {
     function test_CalculateProtocolFees_LargeAssetsTinyRewards_MatchesConvertToShares() external {
         uint256 depositAmount = 1e24;
         _performDeposit(alice, depositAmount);
-        vault.exposedApplyAccountingUpdates(1, 0, 0, 0);
+        vault.exposedApplyAccountingUpdates(1, 0, 0, 0, 0);
 
         uint256 grossRewards = 20;
         (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
