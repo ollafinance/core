@@ -456,6 +456,36 @@ contract OllaCore is
         return address(_modules.stakingManager);
     }
 
+    /// @notice Returns the active withdrawal request id for an owner.
+    /// @param owner The request owner.
+    /// @return requestId The active request id or zero if none.
+    function activeRequestId(address owner) external view override returns (uint256 requestId) {
+        return _activeRequestIds[owner];
+    }
+
+    /// @notice Returns the recorded owner for a withdrawal request id.
+    /// @param requestId The withdrawal request id.
+    /// @return owner The request owner.
+    function requestOwner(uint256 requestId) external view override returns (address owner) {
+        return _requestOwners[requestId];
+    }
+
+    /// @notice Returns the active withdrawal request for an owner.
+    /// @param owner The request owner.
+    /// @return request The withdrawal request struct.
+    function getActiveWithdrawalRequest(address owner)
+        external
+        view
+        override
+        returns (IWithdrawalQueue.WithdrawalRequest memory request)
+    {
+        uint256 requestId = _activeRequestIds[owner];
+        if (requestId == 0) {
+            revert IOllaCore.OllaCore__NoActiveWithdrawal(owner);
+        }
+        return _modules.withdrawalQueue.getRequest(requestId);
+    }
+
     /// @notice Returns the governance address.
     /// @return The governance address.
     function governance() external view override returns (address) {
