@@ -9,6 +9,8 @@ import { TestnetConfig } from "./config/Testnet.s.sol";
 import { MocksDeployer } from "./deployers/Mocks.s.sol";
 import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
 import { StAztecDeployer } from "./deployers/StAztec.s.sol";
+import { StAztec } from "src/core/StAztec.sol";
+import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 
 /// @title DeployScript
 /// @notice Main deployment orchestrator - deploys all contracts based on environment
@@ -84,6 +86,16 @@ contract DeployScript is BaseDeployer {
 
         // 5. Write deployment JSON
         json = _closeAddressesJson(json);
+
+        // Add StAztec metadata for frontend signature generation
+        string memory stAztecName = StAztec(stAztec).name();
+
+        // Get version from EIP712 domain
+        (,, string memory stAztecVersion,,,,) = IERC5267(stAztec).eip712Domain();
+
+        json = _addMetadataToJson(json, "stAztecName", stAztecName);
+        json = _addMetadataToJson(json, "stAztecVersion", stAztecVersion);
+
         _writeDeploymentJson(config.name, json);
 
         console2.log("\n===========================================");
