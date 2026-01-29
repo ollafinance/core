@@ -156,7 +156,7 @@ contract OllaCore is
         // slither-disable-next-line timestamp
         _latestReport.timestamp = block.timestamp;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, governance_);
+        _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governance_);
         _grantRole(GUARDIAN_ROLE, governance_);
         _grantRole(CORE_ROLE, address(this));
         _grantRole(OPERATOR_ROLE, governance_);
@@ -298,7 +298,7 @@ contract OllaCore is
         // Transfer governance-related roles from the old governance to the new one
         if (newGovernance != oldGovernance) {
             // Grant roles to the new governance address first (before revoking from old)
-            _grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, newGovernance);
             _grantRole(GUARDIAN_ROLE, newGovernance);
             _grantRole(OPERATOR_ROLE, newGovernance);
 

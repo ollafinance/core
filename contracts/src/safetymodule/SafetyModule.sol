@@ -94,7 +94,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         maxAccountingDelay = maxAccountingDelay_;
         lastAccountingTimestamp = block.timestamp;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, admin);
         _grantRole(GUARDIAN_ROLE, guardian);
         _grantRole(CORE_ROLE, core);
 

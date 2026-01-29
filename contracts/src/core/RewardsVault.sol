@@ -71,7 +71,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         rewardsToken = rewardsToken_;
         core = core_;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
+        _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, defaultAdmin_);
         _grantRole(CORE_ROLE, core_);
     }
 

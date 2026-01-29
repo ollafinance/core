@@ -77,7 +77,7 @@ contract WithdrawalQueue is
         nextRequestId = 1;
         nextPendingId = 1;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
+        _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, admin_);
         _grantRole(CORE_ROLE, core_);
     }
 

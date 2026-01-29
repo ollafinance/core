@@ -5,16 +5,30 @@
 ```mermaid
 flowchart LR
 
-subgraph "Actors / Roles"
+subgraph "Actors"
     user[User]
-    governanceMultisig[Governance/Admin multisig]
-    guardianMultisig[Guardian multisig]
-    operatorKey[Operator key/bot]
+    governanceActor[Governance]
+    guardianActor[Guardian]
+    ollaOperatorActor[Olla Protocol Operator]
+    stakingProviderActor[Staking Provider Admin]
 end
 
-subgraph "StakingProvider"
-    providerAdmin[Staking provider admin]
-    providerRewardsRecipient[Provider rewards recipient]
+subgraph "Wallets"
+    userWallet[User]
+    stakingProviderAdminWallet[Staking Provider Admin]
+    stakingProviderRewardsWallet[Staking Provider Rewards]
+    guardianWallet[Guardian]
+    ollaOperatorWallet[Olla Protocol Operator]
+    governanceAdminWallet[Governance Admin]
+    treasury[Governance Treasury]
+    user --- userWallet
+    stakingProviderActor --- stakingProviderAdminWallet
+    stakingProviderActor --- stakingProviderRewardsWallet
+    guardianActor --- guardianWallet
+    ollaOperatorActor --- ollaOperatorWallet
+    governanceActor --- treasury
+    governanceActor --- governanceAdminWallet
+    governanceAdminWallet -->|"DEFAULT_ADMIN_ROLE for all contracts"| governanceAdminWallet
 end
 
 subgraph "On-chain modules"
@@ -25,78 +39,66 @@ subgraph "On-chain modules"
     stkMan[StakingManager]
 end
 
-subgraph "Aztec"
+subgraph "Aztec Contracts"
     rollupRegistry[AztecRollupRegistry]
     rollup["AztecRollup (canonical)"]
 end
 
-%% Role bindings (control-plane)
-governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> core
-governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> safety
-governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> rewards
-governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
-governanceMultisig -. "DEFAULT_ADMIN_ROLE" .-> stkMan
+guardianWallet -. "GUARDIAN_ROLE" .-> core
+guardianWallet -. "GUARDIAN_ROLE" .-> safety
 
-guardianMultisig -. "GUARDIAN_ROLE" .-> core
-guardianMultisig -. "GUARDIAN_ROLE" .-> safety
-
-operatorKey -. "OPERATOR_ROLE" .-> core
-providerAdmin -. "STAKING_PROVIDER_ADMIN_ROLE" .-> stkMan
-
-%% Inter-module authority (control-plane)
-core -. "CORE_ROLE" .-> rewards
-core -. "CORE_ROLE" .-> withdrawQ
-core -. "CORE_ROLE" .-> stkMan
+ollaOperatorWallet -. "OPERATOR_ROLE" .-> core
+stakingProviderAdminWallet -. "STAKING_PROVIDER_ADMIN_ROLE" .-> stkMan
 
 %% User flows (asset + call-path)
-user -->|"deposit > Aztec < transferFrom(user, core, assets)"| core
-core -->|"deposit > StAztec < mint(recipient, shares)"| user
+userWallet -->|"deposit >Aztec< transferFrom(user, core, assets)"| core
+core -->|"deposit >StAztec< mint(recipient, shares)"| userWallet
 
-user -->|"requestRedeem(shares, recipient)"| core
-core -->|"withdrawal > StAztec < burn(owner, shares)"| user
+userWallet -->|"requestRedeem(shares, recipient)"| core
+core -->|"withdrawal >StAztec< burn(owner, shares)"| userWallet
 core -->|"requestWithdrawal(recipient, shares, assetsExpected, rate)"| withdrawQ
 
-user -->|"claimRequestById(requestId)"| core
+userWallet -->|"claimRequestById(requestId)"| core
 core -->|"claimWithdrawal(requestId)"| withdrawQ
-core -->|"withdrawal payout > Aztec < transferFrom(core, user, assetsExpected)"| user
+core -->|"withdrawal payout >Aztec< transferFrom(core, user, assetsExpected)"| userWallet
 
 %% Safety checks (control-plane)
 core -->|"checkDepositAllowed / checkWithdrawalMinimum"| safety
 core -->|"checkQueueRatio / checkAccountingLiveness"| safety
 
 %% Operator cycle (end-state orchestration)
-operatorKey -->|"rebalance()"| core
-operatorKey -->|"harvestRewards()"| core
-operatorKey -->|"finalizeWithdrawals(available)"| core
-operatorKey -->|"updateAccounting()"| core
+ollaOperatorWallet -->|"rebalance()"| core
+ollaOperatorWallet -->|"harvestRewards()"| core
+ollaOperatorWallet -->|"finalizeWithdrawals(available)"| core
+ollaOperatorWallet -->|"updateAccounting()"| core
 
 %% Staking principal (AZTEC token) movements
-core -->|"stake > Aztec < transferFrom(core, StakingManager, stakeAmount)"| stkMan
-stkMan -->|"deposit > Aztec < transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
+core -->|"stake >Aztec< transferFrom(core, StakingManager, stakeAmount)"| stkMan
+stkMan -->|"deposit >Aztec< transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
 
 core -->|"unstake(amount)"| stkMan
 stkMan -->|"initiateWithdraw"| rollup
 
-core -->|"claimUnstakedFunds > Aztec < transferFrom(StakingManager, core, unstakedAmount)"| stkMan
-stkMan -->|"finalizeWithdraw > Aztec < transferFrom(rollup, StakingManager, unstakedAmount)"| rollup
+core -->|"claimUnstakedFunds >Aztec< transferFrom(StakingManager, core, unstakedAmount)"| stkMan
+stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, unstakedAmount)"| rollup
 
 core -->|"harvestRewards()"| stkMan
 stkMan -->|"getCanonicalRollup()"| rollupRegistry
 rollupRegistry -->|"canonical rollup"| rollup
 stkMan -->|"claimSequencerRewards(coinbase=rewardsVault)"| rollup
-rollup -->|"rewards > Aztec < transferFrom(rollup, rewardsVault, amount)"| rewards
+rollup -->|"rewards >Aztec< transferFrom(rollup, rewardsVault, amount)"| rewards
 core -->|"recordRewards(expectedRewards)"| rewards
 
 core -->|"finalizeWithdrawals(available)"| withdrawQ
 
 core -->|"balance()"| rewards
 
-core -->|"pay staking fees > StAztec < mint(governance, treasuryShares)"| governanceMultisig
-core -->|"pay staking fees > StAztec < mint(providerRewardsRecipient, providerShares)"| providerRewardsRecipient
+core -->|"pay staking fees >StAztec< mint(governance, treasuryShares)"| treasury
+core -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
 
 style user fill:#900
-style operatorKey fill:#090
-style providerAdmin fill:#009
+style ollaOperatorActor fill:#090
+style stakingProviderActor fill:#009
 style rollup stroke:#ff6,stroke-width:2px
 style core stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
@@ -104,8 +106,8 @@ style rewards stroke:#090,stroke-width:3px
 style stkMan stroke:#090,stroke-width:3px
 style withdrawQ stroke:#090,stroke-width:3px
 style rollupRegistry stroke:#ff6,stroke-width:2px
-style guardianMultisig stroke:#050,stroke-width:2px
-style governanceMultisig stroke:#050,stroke-width:2px
+style guardianActor stroke:#050,stroke-width:2px
+style governanceActor stroke:#050,stroke-width:2px
 ```
 
 ## Activity diagrams
