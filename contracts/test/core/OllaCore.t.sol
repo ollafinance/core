@@ -812,6 +812,31 @@ contract OllaCoreTest is Test {
         assertEq(reportAfter.totalAssets, depositAmount, "total assets unchanged");
     }
 
+    function test_UpdateAccounting_GrossRewardsZero_TotalAssetsZero_NoFeeMinting() external {
+        uint256 depositAmount = 12 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(governance);
+        vault.setProtocolFeeBP(1_000);
+
+        stakingManager.setSlashingDelta(depositAmount);
+
+        uint256 supplyBefore = stAztec.totalSupply();
+        uint256 treasuryBalanceBefore = stAztec.balanceOf(governance);
+        uint256 providerBalanceBefore = stAztec.balanceOf(providerRewardsRecipient);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        assertEq(reportAfter.grossRewards, 0, "gross rewards zero");
+        assertEq(reportAfter.totalAssets, 0, "total assets zero");
+        assertEq(reportAfter.exchangeRate, 0, "exchange rate zero");
+        assertEq(stAztec.totalSupply(), supplyBefore, "no fee shares minted");
+        assertEq(stAztec.balanceOf(governance), treasuryBalanceBefore, "treasury shares unchanged");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), providerBalanceBefore, "provider shares unchanged");
+    }
+
     /*//////////////////////////////////////////////////////////////
                        ACCOUNTING CALCULATIONS
     //////////////////////////////////////////////////////////////*/
@@ -1579,10 +1604,14 @@ contract OllaCoreProtocolFeesTest is Test {
                                 TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_CalculateProtocolFees_ZeroSupply_MatchesConvertToShares() external {
+    function test_CalculateProtocolFees_NonZeroAssets_MatchesConvertToShares() external {
+        uint256 depositAmount = 50 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
         uint256 grossRewards = 100 * DECIMALS;
 
-        assertEq(stAztec.totalSupply(), 0, "supply zero");
+        assertGt(stAztec.totalSupply(), 0, "supply nonzero");
+        assertGt(vault.totalAssets(), 0, "total assets nonzero");
 
         (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
             vault.exposedCalculateProtocolFees(grossRewards);
@@ -1591,7 +1620,6 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 expectedSharesTotal = vault.convertToShares(expectedFeeAssets);
 
         assertEq(feeAssets, expectedFeeAssets, "fee assets");
-        assertEq(expectedSharesTotal, expectedFeeAssets, "zero supply shares");
         assertEq(treasuryShares + providerShares, expectedSharesTotal, "fee shares match convertToShares");
     }
 
@@ -1766,6 +1794,33 @@ contract OllaCoreProtocolFeesTest is Test {
         assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");
         assertEq(stAztec.balanceOf(governance), oldGovShares, "no treasury shares minted");
         assertEq(stAztec.balanceOf(providerRewardsRecipient), oldProviderShares, "no provider shares minted");
+    }
+
+    function test_UpdateAccounting_GrossRewardsZero_TotalAssetsZero_NoFeeMinting() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        stakingManager.setSlashingDelta(depositAmount);
+
+        uint256 oldSupply = stAztec.totalSupply();
+        uint256 oldGovShares = stAztec.balanceOf(governance);
+        uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        assertEq(reportAfter.grossRewards, 0, "gross rewards zero");
+        assertEq(reportAfter.totalAssets, 0, "report total assets zero");
+        assertEq(reportAfter.exchangeRate, 0, "exchange rate zero");
+        assertEq(vault.totalAssets(), 0, "total assets zeroed");
+        assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");
+        assertEq(stAztec.balanceOf(governance), oldGovShares, "no treasury shares minted");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), oldProviderShares, "no provider shares minted");
+        assertGt(stAztec.totalSupply(), 0, "supply remains positive");
     }
 
     /// @notice Reproduces rounding error from invariant test failure.

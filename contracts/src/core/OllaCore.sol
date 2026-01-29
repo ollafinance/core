@@ -612,6 +612,12 @@ contract OllaCore is
         onlyRole(OPERATOR_ROLE)
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
+        //Rationale: strict equality here is intentional and safe for unsigned values;
+        //timestamp detector is inapplicable because no timestamp is used.
+        // slither-disable-next-line incorrect-equality,timestamp
+        if (grossAssetRewards == 0 || protocolFeeBP == 0 || totalAssets() == 0) {
+            return (0, 0, 0);
+        }
         Modules memory modules = _modules;
         (ollaProtocolFeeAssets, treasuryShares, providerShares) = _calculateProtocolFees(grossAssetRewards);
         emit OllaProtocolFeesPaid(ollaProtocolFeeAssets, treasuryShares, providerShares);
