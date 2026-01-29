@@ -208,12 +208,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return _claimUnstakedFunds();
     }
 
-    /// @notice External calls inside loop are intentional and safe:
-    ///      - `rollup` is a trusted Aztec protocol contract
-    ///      - Attesters are permissioned and managed by the provider
-    ///      - Function is only reachable via CORE_ROLE-gated entrypoints with nonReentrant
-    ///      - State updates after external call are benign (internal bookkeeping only)
-    ///      - Failure is handled gracefully with try-catch, allowing continuation
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
