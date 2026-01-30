@@ -149,14 +149,16 @@ interface IOllaCore {
     /// @param timestamp Timestamp of the read.
     event AttestersStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
 
-    /// @notice Emitted when a rebalance occurs.
-    /// @param bufferedAssets Buffered asset snapshot.
-    /// @param stakedPrincipal Staked principal snapshot.
-    /// @param rewardsVaultBalance Rewards vault balance snapshot.
-    /// @param rewardsDelta Rewards delta snapshot.
-    event Rebalanced(
-        uint256 bufferedAssets, uint256 stakedPrincipal, uint256 rewardsVaultBalance, uint256 rewardsDelta
-    );
+    /// @notice Emitted when a rebalance operation completes.
+    /// @param harvestedAmount Amount of rewards harvested.
+    /// @param finalizedAmount Amount of assets used for withdrawal finalization.
+    /// @param stakedAmount Amount of assets staked.
+    /// @param resultingBuffer Final buffered assets after rebalance.
+    event Rebalanced(uint256 harvestedAmount, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
+
+    /// @notice Emitted when rewards are harvested during rebalance.
+    /// @param amount The amount of rewards harvested.
+    event RewardsHarvested(uint256 amount);
 
     /// @notice Emitted when withdrawals are finalized.
     /// @param available Available assets.
