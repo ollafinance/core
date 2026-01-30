@@ -172,6 +172,10 @@ contract OllaCoreTest is Test {
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
+        // Configure staking manager to mint rewards directly to rewards vault
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsVault(address(rewardsVault));
+
         vault.initialize(
             asset,
             stAztec,
@@ -943,11 +947,9 @@ contract OllaCoreTest is Test {
         uint256 harvestedRewards = 5 * DECIMALS;
         uint256 claimableRewards = 7 * DECIMALS;
         uint256 slashing = 2 * DECIMALS;
-        uint256 rewardsVaultBalance = 4 * DECIMALS;
         uint256 stakedPrincipal = 11 * DECIMALS;
 
         _performDeposit(alice, depositAmount);
-        asset.mint(address(rewardsVault), rewardsVaultBalance);
         stakingManager.setTotalStaked(stakedPrincipal);
         stakingManager.setHarvestedRewards(harvestedRewards);
         vm.prank(operator);
@@ -955,9 +957,9 @@ contract OllaCoreTest is Test {
         stakingManager.setClaimableRewards(claimableRewards);
         stakingManager.setSlashingDelta(slashing);
 
+        // rewardsDelta now comes from actual vault balance delta + claimable
         uint256 rewardsDelta = harvestedRewards + claimableRewards;
-        uint256 expectedTotalAssets =
-            depositAmount + stakedPrincipal + rewardsVaultBalance + claimableRewards - slashing;
+        uint256 expectedTotalAssets = depositAmount + stakedPrincipal + harvestedRewards + claimableRewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
         uint256 expectedGrossRewards = expectedTotalAssets > depositAmount ? expectedTotalAssets - depositAmount : 0;
 

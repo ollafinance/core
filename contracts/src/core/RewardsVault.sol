@@ -83,26 +83,17 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IRewardsVault
-    function recordRewards(uint256 expectedRewards) external override onlyCore nonReentrant {
-        // TODO: refactor this function to only update latestRecordedRewardsAmount and return the delta
-        //       1. ExcessFundsDetected should be removed entirely from this class/interface (there is no excess, all delta are rewards)
-        //       2. RewardsRecorded should emit only the delta (current - previous)
-        //       3. It should not take a param, and it should therefore not revert either
-        if (expectedRewards == 0) revert RewardsVault__ZeroAmount();
-
+    function recordRewards() external override onlyCore nonReentrant returns (uint256 rewardsDelta) {
         uint256 previousAmount = latestRecordedRewardsAmount;
         uint256 currentTokenBalance = rewardsToken.balanceOf(address(this));
-        uint256 excessFundsAmount = currentTokenBalance - previousAmount - expectedRewards;
-        if (excessFundsAmount > 0) {
-            emit ExcessFundsDetected(excessFundsAmount);
-        }
-        // Total rewards is harvested rewards plus any excess funds detected
-        uint256 rewardsIsh = expectedRewards + excessFundsAmount;
-        if (currentTokenBalance != previousAmount + rewardsIsh) {
+        // Revert if balance decreased (should never happen in normal operation)
+        if (currentTokenBalance < previousAmount) {
             revert RewardsVault__BalanceMismatch();
         }
+        rewardsDelta = currentTokenBalance - previousAmount;
         latestRecordedRewardsAmount = currentTokenBalance;
-        emit RewardsRecorded(rewardsIsh);
+        emit RewardsRecorded(rewardsDelta);
+        return rewardsDelta;
     }
 
     /// @inheritdoc IRewardsVault

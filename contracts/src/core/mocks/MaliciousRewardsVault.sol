@@ -40,16 +40,18 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         _reenterOnHook = enabled;
     }
 
-    /// @notice Hook called after receiving rewards.
-    /// @param expectedRewards The amount of rewards transferred.
-    function recordRewards(uint256 expectedRewards) external override {
+    /// @inheritdoc IRewardsVault
+    function recordRewards() external override returns (uint256 rewardsDelta) {
         if (_reenterOnHook) {
             _reenterOnHook = false;
             _reentryTarget.functionCall(_reentryCalldata);
         }
-        _totalReceived += expectedRewards;
-        _latestRecordedRewardsAmount = REWARDS_TOKEN.balanceOf(address(this));
-        emit RewardsRecorded(expectedRewards);
+        uint256 currentBalance = REWARDS_TOKEN.balanceOf(address(this));
+        rewardsDelta = currentBalance - _latestRecordedRewardsAmount;
+        _totalReceived += rewardsDelta;
+        _latestRecordedRewardsAmount = currentBalance;
+        emit RewardsRecorded(rewardsDelta);
+        return rewardsDelta;
     }
 
     /// @notice Withdraw rewards to core.

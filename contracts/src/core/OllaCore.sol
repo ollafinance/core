@@ -160,6 +160,34 @@ contract OllaCore is
         _grantRole(OPERATOR_ROLE, governance_);
     }
 
+    /// @inheritdoc IOllaCore
+    /// @notice Harvests sequencer rewards and updates the cumulative rewards counter.
+    /// @return rewardsDelta The delta amount of rewards (actual balance increase in RewardsVault).
+    function harvestRewards()
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 rewardsDelta)
+    {
+        // Trigger the actual claiming on the rollup (rewards are sent directly to RewardsVault)
+        // We intentionally ignore the return value because rewards may be permissionlessly harvested.
+        // The actual amount received is determined by delta from RewardsVault.recordRewards().
+        // slither-disable-next-line unused-return
+        _modules.stakingManager.harvestRewards();
+
+        // Get the actual delta from RewardsVault and update cumulative rewards
+        // slither-disable-next-line reentrancy-benign
+        rewardsDelta = _modules.rewardsVault.recordRewards();
+        if (rewardsDelta != 0) {
+            _accountingState.cumulativeRewards += rewardsDelta;
+        }
+
+        // No event emission - StakingManager and RewardsVault emit their own events
+        return rewardsDelta;
+    }
+
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
@@ -363,34 +391,6 @@ contract OllaCore is
     // solhint-enable function-max-lines
 
     // slither-disable-end pess-multiple-storage-read
-
-    // TODO: Make internal when implementing rebalance
-    /// @notice Harvests sequencer rewards and updates the cumulative rewards counter.
-    /// @return harvested The amount harvested.
-    function harvestRewards()
-        external
-        override
-        onlyRole(OPERATOR_ROLE)
-        whenNotPaused
-        nonReentrant
-        returns (uint256 harvested)
-    {
-        // TODO: refactor to use rewardsDelta to update accounting instead of immediate addition to cumulativeRewards;
-        //       1. should no longer use received from harvestRewards at all
-        //       2. cumulativeRewards should be updated by the delta which is returned from recordRewards in RewardsVault (pending implementation)
-        //       3. Should not emit any events. StakingManager and RewardsVault will emit their own events, which is enough.
-        //       4. Should return delta only.
-        // StakingManager is a trusted dependency; harvest is role-gated and nonReentrant.
-        // slither-disable-next-line reentrancy-benign
-        uint256 received = _modules.stakingManager.harvestRewards();
-        harvested = received;
-        if (harvested != 0) {
-            _accountingState.cumulativeRewards += harvested;
-        }
-        emit RewardsHarvested(harvested);
-        _modules.rewardsVault.recordRewards(harvested);
-        return harvested;
-    }
 
     // slither-disable-start pess-multiple-storage-read
     /// @notice Operator-triggered withdrawal finalization hook.

@@ -4,32 +4,48 @@ pragma solidity >=0.8.27 <0.9.0;
 import { Test } from "@forge-std/Test.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-
-import { OllaCore } from "src/core/OllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
-import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
-import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
+import { OllaCore } from "src/core/OllaCore.sol";
+import { StAztec } from "src/core/StAztec.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MaliciousRewardsVault } from "src/core/mocks/MaliciousRewardsVault.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
-import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
+import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
+import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice Mock staking manager that returns configurable harvested rewards.
 contract MockHarvestStakingManager is IStakingManager {
+    IERC20 public rewardsToken;
+    address public rewardsVault;
     uint256 public harvestedRewards;
+
+    function setRewardsToken(IERC20 token) external {
+        rewardsToken = token;
+    }
+
+    function setRewardsVault(address vault) external {
+        rewardsVault = vault;
+    }
 
     function setHarvestedRewards(uint256 value) external {
         harvestedRewards = value;
     }
 
-    function harvestRewards() external view override returns (uint256 harvested) {
-        return harvestedRewards;
+    function harvestRewards() external override returns (uint256 harvested) {
+        harvested = harvestedRewards;
+        // Actually transfer tokens to rewards vault to simulate real harvest
+        if (harvested > 0 && address(rewardsToken) != address(0) && rewardsVault != address(0)) {
+            // Cast to MockAztec/MaliciousAztec and mint tokens to this contract first, then transfer to vault
+            MockAztec(address(rewardsToken)).mint(address(this), harvested);
+            rewardsToken.transfer(rewardsVault, harvested);
+        }
+        return harvested;
     }
 
     function core() external pure override returns (address) {
@@ -286,6 +302,10 @@ contract OllaCoreHarvestReentrancyTest is Test {
         rewardsVault = new MaliciousRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(implementation));
         withdrawalQueue = new MockWithdrawalQueue();
+
+        // Configure staking manager to mint rewards directly to rewards vault
+        stakingManager.setRewardsToken(IERC20(address(asset)));
+        stakingManager.setRewardsVault(address(rewardsVault));
 
         protocolFeeBP = 500;
         treasuryFeeSplitBP = 5_000;
