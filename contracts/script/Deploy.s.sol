@@ -103,13 +103,15 @@ contract DeployScript is BaseDeployer {
 
         // 3.1 Deploy WithdrawalQueue (linked to OllaCore proxy)
         console2.log("\n--- Deploying WithdrawalQueue ---");
-        (withdrawalQueueImpl, withdrawalQueue) = withdrawalQueueDeployer.deploy(config, ollaCoreProxy, config.governance);
+        (withdrawalQueueImpl, withdrawalQueue) =
+            withdrawalQueueDeployer.deploy(config, ollaCoreProxy, config.governance);
         json = _addAddressToJson(json, "WithdrawalQueueImplementation", withdrawalQueueImpl, false);
         json = _addAddressToJson(json, "WithdrawalQueueProxy", withdrawalQueue, false);
 
         // 3.2 Deploy RewardsVault (linked to OllaCore proxy)
         console2.log("\n--- Deploying RewardsVault ---");
-        (rewardsVaultImpl, rewardsVault) = rewardsVaultDeployer.deploy(config, IERC20(asset), ollaCoreProxy, config.governance);
+        (rewardsVaultImpl, rewardsVault) =
+            rewardsVaultDeployer.deploy(config, IERC20(asset), ollaCoreProxy, config.governance);
         json = _addAddressToJson(json, "RewardsVaultImplementation", rewardsVaultImpl, false);
         json = _addAddressToJson(json, "RewardsVaultProxy", rewardsVault, false);
 
