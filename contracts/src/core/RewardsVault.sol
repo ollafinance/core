@@ -84,6 +84,10 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     /// @inheritdoc IRewardsVault
     function recordRewards(uint256 expectedRewards) external override onlyCore nonReentrant {
+        // TODO: refactor this function to only update latestRecordedRewardsAmount and return the delta
+        //       1. ExcessFundsDetected should be removed entirely from this class/interface (there is no excess, all delta are rewards)
+        //       2. RewardsRecorded should emit only the delta (current - previous)
+        //       3. It should not take a param, and it should therefore not revert either
         if (expectedRewards == 0) revert RewardsVault__ZeroAmount();
 
         uint256 previousAmount = latestRecordedRewardsAmount;

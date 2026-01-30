@@ -169,6 +169,11 @@ interface IOllaCore {
     /// @param assets Assets claimed.
     event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
 
+    /// @notice Emitted when rewards delta is updated.
+    /// @param delta The rewards delta amount.
+    event RewardsDelta(uint256 delta);
+
+    // TODO: remove
     /// @notice Emitted when rewards are harvested.
     /// @param harvested Harvested reward amount.
     event RewardsHarvested(uint256 harvested);

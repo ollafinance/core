@@ -375,6 +375,11 @@ contract OllaCore is
         nonReentrant
         returns (uint256 harvested)
     {
+        // TODO: refactor to use rewardsDelta to update accounting instead of immediate addition to cumulativeRewards;
+        //       1. should no longer use received from harvestRewards at all
+        //       2. cumulativeRewards should be updated by the delta which is returned from recordRewards in RewardsVault (pending implementation)
+        //       3. Should not emit any events. StakingManager and RewardsVault will emit their own events, which is enough.
+        //       4. Should return delta only.
         // StakingManager is a trusted dependency; harvest is role-gated and nonReentrant.
         // slither-disable-next-line reentrancy-benign
         uint256 received = _modules.stakingManager.harvestRewards();

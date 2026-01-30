@@ -15,6 +15,7 @@ interface IRewardsVault {
     /// @param amount The amount of rewards recorded.
     event RewardsRecorded(uint256 indexed amount);
 
+    // TODO: remove
     /// @notice Emitted when excess funds are detected.
     /// @param amount The amount of excess funds.
     event ExcessFundsDetected(uint256 indexed amount);
@@ -55,6 +56,7 @@ interface IRewardsVault {
     /// @param defaultAdmin_ The default admin for role management.
     function initialize(IERC20 rewardsToken_, address core_, address defaultAdmin_) external;
 
+    // TODO: remove parameter and add return rewardsDelta
     /// @notice Hook called after rewards are transferred to the vault. Updates internal accounting.
     /// @dev Only callable by the configured core address.
     /// @param expectedRewards The amount of rewards transferred.
