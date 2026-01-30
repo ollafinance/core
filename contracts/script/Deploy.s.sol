@@ -9,9 +9,12 @@ import { TestnetConfig } from "./config/Testnet.s.sol";
 import { MocksDeployer } from "./deployers/Mocks.s.sol";
 import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
 import { StAztecDeployer } from "./deployers/StAztec.s.sol";
+import { WithdrawalQueueDeployer } from "./deployers/WithdrawalQueue.s.sol";
+import { RewardsVaultDeployer } from "./deployers/RewardsVault.s.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 /// @title DeployScript
 /// @notice Main deployment orchestrator - deploys all contracts based on environment
@@ -20,12 +23,16 @@ contract DeployScript is BaseDeployer {
     MocksDeployer internal mocksDeployer;
     OllaCoreDeployer internal ollaCoreDeployer;
     StAztecDeployer internal stAztecDeployer;
+    WithdrawalQueueDeployer internal withdrawalQueueDeployer;
+    RewardsVaultDeployer internal rewardsVaultDeployer;
 
     function setUp() public {
         // Initialize deployers
         mocksDeployer = new MocksDeployer();
         ollaCoreDeployer = new OllaCoreDeployer();
         stAztecDeployer = new StAztecDeployer();
+        withdrawalQueueDeployer = new WithdrawalQueueDeployer();
+        rewardsVaultDeployer = new RewardsVaultDeployer();
     }
 
     function run() public {
@@ -46,6 +53,10 @@ contract DeployScript is BaseDeployer {
         address ollaCoreProxy;
         address stAztec;
         address safetyModule;
+        address withdrawalQueue;
+        address rewardsVault;
+        address withdrawalQueueImpl;
+        address rewardsVaultImpl;
 
         // Initialize deployment JSON
         string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
@@ -90,11 +101,28 @@ contract DeployScript is BaseDeployer {
         stAztec = stAztecDeployer.deploy(config, ollaCoreProxy);
         json = _addAddressToJson(json, "StAztec", stAztec, false);
 
+        // 3.1 Deploy and initialize WithdrawalQueue (linked to OllaCore proxy)
+        console2.log("\n--- Deploying WithdrawalQueue ---");
+        (withdrawalQueueImpl, withdrawalQueue) = withdrawalQueueDeployer.deploy(config);
+        withdrawalQueueDeployer.initialize(config, withdrawalQueue, ollaCoreProxy, config.governance);
+        json = _addAddressToJson(json, "WithdrawalQueueImplementation", withdrawalQueueImpl, false);
+        json = _addAddressToJson(json, "WithdrawalQueueProxy", withdrawalQueue, false);
+
+        // 3.2 Deploy and initialize RewardsVault (linked to OllaCore proxy)
+        console2.log("\n--- Deploying RewardsVault ---");
+        (rewardsVaultImpl, rewardsVault) = rewardsVaultDeployer.deploy(config);
+        rewardsVaultDeployer.initialize(config, rewardsVault, IERC20(asset), ollaCoreProxy, config.governance);
+        json = _addAddressToJson(json, "RewardsVaultImplementation", rewardsVaultImpl, false);
+        json = _addAddressToJson(json, "RewardsVaultProxy", rewardsVault, false);
+
         // Safety module (required by OllaCore deposit/withdraw paths)
         json = _addAddressToJson(json, "SafetyModule", safetyModule, false);
 
         // 4. Initialize OllaCore with all dependencies
         console2.log("\n--- Initializing OllaCore ---");
+        config.withdrawalQueue = withdrawalQueue;
+        config.rewardsVault = rewardsVault;
+        config.safetyModule = safetyModule;
         ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager, safetyModule);
 
         // 5. Write deployment JSON
