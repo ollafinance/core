@@ -122,6 +122,7 @@ contract OllaCoreTest is Test {
         uint256 exchangeRate
     );
     event OllaProtocolFeesPaid(uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares);
+    event RewardsDelta(uint256 delta);
 
     /*//////////////////////////////////////////////////////////////
                              CONSTANTS
@@ -1119,6 +1120,34 @@ contract OllaCoreTest is Test {
         assertEq(
             totalReceivedAfter - totalReceivedBefore, rewardAmount, "recordRewards should be called with correct amount"
         );
+    }
+
+    function test_HarvestRewards_EmitsRewardsDeltaEvent() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 rewardAmount = 5 * DECIMALS;
+        stakingManager.setHarvestedRewards(rewardAmount);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RewardsDelta(rewardAmount);
+
+        vm.prank(operator);
+        vault.harvestRewards();
+    }
+
+    function test_HarvestRewards_EmitsRewardsDeltaEvent_WithZeroRewards() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Set zero rewards
+        stakingManager.setHarvestedRewards(0);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RewardsDelta(0);
+
+        vm.prank(operator);
+        vault.harvestRewards();
     }
 
     /*//////////////////////////////////////////////////////////////

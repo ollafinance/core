@@ -183,8 +183,7 @@ contract OllaCore is
         if (rewardsDelta != 0) {
             _accountingState.cumulativeRewards += rewardsDelta;
         }
-
-        // No event emission - StakingManager and RewardsVault emit their own events
+        emit RewardsDelta(rewardsDelta);
         return rewardsDelta;
     }
 
