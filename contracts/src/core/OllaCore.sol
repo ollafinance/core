@@ -351,7 +351,7 @@ contract OllaCore is
     /// @notice Operator-triggered rebalance flow.
     /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> stake surplus
     function rebalance() external override onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
-        uint256 harvestedAmount = _harvestRewards();
+        uint256 rewardsDelta = harvestRewards();
 
         // TODO: Phase 2 - Pull unstaked funds
         uint256 finalizedAmount = 0;
@@ -362,7 +362,7 @@ contract OllaCore is
         // TODO: Phase 4 - Stake surplus
         uint256 stakedAmount = 0;
 
-        emit Rebalanced(harvestedAmount, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
+        emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
     }
 
     // Slither: accept multiple storage reads for readability in hot-path accounting.
@@ -882,25 +882,6 @@ contract OllaCore is
             providerShares,
             _latestReport.timestamp
         );
-    }
-
-    /// @notice Harvests rewards from the staking manager.
-    /// @return harvestedAmount The amount of rewards harvested.
-    function _harvestRewards() internal returns (uint256 harvestedAmount) {
-        // Trigger the actual claiming on the rollup
-        // Rewards are sent directly to RewardsVault
-        // slither-disable-next-line unused-return
-        _modules.stakingManager.harvestRewards();
-
-        // Get the actual delta from RewardsVault and update cumulative rewards
-        // slither-disable-next-line reentrancy-benign
-        harvestedAmount = _modules.rewardsVault.recordRewards();
-        if (harvestedAmount != 0) {
-            _accountingState.cumulativeRewards += harvestedAmount;
-        }
-
-        emit RewardsHarvested(harvestedAmount);
-        return harvestedAmount;
     }
 
     function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) {
