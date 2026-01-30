@@ -101,17 +101,15 @@ contract DeployScript is BaseDeployer {
         stAztec = stAztecDeployer.deploy(config, ollaCoreProxy);
         json = _addAddressToJson(json, "StAztec", stAztec, false);
 
-        // 3.1 Deploy and initialize WithdrawalQueue (linked to OllaCore proxy)
+        // 3.1 Deploy WithdrawalQueue (linked to OllaCore proxy)
         console2.log("\n--- Deploying WithdrawalQueue ---");
-        (withdrawalQueueImpl, withdrawalQueue) = withdrawalQueueDeployer.deploy(config);
-        withdrawalQueueDeployer.initialize(config, withdrawalQueue, ollaCoreProxy, config.governance);
+        (withdrawalQueueImpl, withdrawalQueue) = withdrawalQueueDeployer.deploy(config, ollaCoreProxy, config.governance);
         json = _addAddressToJson(json, "WithdrawalQueueImplementation", withdrawalQueueImpl, false);
         json = _addAddressToJson(json, "WithdrawalQueueProxy", withdrawalQueue, false);
 
-        // 3.2 Deploy and initialize RewardsVault (linked to OllaCore proxy)
+        // 3.2 Deploy RewardsVault (linked to OllaCore proxy)
         console2.log("\n--- Deploying RewardsVault ---");
-        (rewardsVaultImpl, rewardsVault) = rewardsVaultDeployer.deploy(config);
-        rewardsVaultDeployer.initialize(config, rewardsVault, IERC20(asset), ollaCoreProxy, config.governance);
+        (rewardsVaultImpl, rewardsVault) = rewardsVaultDeployer.deploy(config, IERC20(asset), ollaCoreProxy, config.governance);
         json = _addAddressToJson(json, "RewardsVaultImplementation", rewardsVaultImpl, false);
         json = _addAddressToJson(json, "RewardsVaultProxy", rewardsVault, false);
 
