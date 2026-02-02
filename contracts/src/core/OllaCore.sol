@@ -399,14 +399,14 @@ contract OllaCore is
     {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         uint256 queued = _modules.withdrawalQueue.totalPendingAssets();
-        uint256 total = totalAssets();
         // slither-disable-start reentrancy-no-eth
         // slither-disable-start reentrancy-events
         // SafetyModule is a trusted immutable dependency; calls are role-gated and non-reentrant, so fail-fast
         // checks before finalization are safe.
-        safetyModuleRef.checkQueueRatio(queued, total);
-
         _syncBufferedWithBalance();
+
+        uint256 total = totalAssets();
+        safetyModuleRef.checkQueueRatio(queued, total);
 
         uint256 bufferedAssets = _accountingState.bufferedAssets;
         // slither-disable-next-line timestamp
@@ -600,6 +600,8 @@ contract OllaCore is
         if (ISafetyModule(modules.safetyModule).isPaused()) {
             revert OllaCore__SafetyModulePaused();
         }
+
+        _syncBufferedWithBalance();
 
         uint256 currentTotalAssets = totalAssets();
         if (!ISafetyModule(modules.safetyModule).checkDepositAllowed(assets, currentTotalAssets)) {

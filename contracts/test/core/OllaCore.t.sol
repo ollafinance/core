@@ -1139,6 +1139,15 @@ contract OllaCoreTest is Test {
         assertEq(accounting.bufferedAssets, assets + bonus, "buffered assets reconciled");
     }
 
+    function test_RevertWhen_BufferedBalanceBelowActual() external {
+        uint256 assets = 5 * DECIMALS;
+
+        vault.exposedIncreaseBuffered(assets);
+
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCore__BufferedBalanceMismatch.selector, assets, 0));
+        vault.exposedSyncBufferedWithBalance();
+    }
+
     function test_EmitDepositEvent() external {
         uint256 assets = 10 * DECIMALS;
 
