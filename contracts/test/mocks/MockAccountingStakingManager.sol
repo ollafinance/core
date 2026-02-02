@@ -20,6 +20,8 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public slashingDelta;
     uint256 public totalStakedAmount;
     uint256 public harvestedRewards;
+    IERC20 public unstakedToken;
+    uint256 public unstakedAmount;
     address public providerRewardsRecipient;
     address public providerAdmin;
 
@@ -51,6 +53,14 @@ contract MockAccountingStakingManager is IStakingManager {
         harvestedRewards = value;
     }
 
+    function setUnstakedToken(IERC20 token) external {
+        unstakedToken = token;
+    }
+
+    function setUnstakedAmount(uint256 value) external {
+        unstakedAmount = value;
+    }
+
     function setProviderRewardsRecipient(address recipient) external {
         providerRewardsRecipient = recipient;
     }
@@ -69,8 +79,20 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function cleanActivatedAttesters() external pure override { }
 
-    function getUnstakedFunds() external pure override returns (uint256 received) {
-        return received;
+    function getUnstakedFunds() public virtual override returns (uint256 received) {
+        uint256 amount = unstakedAmount;
+        if (amount == 0) {
+            return 0;
+        }
+
+        IERC20 token = unstakedToken;
+        if (address(token) == address(0)) {
+            return 0;
+        }
+
+        unstakedAmount = 0;
+        token.transfer(msg.sender, amount);
+        return amount;
     }
 
     function harvestRewards() external override returns (uint256 harvested) {
@@ -104,7 +126,7 @@ contract MockAccountingStakingManager is IStakingManager {
         return StakingState({ stakedAmount: totalStakedAmount, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
     }
 
-    function core() external pure override returns (address) {
+    function core() external pure virtual override returns (address) {
         return address(0);
     }
 
