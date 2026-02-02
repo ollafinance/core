@@ -87,9 +87,6 @@ contract OllaCore is
     /// @notice Thrown when a caller is not governance.
     error OllaCore__UnauthorizedGovernance(address caller);
 
-    /// @notice Thrown when a bucket update amount is invalid.
-    error OllaCore__InvalidAmount();
-
     /// @notice Thrown when a bucket lacks sufficient balance.
     error OllaCore__InsufficientBucketBalance(Bucket bucket, uint256 amount, uint256 available);
 
@@ -350,6 +347,7 @@ contract OllaCore is
 
     /// @notice Stubbed operator rebalance hook.
     function rebalance() external override onlyRole(OPERATOR_ROLE) {
+        _syncBufferedWithBalance();
         emit Rebalanced(0, 0, 0, 0);
     }
 
@@ -405,14 +403,14 @@ contract OllaCore is
     {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         uint256 queued = _modules.withdrawalQueue.totalPendingAssets();
-        uint256 total = totalAssets();
         // slither-disable-start reentrancy-no-eth
         // slither-disable-start reentrancy-events
         // SafetyModule is a trusted immutable dependency; calls are role-gated and non-reentrant, so fail-fast
         // checks before finalization are safe.
-        safetyModuleRef.checkQueueRatio(queued, total);
-
         _syncBufferedWithBalance();
+
+        uint256 total = totalAssets();
+        safetyModuleRef.checkQueueRatio(queued, total);
 
         uint256 bufferedAssets = _accountingState.bufferedAssets;
         // slither-disable-next-line timestamp
@@ -432,6 +430,25 @@ contract OllaCore is
         // slither-disable-end reentrancy-events
         // slither-disable-end reentrancy-no-eth
         return used;
+    }
+
+    /// @notice Reconciles buffered assets with the actual asset balance.
+    /// @return delta The amount added to buffered assets.
+    function reconcileBufferedAssets() external override onlyRole(OPERATOR_ROLE) returns (uint256 delta) {
+        delta = _reconcileBufferedAssets(address(this));
+        return delta;
+    }
+
+    /// @notice Recovers stAztec sent directly to the core.
+    /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
+    /// @param amount The amount of stAztec to recover.
+    function recoverStAztec(address recipient, uint256 amount) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (amount == 0) {
+            revert OllaCore__InvalidAmount();
+        }
+        address resolvedRecipient = recipient == address(0) ? _modules.governance : recipient;
+        IERC20(address(_modules.stAztec)).safeTransfer(resolvedRecipient, amount);
+        emit StAztecRecovered(amount, resolvedRecipient);
     }
 
     // slither-disable-end pess-multiple-storage-read
@@ -587,6 +604,8 @@ contract OllaCore is
         if (ISafetyModule(modules.safetyModule).isPaused()) {
             revert OllaCore__SafetyModulePaused();
         }
+
+        _syncBufferedWithBalance();
 
         uint256 currentTotalAssets = totalAssets();
         if (!ISafetyModule(modules.safetyModule).checkDepositAllowed(assets, currentTotalAssets)) {
@@ -872,6 +891,25 @@ contract OllaCore is
         );
     }
 
+    function _reconcileBufferedAssets(address recipient) internal returns (uint256 delta) {
+        uint256 buffered = _accountingState.bufferedAssets;
+        uint256 actual = _modules.asset.balanceOf(address(this));
+        // slither-disable-next-line timestamp
+        if (actual < buffered) {
+            revert OllaCore__BufferedBalanceMismatch(buffered, actual);
+        }
+        delta = actual - buffered;
+        if (delta != 0) {
+            _accountingState.bufferedAssets = actual;
+            emit BufferedAssetsReconciled(delta, actual, recipient);
+        }
+        return delta;
+    }
+
+    function _syncBufferedWithBalance() internal {
+        _reconcileBufferedAssets(address(this));
+    }
+
     function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) {
         flowsSnapshot = _flowCounters;
         (netFlows,,) = _computeNetFlows(flowsSnapshot);
@@ -910,15 +948,6 @@ contract OllaCore is
         providerShares = protocolSharesTotal - treasuryShares;
 
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
-    }
-
-    function _syncBufferedWithBalance() internal view {
-        uint256 buffered = _accountingState.bufferedAssets;
-        uint256 actual = _modules.asset.balanceOf(address(this));
-        // slither-disable-next-line timestamp
-        if (buffered != actual) {
-            revert OllaCore__BufferedBalanceMismatch(buffered, actual);
-        }
     }
 
     function _exchangeRate() internal view returns (uint256) {

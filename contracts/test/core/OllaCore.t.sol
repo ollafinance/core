@@ -49,7 +49,7 @@ contract OllaCoreHarness is OllaCore {
         );
     }
 
-    function exposedSyncBufferedWithBalance() external view {
+    function exposedSyncBufferedWithBalance() external {
         _syncBufferedWithBalance();
     }
 
@@ -123,6 +123,7 @@ contract OllaCoreTest is Test {
     );
     event OllaProtocolFeesPaid(uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares);
     event RewardsDelta(uint256 delta);
+    event BufferedAssetsReconciled(uint256 delta, uint256 newBufferedAssets, address indexed recipient);
 
     /*//////////////////////////////////////////////////////////////
                              CONSTANTS
@@ -1154,16 +1155,27 @@ contract OllaCoreTest is Test {
                              ERROR CASES
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevertWhen_BufferedBalanceMismatch() external {
+    function test_SyncBufferedWithBalance_ReconcilesExcessBalance() external {
         uint256 assets = 10 * DECIMALS;
         uint256 bonus = 2 * DECIMALS;
 
         _performDeposit(alice, assets);
         asset.mint(address(vault), bonus);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(OllaCore.OllaCore__BufferedBalanceMismatch.selector, assets, assets + bonus)
-        );
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit BufferedAssetsReconciled(bonus, assets + bonus, address(vault));
+        vault.exposedSyncBufferedWithBalance();
+
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        assertEq(accounting.bufferedAssets, assets + bonus, "buffered assets reconciled");
+    }
+
+    function test_RevertWhen_BufferedBalanceBelowActual() external {
+        uint256 assets = 5 * DECIMALS;
+
+        vault.exposedIncreaseBuffered(assets);
+
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCore__BufferedBalanceMismatch.selector, assets, 0));
         vault.exposedSyncBufferedWithBalance();
     }
 
