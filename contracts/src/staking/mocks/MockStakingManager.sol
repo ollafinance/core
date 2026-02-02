@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
+
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 
 /// @title MockStakingManager
 /// @notice Minimal staking manager mock for message routing tests.
@@ -9,6 +11,9 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 contract MockStakingManager is IStakingManager {
     /// @notice The core contract address.
     address public core;
+
+    /// @notice The staking provider registry.
+    IStakingProviderRegistry private _stakingProviderRegistry;
 
     /// @notice Last amount requested to stake.
     uint256 public lastStakeAmount;
@@ -25,8 +30,11 @@ contract MockStakingManager is IStakingManager {
     /// @notice Simulated staked amount for getStakingState.
     uint256 private _stakedAmount;
 
+    /// @notice Mock provider config.
+    ProviderConfig private _providerConfig;
+
     /*//////////////////////////////////////////////////////////////
-                           EXTERNAL FUNCTIONS
+                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice No-op initializer for interface compatibility.
@@ -34,24 +42,21 @@ contract MockStakingManager is IStakingManager {
     /// @param rollupRegistry Unused.
     /// @param rewardsVault Unused.
     /// @param core_ The core contract address.
-    /// @param providerAdmin Unused.
-    /// @param providerRewardsRecipient Unused.
+    /// @param stakingProviderRegistry_ The staking provider registry address.
     /// @param defaultAdmin Unused.
     function initialize(
         IERC20 stakingAsset,
         address rollupRegistry,
         address rewardsVault,
         address core_,
-        address providerAdmin,
-        address providerRewardsRecipient,
+        address stakingProviderRegistry_,
         address defaultAdmin
     ) external override {
         stakingAsset;
         rollupRegistry;
         rewardsVault;
         core = core_;
-        providerAdmin;
-        providerRewardsRecipient;
+        _stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
         defaultAdmin;
         return;
     }
@@ -75,8 +80,13 @@ contract MockStakingManager is IStakingManager {
     }
 
     /*//////////////////////////////////////////////////////////////
-                         EXTERNAL VIEW FUNCTIONS
+                          EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function stakingProviderRegistry() external view override returns (IStakingProviderRegistry) {
+        return _stakingProviderRegistry;
+    }
 
     /// @inheritdoc IStakingManager
     function getStakingState() external view override returns (StakingState memory) {
@@ -88,8 +98,13 @@ contract MockStakingManager is IStakingManager {
         return _stakedAmount;
     }
 
+    /// @inheritdoc IStakingManager
+    function getProviderConfig() external view override returns (ProviderConfig memory) {
+        return _providerConfig;
+    }
+
     /*//////////////////////////////////////////////////////////////
-                         EXTERNAL PURE FUNCTIONS
+                          EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
@@ -113,16 +128,6 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function getQueueLength() external pure override returns (uint256) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
-    function getProviderConfig() external pure override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
-    }
-
-    /// @inheritdoc IStakingManager
     function getActivatedAttesterCount() external pure override returns (uint256) {
         return 0;
     }
@@ -135,28 +140,6 @@ contract MockStakingManager is IStakingManager {
     /// @inheritdoc IStakingManager
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        EXTERNAL NON-VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IStakingManager
-    function addKeysToProvider(KeyStore[] calldata) external pure override {
-        // No-op for mock
-        return;
-    }
-
-    /// @inheritdoc IStakingManager
-    function dripQueue(uint256) external pure override {
-        // No-op for mock
-        return;
-    }
-
-    /// @inheritdoc IStakingManager
-    function setProviderRewardsRecipient(address) external pure override {
-        // No-op for mock
-        return;
     }
 
     /// @inheritdoc IStakingManager

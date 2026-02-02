@@ -7,6 +7,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
+import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
@@ -37,6 +38,7 @@ contract StakingManagerUpgradeTest is Test {
     MockRewardsVault internal rewardsVault;
 
     StakingManager internal stakingManager;
+    StakingProviderRegistry internal stakingProviderRegistry;
 
     address internal core;
     address internal providerAdmin;
@@ -55,13 +57,19 @@ contract StakingManagerUpgradeTest is Test {
         StakingManager implementation = new StakingManager();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         stakingManager = StakingManager(address(proxy));
+
+        StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+        ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+        stakingProviderRegistry = StakingProviderRegistry(address(registryProxy));
+
+        stakingProviderRegistry.initialize(address(stakingManager), providerAdmin, providerAdmin, defaultAdmin);
+
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
             core,
-            providerAdmin,
-            providerAdmin,
+            address(stakingProviderRegistry),
             defaultAdmin
         );
     }
@@ -127,7 +135,7 @@ contract StakingManagerUpgradeTest is Test {
 
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         vm.prank(providerAdmin);
-        stakingManager.addKeysToProvider(keys);
+        stakingProviderRegistry.addKeysToProvider(keys);
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
         vm.startPrank(core);
@@ -136,9 +144,9 @@ contract StakingManagerUpgradeTest is Test {
         vm.stopPrank();
 
         vm.prank(providerAdmin);
-        stakingManager.setProviderRewardsRecipient(rewardsRecipient);
+        stakingProviderRegistry.setProviderRewardsRecipient(rewardsRecipient);
 
-        uint256 queueLengthBefore = stakingManager.getQueueLength();
+        uint256 queueLengthBefore = stakingProviderRegistry.getQueueLength();
         uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
         uint256 pendingBefore = stakingManager.getPendingUnstakeCount();
         IStakingManager.ProviderConfig memory providerBefore = stakingManager.getProviderConfig();
@@ -158,7 +166,7 @@ contract StakingManagerUpgradeTest is Test {
 
         StakingManagerUpgradeMock v2 = StakingManagerUpgradeMock(address(stakingManager));
         assertEq(v2.version(), 2, "upgrade applied");
-        assertEq(v2.getQueueLength(), queueLengthBefore, "queue length preserved");
+        assertEq(stakingProviderRegistry.getQueueLength(), queueLengthBefore, "queue length preserved");
         assertEq(v2.getActivatedAttesterCount(), activatedBefore, "activated preserved");
         assertEq(v2.getPendingUnstakeCount(), pendingBefore, "pending preserved");
         IStakingManager.ProviderConfig memory providerAfter = v2.getProviderConfig();

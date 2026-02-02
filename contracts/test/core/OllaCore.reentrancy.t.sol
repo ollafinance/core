@@ -13,6 +13,7 @@ import { StAztec } from "src/core/StAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
 import { MaliciousRewardsVault } from "src/core/mocks/MaliciousRewardsVault.sol";
@@ -35,6 +36,10 @@ contract MockHarvestStakingManager is IStakingManager {
         return address(0);
     }
 
+    function stakingProviderRegistry() external pure override returns (IStakingProviderRegistry) {
+        return IStakingProviderRegistry(address(0));
+    }
+
     function stake(uint256) external pure override { }
     function unstake(uint256) external pure override { }
     function cleanActivatedAttesters() external pure override { }
@@ -42,9 +47,6 @@ contract MockHarvestStakingManager is IStakingManager {
     function getUnstakedFunds() external pure override returns (uint256) {
         return 0;
     }
-    function addKeysToProvider(KeyStore[] calldata) external pure override { }
-    function dripQueue(uint256) external pure override { }
-    function setProviderRewardsRecipient(address) external pure override { }
 
     function getClaimableRewards() external pure override returns (uint256) {
         return 0;
@@ -62,10 +64,6 @@ contract MockHarvestStakingManager is IStakingManager {
         return StakingState({ stakedAmount: 0, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
     }
 
-    function getQueueLength() external pure override returns (uint256) {
-        return 0;
-    }
-
     function getProviderConfig() external pure override returns (ProviderConfig memory) {
         return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
     }
@@ -81,7 +79,8 @@ contract MockHarvestStakingManager is IStakingManager {
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
     }
-    function initialize(IERC20, address, address, address, address, address, address) external pure override { }
+
+    function initialize(IERC20, address, address, address, address, address) external pure override { }
 }
 
 contract OllaCoreReentrancyTest is Test {

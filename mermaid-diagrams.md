@@ -31,13 +31,18 @@ subgraph "Wallets"
     governanceAdminWallet -->|"DEFAULT_ADMIN_ROLE for all contracts"| governanceAdminWallet
 end
 
-subgraph "On-chain modules"
+subgraph "Olla Core"
     core[OllaCore]
     safety[SafetyModule]
     withdrawQ[WithdrawalQueue]
+end
+subgraph "Olla Staking Components"
     rewards[RewardsVault]
     stkMan[StakingManager]
+    spr[StakingProviderRegistry]
 end
+
+stakingProviderAdminWallet -->|"admin functions"| spr
 
 subgraph "Aztec Contracts"
     rollupRegistry[AztecRollupRegistry]
@@ -48,23 +53,14 @@ guardianWallet -. "GUARDIAN_ROLE" .-> core
 guardianWallet -. "GUARDIAN_ROLE" .-> safety
 
 ollaOperatorWallet -. "OPERATOR_ROLE" .-> core
-stakingProviderAdminWallet -. "STAKING_PROVIDER_ADMIN_ROLE" .-> stkMan
+stakingProviderAdminWallet -. "STAKING_PROVIDER_ADMIN_ROLE" .-> spr
 
 %% User flows (asset + call-path)
-userWallet -->|"deposit >Aztec< transferFrom(user, core, assets)"| core
-core -->|"deposit >StAztec< mint(recipient, shares)"| userWallet
+userWallet -->|"deposit/requestRedeem/claimActiveRequest"| core
 
-userWallet -->|"requestRedeem(shares, recipient)"| core
-core -->|"withdrawal >StAztec< burn(owner, shares)"| userWallet
-core -->|"requestWithdrawal(recipient, shares, assetsExpected, rate)"| withdrawQ
+core -->|"request-,claim-,finalize-withdrawal"| withdrawQ
 
-userWallet -->|"claimRequestById(requestId)"| core
-core -->|"claimWithdrawal(requestId)"| withdrawQ
-core -->|"withdrawal payout >Aztec< transferFrom(core, user, assetsExpected)"| userWallet
-
-%% Safety checks (control-plane)
-core -->|"checkDepositAllowed / checkWithdrawalMinimum"| safety
-core -->|"checkQueueRatio / checkAccountingLiveness"| safety
+core -->|"checkDepositAllowed / checkWithdrawalMinimum / checkQueueRatio / checkAccountingLiveness"| safety
 
 %% Operator cycle (end-state orchestration)
 ollaOperatorWallet -->|"rebalance()"| core
@@ -74,6 +70,7 @@ ollaOperatorWallet -->|"updateAccounting()"| core
 
 %% Staking principal (AZTEC token) movements
 core -->|"stake >Aztec< transferFrom(core, StakingManager, stakeAmount)"| stkMan
+stkMan -->|"getAttesterKeystore()"| spr
 stkMan -->|"deposit >Aztec< transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
 
 core -->|"unstake(amount)"| stkMan
@@ -96,14 +93,17 @@ core -->|"balance()"| rewards
 core -->|"pay staking fees >StAztec< mint(governance, treasuryShares)"| treasury
 core -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
 
+%% Staking provider admin (control-plane)
+
 style user fill:#900
-style ollaOperatorActor fill:#090
+style ollaOperatorActor stroke:#050,stroke-width:2px
 style stakingProviderActor fill:#009
 style rollup stroke:#ff6,stroke-width:2px
 style core stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
 style rewards stroke:#090,stroke-width:3px
 style stkMan stroke:#090,stroke-width:3px
+style spr stroke:#090,stroke-width:3px
 style withdrawQ stroke:#090,stroke-width:3px
 style rollupRegistry stroke:#ff6,stroke-width:2px
 style guardianActor stroke:#050,stroke-width:2px

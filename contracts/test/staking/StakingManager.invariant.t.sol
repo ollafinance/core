@@ -8,7 +8,9 @@ import { Math } from "@oz/utils/math/Math.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
+import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
@@ -22,6 +24,7 @@ contract StakingManagerHandler is Test {
     using Math for uint256;
 
     StakingManager public stakingManager;
+    StakingProviderRegistry public stakingProviderRegistry;
     MockAztec public stakingAsset;
     MockAztecRollupRegistry public rollupRegistry;
     MockAztecRollup public rollup;
@@ -41,6 +44,7 @@ contract StakingManagerHandler is Test {
 
     constructor(
         StakingManager _stakingManager,
+        StakingProviderRegistry _stakingProviderRegistry,
         MockAztec _stakingAsset,
         MockAztecRollupRegistry _rollupRegistry,
         MockAztecRollup _rollup,
@@ -49,6 +53,7 @@ contract StakingManagerHandler is Test {
         address _rewardsVault
     ) {
         stakingManager = _stakingManager;
+        stakingProviderRegistry = _stakingProviderRegistry;
         stakingAsset = _stakingAsset;
         rollupRegistry = _rollupRegistry;
         rollup = _rollup;
@@ -93,7 +98,7 @@ contract StakingManagerHandler is Test {
             });
         }
 
-        try stakingManager.addKeysToProvider(keyStores) {
+        try stakingProviderRegistry.addKeysToProvider(keyStores) {
             ghost_keysAdded += count;
         } catch {
             // Expected if invalid inputs
@@ -106,7 +111,7 @@ contract StakingManagerHandler is Test {
     function dripQueue(uint256 count) external {
         vm.startPrank(providerAdmin);
 
-        uint256 queueLengthBefore = stakingManager.getQueueLength();
+        uint256 queueLengthBefore = stakingProviderRegistry.getQueueLength();
         if (queueLengthBefore == 0) {
             vm.stopPrank();
             return;
@@ -114,7 +119,7 @@ contract StakingManagerHandler is Test {
 
         count = bound(count, 1, queueLengthBefore);
 
-        try stakingManager.dripQueue(count) {
+        try stakingProviderRegistry.dripQueue(count) {
             ghost_keysDripped += count;
         } catch {
             // Expected if queue empty
@@ -127,7 +132,7 @@ contract StakingManagerHandler is Test {
     function stake(uint256 amount) external {
         vm.startPrank(core);
 
-        uint256 queueLength = stakingManager.getQueueLength();
+        uint256 queueLength = stakingProviderRegistry.getQueueLength();
         if (queueLength == 0) {
             vm.stopPrank();
             return;
@@ -230,6 +235,7 @@ contract StakingManagerInvariantTest is Test {
     using Math for uint256;
 
     StakingManager internal stakingManager;
+    StakingProviderRegistry internal stakingProviderRegistry;
     MockAztec internal stakingAsset;
     MockAztecRollupRegistry internal rollupRegistry;
     MockAztecRollup internal rollup;
@@ -258,16 +264,27 @@ contract StakingManagerInvariantTest is Test {
         rollupRegistry.setCanonicalRollup(address(rollup));
 
         // Deploy StakingManager behind an ERC1967 proxy
-        StakingManager implementation = new StakingManager();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        stakingManager = StakingManager(address(proxy));
+        StakingManager stakingManagerImpl = new StakingManager();
+        ERC1967Proxy stakingManagerProxy = new ERC1967Proxy(address(stakingManagerImpl), "");
+        stakingManager = StakingManager(address(stakingManagerProxy));
+
+        // Deploy StakingProviderRegistry behind an ERC1967 proxy
+        StakingProviderRegistry registryImpl = new StakingProviderRegistry();
+        ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImpl), "");
+        stakingProviderRegistry = StakingProviderRegistry(address(registryProxy));
+
+        // Initialize StakingProviderRegistry first
+        stakingProviderRegistry.initialize(
+            address(stakingManager), providerAdmin, makeAddr("providerRewardsRecipient"), defaultAdmin
+        );
+
+        // Initialize StakingManager
         stakingManager.initialize(
             stakingAsset,
             address(rollupRegistry),
             address(rewardsVault),
             core,
-            providerAdmin,
-            makeAddr("providerRewardsRecipient"),
+            address(stakingProviderRegistry),
             defaultAdmin
         );
 
@@ -277,7 +294,14 @@ contract StakingManagerInvariantTest is Test {
 
         // Setup handler
         handler = new StakingManagerHandler(
-            stakingManager, stakingAsset, rollupRegistry, rollup, core, providerAdmin, address(rewardsVault)
+            stakingManager,
+            stakingProviderRegistry,
+            stakingAsset,
+            rollupRegistry,
+            rollup,
+            core,
+            providerAdmin,
+            address(rewardsVault)
         );
 
         targetContract(address(handler));
@@ -298,7 +322,7 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Queue length consistency checks
     function invariant_QueueLengthConsistency() external view {
-        uint256 queueLength = stakingManager.getQueueLength();
+        uint256 queueLength = stakingProviderRegistry.getQueueLength();
 
         // Queue length should never be negative (uint256 is always >= 0)
         assertGe(queueLength, 0, "queue length should never be negative");
@@ -342,7 +366,7 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Provider config consistency
     function invariant_ProviderConfigConsistency() external view {
-        IStakingManager.ProviderConfig memory config = stakingManager.getProviderConfig();
+        IStakingManager.ProviderConfig memory config = stakingProviderRegistry.getStakingProviderConfig();
 
         // Config addresses should never be zero
         assertNotEq(config.admin, address(0), "provider admin should never be zero address");
@@ -364,7 +388,7 @@ contract StakingManagerInvariantTest is Test {
     function invariant_QueueFIFOMaintained() external view {
         // This is more of a behavioral invariant that would need more complex state tracking
         // For now, we just ensure queue operations don't break basic properties
-        uint256 queueLength = stakingManager.getQueueLength();
+        uint256 queueLength = stakingProviderRegistry.getQueueLength();
 
         // Queue should maintain valid state
         if (queueLength == 0) {
@@ -394,7 +418,7 @@ contract StakingManagerInvariantTest is Test {
 
         uint256 currentActivated = stakingManager.getActivatedAttesterCount();
         uint256 pendingCount = stakingManager.getPendingUnstakeCount();
-        uint256 queueLength = stakingManager.getQueueLength();
+        uint256 queueLength = stakingProviderRegistry.getQueueLength();
 
         // Basic consistency: total unique attestations should be reasonable
         uint256 totalTracked = currentActivated + pendingCount + queueLength;
@@ -405,7 +429,7 @@ contract StakingManagerInvariantTest is Test {
     function invariant_ActivationThresholdRespected() external view {
         // Check that staking operations only occur when sufficient conditions are met
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
-        uint256 queueLength = stakingManager.getQueueLength();
+        uint256 queueLength = stakingProviderRegistry.getQueueLength();
 
         // If there are staked assets, there should be corresponding activated attesters
         if (state.stakedAmount > 0) {
