@@ -157,21 +157,6 @@ contract OllaCore is
         _grantRole(OPERATOR_ROLE, governance_);
     }
 
-    /// @inheritdoc IOllaCore
-    /// @notice Harvests sequencer rewards and updates the cumulative rewards counter.
-    /// @return rewardsDelta The delta amount of rewards (actual balance increase in RewardsVault).
-    function harvestRewards()
-        external
-        override
-        onlyRole(OPERATOR_ROLE)
-        whenNotPaused
-        nonReentrant
-        returns (uint256 rewardsDelta)
-    {
-        rewardsDelta = _harvestRewards();
-        return rewardsDelta;
-    }
-
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.

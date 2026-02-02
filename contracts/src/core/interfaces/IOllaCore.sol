@@ -313,10 +313,6 @@ interface IOllaCore {
     /// @notice Operator-triggered accounting update hook.
     function updateAccounting() external;
 
-    /// @notice Operator-triggered rewards harvest hook.
-    /// @return rewardsDelta The delta amount of rewards (actual balance increase in RewardsVault).
-    function harvestRewards() external returns (uint256 rewardsDelta);
-
     /// @notice Operator-triggered withdrawal finalization hook.
     /// @param available The available assets for withdrawals.
     /// @return used The assets used for finalization.
