@@ -46,6 +46,9 @@ This project uses:
 - Ask clarifying questions when requirements or threat models are ambiguous
 - Reference project conventions and expected tooling output when relevant
 - DO NOT write to or modify `foundry.toml` without asking. Explain which config property you are trying to add or change and why.
+- Run `yarn forge:fmt` after writing or modifying Solidity code to ensure consistent formatting.
+- Run `yarn lint` to validate linting and structure rules for contracts.
+- Follow the solhint rules defined in `contracts/.solhint.json` (e.g., private vars must have leading underscore, interfaces must start with I, immutables as SCREAMING_SNAKE_CASE).
 
 ## Handoff Triggers
 

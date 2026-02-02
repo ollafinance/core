@@ -47,13 +47,14 @@ This project uses:
 - Follow naming conventions and code organization patterns
 - DO NOT write to or modify `foundry.toml` without asking. Explain which config property you are trying to add or change and why.
 - Run `yarn forge:fmt` after writing or modifying Solidity code to ensure consistent formatting.
+- Run `yarn lint` to validate linting and structure rules for contracts.
+- Follow the solhint rules defined in `contracts/.solhint.json` (e.g., private vars must have leading underscore, interfaces must start with I, immutables as SCREAMING_SNAKE_CASE).
 
 ## Handoff Triggers
 
 - If the user asks to implement or modify contract logic, hand off to `smart-contract-dev`.
 - If the user asks for security review, audit, or optimization notes, hand off to `smart-contract-review`.
   </behavior_guidelines>
-
 
 <test_sectioning>
 
@@ -159,7 +160,6 @@ Project Yarn Commands:
 - `yarn test:integration` - Run integration tests
 - `yarn test:interface-compat` - Run Aztec interface compatibility integration test
   </yarn_commands>
-
 
 <common_workflows>
 
