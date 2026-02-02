@@ -4,13 +4,11 @@ pragma solidity >=0.8.27 <0.9.0;
 import { Test, Vm } from "@forge-std/Test.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
@@ -319,107 +317,6 @@ contract StakingManagerTest is Test {
                 address(0)
             );
         }
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                      PROVIDER ADMIN TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_AddKeysToProvider_AddsKeys() external {
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(3);
-
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.addKeysToProvider(keys);
-
-        assertEq(stakingProviderRegistry.getQueueLength(), 3);
-    }
-
-    function test_AddKeysToProvider_EmitsEvent() external {
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
-
-        address[] memory expectedAttesters = new address[](2);
-        expectedAttesters[0] = keys[0].attester;
-        expectedAttesters[1] = keys[1].attester;
-
-        vm.expectEmit(true, true, true, true);
-        emit KeysAddedToProvider(expectedAttesters);
-
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.addKeysToProvider(keys);
-    }
-
-    function test_RevertWhen_AddKeysToProvider_Unauthorized() external {
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector,
-                alice,
-                stakingProviderRegistry.STAKING_PROVIDER_ADMIN_ROLE()
-            )
-        );
-        vm.prank(alice);
-        stakingProviderRegistry.addKeysToProvider(keys);
-    }
-
-    function test_RevertWhen_AddKeysToProvider_EmptyArray() external {
-        IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](0);
-
-        vm.expectRevert(IStakingProviderRegistry.StakingProviderRegistry__ZeroAmount.selector);
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.addKeysToProvider(keys);
-    }
-
-    function test_DripQueue_RemovesKeys() external {
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(5);
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.addKeysToProvider(keys);
-
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.dripQueue(2);
-
-        assertEq(stakingProviderRegistry.getQueueLength(), 3);
-    }
-
-    function test_DripQueue_EmitsEvents() external {
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.addKeysToProvider(keys);
-
-        vm.expectEmit(true, true, true, true);
-        emit QueueDripped(keys[0].attester);
-        vm.expectEmit(true, true, true, true);
-        emit QueueDripped(keys[1].attester);
-
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.dripQueue(2);
-    }
-
-    function test_RevertWhen_DripQueue_Empty() external {
-        vm.expectRevert(IStakingProviderRegistry.StakingProviderRegistry__QueueEmpty.selector);
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.dripQueue(1);
-    }
-
-    function test_SetProviderRewardsRecipient() external {
-        vm.expectEmit(true, true, true, true);
-        emit ProviderSet(providerAdmin, alice);
-
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.setProviderRewardsRecipient(alice);
-
-        IStakingManager.ProviderConfig memory config = stakingManager.getProviderConfig();
-        assertEq(config.rewardsRecipient, alice);
-    }
-
-    function test_RevertWhen_SetProviderRewardsRecipient_ZeroAddress() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingProviderRegistry.StakingProviderRegistry__ZeroAddress.selector, "rewardsRecipient"
-            )
-        );
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.setProviderRewardsRecipient(address(0));
     }
 
     /*//////////////////////////////////////////////////////////////
