@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { Initializable } from "@oz/proxy/utils/Initializable.sol";
 
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
@@ -164,7 +165,7 @@ contract StakingProviderRegistryTest is Test {
     }
 
     function test_RevertWhen_InitializeCalledTwice() external {
-        vm.expectRevert(bytes("Initializable: contract is already initialized"));
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
         registry.initialize(stakingManager, providerAdmin, providerRewardsRecipient, defaultAdmin);
     }
 
