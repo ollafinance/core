@@ -53,8 +53,8 @@ interface IRewardsVault {
 
     /// @notice Records the rewards delta (current balance - previous balance) and updates internal accounting.
     /// @dev Only callable by the configured core address. Does not revert on any balance changes.
-    /// @return rewardsDelta The delta amount of rewards (current balance - previous recorded balance).
-    function recordRewards() external returns (uint256 rewardsDelta);
+    /// @return balanceDelta The delta amount of rewards (current balance - previous recorded balance).
+    function recordRewards() external returns (uint256 balanceDelta);
 
     /// @notice Withdraws all available rewards to the core contract.
     /// @dev Only callable by the configured core address.

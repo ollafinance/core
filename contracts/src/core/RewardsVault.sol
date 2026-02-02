@@ -83,17 +83,17 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IRewardsVault
-    function recordRewards() external override onlyCore nonReentrant returns (uint256 rewardsDelta) {
+    function recordRewards() external override onlyCore nonReentrant returns (uint256 balanceDelta) {
         uint256 previousAmount = latestRecordedRewardsAmount;
         uint256 currentTokenBalance = rewardsToken.balanceOf(address(this));
         // Revert if balance decreased (should never happen in normal operation)
         if (currentTokenBalance < previousAmount) {
             revert RewardsVault__BalanceMismatch();
         }
-        rewardsDelta = currentTokenBalance - previousAmount;
+        balanceDelta = currentTokenBalance - previousAmount;
         latestRecordedRewardsAmount = currentTokenBalance;
-        emit RewardsRecorded(rewardsDelta);
-        return rewardsDelta;
+        emit RewardsRecorded(balanceDelta);
+        return balanceDelta;
     }
 
     /// @inheritdoc IRewardsVault

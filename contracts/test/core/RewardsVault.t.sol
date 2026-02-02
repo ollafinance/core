@@ -112,9 +112,9 @@ contract RewardsVaultTest is Test {
         emit RewardsRecorded(amount);
 
         vm.prank(core);
-        uint256 rewardsDelta = vault.recordRewards();
+        uint256 balanceDelta = vault.recordRewards();
 
-        assertEq(rewardsDelta, amount);
+        assertEq(balanceDelta, amount);
         assertEq(vault.latestRecordedRewardsAmount(), amount);
         assertEq(vault.balance(), amount);
     }
@@ -133,9 +133,9 @@ contract RewardsVaultTest is Test {
         emit RewardsRecorded(directTransfer);
 
         vm.prank(core);
-        uint256 rewardsDelta = vault.recordRewards();
+        uint256 balanceDelta = vault.recordRewards();
 
-        assertEq(rewardsDelta, directTransfer);
+        assertEq(balanceDelta, directTransfer);
         assertEq(vault.latestRecordedRewardsAmount(), first + directTransfer);
         assertEq(vault.balance(), first + directTransfer);
     }
