@@ -13,10 +13,10 @@ Implement pulling of unstaked funds during rebalance:
 ## Repo Status
 
 - [x] `StakingManager.getUnstakedFunds()` implemented (`contracts/src/staking/StakingManager.sol`).
-- [ ] `IOllaCore` defines `UnstakedFundsClaimed` event.
-- [ ] `OllaCore` implements `_pullUnstakedFunds()` and buffered assets accounting.
-- [ ] `rebalance()` integrates the pull-unstaked step.
-- [ ] Phase 2 tests added in `contracts/test/core/OllaCoreRebalance.t.sol`.
+- [x] `IOllaCore` defines `UnstakedFundsClaimed` event.
+- [x] `OllaCore` implements `_pullUnstakedFunds()` and buffered assets accounting.
+- [x] `rebalance()` integrates the pull-unstaked step.
+- [x] Phase 2 tests added in `contracts/test/core/OllaCoreRebalance.t.sol`.
 
 ## Prerequisites
 
