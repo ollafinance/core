@@ -5,6 +5,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 
 /// @title MockAccountingStakingManager
 /// @notice Test mock for IStakingManager that allows setting claimable rewards, slashing delta, and staked amounts.
@@ -13,6 +14,8 @@ contract MockAccountingStakingManager is IStakingManager {
                                 STATE
     //////////////////////////////////////////////////////////////*/
 
+    IERC20 public rewardsToken;
+    address public rewardsVault;
     uint256 public claimableRewards;
     uint256 public slashingDelta;
     uint256 public totalStakedAmount;
@@ -23,6 +26,14 @@ contract MockAccountingStakingManager is IStakingManager {
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
     //////////////////////////////////////////////////////////////*/
+
+    function setRewardsToken(IERC20 token) external {
+        rewardsToken = token;
+    }
+
+    function setRewardsVault(address vault) external {
+        rewardsVault = vault;
+    }
 
     function setClaimableRewards(uint256 value) external {
         claimableRewards = value;
@@ -62,8 +73,15 @@ contract MockAccountingStakingManager is IStakingManager {
         return received;
     }
 
-    function harvestRewards() external view override returns (uint256 harvested) {
-        return harvestedRewards;
+    function harvestRewards() external override returns (uint256 harvested) {
+        harvested = harvestedRewards;
+        // Actually transfer tokens to rewards vault to simulate real harvest
+        if (harvested > 0 && address(rewardsToken) != address(0) && rewardsVault != address(0)) {
+            // Cast to MockAztec and mint tokens to this contract first, then transfer to vault
+            MockAztec(address(rewardsToken)).mint(address(this), harvested);
+            rewardsToken.transfer(rewardsVault, harvested);
+        }
+        return harvested;
     }
 
     function getSlashingDelta() external view override returns (uint256) {

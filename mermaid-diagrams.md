@@ -84,7 +84,7 @@ stkMan -->|"getCanonicalRollup()"| rollupRegistry
 rollupRegistry -->|"canonical rollup"| rollup
 stkMan -->|"claimSequencerRewards(coinbase=rewardsVault)"| rollup
 rollup -->|"rewards >Aztec< transferFrom(rollup, rewardsVault, amount)"| rewards
-core -->|"recordRewards(expectedRewards)"| rewards
+core -->|"recordBalance(expectedRewards)"| rewards
 
 core -->|"finalizeWithdrawals(available)"| withdrawQ
 
@@ -189,7 +189,7 @@ sequenceDiagram
     AR-->>RV: AZTEC transferred
     AR-->>SM: returns harvestedAmount
     SM-->>C: harvestedAmount
-    C->>RV: recordRewards(harvestedAmount)
+    C->>RV: recordBalance(harvestedAmount)
 ```
 
 #### Process user withdrawal requests

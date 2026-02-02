@@ -12,12 +12,8 @@ interface IRewardsVault {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Emitted when rewards are recorded.
-    /// @param amount The amount of rewards recorded.
-    event RewardsRecorded(uint256 indexed amount);
-
-    /// @notice Emitted when excess funds are detected.
-    /// @param amount The amount of excess funds.
-    event ExcessFundsDetected(uint256 indexed amount);
+    /// @param delta The delta amount of rewards recorded (current - previous).
+    event RewardsRecorded(uint256 indexed delta);
 
     /// @notice Emitted when rewards are withdrawn to core.
     /// @param amount The amount of rewards withdrawn.
@@ -55,10 +51,10 @@ interface IRewardsVault {
     /// @param defaultAdmin_ The default admin for role management.
     function initialize(IERC20 rewardsToken_, address core_, address defaultAdmin_) external;
 
-    /// @notice Hook called after rewards are transferred to the vault. Updates internal accounting.
-    /// @dev Only callable by the configured core address.
-    /// @param expectedRewards The amount of rewards transferred.
-    function recordRewards(uint256 expectedRewards) external;
+    /// @notice Records the rewards delta (current balance - previous balance) and updates internal accounting.
+    /// @dev Only callable by the configured core address. Does not revert on any balance changes.
+    /// @return balanceDelta The delta amount of rewards (current balance - previous recorded balance).
+    function recordBalance() external returns (uint256 balanceDelta);
 
     /// @notice Withdraws all available rewards to the core contract.
     /// @dev Only callable by the configured core address.

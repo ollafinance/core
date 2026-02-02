@@ -83,22 +83,17 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IRewardsVault
-    function recordRewards(uint256 expectedRewards) external override onlyCore nonReentrant {
-        if (expectedRewards == 0) revert RewardsVault__ZeroAmount();
-
+    function recordBalance() external override onlyCore nonReentrant returns (uint256 balanceDelta) {
         uint256 previousAmount = latestRecordedRewardsAmount;
         uint256 currentTokenBalance = rewardsToken.balanceOf(address(this));
-        uint256 excessFundsAmount = currentTokenBalance - previousAmount - expectedRewards;
-        if (excessFundsAmount > 0) {
-            emit ExcessFundsDetected(excessFundsAmount);
-        }
-        // Total rewards is harvested rewards plus any excess funds detected
-        uint256 rewardsIsh = expectedRewards + excessFundsAmount;
-        if (currentTokenBalance != previousAmount + rewardsIsh) {
+        // Revert if balance decreased (should never happen in normal operation)
+        if (currentTokenBalance < previousAmount) {
             revert RewardsVault__BalanceMismatch();
         }
+        balanceDelta = currentTokenBalance - previousAmount;
         latestRecordedRewardsAmount = currentTokenBalance;
-        emit RewardsRecorded(rewardsIsh);
+        emit RewardsRecorded(balanceDelta);
+        return balanceDelta;
     }
 
     /// @inheritdoc IRewardsVault
@@ -110,7 +105,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         }
         // slither-disable-next-line incorrect-equality
         if (availableBalance != latestRecordedRewardsAmount) {
-            // NOTE: this practically forces to run recordRewards in same tx before withdrawing
+            // NOTE: this practically forces to run recordBalance in same tx before withdrawing
             revert RewardsVault__BalanceMismatch();
         }
         rewardsToken.safeTransfer(core, availableBalance);

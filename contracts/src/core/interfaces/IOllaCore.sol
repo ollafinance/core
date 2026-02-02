@@ -169,9 +169,9 @@ interface IOllaCore {
     /// @param assets Assets claimed.
     event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
 
-    /// @notice Emitted when rewards are harvested.
-    /// @param harvested Harvested reward amount.
-    event RewardsHarvested(uint256 harvested);
+    /// @notice Emitted when rewards delta is updated.
+    /// @param delta The rewards delta amount.
+    event RewardsDelta(uint256 delta);
 
     /// @notice Emitted when buffered assets are reconciled with the actual balance.
     /// @param delta The amount added to buffered assets.
@@ -317,8 +317,8 @@ interface IOllaCore {
     function updateAccounting() external;
 
     /// @notice Operator-triggered rewards harvest hook.
-    /// @return harvested The amount harvested.
-    function harvestRewards() external returns (uint256 harvested);
+    /// @return rewardsDelta The delta amount of rewards (actual balance increase in RewardsVault).
+    function harvestRewards() external returns (uint256 rewardsDelta);
 
     /// @notice Operator-triggered withdrawal finalization hook.
     /// @param available The available assets for withdrawals.
