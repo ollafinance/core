@@ -9,6 +9,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";

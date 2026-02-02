@@ -955,7 +955,7 @@ contract OllaCoreTest is Test {
         stakingManager.setTotalStaked(stakedPrincipal);
         stakingManager.setHarvestedRewards(harvestedRewards);
         vm.prank(operator);
-        vault.harvestRewards();
+        vault.rebalance();
         stakingManager.setClaimableRewards(claimableRewards);
         stakingManager.setSlashingDelta(slashing);
 
@@ -990,7 +990,7 @@ contract OllaCoreTest is Test {
 
         stakingManager.setHarvestedRewards(3 * DECIMALS);
         vm.prank(operator);
-        vault.harvestRewards();
+        vault.rebalance();
         stakingManager.setClaimableRewards(4 * DECIMALS);
 
         vm.prank(operator);
@@ -1001,7 +1001,7 @@ contract OllaCoreTest is Test {
 
         stakingManager.setHarvestedRewards(2 * DECIMALS);
         vm.prank(operator);
-        vault.harvestRewards();
+        vault.rebalance();
         stakingManager.setClaimableRewards(9 * DECIMALS);
 
         uint256 expectedDelta = 14 * DECIMALS - firstReport.rewardsSnapshot;
@@ -1102,10 +1102,10 @@ contract OllaCoreTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            HARVEST REWARDS
+                             REBALANCE HARVEST
     //////////////////////////////////////////////////////////////*/
 
-    function test_HarvestRewards_CallsRecordRewardsWithCorrectAmount() external {
+    function test_Rebalance_CallsRecordRewardsWithCorrectAmount() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
@@ -1115,7 +1115,7 @@ contract OllaCoreTest is Test {
         uint256 totalReceivedBefore = rewardsVault.totalReceived();
 
         vm.prank(operator);
-        vault.harvestRewards();
+        vault.rebalance();
 
         uint256 totalReceivedAfter = rewardsVault.totalReceived();
         assertEq(
@@ -1123,7 +1123,7 @@ contract OllaCoreTest is Test {
         );
     }
 
-    function test_HarvestRewards_EmitsRewardsDeltaEvent() external {
+    function test_Rebalance_EmitsRewardsDeltaEvent() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
@@ -1134,10 +1134,10 @@ contract OllaCoreTest is Test {
         emit RewardsDelta(rewardAmount);
 
         vm.prank(operator);
-        vault.harvestRewards();
+        vault.rebalance();
     }
 
-    function test_HarvestRewards_EmitsRewardsDeltaEvent_WithZeroRewards() external {
+    function test_Rebalance_EmitsRewardsDeltaEvent_WithZeroRewards() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
@@ -1148,7 +1148,7 @@ contract OllaCoreTest is Test {
         emit RewardsDelta(0);
 
         vm.prank(operator);
-        vault.harvestRewards();
+        vault.rebalance();
     }
 
     /*//////////////////////////////////////////////////////////////

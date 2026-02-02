@@ -344,19 +344,19 @@ contract OllaCoreHarvestReentrancyTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                            HARVEST REWARDS
+                             REBALANCE HARVEST
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevertWhen_HarvestRewards_ReenteredFromRewardsVaultHook() external {
+    function test_RevertWhen_Rebalance_ReenteredFromRewardsVaultHook() external {
         _deposit(alice, 10 * DECIMALS);
 
         uint256 rewardAmount = 5 * DECIMALS;
         stakingManager.setHarvestedRewards(rewardAmount);
 
-        rewardsVault.configureReentry(address(vault), abi.encodeCall(vault.harvestRewards, ()), true);
+        rewardsVault.configureReentry(address(vault), abi.encodeCall(vault.rebalance, ()), true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(governance);
-        vault.harvestRewards();
+        vault.rebalance();
     }
 }

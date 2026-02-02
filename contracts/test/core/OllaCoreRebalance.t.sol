@@ -1,0 +1,159 @@
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity ^0.8.27;
+
+import { Test } from "@forge-std/Test.sol";
+
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+
+import { OllaCore } from "src/core/OllaCore.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { StAztec } from "src/core/StAztec.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+
+contract OllaCoreRebalanceTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event RewardsDelta(uint256 delta);
+    event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
+
+    /*//////////////////////////////////////////////////////////////
+                              CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant DECIMALS = 1e18;
+
+    /*//////////////////////////////////////////////////////////////
+                           TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockAccountingStakingManager internal stakingManager;
+    address internal governance;
+    address internal alice;
+    MockWithdrawalQueue internal withdrawalQueue;
+    MockRewardsVault internal rewardsVault;
+    MockSafetyModule internal safetyModule;
+    address internal operator;
+
+    /*//////////////////////////////////////////////////////////////
+                                 SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCore(address(proxy));
+
+        stAztec = new StAztec(address(vault));
+        stakingManager = new MockAccountingStakingManager();
+        governance = makeAddr("governance");
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule(address(coreImplementation));
+        operator = makeAddr("operator");
+        withdrawalQueue = new MockWithdrawalQueue();
+
+        // Configure staking manager to mint rewards directly to rewards vault
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsVault(address(rewardsVault));
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        alice = makeAddr("alice");
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
+        asset.mint(owner, assets);
+        vm.prank(owner);
+        asset.approve(address(vault), assets);
+        vm.prank(owner);
+        shares = vault.deposit(assets, owner);
+        return shares;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                               REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_HarvestsRewardsAndUpdatesCumulativeRewards() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 rewardAmount = 5 * DECIMALS;
+        stakingManager.setHarvestedRewards(rewardAmount);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 expectedBuffer = accountingBefore.bufferedAssets;
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RewardsDelta(rewardAmount);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Rebalanced(rewardAmount, 0, 0, expectedBuffer);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(
+            accountingAfter.cumulativeRewards,
+            accountingBefore.cumulativeRewards + rewardAmount,
+            "cumulative rewards updated"
+        );
+    }
+
+    function test_Rebalance_ZeroRewardsEmitsAndDoesNotUpdateCumulativeRewards() external {
+        uint256 depositAmount = 8 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 firstReward = 3 * DECIMALS;
+        stakingManager.setHarvestedRewards(firstReward);
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 expectedBuffer = accountingBefore.bufferedAssets;
+
+        stakingManager.setHarvestedRewards(0);
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RewardsDelta(0);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Rebalanced(0, 0, 0, expectedBuffer);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(accountingAfter.cumulativeRewards, accountingBefore.cumulativeRewards, "cumulative rewards unchanged");
+    }
+}

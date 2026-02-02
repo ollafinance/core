@@ -157,33 +157,6 @@ contract OllaCore is
         _grantRole(OPERATOR_ROLE, governance_);
     }
 
-    /// @inheritdoc IOllaCore
-    /// @notice Harvests sequencer rewards and updates the cumulative rewards counter.
-    /// @return rewardsDelta The delta amount of rewards (actual balance increase in RewardsVault).
-    function harvestRewards()
-        external
-        override
-        onlyRole(OPERATOR_ROLE)
-        whenNotPaused
-        nonReentrant
-        returns (uint256 rewardsDelta)
-    {
-        // Trigger the actual claiming on the rollup (rewards are sent directly to RewardsVault)
-        // We intentionally ignore the return value because rewards may be permissionlessly harvested.
-        // The actual amount received is determined by delta from RewardsVault.recordBalance().
-        // slither-disable-next-line unused-return
-        _modules.stakingManager.harvestRewards();
-
-        // Get the actual delta from RewardsVault and update cumulative rewards
-        // slither-disable-next-line reentrancy-benign
-        rewardsDelta = _modules.rewardsVault.recordBalance();
-        if (rewardsDelta != 0) {
-            _accountingState.cumulativeRewards += rewardsDelta;
-        }
-        emit RewardsDelta(rewardsDelta);
-        return rewardsDelta;
-    }
-
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
@@ -345,10 +318,22 @@ contract OllaCore is
         emit RewardsVaultUpdated(address(oldRewardsVault), address(newRewardsVault));
     }
 
-    /// @notice Stubbed operator rebalance hook.
-    function rebalance() external override onlyRole(OPERATOR_ROLE) {
+    /// @notice Operator-triggered rebalance flow.
+    /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> stake surplus
+    function rebalance() external override onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
         _syncBufferedWithBalance();
-        emit Rebalanced(0, 0, 0, 0);
+        uint256 rewardsDelta = _harvestRewards();
+
+        // TODO: Phase 2 - Pull unstaked funds
+        uint256 finalizedAmount = 0;
+
+        // TODO: Phase 3 - Finalize withdrawals
+        finalizedAmount = 0;
+
+        // TODO: Phase 4 - Stake surplus
+        uint256 stakedAmount = 0;
+
+        emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
     }
 
     // Slither: accept multiple storage reads for readability in hot-path accounting.
@@ -621,6 +606,23 @@ contract OllaCore is
         modules.stAztec.mint(recipient, shares);
         emit Deposit(caller, recipient, assets, shares);
         return shares;
+    }
+
+    function _harvestRewards() internal returns (uint256 rewardsDelta) {
+        // Trigger the actual claiming on the rollup (rewards are sent directly to RewardsVault)
+        // We intentionally ignore the return value because rewards may be permissionlessly harvested.
+        // The actual amount received is determined by delta from RewardsVault.recordBalance().
+        // slither-disable-next-line unused-return
+        _modules.stakingManager.harvestRewards();
+
+        // Get the actual delta from RewardsVault and update cumulative rewards
+        // slither-disable-next-line reentrancy-benign
+        rewardsDelta = _modules.rewardsVault.recordBalance();
+        if (rewardsDelta != 0) {
+            _accountingState.cumulativeRewards += rewardsDelta;
+        }
+        emit RewardsDelta(rewardsDelta);
+        return rewardsDelta;
     }
 
     function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {
