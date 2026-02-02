@@ -107,16 +107,20 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
                                HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function _createMockKeys(uint256 count) internal pure returns (IStakingManager.KeyStore[] memory) {
+    uint256 internal _keyOffset;
+
+    function _createMockKeys(uint256 count) internal returns (IStakingManager.KeyStore[] memory) {
         IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](count);
         for (uint256 i; i < count; ++i) {
+            uint256 keyId = _keyOffset + i + 1;
             keys[i] = IStakingManager.KeyStore({
-                attester: address(uint160(i + 1)),
-                publicKeyG1: G1Point({ x: i, y: i + 1 }),
-                publicKeyG2: G2Point({ x0: i, x1: i + 1, y0: i + 2, y1: i + 3 }),
-                proofOfPossession: G1Point({ x: i + 10, y: i + 11 })
+                attester: address(uint160(keyId)),
+                publicKeyG1: G1Point({ x: keyId, y: keyId + 1 }),
+                publicKeyG2: G2Point({ x0: keyId, x1: keyId + 1, y0: keyId + 2, y1: keyId + 3 }),
+                proofOfPossession: G1Point({ x: keyId + 10, y: keyId + 11 })
             });
         }
+        _keyOffset += count;
         return keys;
     }
 
@@ -134,9 +138,16 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         vm.stopPrank();
     }
 
-    function _setupStakedAttesters(uint256 count) internal {
-        _addKeys(count);
+    function _setupStakedAttesters(uint256 count) internal returns (IStakingManager.KeyStore[] memory) {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
+        _addKeysFromMemory(keys);
         _stake(ACTIVATION_THRESHOLD * count);
+        return keys;
+    }
+
+    function _addKeysFromMemory(IStakingManager.KeyStore[] memory keys) internal {
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -307,9 +318,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_CleanActivatedAttesters_ExternalExits() external {
-        _setupStakedAttesters(3);
-
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(3);
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(3);
 
         // Simulate external exits for 2 attesters
         for (uint256 i; i < 2; ++i) {
@@ -428,8 +437,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
     }
 
     function test_CrossContractEvents_UnstakeFlow() external {
-        _setupStakedAttesters(1);
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(1);
 
         vm.startPrank(core);
 
