@@ -185,6 +185,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Syncs activated attesters with the rollup exit state.
     /// @dev Moves exited attesters into the pending unstake queue.
     function cleanActivatedAttesters() external override onlyCore nonReentrant {
+        // TODO: change onlyCore to be only OPERATOR_ROLE
         // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = rollupRegistry.getCanonicalRollup();
         IAztecRollup rollup = IAztecRollup(rollupAddress);
