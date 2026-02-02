@@ -101,7 +101,7 @@ contract RewardsVaultTest is Test {
     function test_RevertWhen_PostReceiveFundsHook_Unauthorized() external {
         vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__UnauthorizedCore.selector, alice));
         vm.prank(alice);
-        vault.recordRewards();
+        vault.recordBalance();
     }
 
     function test_PostReceiveFundsHook_RecordsRewards_ReturnsDelta() external {
@@ -112,7 +112,7 @@ contract RewardsVaultTest is Test {
         emit RewardsRecorded(amount);
 
         vm.prank(core);
-        uint256 balanceDelta = vault.recordRewards();
+        uint256 balanceDelta = vault.recordBalance();
 
         assertEq(balanceDelta, amount);
         assertEq(vault.latestRecordedRewardsAmount(), amount);
@@ -123,7 +123,7 @@ contract RewardsVaultTest is Test {
         uint256 first = 100 ether;
         aztec.mint(address(vault), first);
         vm.prank(core);
-        vault.recordRewards();
+        vault.recordBalance();
 
         // Direct transfer (simulating permissionless harvest or direct send)
         uint256 directTransfer = 25 ether;
@@ -133,7 +133,7 @@ contract RewardsVaultTest is Test {
         emit RewardsRecorded(directTransfer);
 
         vm.prank(core);
-        uint256 balanceDelta = vault.recordRewards();
+        uint256 balanceDelta = vault.recordBalance();
 
         assertEq(balanceDelta, directTransfer);
         assertEq(vault.latestRecordedRewardsAmount(), first + directTransfer);
@@ -144,14 +144,14 @@ contract RewardsVaultTest is Test {
         uint256 first = 100 ether;
         aztec.mint(address(vault), first);
         vm.prank(core);
-        vault.recordRewards();
+        vault.recordBalance();
 
         vm.prank(address(vault));
         aztec.transfer(alice, 10 ether);
 
         vm.expectRevert(IRewardsVault.RewardsVault__BalanceMismatch.selector);
         vm.prank(core);
-        vault.recordRewards();
+        vault.recordBalance();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -183,7 +183,7 @@ contract RewardsVaultTest is Test {
         aztec.mint(address(vault), amount);
 
         vm.prank(core);
-        vault.recordRewards();
+        vault.recordBalance();
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
@@ -202,14 +202,14 @@ contract RewardsVaultTest is Test {
         uint256 first = 10 ether;
         aztec.mint(address(vault), first);
         vm.prank(core);
-        vault.recordRewards();
+        vault.recordBalance();
         vm.prank(core);
         vault.withdrawToCore();
 
         uint256 second = 7 ether;
         aztec.mint(address(vault), second);
         vm.prank(core);
-        vault.recordRewards();
+        vault.recordBalance();
         vm.prank(core);
         vault.withdrawToCore();
 

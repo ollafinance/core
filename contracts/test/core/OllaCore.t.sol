@@ -1119,7 +1119,7 @@ contract OllaCoreTest is Test {
 
         uint256 totalReceivedAfter = rewardsVault.totalReceived();
         assertEq(
-            totalReceivedAfter - totalReceivedBefore, rewardAmount, "recordRewards should be called with correct amount"
+            totalReceivedAfter - totalReceivedBefore, rewardAmount, "recordBalance should be called with correct amount"
         );
     }
 

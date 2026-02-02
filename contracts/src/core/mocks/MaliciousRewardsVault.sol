@@ -7,7 +7,7 @@ import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IMaliciousRewardsVault } from "src/core/mocks/IMaliciousRewardsVault.sol";
 
 /// @title MaliciousRewardsVault
-/// @notice Test-only rewards vault that attempts reentrancy in recordRewards.
+/// @notice Test-only rewards vault that attempts reentrancy in recordBalance.
 /// @author Olla Core contributors
 contract MaliciousRewardsVault is IMaliciousRewardsVault {
     using Address for address;
@@ -30,7 +30,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         CORE_ADDRESS = coreAddress_;
     }
 
-    /// @notice Configure the call attempted from `recordRewards`.
+    /// @notice Configure the call attempted from `recordBalance`.
     /// @param target The contract to call.
     /// @param data The calldata to use.
     /// @param enabled Whether to enable the reentrancy attempt.
@@ -41,7 +41,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
     }
 
     /// @inheritdoc IRewardsVault
-    function recordRewards() external override returns (uint256 balanceDelta) {
+    function recordBalance() external override returns (uint256 balanceDelta) {
         if (_reenterOnHook) {
             _reenterOnHook = false;
             _reentryTarget.functionCall(_reentryCalldata);
@@ -80,7 +80,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         return REWARDS_TOKEN;
     }
 
-    /// @notice Return the total amount passed to `recordRewards`.
+    /// @notice Return the total amount passed to `recordBalance`.
     /// @return The total received.
     function totalReceived() external view override returns (uint256) {
         return _totalReceived;

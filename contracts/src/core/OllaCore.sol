@@ -170,13 +170,13 @@ contract OllaCore is
     {
         // Trigger the actual claiming on the rollup (rewards are sent directly to RewardsVault)
         // We intentionally ignore the return value because rewards may be permissionlessly harvested.
-        // The actual amount received is determined by delta from RewardsVault.recordRewards().
+        // The actual amount received is determined by delta from RewardsVault.recordBalance().
         // slither-disable-next-line unused-return
         _modules.stakingManager.harvestRewards();
 
         // Get the actual delta from RewardsVault and update cumulative rewards
         // slither-disable-next-line reentrancy-benign
-        rewardsDelta = _modules.rewardsVault.recordRewards();
+        rewardsDelta = _modules.rewardsVault.recordBalance();
         if (rewardsDelta != 0) {
             _accountingState.cumulativeRewards += rewardsDelta;
         }
