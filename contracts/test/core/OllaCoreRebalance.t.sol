@@ -113,6 +113,7 @@ contract OllaCoreRebalanceTest is Test {
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 expectedBuffer = accountingBefore.bufferedAssets;
 
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
         vm.expectEmit(true, true, true, true, address(vault));
         emit RewardsDelta(rewardAmount);
         vm.expectEmit(true, true, true, true, address(vault));
@@ -143,6 +144,7 @@ contract OllaCoreRebalanceTest is Test {
 
         stakingManager.setHarvestedRewards(0);
 
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
         vm.expectEmit(true, true, true, true, address(vault));
         emit RewardsDelta(0);
         vm.expectEmit(true, true, true, true, address(vault));
