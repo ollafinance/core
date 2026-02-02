@@ -16,7 +16,7 @@ Implement the harvest step inside `rebalance()` that:
 - [x] `rebalance()` calls `_harvestRewards()` (`contracts/src/core/OllaCore.sol`).
 - [x] `IOllaCore` defines `RewardsDelta` event.
 - [x] `OllaCore` emits `RewardsDelta` during harvest.
-- [ ] Phase 1 tests for harvest behavior added in `contracts/test/core/OllaCoreRebalance.t.sol`.
+- [x] Phase 1 tests for rebalance harvest behavior added in `contracts/test/core/OllaCoreRebalance.t.sol`.
 
 ## Prerequisites
 

@@ -28,7 +28,7 @@ The `rebalance()` function is the core operational flow that optimizes capital a
 
 ## Repo Status (based on current contracts)
 
-- Phase 1: partially complete (OllaCore has `_harvestRewards()` and `rebalance()` calls it; event is `RewardsDelta`, no core `RewardsHarvested`).
+- Phase 1: complete (harvest hook, `RewardsDelta` event, and rebalance tests in place).
 - Phase 2: not started in OllaCore (StakingManager `getUnstakedFunds()` exists; core hook missing).
 - Phase 3: partially complete (external `finalizeWithdrawals()` implemented; no `_finalizeWithdrawals()` hook and not wired into `rebalance()`).
 - Phase 4: not started (no `targetBuffer`, `VALIDATOR_STAKE_UNIT`, or `_stakeSurplus()` in OllaCore).
