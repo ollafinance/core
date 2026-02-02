@@ -4,12 +4,13 @@ This plan covers issues #62, #63, #64, #65, #66 for implementing the complete `r
 
 ## Overview
 
-The `rebalance()` function is the core operational flow that optimizes capital allocation within the Olla protocol. It orchestrates four key steps:
+The `rebalance()` function is the core operational flow that optimizes capital allocation within the Olla protocol. It orchestrates five key steps:
 
 1. **Harvest Rewards** - Claims sequencer rewards from the AztecRollup
 2. **Pull Unstaked Funds** - Retrieves matured unstakes from StakingManager
 3. **Finalize Withdrawals** - Processes pending user withdrawal requests using available liquidity
-4. **Stake Surplus** - Stakes excess buffered assets above the target buffer
+4. **Initiate Unstake** - Initiates rollup withdrawals for remaining shortfall
+5. **Stake Surplus** - Stakes excess buffered assets above the target buffer
 
 **Source of truth**: 
 - `research/technical/architecture/flows.md` - Sequence diagrams
@@ -23,16 +24,18 @@ The `rebalance()` function is the core operational flow that optimizes capital a
 | [Phase 1](./rebalance-phase1-harvest.md) | #64 | Harvest rewards step implementation |
 | [Phase 2](./rebalance-phase2-pull-unstaked.md) | #63 | Pull unstaked funds step implementation |
 | [Phase 3](./rebalance-phase3-finalize.md) | #66 | Finalize withdrawals step implementation |
-| [Phase 4](./rebalance-phase4-stake-surplus.md) | #65 | Stake surplus step implementation |
-| [Phase 5](./rebalance-phase5-integration.md) | #62 | End-to-end integration with summary event |
+| [Phase 4](./rebalance-phase4-unstake.md) | #159 | Initiate unstake step implementation |
+| [Phase 5](./rebalance-phase5-stake-surplus.md) | #65 | Stake surplus step implementation |
+| [Phase 6](./rebalance-phase6-integration.md) | #62 | End-to-end integration with summary event |
 
 ## Repo Status (based on current contracts)
 
 - Phase 1: complete (harvest hook, `RewardsDelta` event, and rebalance tests in place).
 - Phase 2: not started in OllaCore (StakingManager `getUnstakedFunds()` exists; core hook missing).
 - Phase 3: partially complete (external `finalizeWithdrawals()` implemented; no `_finalizeWithdrawals()` hook and not wired into `rebalance()`).
-- Phase 4: not started (no `targetBuffer`, `VALIDATOR_STAKE_UNIT`, or `_stakeSurplus()` in OllaCore).
-- Phase 5: not started (rebalance still stubbed, no integration tests).
+- Phase 4: not started in OllaCore (no unstake initiation hook or event).
+- Phase 5: not started (no `targetBuffer`, `VALIDATOR_STAKE_UNIT`, or `_stakeSurplus()` in OllaCore).
+- Phase 6: not started (rebalance still stubbed, no integration tests).
 
 ## Architecture Context
 
@@ -58,14 +61,19 @@ sequenceDiagram
     C->>SM: getUnstakedFunds()
     SM-->>C: transfer matured unstakes
     C->>C: bufferedAssets += received
-    
+
     Note over C: Step 3: Finalize Withdrawals
     C->>C: available = bufferedAssets + safetyBuffer
     C->>WQ: finalizeWithdrawals(available)
     WQ-->>C: amountUsed
     C->>C: bufferedAssets -= amountUsed
-    
-    Note over C: Step 4: Stake Surplus
+
+    Note over C: Step 4: Initiate Unstake
+    C->>WQ: totalPendingAssets()
+    C->>C: amountToUnstake = max(0, pending - buffered)
+    C->>SM: unstake(amountToUnstake)
+
+    Note over C: Step 5: Stake Surplus
     C->>C: stakeable = bufferedAssets - targetBuffer
     loop while stakeable >= VALIDATOR_STAKE_UNIT
         C->>SM: stake(VALIDATOR_STAKE_UNIT)
@@ -183,7 +191,7 @@ forge coverage --match-contract Rebalance
 
 ## Notes
 
-1. **Order is critical**: Harvest → Pull unstaked → Finalize withdrawals → Stake surplus
+1. **Order is critical**: Harvest → Pull unstaked → Finalize withdrawals → Initiate unstake → Stake surplus
 2. **Withdrawals prioritized**: User withdrawals must be processed before staking surplus
 3. **Idempotency**: The rebalance function should be idempotent when called repeatedly without state changes
 4. **Safety checks**: All external calls should respect the `whenNotPaused` modifier and use `nonReentrant`

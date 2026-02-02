@@ -79,7 +79,7 @@ Update the rebalance function to include the pull-unstaked step:
 
 ```solidity
 /// @notice Operator-triggered rebalance flow.
-/// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> stake surplus
+/// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
 function rebalance() 
     external 
     override 
@@ -95,8 +95,11 @@ function rebalance()
     
     // TODO: Phase 3 - Finalize withdrawals
     uint256 finalizedAmount = 0;
+
+    // TODO: Phase 4 - Initiate unstake
+    uint256 initiatedUnstake = 0;
     
-    // TODO: Phase 4 - Stake surplus
+    // TODO: Phase 5 - Stake surplus
     uint256 stakedAmount = 0;
     
     emit Rebalanced(
@@ -232,7 +235,8 @@ The pull-unstaked step must occur AFTER harvest and BEFORE finalization:
 // 1. Harvest (adds to RewardsVault, not buffered)
 // 2. Pull Unstaked (adds to bufferedAssets)
 // 3. Finalize Withdrawals (uses bufferedAssets)
-// 4. Stake Surplus (uses remaining bufferedAssets)
+// 4. Initiate Unstake (starts rollup withdrawals if needed)
+// 5. Stake Surplus (uses remaining bufferedAssets)
 ```
 
 ## Dependencies for Next Phase

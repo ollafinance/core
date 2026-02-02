@@ -71,11 +71,14 @@ function rebalance()
     
     // TODO: Phase 2 - Pull unstaked funds
     uint256 unstakedAmount = 0;
-    
-    // TODO: Phase 3 - Finalize withdrawals  
+
+    // TODO: Phase 3 - Finalize withdrawals
     uint256 finalizedAmount = 0;
-    
-    // TODO: Phase 4 - Stake surplus
+
+    // TODO: Phase 4 - Initiate unstake
+    uint256 initiatedUnstake = 0;
+
+    // TODO: Phase 5 - Stake surplus
     uint256 stakedAmount = 0;
     
     emit Rebalanced(

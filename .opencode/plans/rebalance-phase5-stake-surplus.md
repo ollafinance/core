@@ -1,4 +1,4 @@
-# Phase 4: Rebalance Stake Surplus Step
+# Phase 5: Rebalance Stake Surplus Step
 
 **Issue**: #65 - feat: Rebalance stake surplus step
 
@@ -18,11 +18,11 @@ Implement staking of buffered surplus above target buffer:
 - [ ] `OllaCore` implements `setTargetBuffer()` and `TargetBufferUpdated` event.
 - [ ] `OllaCore` implements `_stakeSurplus()` and accounting updates.
 - [ ] `rebalance()` integrates the stake surplus step.
-- [ ] Phase 4 tests added in `contracts/test/core/OllaCoreRebalance.t.sol`.
+- [ ] Phase 5 tests added in `contracts/test/core/OllaCoreRebalance.t.sol`.
 
 ## Prerequisites
 
-- Phase 3 (Finalize Withdrawals) must be complete
+- Phase 4 (Unstake) must be complete
 - `StakingManager.stake()` must be implemented and callable
 - `targetBuffer` state variable must be added to OllaCore
 - `VALIDATOR_STAKE_UNIT` constant must be defined
@@ -120,7 +120,7 @@ Complete the rebalance function with all steps:
 
 ```solidity
 /// @notice Operator-triggered rebalance flow.
-/// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> stake surplus
+/// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
 /// @return harvestedAmount The amount of rewards harvested.
 /// @return finalizedAmount The amount used to finalize withdrawals.
 /// @return stakedAmount The amount staked.
@@ -140,14 +140,17 @@ function rebalance()
 {
     // Step 1: Harvest rewards
     harvestedAmount = _harvestRewards();
-    
-    // Step 2: Pull unstaked funds  
+
+    // Step 2: Pull unstaked funds
     /* uint256 unstakedAmount = */ _pullUnstakedFunds();
     
     // Step 3: Finalize withdrawals (uses available liquidity)
     finalizedAmount = _finalizeWithdrawals();
+
+    // Step 4: Initiate unstake
+    /* uint256 initiatedUnstake = */ _initiateUnstake();
     
-    // Step 4: Stake surplus above target buffer
+    // Step 5: Stake surplus above target buffer
     stakedAmount = _stakeSurplus();
     
     resultingBuffer = _accountingState.bufferedAssets;
@@ -207,7 +210,7 @@ event Rebalanced(
 - [ ] No staking when bufferedAssets <= targetBuffer
 - [ ] `bufferedAssets` and `stakedPrincipal` accounting updated correctly
 - [ ] `Rebalanced` event includes the staked amount
-- [ ] Staking occurs only after withdrawals are finalized
+- [ ] Staking occurs only after withdrawals are finalized and unstake is initiated
 
 ## Code Changes Summary
 
@@ -363,4 +366,4 @@ This ensures the transaction doesn't exceed block gas limits.
 ## Dependencies for Next Phase
 
 - This phase completes the individual rebalance steps
-- Phase 5 will integrate all steps and add comprehensive tests
+- Phase 6 will integrate all steps and add comprehensive tests

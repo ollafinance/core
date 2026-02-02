@@ -90,7 +90,7 @@ Update the rebalance function to include the finalization step:
 
 ```solidity
 /// @notice Operator-triggered rebalance flow.
-/// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> stake surplus
+/// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
 function rebalance() 
     external 
     override 
@@ -100,14 +100,17 @@ function rebalance()
 {
     // Step 1: Harvest rewards
     uint256 harvestedAmount = _harvestRewards();
-    
-    // Step 2: Pull unstaked funds  
+
+    // Step 2: Pull unstaked funds
     uint256 unstakedAmount = _pullUnstakedFunds();
     
     // Step 3: Finalize withdrawals (uses available liquidity)
     uint256 finalizedAmount = _finalizeWithdrawals();
+
+    // TODO: Phase 4 - Initiate unstake
+    uint256 initiatedUnstake = 0;
     
-    // TODO: Phase 4 - Stake surplus
+    // TODO: Phase 5 - Stake surplus
     uint256 stakedAmount = 0;
     
     emit Rebalanced(
@@ -189,7 +192,7 @@ function finalizeWithdrawals(uint256 available)
 - [ ] `WithdrawalFinalized` event emitted with available and used amounts
 - [ ] Queue ratio safety check performed
 - [ ] Preview and actual amounts match (or revert)
-- [ ] Finalization occurs before staking step
+- [ ] Finalization occurs before initiating unstake and staking
 
 ## Code Changes Summary
 
@@ -315,5 +318,5 @@ function test_Rebalance_FinalizeWithdrawals_FIFO() public {
 
 ## Dependencies for Next Phase
 
-- This phase must be complete before Phase 4 (Stake Surplus)
-- The remaining `bufferedAssets` after finalization determines how much can be staked
+- This phase must be complete before Phase 4 (Unstake)
+- The remaining pending withdrawals after finalization determines how much to unstake

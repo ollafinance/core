@@ -1,26 +1,27 @@
-# Phase 5: Rebalance End-to-End Integration
+# Phase 6: Rebalance End-to-End Integration
 
 **Issue**: #62 - feat: Rebalance flow end-to-end
 
 ## Scope
 
-Implement the full `rebalance()` flow integrating all four steps:
+Implement the full `rebalance()` flow integrating all five steps:
 1. Harvest rewards via `StakingManager.harvestRewards()`
 2. Pull unstaked funds via `StakingManager.getUnstakedFunds()`
 3. Finalize withdrawals with `WithdrawalQueue.finalizeWithdrawals(availableForWithdrawals)`
-4. Stake surplus above target buffer in `VALIDATOR_STAKE_UNIT` increments
+4. Initiate unstake via `StakingManager.unstake(amountToUnstake)`
+5. Stake surplus above target buffer in `VALIDATOR_STAKE_UNIT` increments
 
 Emit comprehensive `Rebalanced` summary event with harvested, finalized, staked, and resulting buffer totals.
 
 ## Repo Status
 
 - [ ] `rebalance()` returns full summary tuple and emits complete `Rebalanced` event (currently stubbed and returns nothing).
-- [ ] `rebalance()` integrates all four steps end-to-end in order.
+- [ ] `rebalance()` integrates all five steps end-to-end in order.
 - [ ] Integration tests added in `contracts/test/integration/RebalanceIntegration.t.sol`.
 
 ## Prerequisites
 
-- Phases 1-4 must be complete
+- Phases 1-5 must be complete
 - All individual steps tested and working
 - StakingManager, WithdrawalQueue, and RewardsVault properly integrated
 - SafetyModule checks operational
@@ -33,7 +34,7 @@ Ensure the `rebalance()` function is fully implemented:
 
 ```solidity
 /// @notice Operator-triggered rebalance flow.
-/// @dev Executes in strict order: harvest -> pull unstaked -> finalize -> stake
+/// @dev Executes in strict order: harvest -> pull unstaked -> finalize -> initiate unstake -> stake
 /// @return harvestedAmount The amount of rewards harvested.
 /// @return finalizedAmount The amount used to finalize withdrawals.
 /// @return stakedAmount The amount staked.
@@ -60,7 +61,10 @@ function rebalance()
     // Step 3: Finalize pending withdrawals (prioritized before staking)
     finalizedAmount = _finalizeWithdrawals();
     
-    // Step 4: Stake surplus above target buffer
+    // Step 4: Initiate unstake if needed
+    _initiateUnstake();
+    
+    // Step 5: Stake surplus above target buffer
     stakedAmount = _stakeSurplus();
     
     resultingBuffer = _accountingState.bufferedAssets;
@@ -83,7 +87,8 @@ Verify these internal functions exist and are correct:
 
 ```solidity
 function _harvestRewards() internal returns (uint256 harvestedAmount)
-function _pullUnstakedFunds() internal returns (uint256 receivedAmount)  
+function _initiateUnstake() internal returns (uint256 initiatedAmount)
+function _pullUnstakedFunds() internal returns (uint256 receivedAmount)
 function _finalizeWithdrawals() internal returns (uint256 finalizedAmount)
 function _stakeSurplus() internal returns (uint256 totalStaked)
 ```
@@ -373,7 +378,7 @@ function test_Rebalance_EmitsCorrectEvents() public {
 
 ## Acceptance Criteria
 
-- [ ] Rebalance step order matches harvest -> pull unstaked -> finalize -> stake
+- [ ] Rebalance step order matches harvest -> pull unstaked -> finalize -> initiate unstake -> stake
 - [ ] Accounting updated for each step
 - [ ] Withdrawals prioritized before staking
 - [ ] Rebalance idempotent when called repeatedly
