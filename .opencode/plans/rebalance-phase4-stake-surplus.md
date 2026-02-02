@@ -11,6 +11,15 @@ Implement staking of buffered surplus above target buffer:
 - Update `bufferedAssets` and `stakedPrincipal` accounting
 - Track total staked for the summary event
 
+## Repo Status
+
+- [ ] `OllaCore` has `targetBuffer` state variable.
+- [ ] `OllaCore` defines `VALIDATOR_STAKE_UNIT` constant.
+- [ ] `OllaCore` implements `setTargetBuffer()` and `TargetBufferUpdated` event.
+- [ ] `OllaCore` implements `_stakeSurplus()` and accounting updates.
+- [ ] `rebalance()` integrates the stake surplus step.
+- [ ] Phase 4 tests added in `contracts/test/core/OllaCoreRebalance.t.sol`.
+
 ## Prerequisites
 
 - Phase 3 (Finalize Withdrawals) must be complete

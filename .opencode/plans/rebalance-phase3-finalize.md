@@ -10,6 +10,13 @@ Implement finalization of pending withdrawals using available liquidity:
 - Update `bufferedAssets` by the amount used
 - Track the amount returned for the summary event
 
+## Repo Status
+
+- [x] `OllaCore.finalizeWithdrawals(uint256)` implemented with SafetyModule checks and `WithdrawalFinalized` event (`contracts/src/core/OllaCore.sol`).
+- [ ] `OllaCore` implements internal `_finalizeWithdrawals()` for use by `rebalance()`.
+- [ ] `rebalance()` integrates withdrawal finalization.
+- [ ] Phase 3 tests added in `contracts/test/core/OllaCoreRebalance.t.sol`.
+
 ## Prerequisites
 
 - Phase 2 (Pull Unstaked) must be complete

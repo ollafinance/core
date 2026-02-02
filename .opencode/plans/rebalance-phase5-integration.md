@@ -12,6 +12,12 @@ Implement the full `rebalance()` flow integrating all four steps:
 
 Emit comprehensive `Rebalanced` summary event with harvested, finalized, staked, and resulting buffer totals.
 
+## Repo Status
+
+- [ ] `rebalance()` returns full summary tuple and emits complete `Rebalanced` event (currently stubbed and returns nothing).
+- [ ] `rebalance()` integrates all four steps end-to-end in order.
+- [ ] Integration tests added in `contracts/test/integration/RebalanceIntegration.t.sol`.
+
 ## Prerequisites
 
 - Phases 1-4 must be complete

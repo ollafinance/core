@@ -10,6 +10,14 @@ Implement pulling of unstaked funds during rebalance:
 - Emit `UnstakedFundsClaimed` event for received funds
 - Ensure proper order: called after harvest, before finalization
 
+## Repo Status
+
+- [x] `StakingManager.getUnstakedFunds()` implemented (`contracts/src/staking/StakingManager.sol`).
+- [ ] `IOllaCore` defines `UnstakedFundsClaimed` event.
+- [ ] `OllaCore` implements `_pullUnstakedFunds()` and buffered assets accounting.
+- [ ] `rebalance()` integrates the pull-unstaked step.
+- [ ] Phase 2 tests added in `contracts/test/core/OllaCoreRebalance.t.sol`.
+
 ## Prerequisites
 
 - Phase 1 (Harvest) must be complete

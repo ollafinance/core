@@ -7,24 +7,28 @@
 Implement the harvest step inside `rebalance()` that:
 - Calls `StakingManager.harvestRewards()`
 - Receives rewards into the RewardsVault (deposited by AztecRollup)
-- Emits `RewardsHarvested(harvestedAmount)` in OllaCore
+- Emits `RewardsDelta(rewardsDelta)` in OllaCore (authoritative vault balance delta)
 - Updates cumulative rewards accounting
+
+## Repo Status
+
+- [x] `OllaCore` implements `_harvestRewards()` and updates cumulative rewards (`contracts/src/core/OllaCore.sol`).
+- [x] `rebalance()` calls `_harvestRewards()` (`contracts/src/core/OllaCore.sol`).
+- [x] `IOllaCore` defines `RewardsDelta` event.
+- [x] `OllaCore` emits `RewardsDelta` during harvest.
+- [ ] Phase 1 tests for harvest behavior added in `contracts/test/core/OllaCoreRebalance.t.sol`.
 
 ## Prerequisites
 
 - `StakingManager.harvestRewards()` must be implemented and callable
-- `RewardsVault.recordRewards()` must track balance changes
+- `RewardsVault.recordBalance()` must track balance changes
 - `OllaCore` has the `OPERATOR_ROLE` modifier available
 
 ## Implementation Steps
 
-### Step 1: Add `RewardsHarvested` event to IOllaCore.sol
+### Step 1: Use existing `RewardsDelta` event in IOllaCore.sol
 
-```solidity
-/// @notice Emitted when rewards are harvested during rebalance.
-/// @param amount The amount of rewards harvested.
-event RewardsHarvested(uint256 amount);
-```
+`IOllaCore` already defines `RewardsDelta(uint256 delta)`, which is the authoritative delta from `RewardsVault.recordBalance()`.
 
 ### Step 2: Implement `_harvestRewards()` internal function in OllaCore.sol
 
@@ -39,12 +43,12 @@ function _harvestRewards() internal returns (uint256 harvestedAmount) {
     _modules.stakingManager.harvestRewards();
     
     // Get the actual delta from RewardsVault and update cumulative rewards
-    harvestedAmount = _modules.rewardsVault.recordRewards();
+    harvestedAmount = _modules.rewardsVault.recordBalance();
     if (harvestedAmount != 0) {
         _accountingState.cumulativeRewards += harvestedAmount;
     }
     
-    emit RewardsHarvested(harvestedAmount);
+    emit RewardsDelta(harvestedAmount);
     return harvestedAmount;
 }
 ```
@@ -88,18 +92,18 @@ function rebalance()
 - [ ] **Harvest invoked and rewards tracked**
   - Mock StakingManager to return a specific harvest amount
   - Verify `harvestRewards()` is called on StakingManager
-  - Verify `RewardsHarvested` event is emitted with correct amount
+- Verify `RewardsDelta` event is emitted with correct amount
   - Verify cumulative rewards accounting is updated
 
 - [ ] **Zero rewards handled gracefully**
   - Mock StakingManager to return 0
   - Verify no state changes or errors occur
-  - Verify `RewardsHarvested(0)` is emitted
+- Verify `RewardsDelta(0)` is emitted
 
 ## Acceptance Criteria
 
 - [ ] Harvest is invoked before withdrawal finalization and staking
-- [ ] `RewardsHarvested` event emitted with the actual harvested amount
+- [ ] `RewardsDelta` event emitted with the actual rewards delta
 - [ ] Cumulative rewards tracking is updated
 - [ ] Zero rewards case handled without errors
 
@@ -107,7 +111,6 @@ function rebalance()
 
 | File | Change |
 |------|--------|
-| `IOllaCore.sol` | Add `RewardsHarvested` event |
 | `OllaCore.sol` | Add `_harvestRewards()` internal function; update `rebalance()` stub |
 
 ## Test Implementation
@@ -127,13 +130,13 @@ function test_Rebalance_HarvestRewards() public {
     // Mock RewardsVault to return the delta
     vm.mockCall(
         address(rewardsVault),
-        abi.encodeWithSelector(IRewardsVault.recordRewards.selector),
+        abi.encodeWithSelector(IRewardsVault.recordBalance.selector),
         abi.encode(expectedHarvest)
     );
     
     vm.prank(operator);
     vm.expectEmit(true, true, true, true);
-    emit RewardsHarvested(expectedHarvest);
+    emit RewardsDelta(expectedHarvest);
     ollaCore.rebalance();
     
     // Verify cumulative rewards updated
@@ -150,13 +153,13 @@ function test_Rebalance_HarvestZeroRewards() public {
     
     vm.mockCall(
         address(rewardsVault),
-        abi.encodeWithSelector(IRewardsVault.recordRewards.selector),
+        abi.encodeWithSelector(IRewardsVault.recordBalance.selector),
         abi.encode(0)
     );
     
     vm.prank(operator);
     vm.expectEmit(true, true, true, true);
-    emit RewardsHarvested(0);
+    emit RewardsDelta(0);
     ollaCore.rebalance();
 }
 ```
