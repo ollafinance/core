@@ -49,8 +49,8 @@ interface IWithdrawalQueue {
                                   ERRORS
      //////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when caller is not authorized.
-    error WithdrawalQueue__Unauthorized(address caller);
+    /// @notice Thrown when caller is not core.
+    error WithdrawalQueue__UnauthorizedCore(address caller);
 
     /// @notice Thrown when a zero address is provided.
     error WithdrawalQueue__ZeroAddress(string param);

@@ -102,9 +102,7 @@ contract StakingManagerReentrancyTest is Test {
         rollup.setReenterOnDeposit(true);
 
         vm.prank(core);
-        vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
-        );
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         stakingManager.stake(ACTIVATION_THRESHOLD);
     }
 

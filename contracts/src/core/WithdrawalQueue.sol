@@ -47,7 +47,7 @@ contract WithdrawalQueue is
 
     modifier onlyCore() {
         if (msg.sender != core) {
-            revert WithdrawalQueue__Unauthorized(msg.sender);
+            revert IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore(msg.sender);
         }
         _;
     }
