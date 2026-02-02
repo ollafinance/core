@@ -322,9 +322,12 @@ contract OllaCore is
     /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> stake surplus
     function rebalance() external override onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
         _syncBufferedWithBalance();
+        // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
+        // slither-disable-next-line reentrancy-no-eth
         uint256 rewardsDelta = _harvestRewards();
 
-        // TODO: Phase 2 - Pull unstaked funds
+        _pullUnstakedFunds();
+
         uint256 finalizedAmount = 0;
 
         // TODO: Phase 3 - Finalize withdrawals
@@ -623,6 +626,31 @@ contract OllaCore is
         }
         emit RewardsDelta(rewardsDelta);
         return rewardsDelta;
+    }
+
+    /// @notice Pulls unstaked funds from the staking manager.
+    /// @return receivedAmount The amount of unstaked funds received.
+    function _pullUnstakedFunds() internal returns (uint256 receivedAmount) {
+        IERC20 assetRef = _modules.asset;
+        uint256 balanceBefore = assetRef.balanceOf(address(this));
+
+        // Slither: stakingManager is trusted; rebalance is nonReentrant and role-gated.
+        // slither-disable-next-line reentrancy-benign
+        receivedAmount = _modules.stakingManager.getUnstakedFunds();
+
+        uint256 balanceAfter = assetRef.balanceOf(address(this));
+        uint256 actualReceived = balanceAfter - balanceBefore;
+
+        if (receivedAmount != 0 && receivedAmount != actualReceived) {
+            revert OllaCore__UnstakedFundsMismatch(receivedAmount, actualReceived);
+        }
+
+        if (actualReceived > 0) {
+            _accountingState.bufferedAssets += actualReceived;
+            emit UnstakedFundsClaimed(actualReceived);
+        }
+
+        return actualReceived;
     }
 
     function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {

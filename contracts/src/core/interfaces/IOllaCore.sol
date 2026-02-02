@@ -155,6 +155,11 @@ interface IOllaCore {
     /// @param stakedAmount Amount of assets staked.
     /// @param resultingBuffer Final buffered assets after rebalance.
     event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
+
+    /// @notice Emitted when unstaked funds are claimed during rebalance.
+    /// @param amount The amount of unstaked funds received.
+    event UnstakedFundsClaimed(uint256 amount);
+
     /// @notice Emitted when withdrawals are finalized.
     /// @param available Available assets.
     /// @param used Used assets.
@@ -203,6 +208,9 @@ interface IOllaCore {
 
     /// @notice Thrown when previewed and finalized amounts mismatch.
     error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
+
+    /// @notice Thrown when claimed unstaked funds don't match expected.
+    error OllaCore__UnstakedFundsMismatch(uint256 expected, uint256 actual);
 
     /// @notice Thrown when a deposit exceeds the configured cap.
     error OllaCore__DepositCapExceeded(uint256 assets, uint256 totalAssets);
