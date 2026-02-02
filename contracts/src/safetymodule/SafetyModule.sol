@@ -66,7 +66,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
     modifier onlyCore() {
         if (msg.sender != core) {
-            revert SafetyModule__UnauthorizedCore(msg.sender);
+            revert ISafetyModule.SafetyModule__UnauthorizedCore(msg.sender);
         }
         _;
     }

@@ -38,7 +38,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     modifier onlyCore() {
         if (msg.sender != core) {
-            revert RewardsVault__UnauthorizedCore(msg.sender);
+            revert IRewardsVault.RewardsVault__UnauthorizedCore(msg.sender);
         }
         _;
     }

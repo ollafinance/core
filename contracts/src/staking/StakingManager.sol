@@ -84,8 +84,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     uint256[48] private __gap;
 
     /*//////////////////////////////////////////////////////////////
-                                   ERRORS
-     //////////////////////////////////////////////////////////////*/
+                                  ERRORS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a caller is not authorized governance.
     error StakingManager__UnauthorizedGovernance(address caller);
@@ -96,7 +96,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     modifier onlyCore() {
         if (msg.sender != core) {
-            revert StakingManager__UnauthorizedCore(msg.sender);
+            revert IStakingManager.StakingManager__UnauthorizedCore(msg.sender);
         }
         _;
     }

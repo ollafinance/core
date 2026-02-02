@@ -722,7 +722,7 @@ contract StakingManagerTest is Test {
         stakingManager.harvestRewards();
     }
 
-    function testAccessControlUnauthorizedAccount_RevertWhen_HarvestRewards_Unauthorized() external {
+    function test_StakingManagerUnauthorizedCore_RevertWhen_HarvestRewards_Unauthorized() external {
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         stakingManager.harvestRewards();
