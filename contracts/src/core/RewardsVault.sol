@@ -38,7 +38,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     modifier onlyCore() {
         if (msg.sender != core) {
-            revert RewardsVault__UnauthorizedCore(msg.sender);
+            revert IRewardsVault.RewardsVault__UnauthorizedCore(msg.sender);
         }
         _;
     }
@@ -83,17 +83,17 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IRewardsVault
-    function recordRewards() external override onlyCore nonReentrant returns (uint256 rewardsDelta) {
+    function recordBalance() external override onlyCore nonReentrant returns (uint256 balanceDelta) {
         uint256 previousAmount = latestRecordedRewardsAmount;
         uint256 currentTokenBalance = rewardsToken.balanceOf(address(this));
         // Revert if balance decreased (should never happen in normal operation)
         if (currentTokenBalance < previousAmount) {
             revert RewardsVault__BalanceMismatch();
         }
-        rewardsDelta = currentTokenBalance - previousAmount;
+        balanceDelta = currentTokenBalance - previousAmount;
         latestRecordedRewardsAmount = currentTokenBalance;
-        emit RewardsRecorded(rewardsDelta);
-        return rewardsDelta;
+        emit RewardsRecorded(balanceDelta);
+        return balanceDelta;
     }
 
     /// @inheritdoc IRewardsVault
@@ -105,7 +105,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         }
         // slither-disable-next-line incorrect-equality
         if (availableBalance != latestRecordedRewardsAmount) {
-            // NOTE: this practically forces to run recordRewards in same tx before withdrawing
+            // NOTE: this practically forces to run recordBalance in same tx before withdrawing
             revert RewardsVault__BalanceMismatch();
         }
         rewardsToken.safeTransfer(core, availableBalance);

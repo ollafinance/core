@@ -170,6 +170,17 @@ interface IOllaCore {
     /// @param delta The rewards delta amount.
     event RewardsDelta(uint256 delta);
 
+    /// @notice Emitted when buffered assets are reconciled with the actual balance.
+    /// @param delta The amount added to buffered assets.
+    /// @param newBufferedAssets The updated buffered assets amount.
+    /// @param recipient The recipient that benefits from reconciliation.
+    event BufferedAssetsReconciled(uint256 delta, uint256 newBufferedAssets, address indexed recipient);
+
+    /// @notice Emitted when stAztec is recovered from the core.
+    /// @param amount The amount recovered.
+    /// @param recipient The recipient of the recovered stAztec.
+    event StAztecRecovered(uint256 amount, address indexed recipient);
+
     /// @notice Emitted when the core is paused.
     event Paused();
 
@@ -201,6 +212,9 @@ interface IOllaCore {
 
     /// @notice Thrown when a slashing delta is invalid.
     error OllaCore__InvalidSlashingDelta(uint256 previous, uint256 current);
+
+    /// @notice Thrown when an amount is zero or otherwise invalid.
+    error OllaCore__InvalidAmount();
 
     /// @notice Thrown when a fee basis points value exceeds maximum.
     error OllaCore__InvalidFeeBP(uint256 feeBP);
@@ -308,6 +322,10 @@ interface IOllaCore {
     /// @return used The assets used for finalization.
     function finalizeWithdrawals(uint256 available) external returns (uint256 used);
 
+    /// @notice Reconciles buffered assets with the actual asset balance.
+    /// @return delta The amount added to buffered assets.
+    function reconcileBufferedAssets() external returns (uint256 delta);
+
     /// @notice Sets the protocol fee in basis points.
     /// @param newFeeBP The new fee (0-10000).
     function setProtocolFeeBP(uint256 newFeeBP) external;
@@ -323,6 +341,11 @@ interface IOllaCore {
     /// @notice Sets the rewards vault address.
     /// @param newRewardsVault The new rewards vault address.
     function setRewardsVault(IRewardsVault newRewardsVault) external;
+
+    /// @notice Recovers stAztec sent directly to the core.
+    /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
+    /// @param amount The amount of stAztec to recover.
+    function recoverStAztec(address recipient, uint256 amount) external;
 
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS

@@ -10,6 +10,7 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousRewardsVault } from "src/core/mocks/MaliciousRewardsVault.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
