@@ -102,6 +102,7 @@ contract StakingManagerReentrancyTest is Test {
         rollup.setReenterOnDeposit(true);
 
         vm.prank(core);
+        // Note: onlyCore modifier runs before nonReentrant, so reentrancy attempt fails with UnauthorizedCore
         vm.expectRevert(
             abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
         );

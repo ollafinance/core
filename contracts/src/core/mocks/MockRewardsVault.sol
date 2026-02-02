@@ -25,13 +25,13 @@ contract MockRewardsVault is IMockRewardsVault {
                                   STATE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Total funds received via recordRewards.
+    /// @notice Total funds received via recordBalance.
     uint256 private _totalReceived;
 
     /// @notice Latest recorded rewards amount (for interface compliance).
     uint256 private _latestRecordedRewardsAmount;
 
-    /// @notice Whether recordRewards should fail.
+    /// @notice Whether recordBalance should fail.
     bool private _hookShouldFail;
 
     /*//////////////////////////////////////////////////////////////
@@ -51,16 +51,16 @@ contract MockRewardsVault is IMockRewardsVault {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IRewardsVault
-    function recordRewards() external override returns (uint256 rewardsDelta) {
+    function recordBalance() external override returns (uint256 balanceDelta) {
         if (_hookShouldFail) {
             revert MockRewardsVault__HookFailed();
         }
         uint256 currentBalance = REWARDS_TOKEN.balanceOf(address(this));
-        rewardsDelta = currentBalance - _latestRecordedRewardsAmount;
-        _totalReceived += rewardsDelta;
+        balanceDelta = currentBalance - _latestRecordedRewardsAmount;
+        _totalReceived += balanceDelta;
         _latestRecordedRewardsAmount = currentBalance;
-        emit RewardsRecorded(rewardsDelta);
-        return rewardsDelta;
+        emit RewardsRecorded(balanceDelta);
+        return balanceDelta;
     }
 
     /// @inheritdoc IRewardsVault
