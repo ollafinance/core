@@ -184,6 +184,9 @@ contract StakingManagerTest is Test {
         assertTrue(
             stakingProviderRegistry.hasRole(stakingProviderRegistry.STAKING_PROVIDER_ADMIN_ROLE(), providerAdmin)
         );
+        assertTrue(
+            stakingProviderRegistry.hasRole(stakingProviderRegistry.STAKING_PROVIDER_ADMIN_ROLE(), providerAdmin)
+        );
     }
 
     function test_Initialize_EmitsProviderSet() external {
