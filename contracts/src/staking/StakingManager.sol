@@ -4,9 +4,13 @@ pragma solidity ^0.8.27;
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+
+import { RolesLib } from "src/shared/RolesLib.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -24,11 +28,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                                  CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Role for OllaCore to call stake/unstake operations.
-    bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
-
     /// @notice Role for staking provider admin to manage keys.
-    bytes32 public constant STAKING_PROVIDER_ADMIN_ROLE = keccak256("STAKING_PROVIDER_ADMIN_ROLE");
+    bytes32 public constant STAKING_PROVIDER_ADMIN_ROLE = RolesLib.STAKING_PROVIDER_ADMIN_ROLE;
 
     /*//////////////////////////////////////////////////////////////
                                    STATE
@@ -90,8 +91,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     error StakingManager__UnauthorizedGovernance(address caller);
 
     /*//////////////////////////////////////////////////////////////
-                               CONSTRUCTOR
-    //////////////////////////////////////////////////////////////*/
+                                 MODIFIERS
+     //////////////////////////////////////////////////////////////*/
+
+    modifier onlyCore() {
+        if (msg.sender != core) {
+            revert IStakingManager.StakingManager__UnauthorizedCore(msg.sender);
+        }
+        _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                CONSTRUCTOR
+     //////////////////////////////////////////////////////////////*/
 
     constructor() {
         _disableInitializers();
@@ -101,14 +113,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the StakingManager behind a proxy.
-    /// @param stakingAsset_ The staking asset token.
-    /// @param rollupRegistry_ The Aztec rollup registry contract.
-    /// @param rewardsVault_ The rewards vault address.
-    /// @param core_ The OllaCore contract address.
-    /// @param providerAdmin_ The provider admin address.
-    /// @param providerRewardsRecipient_ The provider rewards recipient address.
-    /// @param defaultAdmin_ The default admin for role management.
+    /// @inheritdoc IStakingManager
     function initialize(
         IERC20 stakingAsset_,
         address rollupRegistry_,
@@ -153,7 +158,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         _providerQueue.init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
-        _grantRole(CORE_ROLE, core_);
         _grantRole(STAKING_PROVIDER_ADMIN_ROLE, providerAdmin_);
 
         emit ProviderSet(providerAdmin_, providerRewardsRecipient_);
@@ -164,13 +168,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
-    function stake(uint256 amount) external override onlyRole(CORE_ROLE) nonReentrant {
+    function stake(uint256 amount) external override onlyCore nonReentrant {
         if (amount == 0) revert StakingManager__ZeroAmount();
         _stake(amount);
     }
 
     /// @inheritdoc IStakingManager
-    function unstake(uint256 amount) external override onlyRole(CORE_ROLE) nonReentrant {
+    function unstake(uint256 amount) external override onlyCore nonReentrant {
         if (amount == 0) revert StakingManager__ZeroAmount();
         _unstake(amount);
     }
@@ -180,7 +184,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-start pess-multiple-storage-read,cache-array-length
     /// @notice Syncs activated attesters with the rollup exit state.
     /// @dev Moves exited attesters into the pending unstake queue.
-    function cleanActivatedAttesters() external override onlyRole(CORE_ROLE) nonReentrant {
+    function cleanActivatedAttesters() external override onlyCore nonReentrant {
+        // TODO: change onlyCore to be only OPERATOR_ROLE
         // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = rollupRegistry.getCanonicalRollup();
         IAztecRollup rollup = IAztecRollup(rollupAddress);
@@ -204,12 +209,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end calls-loop
 
     /// @inheritdoc IStakingManager
-    function getUnstakedFunds() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 received) {
+    function getUnstakedFunds() external override onlyCore nonReentrant returns (uint256 received) {
         return _claimUnstakedFunds();
     }
 
     /// @inheritdoc IStakingManager
-    function harvestRewards() external override onlyRole(CORE_ROLE) nonReentrant returns (uint256 harvested) {
+    function harvestRewards() external override onlyCore nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
         harvested = rollup.claimSequencerRewards(rewardsVault);
         emit RewardsHarvested(harvested);
@@ -264,7 +269,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Returns the cumulative slashing delta from the rollup.
     /// @return slashingDelta The cumulative slashing delta.
-    function getSlashingDelta() external override onlyRole(CORE_ROLE) returns (uint256 slashingDelta) {
+    function getSlashingDelta() external override onlyCore returns (uint256 slashingDelta) {
         (, IAztecRollup rollup) = _getRollup();
         uint256 currentSlashingDelta = _computeSlashed(rollup);
         if (currentSlashingDelta > _cumulativeSlashingDelta) {
@@ -280,7 +285,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Internal helper to get the claimable rewards.
     /// @dev Internal helper to get the claimable rewards.
     /// @return claimableRewards The total rewards claimable to rewards recipient.
-    function getClaimableRewards() external view override onlyRole(CORE_ROLE) returns (uint256 claimableRewards) {
+    function getClaimableRewards() external view override onlyCore returns (uint256 claimableRewards) {
         (, IAztecRollup rollup) = _getRollup();
         return rollup.getSequencerRewards(address(rewardsVault));
     }
@@ -501,7 +506,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-next-line pess-multiple-storage-read,cache-array-length
     function _initiateUnstakeRequests(IAztecRollup rollup, uint256 amount)
         internal
-        onlyRole(CORE_ROLE)
+        onlyCore
         returns (uint256 totalUnstakedAmount)
     {
         uint256 i = 0;
@@ -524,7 +529,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev External calls inside a loop are intentional and safe:
     ///      - `rollup` is a trusted Aztec protocol contract
     ///      - Attesters are permissioned and managed by the provider
-    ///      - Function is only reachable via CORE_ROLE-gated entrypoints with nonReentrant
+    ///      - Function is only reachable via core-gated entrypoints with nonReentrant
     ///      - State updates after external call are benign (internal bookkeeping only)
     ///      - Failure is expected to revert the entire unstake operation
     /// @param rollup The rollup staking interface.

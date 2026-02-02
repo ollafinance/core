@@ -128,26 +128,29 @@ interface IStakingManager {
     /// @notice Thrown when unstake fails for an attester.
     error StakingManager__UnstakeFailed(address attester);
 
+    /// @notice Thrown when caller is not authorized core.
+    error StakingManager__UnauthorizedCore(address caller);
+
     /*//////////////////////////////////////////////////////////////
                               INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the StakingManager behind a proxy.
-    /// @param stakingAsset The staking asset token.
-    /// @param rollupRegistry The Aztec rollup registry contract.
-    /// @param rewardsVault The rewards vault address.
-    /// @param core The OllaCore contract address.
-    /// @param providerAdmin The provider admin address.
-    /// @param providerRewardsRecipient The provider rewards recipient address.
-    /// @param defaultAdmin The default admin for role management.
+    /// @param stakingAsset_ The staking asset token.
+    /// @param rollupRegistry_ The Aztec rollup registry contract.
+    /// @param rewardsVault_ The rewards vault address.
+    /// @param core_ The OllaCore contract address.
+    /// @param providerAdmin_ The provider admin address.
+    /// @param providerRewardsRecipient_ The provider rewards recipient address.
+    /// @param defaultAdmin_ The default admin for role management.
     function initialize(
-        IERC20 stakingAsset,
-        address rollupRegistry,
-        address rewardsVault,
-        address core,
-        address providerAdmin,
-        address providerRewardsRecipient,
-        address defaultAdmin
+        IERC20 stakingAsset_,
+        address rollupRegistry_,
+        address rewardsVault_,
+        address core_,
+        address providerAdmin_,
+        address providerRewardsRecipient_,
+        address defaultAdmin_
     ) external;
 
     /*//////////////////////////////////////////////////////////////
@@ -190,7 +193,7 @@ interface IStakingManager {
     function setProviderRewardsRecipient(address rewardsRecipient) external;
 
     /// @notice Returns the cumulative slashing delta from the rollup.
-    /// @dev Only callable by CORE_ROLE.
+    /// @dev Only callable by the configured core address.
     /// @return slashingDelta The cumulative slashing delta.
     function getSlashingDelta() external returns (uint256 slashingDelta);
 
@@ -199,7 +202,7 @@ interface IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns claimable rewards.
-    /// @dev Only callable by CORE_ROLE. Does not actually claim rewards.
+    /// @dev Only callable by the configured core address. Does not actually claim rewards.
     /// @return claimableRewards The total rewards claimalbe to rewards recipient.
     function getClaimableRewards() external view returns (uint256 claimableRewards);
 
@@ -232,4 +235,8 @@ interface IStakingManager {
     /// @param attester The attester address.
     /// @return True if unstake is pending.
     function isUnstakePending(address attester) external view returns (bool);
+
+    /// @notice Returns the core address.
+    /// @return The core contract address.
+    function core() external view returns (address);
 }

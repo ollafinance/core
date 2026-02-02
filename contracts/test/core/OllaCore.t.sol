@@ -166,7 +166,7 @@ contract OllaCoreTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule();
+        safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
@@ -226,7 +226,7 @@ contract OllaCoreTest is Test {
         address spender,
         uint256 value,
         uint256 deadline
-    ) internal returns (uint8 v, bytes32 r, bytes32 s) {
+    ) internal view returns (uint8 v, bytes32 r, bytes32 s) {
         uint256 nonce = token.nonces(owner);
         bytes32 digest = _buildPermitDigest(token, owner, spender, value, nonce, deadline);
         (v, r, s) = vm.sign(ownerKey, digest);
@@ -1297,7 +1297,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
         rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
-        safetyModule = new MockSafetyModule();
+        safetyModule = new MockSafetyModule(address(coreImplementation));
         withdrawalQueue = new MockWithdrawalQueue();
 
         vault.initialize(
@@ -1599,7 +1599,7 @@ contract OllaCoreProtocolFeesTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule();
+        safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");

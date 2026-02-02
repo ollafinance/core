@@ -167,7 +167,6 @@ contract StakingManagerTest is Test {
 
     function test_Initialize_GrantsRoles() external view {
         assertTrue(stakingManager.hasRole(stakingManager.DEFAULT_ADMIN_ROLE(), defaultAdmin));
-        assertTrue(stakingManager.hasRole(stakingManager.CORE_ROLE(), core));
         assertTrue(stakingManager.hasRole(stakingManager.STAKING_PROVIDER_ADMIN_ROLE(), providerAdmin));
     }
 
@@ -484,11 +483,7 @@ contract StakingManagerTest is Test {
     }
 
     function test_RevertWhen_Stake_Unauthorized() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.CORE_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         stakingManager.stake(ACTIVATION_THRESHOLD);
     }
@@ -572,11 +567,7 @@ contract StakingManagerTest is Test {
     }
 
     function test_RevertWhen_Unstake_Unauthorized() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.CORE_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
@@ -731,12 +722,8 @@ contract StakingManagerTest is Test {
         stakingManager.harvestRewards();
     }
 
-    function test_RevertWhen_HarvestRewards_Unauthorized() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.CORE_ROLE()
-            )
-        );
+    function test_StakingManagerUnauthorizedCore_RevertWhen_HarvestRewards_Unauthorized() external {
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         stakingManager.harvestRewards();
     }
@@ -934,11 +921,7 @@ contract StakingManagerTest is Test {
     }
 
     function test_RevertWhen_CleanActivatedAttesters_Unauthorized() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.CORE_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         stakingManager.cleanActivatedAttesters();
     }
@@ -1219,11 +1202,7 @@ contract StakingManagerHarvestTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_HarvestRewards_CalledByNonCore() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.CORE_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         stakingManager.harvestRewards();
     }
@@ -1285,11 +1264,7 @@ contract StakingManagerHarvestTest is Test {
     }
 
     function test_RevertWhen_GetClaimableRewards_CalledByNonCore() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.CORE_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         stakingManager.getClaimableRewards();
     }

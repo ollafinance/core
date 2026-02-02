@@ -46,8 +46,11 @@ interface IWithdrawalQueue {
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
-                                 ERRORS
-    //////////////////////////////////////////////////////////////*/
+                                  ERRORS
+     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when caller is not core.
+    error WithdrawalQueue__UnauthorizedCore(address caller);
 
     /// @notice Thrown when a zero address is provided.
     error WithdrawalQueue__ZeroAddress(string param);
@@ -101,10 +104,6 @@ interface IWithdrawalQueue {
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the OllaCore address.
-    /// @return coreAddress The core address.
-    function core() external view returns (address coreAddress);
-
     /// @notice Returns the next request id to assign.
     /// @return requestId The next request id.
     function nextRequestId() external view returns (uint256 requestId);
@@ -130,4 +129,8 @@ interface IWithdrawalQueue {
     /// @param available The available assets to finalize.
     /// @return used The assets that would be used.
     function previewFinalizeWithdrawals(uint256 available) external view returns (uint256 used);
+
+    /// @notice Returns the core address.
+    /// @return The core contract address.
+    function core() external view returns (address);
 }

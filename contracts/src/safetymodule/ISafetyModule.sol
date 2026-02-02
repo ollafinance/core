@@ -55,6 +55,9 @@ interface ISafetyModule {
     /// @notice Thrown when a withdrawal share amount is below the minimum.
     error SafetyModule__BelowWithdrawalMinimum(uint256 shares, uint256 minimumShares);
 
+    /// @notice Thrown when caller is not authorized core.
+    error SafetyModule__UnauthorizedCore(address caller);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -123,4 +126,8 @@ interface ISafetyModule {
     /// @notice Checks whether a withdrawal meets the minimum requirement.
     /// @param shares The withdrawal amount in shares.
     function checkWithdrawalMinimum(uint256 shares) external view;
+
+    /// @notice Returns the core address.
+    /// @return The core contract address.
+    function core() external view returns (address);
 }

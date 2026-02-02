@@ -289,7 +289,7 @@ contract OllaCoreInvariantTest is Test {
         address governance = makeAddr("governance");
         withdrawalQueue = new MockWithdrawalQueue();
         rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule();
+        safetyModule = new MockSafetyModule(address(implementation));
         address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
         vault.initialize(
@@ -467,7 +467,7 @@ contract OllaCoreDepositInvariantTest is Test {
         address governance = makeAddr("governance");
         withdrawalQueue = new MockWithdrawalQueue();
         address rewardsVault = makeAddr("rewardsVault");
-        safetyModule = new MockSafetyModule();
+        safetyModule = new MockSafetyModule(address(implementation));
         vault.initialize(
             asset,
             stAztec,

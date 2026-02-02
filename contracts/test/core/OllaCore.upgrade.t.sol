@@ -101,7 +101,7 @@ contract OllaCoreUpgradeTest is Test {
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
         rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
-        safetyModule = new MockSafetyModule();
+        safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
 

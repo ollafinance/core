@@ -16,14 +16,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
-                                  CONSTANTS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Role for core contract to call vault functions.
-    bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
-
-    /*//////////////////////////////////////////////////////////////
-                                    STATE
+                                       STATE
     //////////////////////////////////////////////////////////////*/
 
     /// @notice The rewards token (same as staking asset).
@@ -40,8 +33,19 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
-                                CONSTRUCTOR
+                                 MODIFIERS
     //////////////////////////////////////////////////////////////*/
+
+    modifier onlyCore() {
+        if (msg.sender != core) {
+            revert IRewardsVault.RewardsVault__UnauthorizedCore(msg.sender);
+        }
+        _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                 CONSTRUCTOR
+     //////////////////////////////////////////////////////////////*/
 
     constructor() {
         _disableInitializers();
@@ -71,16 +75,15 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         rewardsToken = rewardsToken_;
         core = core_;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
-        _grantRole(CORE_ROLE, core_);
+        _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, defaultAdmin_);
     }
 
     /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
+                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IRewardsVault
-    function recordRewards(uint256 expectedRewards) external override onlyRole(CORE_ROLE) nonReentrant {
+    function recordRewards(uint256 expectedRewards) external override onlyCore nonReentrant {
         if (expectedRewards == 0) revert RewardsVault__ZeroAmount();
 
         uint256 previousAmount = latestRecordedRewardsAmount;
@@ -99,7 +102,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     /// @inheritdoc IRewardsVault
-    function withdrawToCore() external override onlyRole(CORE_ROLE) nonReentrant {
+    function withdrawToCore() external override onlyCore nonReentrant {
         uint256 availableBalance = rewardsToken.balanceOf(address(this));
         // slither-disable-next-line incorrect-equality
         if (availableBalance == 0) {

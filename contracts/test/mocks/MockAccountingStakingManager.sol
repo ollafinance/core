@@ -88,6 +88,10 @@ contract MockAccountingStakingManager is IStakingManager {
         return StakingState({ stakedAmount: totalStakedAmount, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
     }
 
+    function core() external pure override returns (address) {
+        return address(0);
+    }
+
     function getQueueLength() external pure override returns (uint256) {
         return 0;
     }
