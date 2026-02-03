@@ -183,6 +183,10 @@ interface IStakingManager {
     /// @return state The aggregated staking state.
     function getStakingState() external view returns (StakingState memory state);
 
+    /// @notice Returns the rollup activation threshold (minimum stake per attester).
+    /// @return threshold The activation threshold amount.
+    function activationThreshold() external view returns (uint256 threshold);
+
     /// @notice Returns the total amount pending unstake across the rollup.
     /// @return pendingUnstakeAmount The total pending unstake amount.
     function pendingUnstakes() external view returns (uint256 pendingUnstakeAmount);

@@ -30,6 +30,9 @@ contract MockStakingManager is IStakingManager {
     /// @notice Simulated staked amount for getStakingState.
     uint256 private _stakedAmount;
 
+    /// @notice Mock activation threshold.
+    uint256 private _activationThreshold = 1e18;
+
     /// @notice Mock provider config.
     ProviderConfig private _providerConfig;
 
@@ -96,6 +99,11 @@ contract MockStakingManager is IStakingManager {
     /// @inheritdoc IStakingManager
     function pendingUnstakes() external view override returns (uint256) {
         return 0;
+    }
+
+    /// @inheritdoc IStakingManager
+    function activationThreshold() external view override returns (uint256) {
+        return _activationThreshold;
     }
 
     /// @inheritdoc IStakingManager
