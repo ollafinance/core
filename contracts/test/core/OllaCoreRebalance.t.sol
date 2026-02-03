@@ -10,9 +10,11 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { MaliciousReentrantStakingManager } from "test/mocks/MaliciousReentrantStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 contract OllaCoreRebalanceTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -21,6 +23,7 @@ contract OllaCoreRebalanceTest is Test {
 
     event RewardsDelta(uint256 delta);
     event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
+    event UnstakedFundsClaimed(uint256 amount);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -155,5 +158,111 @@ contract OllaCoreRebalanceTest is Test {
 
         IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
         assertEq(accountingAfter.cumulativeRewards, accountingBefore.cumulativeRewards, "cumulative rewards unchanged");
+    }
+
+    function test_Rebalance_PullUnstakedFunds_IncreasesBuffer() external {
+        uint256 unstakedAmount = 5 * DECIMALS;
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.getUnstakedFunds, ()));
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit UnstakedFundsClaimed(unstakedAmount);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(
+            accountingAfter.bufferedAssets,
+            accountingBefore.bufferedAssets + unstakedAmount,
+            "buffered assets increased"
+        );
+    }
+
+    function test_Rebalance_PullUnstakedFunds_NoOp() external {
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(0);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.getUnstakedFunds, ()));
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered assets unchanged");
+    }
+}
+
+contract OllaCoreRebalanceReentrancyTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                            TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MaliciousReentrantStakingManager internal stakingManager;
+    address internal governance;
+    MockWithdrawalQueue internal withdrawalQueue;
+    MockRewardsVault internal rewardsVault;
+    MockSafetyModule internal safetyModule;
+    address internal operator;
+
+    /*//////////////////////////////////////////////////////////////
+                                  SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCore(address(proxy));
+
+        stAztec = new StAztec(address(vault));
+        stakingManager = new MaliciousReentrantStakingManager();
+        governance = makeAddr("governance");
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule(address(coreImplementation));
+        operator = makeAddr("operator");
+        withdrawalQueue = new MockWithdrawalQueue();
+
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsVault(address(rewardsVault));
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vault.grantRole(operatorRole, address(stakingManager));
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_RevertsOnReentrantGetUnstakedFunds() external {
+        stakingManager.setReentry(vault, MaliciousReentrantStakingManager.ReentryAction.Rebalance, 0);
+
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.prank(operator);
+        vault.rebalance();
     }
 }
