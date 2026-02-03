@@ -191,6 +191,24 @@ sequenceDiagram
     RV-->>C: rewardsDelta
 ```
 
+#### Pull unstaked funds
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant C as OllaCore
+    participant SM as StakingManager
+    participant AZ as AssetToken
+
+    OP->>C: rebalance()
+    Note over C: Step 2: Pull unstaked funds
+    C->>SM: getUnstakedFunds()
+    SM-->>C: transfer matured unstakes
+    C->>AZ: balanceOf(C) increases
+    C->>C: bufferedAssets += received
+    Note right of C: emit UnstakedFundsClaimed(received)
+```
+
 #### Process user withdrawal requests
 
 ```mermaid
