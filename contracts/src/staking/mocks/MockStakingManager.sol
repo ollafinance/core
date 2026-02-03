@@ -97,11 +97,6 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function pendingUnstakes() external view override returns (uint256) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
     function activationThreshold() external view override returns (uint256) {
         return _activationThreshold;
     }
@@ -119,6 +114,11 @@ contract MockStakingManager is IStakingManager {
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function pendingUnstakes() external pure override returns (uint256) {
+        return 0;
+    }
 
     /// @inheritdoc IStakingManager
     function getSlashingDelta() external pure override returns (uint256 slashingDelta) {
