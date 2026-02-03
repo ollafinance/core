@@ -245,10 +245,13 @@ sequenceDiagram
 
     OP->>C: rebalance()
     Note over C: Step 4: Initiate unstake
+    Note over C: Trigger when requested >= unstakeThreshold
     C->>WQ: totalPendingAssets()
     C->>C: amountToUnstake = max(0, pending - buffered)
     C->>SM: pendingUnstakes()
     SM-->>C: pendingUnstakes
+    C->>SM: activationThreshold()
+    C->>C: initiated = roundToUnit(requested, activationThreshold)
     C->>SM: unstake(initiated)
     Note right of C: emit UnstakeInitiated(requested, initiated)
 ```
