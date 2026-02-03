@@ -187,9 +187,8 @@ sequenceDiagram
     RR-->>SM: rollup address
     SM->>AR: claimSequencerRewards(coinbase=RewardsVault)
     AR-->>RV: AZTEC transferred
-    AR-->>SM: returns harvestedAmount
-    SM-->>C: harvestedAmount
-    C->>RV: recordBalance(harvestedAmount)
+    C->>RV: recordBalance()
+    RV-->>C: rewardsDelta
 ```
 
 #### Process user withdrawal requests
@@ -215,6 +214,59 @@ sequenceDiagram
     C->>WQ: finalizeWithdrawals(available)
     WQ-->>C: finalized
     Note right of C: require finalized == used
+```
+
+#### Rebalance (full flow)
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant C as OllaCore
+    participant SAF as SafetyModule
+    participant SM as StakingManager
+    participant AR as AztecRollup (canonical)
+    participant RV as RewardsVault
+    participant WQ as WithdrawalQueue
+
+    OP->>C: rebalance()
+
+    Note over C: Step 1: Harvest rewards
+    C->>SM: harvestRewards()
+    SM->>AR: claimSequencerRewards()
+    AR-->>RV: rewards transferred
+    C->>RV: recordBalance()
+    RV-->>C: rewardsDelta
+
+    Note over C: Step 2: Pull unstaked funds
+    C->>SM: getUnstakedFunds()
+    SM-->>C: transfer matured unstakes
+    C->>C: bufferedAssets += received
+
+    Note over C: Step 3: Finalize withdrawals
+    C->>C: available = bufferedAssets
+    C->>WQ: totalPendingAssets()
+    C->>SAF: checkQueueRatio(queued, totalAssets)
+    C->>WQ: previewFinalizeWithdrawals(available)
+    C->>WQ: finalizeWithdrawals(available)
+    WQ-->>C: amountUsed
+    C->>C: bufferedAssets -= amountUsed
+
+    Note over C: Step 4: Initiate unstake
+    C->>WQ: totalPendingAssets()
+    C->>C: amountToUnstake = max(0, pending - buffered)
+    C->>SM: pendingUnstakes()
+    SM-->>C: pendingUnstakes
+    C->>SM: unstake(initiated)
+
+    Note over C: Step 5: Stake surplus
+    C->>C: stakeable = bufferedAssets - targetBuffer
+    loop while stakeable >= VALIDATOR_STAKE_UNIT
+        C->>SM: stake(VALIDATOR_STAKE_UNIT)
+        SM->>AR: stake()
+        C->>C: bufferedAssets -= unit
+        C->>C: stakedPrincipal += unit
+        C->>C: stakeable -= unit
+    end
 ```
 
 #### Update accounting
