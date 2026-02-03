@@ -107,6 +107,11 @@ interface IOllaCore {
     /// @param newSplitBP The new split in basis points.
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
 
+    /// @notice Emitted when the unstake threshold is updated.
+    /// @param oldThreshold The old unstake threshold.
+    /// @param newThreshold The new unstake threshold.
+    event UnstakeThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
+
     /// @notice Emitted when the governance address is updated.
     /// @param oldGovernance The old governance address.
     /// @param newGovernance The new governance address.
@@ -235,6 +240,9 @@ interface IOllaCore {
     /// @notice Thrown when a split basis points value exceeds maximum.
     error OllaCore__InvalidSplitBP(uint256 splitBP);
 
+    /// @notice Thrown when the unstake threshold is invalid.
+    error OllaCore__InvalidUnstakeThreshold(uint256 threshold, uint256 activationThreshold);
+
     /// @notice Thrown when no active withdrawal request exists.
     error OllaCore__NoActiveWithdrawal(address owner);
 
@@ -346,6 +354,10 @@ interface IOllaCore {
     /// @param newRewardsVault The new rewards vault address.
     function setRewardsVault(IRewardsVault newRewardsVault) external;
 
+    /// @notice Sets the unstake threshold used to trigger unit-based unstaking.
+    /// @param newThreshold The new unstake threshold.
+    function setUnstakeThreshold(uint256 newThreshold) external;
+
     /// @notice Recovers stAztec sent directly to the core.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
     /// @param amount The amount of stAztec to recover.
@@ -400,6 +412,10 @@ interface IOllaCore {
     /// @notice Returns the safety module address.
     /// @return The safety module address.
     function safetyModule() external view returns (address);
+
+    /// @notice Returns the unstake threshold used to trigger unit-based unstaking.
+    /// @return The unstake threshold.
+    function unstakeThreshold() external view returns (uint256);
 
     /// @notice Returns the latest accounting report snapshot.
     /// @return The latest report struct.

@@ -73,12 +73,15 @@ contract OllaCore is
     /// @notice The treasury fee split in basis points.
     uint256 public treasuryFeeSplitBP;
 
+    /// @notice Threshold to trigger unit-based unstaking.
+    uint256 public unstakeThreshold;
+
     mapping(address owner => uint256 requestId) private _activeRequestIds;
     mapping(uint256 requestId => address owner) private _requestOwners;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -146,6 +149,7 @@ contract OllaCore is
 
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
+        unstakeThreshold = stakingManager_.activationThreshold();
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         // Timestamp is used only for reporting/accounting liveness.
@@ -316,6 +320,18 @@ contract OllaCore is
         IRewardsVault oldRewardsVault = _modules.rewardsVault;
         _modules.rewardsVault = newRewardsVault;
         emit RewardsVaultUpdated(address(oldRewardsVault), address(newRewardsVault));
+    }
+
+    /// @notice Sets the unstake threshold used to trigger unit-based unstaking.
+    /// @param newThreshold The new unstake threshold.
+    function setUnstakeThreshold(uint256 newThreshold) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 activationThreshold = _modules.stakingManager.activationThreshold();
+        if (newThreshold == 0 || newThreshold > activationThreshold) {
+            revert OllaCore__InvalidUnstakeThreshold(newThreshold, activationThreshold);
+        }
+        uint256 oldThreshold = unstakeThreshold;
+        unstakeThreshold = newThreshold;
+        emit UnstakeThresholdUpdated(oldThreshold, newThreshold);
     }
 
     /// @notice Operator-triggered rebalance flow.
@@ -670,7 +686,20 @@ contract OllaCore is
             return 0;
         }
 
-        initiated = amountToUnstake - pendingUnstakes;
+        uint256 requested = amountToUnstake - pendingUnstakes;
+        uint256 threshold = unstakeThreshold;
+        if (requested < threshold) {
+            return 0;
+        }
+
+        uint256 activationThreshold = modules.stakingManager.activationThreshold();
+        // Unstakes happen in full attester units; round down unless below one unit.
+        if (requested < activationThreshold) {
+            initiated = activationThreshold;
+        } else {
+            initiated = (requested / activationThreshold) * activationThreshold;
+        }
+
         if (initiated > 0) {
             modules.stakingManager.unstake(initiated);
             emit UnstakeInitiated(amountToUnstake, initiated);
