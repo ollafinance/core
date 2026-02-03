@@ -374,49 +374,6 @@ contract OllaCore is
 
     // slither-disable-end pess-multiple-storage-read
 
-    // slither-disable-start pess-multiple-storage-read
-    /// @notice Operator-triggered withdrawal finalization hook.
-    /// @param available The available assets for withdrawals.
-    /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available)
-        external
-        override
-        onlyRole(OPERATOR_ROLE)
-        whenNotPaused
-        nonReentrant
-        returns (uint256 used)
-    {
-        ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
-        uint256 queued = _modules.withdrawalQueue.totalPendingAssets();
-        // slither-disable-start reentrancy-no-eth
-        // slither-disable-start reentrancy-events
-        // SafetyModule is a trusted immutable dependency; calls are role-gated and non-reentrant, so fail-fast
-        // checks before finalization are safe.
-        _syncBufferedWithBalance();
-
-        uint256 total = totalAssets();
-        safetyModuleRef.checkQueueRatio(queued, total);
-
-        uint256 bufferedAssets = _accountingState.bufferedAssets;
-        // slither-disable-next-line timestamp
-        if (available > bufferedAssets) {
-            revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, available, bufferedAssets);
-        }
-
-        used = _modules.withdrawalQueue.previewFinalizeWithdrawals(available);
-        _accountingState.bufferedAssets = bufferedAssets - used;
-
-        uint256 finalized = _modules.withdrawalQueue.finalizeWithdrawals(available);
-        if (finalized != used) {
-            revert OllaCore__FinalizeAmountMismatch(used, finalized);
-        }
-
-        emit WithdrawalFinalized(available, used);
-        // slither-disable-end reentrancy-events
-        // slither-disable-end reentrancy-no-eth
-        return used;
-    }
-
     /// @notice Reconciles buffered assets with the actual asset balance.
     /// @return delta The amount added to buffered assets.
     function reconcileBufferedAssets() external override onlyRole(OPERATOR_ROLE) returns (uint256 delta) {
@@ -653,21 +610,29 @@ contract OllaCore is
     /// @notice Finalizes pending withdrawal requests using available liquidity.
     /// @return finalizedAmount The amount of assets used to finalize withdrawals.
     function _finalizeWithdrawals() internal returns (uint256 finalizedAmount) {
+        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
         uint256 bufferedAssets = _accountingState.bufferedAssets;
         uint256 availableForWithdrawals = bufferedAssets;
 
+        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
         if (availableForWithdrawals == 0) {
             return 0;
         }
 
+        // slither-disable-next-line pess-multiple-storage-read - clarity over micro-optimization
         uint256 queued = _modules.withdrawalQueue.totalPendingAssets();
+        // slither-disable-next-line pess-multiple-storage-read - clarity over micro-optimization
         uint256 total = totalAssets();
+        // slither-disable-next-line reentrancy-no-eth - external calls under nonReentrant entrypoints
         ISafetyModule(_modules.safetyModule).checkQueueRatio(queued, total);
+        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
         if (queued == 0) {
             return 0;
         }
 
+        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
         uint256 previewUsed = _modules.withdrawalQueue.previewFinalizeWithdrawals(availableForWithdrawals);
+        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
         if (previewUsed == 0) {
             return 0;
         }
@@ -676,7 +641,9 @@ contract OllaCore is
             revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, previewUsed, bufferedAssets);
         }
 
+        // slither-disable-next-line reentrancy-no-eth - external call under nonReentrant entrypoints
         finalizedAmount = _modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
+        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
         if (finalizedAmount != previewUsed) {
             revert OllaCore__FinalizeAmountMismatch(previewUsed, finalizedAmount);
         }
@@ -826,6 +793,7 @@ contract OllaCore is
     }
 
     function _decreaseBuffered(uint256 amount) internal {
+        // slither-disable-next-line timestamp,incorrect-equality - zero guard only, no timestamp usage
         if (amount == 0) {
             revert OllaCore__InvalidAmount();
         }

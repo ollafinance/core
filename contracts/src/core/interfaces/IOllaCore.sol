@@ -321,11 +321,6 @@ interface IOllaCore {
     /// @notice Operator-triggered accounting update hook.
     function updateAccounting() external;
 
-    /// @notice Operator-triggered withdrawal finalization hook.
-    /// @param available The available assets for withdrawals.
-    /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available) external returns (uint256 used);
-
     /// @notice Reconciles buffered assets with the actual asset balance.
     /// @return delta The amount added to buffered assets.
     function reconcileBufferedAssets() external returns (uint256 delta);

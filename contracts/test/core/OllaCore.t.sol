@@ -401,12 +401,6 @@ contract OllaCoreTest is Test {
         emit AccountingUpdated(0, expectedExchangeRate, 0, 0, 0, 0, 0, expectedTimestamp);
         vm.prank(operator);
         vault.updateAccounting();
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit WithdrawalFinalized(0, 0);
-        vm.prank(operator);
-        uint256 used = vault.finalizeWithdrawals(0);
-        assertEq(used, 0, "finalize returns zero in stub");
     }
 
     /*//////////////////////////////////////////////////////////////

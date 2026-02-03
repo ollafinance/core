@@ -201,20 +201,6 @@ contract OllaCoreSafetyModuleTest is Test {
         assertTrue(safetyModule.isPaused(), "rate-drop breaker should pause");
     }
 
-    function test_FinalizeWithdrawals_TriggersQueueRatioBreaker() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        _performRequestRedeem(alice, 80 * DECIMALS, alice);
-
-        vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
-
-        vault.finalizeWithdrawals(0);
-
-        assertTrue(safetyModule.isPaused(), "queue ratio breaker should pause");
-    }
-
     function test_UpdateAccounting_TriggersQueueRatioBreaker() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
@@ -301,16 +287,6 @@ contract OllaCoreSafetyModuleTest is Test {
         uint256 requestId = _performRequestRedeem(alice, shares / 2, alice);
 
         assertEq(requestId, 1, "request should succeed while paused");
-    }
-
-    function test_RevertWhen_FinalizeWithdrawalsPaused() external {
-        _performDeposit(alice, 10 * DECIMALS);
-
-        vm.prank(governance);
-        vault.pause();
-
-        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        vault.finalizeWithdrawals(0);
     }
 
     function test_ClaimWithdrawal_AllowsWhenPaused() external {

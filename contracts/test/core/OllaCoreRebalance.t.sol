@@ -258,32 +258,6 @@ contract OllaCoreRebalanceTest is Test {
 
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending queue drained");
     }
-
-    function test_FinalizeWithdrawals_FIFO() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        uint256 withdrawalShares = 5 * DECIMALS;
-
-        address bob = makeAddr("bob");
-        address carol = makeAddr("carol");
-
-        _performDeposit(alice, depositAmount);
-        _performDeposit(bob, depositAmount);
-        _performDeposit(carol, depositAmount);
-
-        uint256 firstRequestId = _requestWithdrawal(alice, withdrawalShares);
-        uint256 secondRequestId = _requestWithdrawal(bob, withdrawalShares);
-        uint256 thirdRequestId = _requestWithdrawal(carol, withdrawalShares);
-
-        uint256 available = withdrawalQueue.getRequest(firstRequestId).assetsExpected;
-
-        vm.prank(operator);
-        vault.finalizeWithdrawals(available);
-
-        assertTrue(withdrawalQueue.getRequest(firstRequestId).finalized, "first request finalized");
-        assertTrue(!withdrawalQueue.getRequest(secondRequestId).finalized, "second request pending");
-        assertTrue(!withdrawalQueue.getRequest(thirdRequestId).finalized, "third request pending");
-        assertEq(withdrawalQueue.nextPendingId(), secondRequestId, "next pending id advanced in order");
-    }
 }
 
 contract OllaCoreRebalanceReentrancyTest is Test {
@@ -351,7 +325,7 @@ contract OllaCoreRebalanceReentrancyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Rebalance_RevertsOnReentrantGetUnstakedFunds() external {
-        stakingManager.setReentry(vault, MaliciousReentrantStakingManager.ReentryAction.Rebalance, 0);
+        stakingManager.setReentry(vault, MaliciousReentrantStakingManager.ReentryAction.Rebalance);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(operator);
