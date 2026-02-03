@@ -241,6 +241,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end calls-loop,timestamp
 
     /// @inheritdoc IStakingManager
+    function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
+        (, IAztecRollup rollup) = _getRollup();
+        StakingState memory state = _getActivatedAttestersStakingState(rollup);
+        StakingState memory pendingState = _getPendingUnstakeRequestsStakingState(rollup);
+        pendingUnstakeAmount = state.pendingUnstakeAmount + pendingState.pendingUnstakeAmount;
+        return pendingUnstakeAmount;
+    }
+
+    /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
         // TODO: research if we can assume moving with rollup is safe
         (, IAztecRollup rollup) = _getRollup();

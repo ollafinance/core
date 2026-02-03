@@ -94,6 +94,11 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
+    function pendingUnstakes() external view override returns (uint256) {
+        return 0;
+    }
+
+    /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
         return _stakedAmount;
     }
