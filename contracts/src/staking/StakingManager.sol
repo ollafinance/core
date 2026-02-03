@@ -303,12 +303,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             revert StakingManager__InsufficientKeys();
         }
         (address rollupAddress, IAztecRollup rollup) = _getRollup();
-        uint256 activationThreshold = rollup.getActivationThreshold();
-        uint256 attestersToStakeTo = _calculateAttestersToStake(amount, activationThreshold, availableKeys);
-        uint256 actualStakeAmount = attestersToStakeTo * activationThreshold;
+        uint256 activationThresholdValue = rollup.getActivationThreshold();
+        uint256 attestersToStakeTo = _calculateAttestersToStake(amount, activationThresholdValue, availableKeys);
+        uint256 actualStakeAmount = attestersToStakeTo * activationThresholdValue;
 
         _transferAndApproveStake(rollupAddress, actualStakeAmount);
-        _stakeAttesters(rollup, attestersToStakeTo, activationThreshold);
+        _stakeAttesters(rollup, attestersToStakeTo, activationThresholdValue);
         stakingAsset.forceApprove(rollupAddress, 0);
     }
 
@@ -411,14 +411,16 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Reentrancy protection provided by external caller (stake).
     /// @param rollup The rollup staking interface.
     /// @param attestersToStakeTo The number of attesters to stake.
-    /// @param activationThreshold The stake amount per attester.
+    /// @param activationThresholdValue The stake amount per attester.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
-    function _stakeAttesters(IAztecRollup rollup, uint256 attestersToStakeTo, uint256 activationThreshold) internal {
+    function _stakeAttesters(IAztecRollup rollup, uint256 attestersToStakeTo, uint256 activationThresholdValue)
+        internal
+    {
         for (uint256 i; i < attestersToStakeTo; ++i) {
             KeyStore memory keyStore = stakingProviderRegistry.getAttesterKeystore();
-            _addActivatedAttester(keyStore.attester, activationThreshold);
-            emit StakedWithProvider(keyStore.attester, activationThreshold);
+            _addActivatedAttester(keyStore.attester, activationThresholdValue);
+            emit StakedWithProvider(keyStore.attester, activationThresholdValue);
             // External call is safe:
             // - Caller has nonReentrant modifier
             // - State fully updated before call (CEI pattern)
@@ -705,15 +707,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Calculates the attester count to stake to, bounded by available keys.
     /// @param amount The stake amount requested.
-    /// @param activationThreshold The stake amount per attester.
+    /// @param activationThresholdValue The stake amount per attester.
     /// @param availableKeys The number of keys available in the queue.
     /// @return attestersToStakeTo The number of attesters to stake.
-    function _calculateAttestersToStake(uint256 amount, uint256 activationThreshold, uint256 availableKeys)
+    function _calculateAttestersToStake(uint256 amount, uint256 activationThresholdValue, uint256 availableKeys)
         internal
         pure
         returns (uint256 attestersToStakeTo)
     {
-        attestersToStakeTo = amount / activationThreshold;
+        attestersToStakeTo = amount / activationThresholdValue;
         if (attestersToStakeTo == 0) {
             revert StakingManager__InsufficientAmount();
         }

@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
-import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
-import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-import { Math } from "@oz/utils/math/Math.sol";
-import { SafeCast } from "@oz/utils/math/SafeCast.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
-import { RolesLib } from "src/shared/RolesLib.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import {AccessControlUpgradeable} from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
+import {Initializable} from "@oz-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {PausableUpgradeable} from "@oz-upgradeable/utils/PausableUpgradeable.sol";
+import {IERC20Permit} from "@oz/token/ERC20/extensions/IERC20Permit.sol";
+import {IERC20} from "@oz/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@oz/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@oz/utils/math/Math.sol";
+import {SafeCast} from "@oz/utils/math/SafeCast.sol";
+import {ReentrancyGuard} from "@oz/utils/ReentrancyGuard.sol";
+import {IOllaCore} from "src/core/interfaces/IOllaCore.sol";
+import {IRewardsVault} from "src/core/interfaces/IRewardsVault.sol";
+import {IStAztec} from "src/core/interfaces/IStAztec.sol";
+import {IWithdrawalQueue} from "src/core/interfaces/IWithdrawalQueue.sol";
+import {ISafetyModule} from "src/safetymodule/ISafetyModule.sol";
+import {RolesLib} from "src/shared/RolesLib.sol";
+import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
@@ -671,35 +671,43 @@ contract OllaCore is
 
     /// @notice Initiates unstaking when pending withdrawals exceed buffered assets.
     /// @return initiated Amount actually initiated for unstake.
+    // slither-disable-next-line pess-unprotected-initialize
     function _initiateUnstake() internal returns (uint256 initiated) {
         IOllaCore.Modules memory modules = _modules;
         uint256 pendingWithdrawals = modules.withdrawalQueue.totalPendingAssets();
         uint256 bufferedAssets = _accountingState.bufferedAssets;
 
+        // slither-disable-next-line timestamp
         if (pendingWithdrawals <= bufferedAssets) {
             return 0;
         }
 
         uint256 amountToUnstake = pendingWithdrawals - bufferedAssets;
         uint256 pendingUnstakes = modules.stakingManager.pendingUnstakes();
+        // slither-disable-next-line timestamp
         if (pendingUnstakes >= amountToUnstake) {
             return 0;
         }
 
         uint256 requested = amountToUnstake - pendingUnstakes;
         uint256 threshold = unstakeThreshold;
+        // slither-disable-next-line timestamp
         if (requested < threshold) {
             return 0;
         }
 
         uint256 activationThreshold = modules.stakingManager.activationThreshold();
         // Unstakes happen in full attester units; round down unless below one unit.
+        // slither-disable-next-line timestamp
         if (requested < activationThreshold) {
             initiated = activationThreshold;
         } else {
+            // Intentional floor-to-unit rounding; result <= requested so no overflow risk.
+            // slither-disable-next-line divide-before-multiply
             initiated = (requested / activationThreshold) * activationThreshold;
         }
 
+        // slither-disable-next-line timestamp
         if (initiated > 0) {
             modules.stakingManager.unstake(initiated);
             emit UnstakeInitiated(amountToUnstake, initiated);
