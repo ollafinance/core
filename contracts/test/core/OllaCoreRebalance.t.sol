@@ -258,6 +258,24 @@ contract OllaCoreRebalanceTest is Test {
 
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending queue drained");
     }
+
+    function test_Rebalance_NoOp_WhenNoRewardsNoUnstakedNoQueue() external {
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RewardsDelta(0);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Rebalanced(0, 0, 0, accountingBefore.bufferedAssets);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered assets unchanged");
+    }
 }
 
 contract OllaCoreRebalanceReentrancyTest is Test {
