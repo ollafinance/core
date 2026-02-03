@@ -31,15 +31,15 @@ contract StAztec is ERC20Permit, AccessControl, IStAztec {
 
     /// @notice Sets governance admin and configures the initial core roles.
     /// @param governance Address granted DEFAULT_ADMIN_ROLE to manage roles.
-    /// @param core Address granted MINTER_ROLE and BURNER_ROLE.
-    constructor(address governance, address core) ERC20("stAztec", "stAZTEC") ERC20Permit("stAztec") {
-        if (governance == address(0) || core == address(0)) {
+    /// @param ollaCore Address granted MINTER_ROLE and BURNER_ROLE.
+    constructor(address governance, address ollaCore) ERC20("stAztec", "stAZTEC") ERC20Permit("stAztec") {
+        if (governance == address(0) || ollaCore == address(0)) {
             revert StAztecZeroAddress();
         }
 
         _grantRole(DEFAULT_ADMIN_ROLE, governance);
-        _grantRole(MINTER_ROLE, core);
-        _grantRole(BURNER_ROLE, core);
+        _grantRole(MINTER_ROLE, ollaCore);
+        _grantRole(BURNER_ROLE, ollaCore);
     }
 
     /*//////////////////////////////////////////////////////////////
