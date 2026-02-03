@@ -319,7 +319,7 @@ contract OllaCore is
     }
 
     /// @notice Operator-triggered rebalance flow.
-    /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> stake surplus
+    /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
     function rebalance() external override onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
         _syncBufferedWithBalance();
         // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
@@ -330,7 +330,9 @@ contract OllaCore is
 
         uint256 finalizedAmount = _finalizeWithdrawals();
 
-        // TODO: Phase 4 - Stake surplus
+        _initiateUnstake();
+
+        // TODO: Phase 5 - Stake surplus
         uint256 stakedAmount = 0;
 
         emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
@@ -649,6 +651,32 @@ contract OllaCore is
 
         emit WithdrawalFinalized(availableForWithdrawals, finalizedAmount);
         return finalizedAmount;
+    }
+
+    /// @notice Initiates unstaking when pending withdrawals exceed buffered assets.
+    /// @return initiated Amount actually initiated for unstake.
+    function _initiateUnstake() internal returns (uint256 initiated) {
+        IOllaCore.Modules memory modules = _modules;
+        uint256 pendingWithdrawals = modules.withdrawalQueue.totalPendingAssets();
+        uint256 bufferedAssets = _accountingState.bufferedAssets;
+
+        if (pendingWithdrawals <= bufferedAssets) {
+            return 0;
+        }
+
+        uint256 amountToUnstake = pendingWithdrawals - bufferedAssets;
+        uint256 pendingUnstakes = modules.stakingManager.pendingUnstakes();
+        if (pendingUnstakes >= amountToUnstake) {
+            return 0;
+        }
+
+        initiated = amountToUnstake - pendingUnstakes;
+        if (initiated > 0) {
+            modules.stakingManager.unstake(initiated);
+            emit UnstakeInitiated(amountToUnstake, initiated);
+        }
+
+        return initiated;
     }
 
     function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {

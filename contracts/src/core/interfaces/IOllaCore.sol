@@ -165,6 +165,11 @@ interface IOllaCore {
     /// @param used Used assets.
     event WithdrawalFinalized(uint256 available, uint256 used);
 
+    /// @notice Emitted when the core initiates unstaking to satisfy withdrawals.
+    /// @param requested Amount requested to unstake based on pending withdrawals.
+    /// @param initiated Amount actually initiated (after pendingUnstakes adjustments).
+    event UnstakeInitiated(uint256 requested, uint256 initiated);
+
     /// @notice Emitted when a withdrawal is claimed via queue.
     /// @param requestId Withdrawal request id.
     /// @param recipient Recipient address.
