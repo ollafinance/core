@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
-import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
-import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
-import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-import { Math } from "@oz/utils/math/Math.sol";
-import { SafeCast } from "@oz/utils/math/SafeCast.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
-import { RolesLib } from "src/shared/RolesLib.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import {AccessControlUpgradeable} from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
+import {Initializable} from "@oz-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {PausableUpgradeable} from "@oz-upgradeable/utils/PausableUpgradeable.sol";
+import {IERC20Permit} from "@oz/token/ERC20/extensions/IERC20Permit.sol";
+import {IERC20} from "@oz/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@oz/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@oz/utils/math/Math.sol";
+import {SafeCast} from "@oz/utils/math/SafeCast.sol";
+import {ReentrancyGuard} from "@oz/utils/ReentrancyGuard.sol";
+import {IOllaCore} from "src/core/interfaces/IOllaCore.sol";
+import {IRewardsVault} from "src/core/interfaces/IRewardsVault.sol";
+import {IStAztec} from "src/core/interfaces/IStAztec.sol";
+import {IWithdrawalQueue} from "src/core/interfaces/IWithdrawalQueue.sol";
+import {ISafetyModule} from "src/safetymodule/ISafetyModule.sol";
+import {RolesLib} from "src/shared/RolesLib.sol";
+import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
 
 /// @title OllaCore
 /// @notice Core vault handling deposits and async withdrawals.
@@ -681,7 +681,7 @@ contract OllaCore is
         if (pendingWithdrawals < bufferedAssets) {
             return 0;
         }
-        // slither-disable-next-line timestamp
+        // slither-disable-next-line timestamp,incorrect-equality
         if (pendingWithdrawals == bufferedAssets) {
             return 0;
         }
@@ -692,7 +692,7 @@ contract OllaCore is
         if (pendingUnstakes > amountToUnstake) {
             return 0;
         }
-        // slither-disable-next-line timestamp
+        // slither-disable-next-line timestamp,incorrect-equality
         if (pendingUnstakes == amountToUnstake) {
             return 0;
         }
