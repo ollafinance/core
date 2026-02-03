@@ -18,7 +18,7 @@ interface IStAztec is IERC20, IERC20Metadata, IERC20Permit, IAccessControl {
     error StAztecZeroAddress();
 
     /*//////////////////////////////////////////////////////////////
-                               CORE FUNCTIONS
+                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Mints stAztec shares to an account.
