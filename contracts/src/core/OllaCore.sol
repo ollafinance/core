@@ -328,10 +328,7 @@ contract OllaCore is
 
         _pullUnstakedFunds();
 
-        uint256 finalizedAmount = 0;
-
-        // TODO: Phase 3 - Finalize withdrawals
-        finalizedAmount = 0;
+        uint256 finalizedAmount = _finalizeWithdrawals();
 
         // TODO: Phase 4 - Stake surplus
         uint256 stakedAmount = 0;
@@ -653,6 +650,43 @@ contract OllaCore is
         return actualReceived;
     }
 
+    /// @notice Finalizes pending withdrawal requests using available liquidity.
+    /// @return finalizedAmount The amount of assets used to finalize withdrawals.
+    function _finalizeWithdrawals() internal returns (uint256 finalizedAmount) {
+        uint256 bufferedAssets = _accountingState.bufferedAssets;
+        uint256 availableForWithdrawals = bufferedAssets;
+
+        if (availableForWithdrawals == 0) {
+            return 0;
+        }
+
+        uint256 queued = _modules.withdrawalQueue.totalPendingAssets();
+        uint256 total = totalAssets();
+        ISafetyModule(_modules.safetyModule).checkQueueRatio(queued, total);
+        if (queued == 0) {
+            return 0;
+        }
+
+        uint256 previewUsed = _modules.withdrawalQueue.previewFinalizeWithdrawals(availableForWithdrawals);
+        if (previewUsed == 0) {
+            return 0;
+        }
+
+        if (previewUsed > bufferedAssets) {
+            revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, previewUsed, bufferedAssets);
+        }
+
+        finalizedAmount = _modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
+        if (finalizedAmount != previewUsed) {
+            revert OllaCore__FinalizeAmountMismatch(previewUsed, finalizedAmount);
+        }
+
+        _decreaseBuffered(finalizedAmount);
+
+        emit WithdrawalFinalized(availableForWithdrawals, finalizedAmount);
+        return finalizedAmount;
+    }
+
     function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {
         if (recipient == address(0)) {
             revert OllaCore__ZeroAddress("recipient");
@@ -789,6 +823,13 @@ contract OllaCore is
         uint256 oldValue = _accountingState.bufferedAssets;
         uint256 newValue = oldValue + amount;
         _accountingState.bufferedAssets = newValue;
+    }
+
+    function _decreaseBuffered(uint256 amount) internal {
+        if (amount == 0) {
+            revert OllaCore__InvalidAmount();
+        }
+        _accountingState.bufferedAssets -= amount;
     }
 
     function _getStakingManagerState()

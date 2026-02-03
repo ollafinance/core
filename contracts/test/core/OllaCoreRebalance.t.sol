@@ -7,13 +7,14 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/core/StAztec.sol";
+import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MaliciousReentrantStakingManager } from "test/mocks/MaliciousReentrantStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 contract OllaCoreRebalanceTest is Test {
@@ -24,6 +25,7 @@ contract OllaCoreRebalanceTest is Test {
     event RewardsDelta(uint256 delta);
     event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
     event UnstakedFundsClaimed(uint256 amount);
+    event WithdrawalFinalized(uint256 available, uint256 used);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -41,7 +43,7 @@ contract OllaCoreRebalanceTest is Test {
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
-    MockWithdrawalQueue internal withdrawalQueue;
+    WithdrawalQueue internal withdrawalQueue;
     MockRewardsVault internal rewardsVault;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -60,10 +62,14 @@ contract OllaCoreRebalanceTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
+        WithdrawalQueue queueImplementation = new WithdrawalQueue();
+        ERC1967Proxy queueProxy = new ERC1967Proxy(
+            address(queueImplementation), abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance))
+        );
+        withdrawalQueue = WithdrawalQueue(address(queueProxy));
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule(address(vault));
 
         // Configure staking manager to mint rewards directly to rewards vault
         stakingManager.setRewardsToken(asset);
@@ -100,6 +106,12 @@ contract OllaCoreRebalanceTest is Test {
         vm.prank(owner);
         shares = vault.deposit(assets, owner);
         return shares;
+    }
+
+    function _requestWithdrawal(address owner, uint256 shares) internal returns (uint256 requestId) {
+        vm.prank(owner);
+        requestId = vault.requestRedeem(shares, owner);
+        return requestId;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -196,6 +208,82 @@ contract OllaCoreRebalanceTest is Test {
         IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
         assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered assets unchanged");
     }
+
+    function test_Rebalance_FinalizeWithdrawals_ConsumesBuffer() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 withdrawalShares = 6 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 bufferBefore = accountingBefore.bufferedAssets;
+
+        vm.expectCall(address(withdrawalQueue), abi.encodeCall(withdrawalQueue.finalizeWithdrawals, (bufferBefore)));
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RewardsDelta(0);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit WithdrawalFinalized(bufferBefore, request.assetsExpected);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Rebalanced(0, request.assetsExpected, 0, bufferBefore - request.assetsExpected);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(
+            accountingAfter.bufferedAssets,
+            bufferBefore - request.assetsExpected,
+            "buffered assets reduced by finalized amount"
+        );
+    }
+
+    function test_Rebalance_FinalizeWithdrawals_QueueDrains() external {
+        uint256 depositAmount = 20 * DECIMALS;
+        uint256 withdrawalShares = 5 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+        _requestWithdrawal(alice, withdrawalShares);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending queue drained");
+    }
+
+    function test_FinalizeWithdrawals_FIFO() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 withdrawalShares = 5 * DECIMALS;
+
+        address bob = makeAddr("bob");
+        address carol = makeAddr("carol");
+
+        _performDeposit(alice, depositAmount);
+        _performDeposit(bob, depositAmount);
+        _performDeposit(carol, depositAmount);
+
+        uint256 firstRequestId = _requestWithdrawal(alice, withdrawalShares);
+        uint256 secondRequestId = _requestWithdrawal(bob, withdrawalShares);
+        uint256 thirdRequestId = _requestWithdrawal(carol, withdrawalShares);
+
+        uint256 available = withdrawalQueue.getRequest(firstRequestId).assetsExpected;
+
+        vm.prank(operator);
+        vault.finalizeWithdrawals(available);
+
+        assertTrue(withdrawalQueue.getRequest(firstRequestId).finalized, "first request finalized");
+        assertTrue(!withdrawalQueue.getRequest(secondRequestId).finalized, "second request pending");
+        assertTrue(!withdrawalQueue.getRequest(thirdRequestId).finalized, "third request pending");
+        assertEq(withdrawalQueue.nextPendingId(), secondRequestId, "next pending id advanced in order");
+    }
 }
 
 contract OllaCoreRebalanceReentrancyTest is Test {
@@ -208,7 +296,7 @@ contract OllaCoreRebalanceReentrancyTest is Test {
     StAztec internal stAztec;
     MaliciousReentrantStakingManager internal stakingManager;
     address internal governance;
-    MockWithdrawalQueue internal withdrawalQueue;
+    WithdrawalQueue internal withdrawalQueue;
     MockRewardsVault internal rewardsVault;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -227,10 +315,14 @@ contract OllaCoreRebalanceReentrancyTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MaliciousReentrantStakingManager();
         governance = makeAddr("governance");
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
+        WithdrawalQueue queueImplementation = new WithdrawalQueue();
+        ERC1967Proxy queueProxy = new ERC1967Proxy(
+            address(queueImplementation), abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance))
+        );
+        withdrawalQueue = WithdrawalQueue(address(queueProxy));
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule(address(vault));
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
