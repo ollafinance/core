@@ -124,6 +124,7 @@ contract OllaCoreTest is Test {
     event OllaProtocolFeesPaid(uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares);
     event RewardsDelta(uint256 delta);
     event BufferedAssetsReconciled(uint256 delta, uint256 newBufferedAssets, address indexed recipient);
+    event UnstakeThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
 
     /*//////////////////////////////////////////////////////////////
                              CONSTANTS
@@ -1296,6 +1297,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
     event GovernanceUpdated(address oldGovernance, address newGovernance);
     event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
+    event UnstakeThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
 
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
@@ -1424,6 +1426,28 @@ contract OllaCoreRewardsAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(address(0)));
     }
 
+    function test_RevertWhen_UnstakeThresholdIsZero() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOllaCore.OllaCore__InvalidUnstakeThreshold.selector, 0, stakingManager.activationThreshold()
+            )
+        );
+        vm.prank(governance);
+        vault.setUnstakeThreshold(0);
+    }
+
+    function test_RevertWhen_UnstakeThresholdExceedsActivationThreshold() external {
+        uint256 activationThreshold = stakingManager.activationThreshold();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOllaCore.OllaCore__InvalidUnstakeThreshold.selector, activationThreshold + 1, activationThreshold
+            )
+        );
+        vm.prank(governance);
+        vault.setUnstakeThreshold(activationThreshold + 1);
+    }
+
     /*//////////////////////////////////////////////////////////////
                         SUCCESSFUL UPDATE TESTS
     //////////////////////////////////////////////////////////////*/
@@ -1474,6 +1498,22 @@ contract OllaCoreRewardsAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(newRewardsVault));
 
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault updated");
+    }
+
+    function test_SetUnstakeThreshold_UpdatesAndEmits() external {
+        uint256 activationThreshold = stakingManager.activationThreshold();
+        assertGt(activationThreshold, 1, "activation threshold too small");
+
+        uint256 oldThreshold = vault.unstakeThreshold();
+        uint256 newThreshold = activationThreshold - 1;
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit UnstakeThresholdUpdated(oldThreshold, newThreshold);
+
+        vm.prank(governance);
+        vault.setUnstakeThreshold(newThreshold);
+
+        assertEq(vault.unstakeThreshold(), newThreshold, "unstake threshold updated");
     }
 
     /*//////////////////////////////////////////////////////////////

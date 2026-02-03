@@ -342,6 +342,72 @@ contract OllaCoreRebalanceTest is Test {
             "unstake reduced by pending"
         );
     }
+
+    function test_Rebalance_Unstake_UnitBased_RoundsDownToActivationThreshold() external {
+        uint256 pendingAssets = 210 * DECIMALS;
+
+        stakingManager.setActivationThreshold(200 * DECIMALS);
+        vm.prank(governance);
+        vault.setUnstakeThreshold(150 * DECIMALS);
+
+        vm.prank(address(vault));
+        withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit UnstakeInitiated(pendingAssets, 200 * DECIMALS);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(stakingManager.lastUnstakeAmount(), 200 * DECIMALS, "unstake rounds down");
+    }
+
+    function test_Rebalance_Unstake_UnitBased_NoOpBelowThreshold() external {
+        uint256 pendingAssets = 120 * DECIMALS;
+
+        stakingManager.setActivationThreshold(200 * DECIMALS);
+        vm.prank(governance);
+        vault.setUnstakeThreshold(150 * DECIMALS);
+
+        vm.prank(address(vault));
+        withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(stakingManager.lastUnstakeAmount(), 0, "unstake not initiated");
+    }
+
+    function test_Rebalance_Unstake_UnitBased_ThresholdTriggersOneUnit() external {
+        uint256 pendingAssets = 160 * DECIMALS;
+
+        stakingManager.setActivationThreshold(200 * DECIMALS);
+        vm.prank(governance);
+        vault.setUnstakeThreshold(150 * DECIMALS);
+
+        vm.prank(address(vault));
+        withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit UnstakeInitiated(pendingAssets, 200 * DECIMALS);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(stakingManager.lastUnstakeAmount(), 200 * DECIMALS, "unstake initiated to one unit");
+    }
 }
 
 contract OllaCoreRebalanceReentrancyTest is Test {
