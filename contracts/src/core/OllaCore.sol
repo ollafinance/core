@@ -678,14 +678,22 @@ contract OllaCore is
         uint256 bufferedAssets = _accountingState.bufferedAssets;
 
         // slither-disable-next-line timestamp
-        if (pendingWithdrawals <= bufferedAssets) {
+        if (pendingWithdrawals < bufferedAssets) {
+            return 0;
+        }
+        // slither-disable-next-line timestamp
+        if (pendingWithdrawals == bufferedAssets) {
             return 0;
         }
 
         uint256 amountToUnstake = pendingWithdrawals - bufferedAssets;
         uint256 pendingUnstakes = modules.stakingManager.pendingUnstakes();
         // slither-disable-next-line timestamp
-        if (pendingUnstakes >= amountToUnstake) {
+        if (pendingUnstakes > amountToUnstake) {
+            return 0;
+        }
+        // slither-disable-next-line timestamp
+        if (pendingUnstakes == amountToUnstake) {
             return 0;
         }
 
