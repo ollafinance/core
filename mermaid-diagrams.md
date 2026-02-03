@@ -234,6 +234,25 @@ sequenceDiagram
     Note right of C: require finalized == used
 ```
 
+#### Initiate unstake
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant C as OllaCore
+    participant WQ as WithdrawalQueue
+    participant SM as StakingManager
+
+    OP->>C: rebalance()
+    Note over C: Step 4: Initiate unstake
+    C->>WQ: totalPendingAssets()
+    C->>C: amountToUnstake = max(0, pending - buffered)
+    C->>SM: pendingUnstakes()
+    SM-->>C: pendingUnstakes
+    C->>SM: unstake(initiated)
+    Note right of C: emit UnstakeInitiated(requested, initiated)
+```
+
 #### Rebalance (full flow)
 
 ```mermaid
