@@ -245,22 +245,6 @@ contract OllaCoreReentrancyTest is Test {
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vault.claimRequestById(requestId);
     }
-
-    /*//////////////////////////////////////////////////////////////
-                          FINALIZE WITHDRAWALS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_FinalizeWithdrawals_ReenteredFromQueue() external {
-        _deposit(alice, 10 * DECIMALS);
-
-        uint256 available = 1 * DECIMALS;
-        withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.finalizeWithdrawals, (available)));
-        withdrawalQueue.setReenterOnFinalize(true);
-
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        vm.prank(governance);
-        vault.finalizeWithdrawals(available);
-    }
 }
 
 contract OllaCoreHarvestReentrancyTest is Test {

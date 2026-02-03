@@ -13,8 +13,7 @@ contract MaliciousReentrantStakingManager is MockAccountingStakingManager {
 
     enum ReentryAction {
         None,
-        Rebalance,
-        FinalizeWithdrawals
+        Rebalance
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -23,16 +22,14 @@ contract MaliciousReentrantStakingManager is MockAccountingStakingManager {
 
     IOllaCore public coreRef;
     ReentryAction public action;
-    uint256 public finalizeAvailable;
 
     /*//////////////////////////////////////////////////////////////
                                TEST HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function setReentry(IOllaCore core_, ReentryAction action_, uint256 available) external {
+    function setReentry(IOllaCore core_, ReentryAction action_) external {
         coreRef = core_;
         action = action_;
-        finalizeAvailable = available;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -57,10 +54,6 @@ contract MaliciousReentrantStakingManager is MockAccountingStakingManager {
         if (action == ReentryAction.Rebalance) {
             coreTarget.rebalance();
             return;
-        }
-
-        if (action == ReentryAction.FinalizeWithdrawals) {
-            coreTarget.finalizeWithdrawals(finalizeAvailable);
         }
     }
 }
