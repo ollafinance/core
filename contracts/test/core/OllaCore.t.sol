@@ -164,9 +164,9 @@ contract OllaCoreTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCoreHarness(address(proxy));
 
-        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");
@@ -1195,10 +1195,10 @@ contract OllaCoreTest is Test {
         OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         OllaCore newVault = OllaCore(address(proxy));
-        StAztec newStAztec = new StAztec(address(newVault));
         MockAccountingStakingManager newStakingManager = new MockAccountingStakingManager();
 
         address newGovernance = makeAddr("governance");
+        StAztec newStAztec = new StAztec(newGovernance, address(newVault));
 
         address newWithdrawalQueue = makeAddr("withdrawalQueue");
         MockRewardsVault newRewardsVault = new MockRewardsVault(asset, address(coreImplementation));
@@ -1330,9 +1330,9 @@ contract OllaCoreRewardsAccessControlTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        stAztec = new StAztec(address(vault));
-        stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockStakingManager();
         rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         withdrawalQueue = new MockWithdrawalQueue();
@@ -1632,9 +1632,9 @@ contract OllaCoreProtocolFeesTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCoreHarness(address(proxy));
 
-        stAztec = new StAztec(address(vault));
-        stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockAccountingStakingManager();
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");

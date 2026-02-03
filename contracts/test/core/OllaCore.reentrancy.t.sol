@@ -135,9 +135,9 @@ contract OllaCoreReentrancyTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         vault = OllaCore(address(proxy));
 
-        stAztec = new StAztec(address(vault));
-        stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockStakingManager();
         rewardsVault = makeAddr("rewardsVault");
         safetyModule = new MockSafetyModule(address(implementation));
         withdrawalQueue = new MaliciousWithdrawalQueue();
@@ -281,9 +281,9 @@ contract OllaCoreHarvestReentrancyTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         vault = OllaCore(address(proxy));
 
-        stAztec = new StAztec(address(vault));
-        stakingManager = new MockHarvestStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockHarvestStakingManager();
         rewardsVault = new MaliciousRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(implementation));
         withdrawalQueue = new MockWithdrawalQueue();

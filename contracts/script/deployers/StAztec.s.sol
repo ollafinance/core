@@ -17,7 +17,7 @@ contract StAztecDeployer is BaseDeployer {
 
         vm.startBroadcast(config.deployerPrivateKey);
 
-        StAztec token = new StAztec(ollaCoreProxy);
+        StAztec token = new StAztec(config.governance, ollaCoreProxy);
         _logDeployment("StAztec", address(token));
 
         vm.stopBroadcast();

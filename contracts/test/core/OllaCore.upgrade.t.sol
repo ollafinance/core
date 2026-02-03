@@ -97,9 +97,9 @@ contract OllaCoreUpgradeTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCoreUpgradeHarness(address(proxy));
 
-        stAztec = new StAztec(address(vault));
-        stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockStakingManager();
         rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");

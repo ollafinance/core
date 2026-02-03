@@ -59,9 +59,9 @@ contract OllaCoreRebalanceTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        stAztec = new StAztec(address(vault));
-        stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(
@@ -304,9 +304,9 @@ contract OllaCoreRebalanceReentrancyTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        stAztec = new StAztec(address(vault));
-        stakingManager = new MaliciousReentrantStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MaliciousReentrantStakingManager();
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(
