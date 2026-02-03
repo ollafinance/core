@@ -81,6 +81,10 @@ contract MockHarvestStakingManager is IStakingManager {
         return StakingState({ stakedAmount: 0, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
     }
 
+    function pendingUnstakes() external pure override returns (uint256) {
+        return 0;
+    }
+
     function getProviderConfig() external pure override returns (ProviderConfig memory) {
         return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
     }
