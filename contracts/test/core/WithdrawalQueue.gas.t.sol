@@ -83,6 +83,39 @@ contract WithdrawalQueueGasTest is Test {
         assertGt(slope, 0, "marginal gas per request must be > 0");
     }
 
+    function test_Rebalance_CanBeForcedToExceedFixedGasBudget() external {
+        uint256 nSmall = 25;
+        uint256 nLarge = 400;
+
+        // Measure gas requirements (normal calls).
+        uint256 gasSmall = _gasForRebalanceWithNRequests(nSmall);
+        uint256 gasLarge = _gasForRebalanceWithNRequests(nLarge);
+
+        emit log_named_uint("measured rebalanceGas n=25", gasSmall);
+        emit log_named_uint("measured rebalanceGas n=400", gasLarge);
+
+        assertGt(gasLarge, gasSmall, "rebalance must cost more with more withdrawals");
+
+        // Choose a fixed gas budget between the two measurements.
+        uint256 gasBudget = gasSmall + (gasLarge - gasSmall) / 2;
+        emit log_named_uint("chosen gasBudget", gasBudget);
+
+        // Demonstrate: small succeeds under the budget, large fails under the same budget.
+        System memory sSmall = _deploySystem();
+        _enqueueNWithdrawals(sSmall, nSmall);
+
+        vm.prank(sSmall.operator);
+        (bool okSmall,) = address(sSmall.vault).call{ gas: gasBudget }(abi.encodeCall(OllaCore.rebalance, ()));
+        assertTrue(okSmall, "small queue should rebalance within fixed gas budget");
+
+        System memory sLarge = _deploySystem();
+        _enqueueNWithdrawals(sLarge, nLarge);
+
+        vm.prank(sLarge.operator);
+        (bool okLarge,) = address(sLarge.vault).call{ gas: gasBudget }(abi.encodeCall(OllaCore.rebalance, ()));
+        assertFalse(okLarge, "large queue should exceed the same fixed gas budget");
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 HELPERS
     //////////////////////////////////////////////////////////////*/
