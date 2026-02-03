@@ -52,9 +52,9 @@ contract OllaCoreRecoverStAztecTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        stAztec = new StAztec(address(vault));
-        stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockAccountingStakingManager();
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         withdrawalQueue = new MockWithdrawalQueue();

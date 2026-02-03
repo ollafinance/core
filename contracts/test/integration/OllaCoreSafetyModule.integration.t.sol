@@ -79,10 +79,10 @@ contract OllaCoreSafetyModuleTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCoreSafetyModuleHarness(address(proxy));
 
-        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         rewardsVault = new MockRewardsVault(asset, address(vault));

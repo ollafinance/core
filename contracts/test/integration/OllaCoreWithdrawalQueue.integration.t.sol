@@ -77,9 +77,9 @@ contract OllaCoreWithdrawalQueueTest is Test {
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCoreWithdrawalQueueHarness(address(coreProxy));
 
-        stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
         rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");

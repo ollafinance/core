@@ -12,4 +12,6 @@ library RolesLib {
     bytes32 internal constant GUARDIAN_ROLE = keccak256("GUARDIAN_ROLE");
     bytes32 internal constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
     bytes32 internal constant STAKING_PROVIDER_ADMIN_ROLE = keccak256("STAKING_PROVIDER_ADMIN_ROLE");
+    bytes32 internal constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 internal constant BURNER_ROLE = keccak256("BURNER_ROLE");
 }

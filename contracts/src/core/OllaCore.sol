@@ -155,6 +155,8 @@ contract OllaCore is
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governance_);
         _grantRole(GUARDIAN_ROLE, governance_);
         _grantRole(OPERATOR_ROLE, governance_);
+
+        // stAztec roles are granted at stAztec deployment (constructor).
     }
 
     /// @notice Deposits assets and mints stAztec shares.
