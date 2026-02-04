@@ -53,6 +53,29 @@ CORE=0x... PRIVATE_KEY=0x... \
   forge script script/ops/Rebalance.s.sol --broadcast --rpc-url http://127.0.0.1:8545
 CORE=0x... PRIVATE_KEY=0x... \
   forge script script/ops/UpdateAccounting.s.sol --broadcast --rpc-url http://127.0.0.1:8545
+
+# Print current core/accounting state
+forge script script/ops/PrintState.s.sol --rpc-url http://127.0.0.1:8545
+```
+
+### Local Demo (Finalize Stake Withdraw)
+
+Demonstrates stake deposit -> initiateWithdraw -> finalizeWithdraw against the mock rollup.
+
+```bash
+cd contracts
+
+# Uses deployments/local.json if ROLLUP is not set
+PRIVATE_KEY=0x... \
+  forge script script/rollup/DemoFinalizeWithdraw.s.sol --rpc-url http://127.0.0.1:8545
+
+# Broadcast to actually execute on-chain
+PRIVATE_KEY=0x... \
+  forge script script/rollup/DemoFinalizeWithdraw.s.sol --broadcast --rpc-url http://127.0.0.1:8545
+
+# Optional overrides
+PRIVATE_KEY=0x... ATTESTER=0x... RECIPIENT=0x... THRESHOLD=10000000000000000000 \
+  forge script script/rollup/DemoFinalizeWithdraw.s.sol --broadcast --rpc-url http://127.0.0.1:8545
 ```
 
 ### Testnet Deployment
