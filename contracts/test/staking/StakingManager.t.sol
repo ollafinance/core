@@ -457,7 +457,7 @@ contract StakingManagerTest is Test {
         vm.stopPrank();
     }
 
-    function test_RevertWhen_Stake_BelowThreshold() external {
+    function test_Stake_ReturnsZeroWhen_BelowThreshold() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(keys);
@@ -467,9 +467,11 @@ contract StakingManagerTest is Test {
 
         vm.startPrank(core);
         aztec.approve(address(stakingManager), stakeAmount);
-        vm.expectRevert(IStakingManager.StakingManager__InsufficientAmount.selector);
-        stakingManager.stake(stakeAmount);
+        uint256 stakedAmount = stakingManager.stake(stakeAmount);
         vm.stopPrank();
+
+        assertEq(stakedAmount, 0);
+        assertEq(stakingManager.getActivatedAttesterCount(), 0);
     }
 
     /*//////////////////////////////////////////////////////////////

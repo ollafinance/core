@@ -299,6 +299,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         (address rollupAddress, IAztecRollup rollup) = _getRollup();
         uint256 activationThresholdValue = rollup.getActivationThreshold();
         uint256 attestersToStakeTo = _calculateAttestersToStake(amount, activationThresholdValue, availableKeys);
+        if (attestersToStakeTo == 0) {
+            return 0;
+        }
         actualStakeAmount = attestersToStakeTo * activationThresholdValue;
 
         _transferAndApproveStake(rollupAddress, actualStakeAmount);
@@ -711,9 +714,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         returns (uint256 attestersToStakeTo)
     {
         attestersToStakeTo = amount / activationThresholdValue;
-        if (attestersToStakeTo == 0) {
-            revert StakingManager__InsufficientAmount();
-        }
         if (attestersToStakeTo > availableKeys) {
             attestersToStakeTo = availableKeys;
         }
