@@ -186,8 +186,8 @@ sequenceDiagram
     participant AR as AztecRollupContract
 
     OP->>C: rebalance
-    Note over C: targetBuffer is the amount we want to keep liquid for withdrawals
-    C->>C: stakeable = bufferedAssets - targetBuffer
+    Note over C: targetLiquidityBuffer is the amount we want to keep liquid for withdrawals
+    C->>C: stakeable = bufferedAssets - targetLiquidityBuffer
     loop while stakeable >= VALIDATOR_STAKE_UNIT
         C->>SR: stake(amount = VALIDATOR_STAKE_UNIT)
         SR->>AR: stake(VALIDATOR_STAKE_UNIT,<br/>Attester: nextValidatorKey,<br/>Withdrawer: StakingManager,<br/>Coinbase: RewardsVault)
@@ -210,7 +210,7 @@ sequenceDiagram
     op->>C: rebalance
     C->>WQ: getWithdrawalRequestsAmount
     WQ-->>C: withdrawalRequestsAmount
-    C->>C: requiredBuffer = max(withdrawalRequestsAmount, targetBuffer)
+    C->>C: requiredBuffer = max(withdrawalRequestsAmount, targetLiquidityBuffer)
     C->>C: amountToUnstake = max(0, requiredBuffer - bufferedAssets)
     C->>stkMan: unStake(amountToUnstake)
     Note over stkMan,AR: Later, when AztecRollup processes the withdrawal
