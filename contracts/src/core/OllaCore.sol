@@ -73,8 +73,8 @@ contract OllaCore is
     /// @notice The treasury fee split in basis points.
     uint256 public treasuryFeeSplitBP;
 
-    /// @notice Threshold to trigger unit-based unstaking.
-    uint256 public unstakeThreshold;
+    /// @notice Target liquid assets to keep buffered for withdrawals.
+    uint256 public targetBuffer;
 
     mapping(address owner => uint256 requestId) private _activeRequestIds;
     mapping(uint256 requestId => address owner) private _requestOwners;
@@ -149,7 +149,7 @@ contract OllaCore is
 
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
-        unstakeThreshold = stakingManager_.activationThreshold();
+        targetBuffer = 0;
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         // Timestamp is used only for reporting/accounting liveness.
@@ -322,16 +322,15 @@ contract OllaCore is
         emit RewardsVaultUpdated(address(oldRewardsVault), address(newRewardsVault));
     }
 
-    /// @notice Sets the unstake threshold used to trigger unit-based unstaking.
-    /// @param newThreshold The new unstake threshold.
-    function setUnstakeThreshold(uint256 newThreshold) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 activationThreshold = _modules.stakingManager.activationThreshold();
-        if (newThreshold == 0 || newThreshold > activationThreshold) {
-            revert OllaCore__InvalidUnstakeThreshold(newThreshold, activationThreshold);
+    /// @notice Sets the target buffer used to reserve liquid assets.
+    /// @param newBuffer The new target buffer.
+    function setTargetBuffer(uint256 newBuffer) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newBuffer == 0) {
+            revert OllaCore__InvalidTargetBuffer(newBuffer);
         }
-        uint256 oldThreshold = unstakeThreshold;
-        unstakeThreshold = newThreshold;
-        emit UnstakeThresholdUpdated(oldThreshold, newThreshold);
+        uint256 oldBuffer = targetBuffer;
+        targetBuffer = newBuffer;
+        emit TargetBufferUpdated(oldBuffer, newBuffer);
     }
 
     /// @notice Operator-triggered rebalance flow.
@@ -676,17 +675,18 @@ contract OllaCore is
         IOllaCore.Modules memory modules = _modules;
         uint256 pendingWithdrawals = modules.withdrawalQueue.totalPendingAssets();
         uint256 bufferedAssets = _accountingState.bufferedAssets;
+        uint256 requiredBuffer = pendingWithdrawals > targetBuffer ? pendingWithdrawals : targetBuffer;
 
         // slither-disable-next-line timestamp
-        if (pendingWithdrawals < bufferedAssets) {
+        if (requiredBuffer < bufferedAssets) {
             return 0;
         }
         // slither-disable-next-line timestamp,incorrect-equality
-        if (pendingWithdrawals == bufferedAssets) {
+        if (requiredBuffer == bufferedAssets) {
             return 0;
         }
 
-        uint256 amountToUnstake = pendingWithdrawals - bufferedAssets;
+        uint256 amountToUnstake = requiredBuffer - bufferedAssets;
         uint256 pendingUnstakes = modules.stakingManager.pendingUnstakes();
         // slither-disable-next-line timestamp
         if (pendingUnstakes > amountToUnstake) {
@@ -698,22 +698,8 @@ contract OllaCore is
         }
 
         uint256 requested = amountToUnstake - pendingUnstakes;
-        uint256 threshold = unstakeThreshold;
-        // slither-disable-next-line timestamp
-        if (requested < threshold) {
-            return 0;
-        }
 
-        uint256 activationThreshold = modules.stakingManager.activationThreshold();
-        // Unstakes happen in full attester units; round down unless below one unit.
-        // slither-disable-next-line timestamp
-        if (requested < activationThreshold) {
-            initiated = activationThreshold;
-        } else {
-            // Intentional floor-to-unit rounding; result <= requested so no overflow risk.
-            // slither-disable-next-line divide-before-multiply
-            initiated = (requested / activationThreshold) * activationThreshold;
-        }
+        initiated = requested;
 
         // slither-disable-next-line timestamp
         if (initiated > 0) {

@@ -124,7 +124,6 @@ contract OllaCoreTest is Test {
     event OllaProtocolFeesPaid(uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares);
     event RewardsDelta(uint256 delta);
     event BufferedAssetsReconciled(uint256 delta, uint256 newBufferedAssets, address indexed recipient);
-    event UnstakeThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
 
     /*//////////////////////////////////////////////////////////////
                              CONSTANTS
@@ -1297,7 +1296,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
     event GovernanceUpdated(address oldGovernance, address newGovernance);
     event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
-    event UnstakeThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
+    event TargetBufferUpdated(uint256 oldBuffer, uint256 newBuffer);
 
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
@@ -1398,6 +1397,16 @@ contract OllaCoreRewardsAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(alice));
     }
 
+    function test_RevertWhen_NonAdminSetsTargetBuffer() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(alice);
+        vault.setTargetBuffer(1);
+    }
+
     /*//////////////////////////////////////////////////////////////
                         INVALID VALUE TESTS
     //////////////////////////////////////////////////////////////*/
@@ -1426,26 +1435,10 @@ contract OllaCoreRewardsAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(address(0)));
     }
 
-    function test_RevertWhen_UnstakeThresholdIsZero() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IOllaCore.OllaCore__InvalidUnstakeThreshold.selector, 0, stakingManager.activationThreshold()
-            )
-        );
+    function test_RevertWhen_TargetBufferIsZero() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidTargetBuffer.selector, 0));
         vm.prank(governance);
-        vault.setUnstakeThreshold(0);
-    }
-
-    function test_RevertWhen_UnstakeThresholdExceedsActivationThreshold() external {
-        uint256 activationThreshold = stakingManager.activationThreshold();
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IOllaCore.OllaCore__InvalidUnstakeThreshold.selector, activationThreshold + 1, activationThreshold
-            )
-        );
-        vm.prank(governance);
-        vault.setUnstakeThreshold(activationThreshold + 1);
+        vault.setTargetBuffer(0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1500,20 +1493,17 @@ contract OllaCoreRewardsAccessControlTest is Test {
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault updated");
     }
 
-    function test_SetUnstakeThreshold_UpdatesAndEmits() external {
-        uint256 activationThreshold = stakingManager.activationThreshold();
-        assertGt(activationThreshold, 1, "activation threshold too small");
-
-        uint256 oldThreshold = vault.unstakeThreshold();
-        uint256 newThreshold = activationThreshold - 1;
+    function test_SetTargetBuffer_UpdatesAndEmits() external {
+        uint256 oldBuffer = vault.targetBuffer();
+        uint256 newBuffer = oldBuffer + 1;
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit UnstakeThresholdUpdated(oldThreshold, newThreshold);
+        emit TargetBufferUpdated(oldBuffer, newBuffer);
 
         vm.prank(governance);
-        vault.setUnstakeThreshold(newThreshold);
+        vault.setTargetBuffer(newBuffer);
 
-        assertEq(vault.unstakeThreshold(), newThreshold, "unstake threshold updated");
+        assertEq(vault.targetBuffer(), newBuffer, "target buffer updated");
     }
 
     /*//////////////////////////////////////////////////////////////
