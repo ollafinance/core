@@ -79,7 +79,17 @@ contract MockAccountingStakingManager is IStakingManager {
                           CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function stake(uint256) external pure override { }
+    function stake(uint256 amount) external override returns (uint256 stakedAmount) {
+        if (amount == 0) {
+            return 0;
+        }
+        IERC20 token = rewardsToken;
+        if (address(token) == address(0)) {
+            return 0;
+        }
+        token.transferFrom(msg.sender, address(this), amount);
+        return amount;
+    }
 
     function unstake(uint256 amount) external override {
         lastUnstakeAmount = amount;

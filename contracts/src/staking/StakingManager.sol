@@ -146,9 +146,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
-    function stake(uint256 amount) external override onlyCore nonReentrant {
+    function stake(uint256 amount) external override onlyCore nonReentrant returns (uint256 stakedAmount) {
         if (amount == 0) revert StakingManager__ZeroAmount();
-        _stake(amount);
+        stakedAmount = _stake(amount);
+        return stakedAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -290,7 +291,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
     // slither-disable-next-line ordering
-    function _stake(uint256 amount) internal {
+    function _stake(uint256 amount) internal returns (uint256 actualStakeAmount) {
         uint256 availableKeys = stakingProviderRegistry.getQueueLength();
         if (availableKeys == 0) {
             revert StakingManager__InsufficientKeys();
@@ -298,11 +299,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         (address rollupAddress, IAztecRollup rollup) = _getRollup();
         uint256 activationThresholdValue = rollup.getActivationThreshold();
         uint256 attestersToStakeTo = _calculateAttestersToStake(amount, activationThresholdValue, availableKeys);
-        uint256 actualStakeAmount = attestersToStakeTo * activationThresholdValue;
+        actualStakeAmount = attestersToStakeTo * activationThresholdValue;
 
         _transferAndApproveStake(rollupAddress, actualStakeAmount);
         _stakeAttesters(rollup, attestersToStakeTo, activationThresholdValue);
         stakingAsset.forceApprove(rollupAddress, 0);
+        return actualStakeAmount;
     }
 
     // slither-disable-end reentrancy-no-eth
