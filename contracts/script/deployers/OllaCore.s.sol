@@ -7,7 +7,7 @@ import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { BaseDeployer, console2 } from "./../base/BaseDeployer.s.sol";
+import { BaseDeployer } from "./../base/BaseDeployer.s.sol";
 import { DeployConfig } from "./../config/Config.s.sol";
 
 /// @title OllaCoreDeployer
@@ -62,13 +62,11 @@ contract OllaCoreDeployer is BaseDeployer {
                 IRewardsVault(config.rewardsVault),
                 safetyModule
             );
-        
 
         // Approve core to spend deployer's tokens (for local dev convenience)
         if (config.deployMocks) {
             IERC20(asset).approve(proxyAddress, type(uint256).max);
             IERC20(stAztec).approve(proxyAddress, type(uint256).max);
-            
         }
 
         vm.stopBroadcast();

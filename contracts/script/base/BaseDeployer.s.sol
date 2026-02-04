@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Script, console2 } from "@forge-std/Script.sol";
+import { Script } from "@forge-std/Script.sol";
 
 /// @title BaseDeployer
 /// @notice Base contract for all deployers with shared utilities
@@ -9,9 +9,15 @@ abstract contract BaseDeployer is Script {
     /// @notice Path to deployments directory
     string internal constant _DEPLOYMENTS_PATH = "deployments/";
 
-    /// @notice Get the deployment file path for a given environment
-    function _getDeploymentPath(string memory env) internal pure returns (string memory) {
-        return string.concat(DEPLOYMENTS_PATH, env, ".json");
+    /// @notice Write deployment JSON to file
+    function _writeDeploymentJson(string memory env, string memory json) internal {
+        string memory path = _getDeploymentPath(env);
+        string memory finalJson = string.concat(json, "\n}");
+
+        // Create deployments directory if it doesn't exist
+        vm.createDir(_DEPLOYMENTS_PATH, true);
+
+        vm.writeFile(path, finalJson);
     }
 
     /// @notice Check if a deployment file exists for the given environment
@@ -41,6 +47,11 @@ abstract contract BaseDeployer is Script {
         } catch {
             return address(0);
         }
+    }
+
+    /// @notice Get the deployment file path for a given environment
+    function _getDeploymentPath(string memory env) internal pure returns (string memory) {
+        return string.concat(_DEPLOYMENTS_PATH, env, ".json");
     }
 
     /// @notice Initialize a new deployment JSON with metadata
@@ -94,18 +105,6 @@ abstract contract BaseDeployer is Script {
         return string(str);
     }
 
-    /// @notice Write deployment JSON to file
-    function _writeDeploymentJson(string memory env, string memory json) internal {
-        string memory path = _getDeploymentPath(env);
-        string memory finalJson = string.concat(json, "\n}");
-
-        // Create deployments directory if it doesn't exist
-        vm.createDir(DEPLOYMENTS_PATH, true);
-
-        vm.writeFile(path, finalJson);
-        
-    }
-
     /// @notice Add an address to the deployment JSON (for building incrementally)
     function _addAddressToJson(string memory currentJson, string memory key, address addr, bool isFirst)
         internal
@@ -134,7 +133,5 @@ abstract contract BaseDeployer is Script {
     }
 
     /// @notice Log deployment of a contract
-    function _logDeployment(string memory name, address addr) internal pure {
-        
-    }
+    function _logDeployment(string memory name, address addr) internal pure { }
 }

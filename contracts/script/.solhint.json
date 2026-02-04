@@ -1,0 +1,56 @@
+{
+  "extends": "solhint:recommended",
+  "plugins": ["explicit-return"],
+  "rules": {
+    "private-vars-leading-underscore": "error",
+    "no-global-import": "error",
+    "interface-starts-with-i": "error",
+    "immutable-vars-naming": [
+      "error",
+      {
+        "immutablesAsConstants": true
+      }
+    ],
+    "compiler-version": [
+      "error",
+      ">=0.8.24 <0.9.0"
+    ],
+    "func-visibility": [
+      "error",
+      {
+        "ignoreConstructors": true
+      }
+    ],
+    "explicit-return/explicit-return": "error",
+    "no-unused-vars": "error",
+    "state-visibility": "error",
+    "var-name-mixedcase": "error",
+    "func-param-name-mixedcase": "error",
+    "ordering": "error",
+    "comprehensive-interface": "off",
+    "no-unused-import": "error",
+    "imports-order": "error",
+    "import-path-check": "off",
+    "check-send-result": "error",
+    "duplicated-imports": "warn",
+    "gas-custom-errors": "off",
+    "named-parameters-mapping": "warn",
+    "gas-struct-packing": "warn",
+    "no-empty-blocks": "warn",
+    "no-console": "off",
+    "gas-calldata-parameters": "off",
+    "gas-small-strings": "off",
+    "gas-increment-by-one": "off",
+    "function-max-lines": "off",
+    "max-line-length": [
+      "warn",
+      120
+    ],
+    "reason-string": [
+      "warn",
+      {
+        "maxLength": 64
+      }
+    ]
+  }
+}
