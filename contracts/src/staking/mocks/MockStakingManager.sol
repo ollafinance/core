@@ -63,10 +63,12 @@ contract MockStakingManager is IStakingManager {
 
     /// @notice Records a stake request.
     /// @param amount The amount to stake.
-    function stake(uint256 amount) external override {
+    /// @return stakedAmount The amount recorded as staked.
+    function stake(uint256 amount) external override returns (uint256 stakedAmount) {
         lastStakeAmount = amount;
         _stakedAmount += amount;
         ++stakeCalls;
+        return amount;
     }
 
     /// @notice Records an unstake request.

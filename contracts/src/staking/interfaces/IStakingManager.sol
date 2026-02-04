@@ -140,9 +140,10 @@ interface IStakingManager {
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Stakes assets with the staking provider.
-    /// @param amount The amount to stake.
-    function stake(uint256 amount) external;
+    /// @notice Stakes assets using provider attesters.
+    /// @param amount The amount requested to stake.
+    /// @return stakedAmount The actual amount staked.
+    function stake(uint256 amount) external returns (uint256 stakedAmount);
 
     /// @notice Initiates an unstake with the staking provider.
     /// @param amount The amount to unstake.

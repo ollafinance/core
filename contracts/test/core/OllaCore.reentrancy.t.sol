@@ -57,7 +57,9 @@ contract MockHarvestStakingManager is IStakingManager {
         return IStakingProviderRegistry(address(0));
     }
 
-    function stake(uint256) external pure override { }
+    function stake(uint256) external pure override returns (uint256) {
+        return 0;
+    }
     function unstake(uint256) external pure override { }
     function cleanActivatedAttesters() external pure override { }
 
