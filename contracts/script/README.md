@@ -13,10 +13,13 @@ script/
 │   ├── Config.s.sol          # Base config struct
 │   ├── Local.s.sol           # Anvil configuration
 │   └── Testnet.s.sol         # Testnet configuration
-└── deployers/
-    ├── Mocks.s.sol           # Mock contracts deployer
-    ├── OllaCore.s.sol        # OllaCore deployer
-    └── StAztec.s.sol         # StAztec deployer
+├── deployers/
+│   ├── Mocks.s.sol           # Mock contracts deployer
+│   ├── OllaCore.s.sol        # OllaCore deployer
+│   └── StAztec.s.sol         # StAztec deployer
+├── ops/                       # Operator scripts (rebalance/accounting/roles)
+├── provider/                  # Provider scripts (seed keys)
+└── rollup/                    # Mock rollup control scripts (tick/rate/bump)
 ```
 
 ## Quick Start
@@ -25,10 +28,31 @@ script/
 
 ```bash
 # Terminal 1: Start Anvil
-yarn dev:anvil
+yarn dev:chain
 
 # Terminal 2: Deploy contracts
 yarn deploy:local
+```
+
+### Local Demo (Rewards Tick + Harvest)
+
+```bash
+# Inspect deployed addresses
+cd contracts && forge script script/ops/PrintDeployment.s.sol --rpc-url http://127.0.0.1:8545
+
+# Set a reward rate (example: 1 token / second, 18 decimals)
+ROLLUP=0x... RATE=1000000000000000000 PRIVATE_KEY=0x... \
+  forge script script/rollup/SetRewardRate.s.sol --broadcast --rpc-url http://127.0.0.1:8545
+
+# Accrue rewards into RewardsVault claim bucket
+ROLLUP=0x... COINBASE=0x... PRIVATE_KEY=0x... \
+  forge script script/rollup/TickRewards.s.sol --broadcast --rpc-url http://127.0.0.1:8545
+
+# Harvest (rebalance) + record accounting
+CORE=0x... PRIVATE_KEY=0x... \
+  forge script script/ops/Rebalance.s.sol --broadcast --rpc-url http://127.0.0.1:8545
+CORE=0x... PRIVATE_KEY=0x... \
+  forge script script/ops/UpdateAccounting.s.sol --broadcast --rpc-url http://127.0.0.1:8545
 ```
 
 ### Testnet Deployment
@@ -48,10 +72,14 @@ After deployment, a JSON file is created in `contracts/deployments/`:
   "chainId": 31337,
   "deployer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
   "addresses": {
-    "MockAztec": "0x...",
-    "MockStakingManager": "0x...",
+    "Asset": "0x...",
+    "MockAztecRollup": "0x...",
+    "MockAztecRollupRegistry": "0x...",
+    "StakingManagerProxy": "0x...",
+    "StakingProviderRegistryProxy": "0x...",
     "OllaCoreImplementation": "0x...",
     "OllaCoreProxy": "0x...",
+    "RewardsVaultProxy": "0x...",
     "StAztec": "0x..."
   }
 }
