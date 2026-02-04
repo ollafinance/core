@@ -110,7 +110,7 @@ interface IOllaCore {
     /// @notice Emitted when the target buffer is updated.
     /// @param oldBuffer The old target buffer.
     /// @param newBuffer The new target buffer.
-    event TargetLiquidityBufferUpdated(uint256 oldBuffer, uint256 newBuffer);
+    event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
     /// @notice Emitted when the governance address is updated.
     /// @param oldGovernance The old governance address.
@@ -241,7 +241,7 @@ interface IOllaCore {
     error OllaCore__InvalidSplitBP(uint256 splitBP);
 
     /// @notice Thrown when the target buffer is invalid.
-    error OllaCore__InvalidTargetLiquidityBuffer(uint256 newBuffer);
+    error OllaCore__InvalidTargetBufferedAssets(uint256 newBuffer);
 
     /// @notice Thrown when no active withdrawal request exists.
     error OllaCore__NoActiveWithdrawal(address owner);
@@ -356,7 +356,7 @@ interface IOllaCore {
 
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.
-    function setTargetLiquidityBuffer(uint256 newBuffer) external;
+    function setTargetBufferedAssets(uint256 newBuffer) external;
 
     /// @notice Recovers stAztec sent directly to the core.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
@@ -415,7 +415,7 @@ interface IOllaCore {
 
     /// @notice Returns the target liquid assets buffer.
     /// @return The target buffer.
-    function targetLiquidityBuffer() external view returns (uint256);
+    function targetBufferedAssets() external view returns (uint256);
 
     /// @notice Returns the latest accounting report snapshot.
     /// @return The latest report struct.

@@ -74,7 +74,7 @@ contract OllaCore is
     uint256 public treasuryFeeSplitBP;
 
     /// @notice Target liquid assets to keep buffered for withdrawals.
-    uint256 public targetLiquidityBuffer;
+    uint256 public targetBufferedAssets;
 
     mapping(address owner => uint256 requestId) private _activeRequestIds;
     mapping(uint256 requestId => address owner) private _requestOwners;
@@ -149,7 +149,7 @@ contract OllaCore is
 
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
-        targetLiquidityBuffer = 0;
+        targetBufferedAssets = 0;
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         // Timestamp is used only for reporting/accounting liveness.
@@ -324,13 +324,13 @@ contract OllaCore is
 
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.
-    function setTargetLiquidityBuffer(uint256 newBuffer) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setTargetBufferedAssets(uint256 newBuffer) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newBuffer == 0) {
-            revert OllaCore__InvalidTargetLiquidityBuffer(newBuffer);
+            revert OllaCore__InvalidTargetBufferedAssets(newBuffer);
         }
-        uint256 oldBuffer = targetLiquidityBuffer;
-        targetLiquidityBuffer = newBuffer;
-        emit TargetLiquidityBufferUpdated(oldBuffer, newBuffer);
+        uint256 oldBuffer = targetBufferedAssets;
+        targetBufferedAssets = newBuffer;
+        emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
     }
 
     /// @notice Operator-triggered rebalance flow.
@@ -675,8 +675,8 @@ contract OllaCore is
         IOllaCore.Modules memory modules = _modules;
         uint256 pendingWithdrawals = modules.withdrawalQueue.totalPendingAssets();
         uint256 bufferedAssets = _accountingState.bufferedAssets;
-        uint256 targetLiquidity = targetLiquidityBuffer;
-        uint256 requiredBuffer = pendingWithdrawals > targetLiquidity ? pendingWithdrawals : targetLiquidity;
+        uint256 targetBuffered = targetBufferedAssets;
+        uint256 requiredBuffer = pendingWithdrawals > targetBuffered ? pendingWithdrawals : targetBuffered;
 
         // slither-disable-next-line timestamp
         if (requiredBuffer < bufferedAssets) {

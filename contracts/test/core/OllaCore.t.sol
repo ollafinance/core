@@ -264,7 +264,7 @@ contract OllaCoreTest is Test {
         assertEq(vault.withdrawalQueue(), address(withdrawalQueue), "withdrawal queue set");
         assertEq(vault.rewardsVault(), address(rewardsVault), "rewards vault set");
         assertEq(vault.safetyModule(), address(safetyModule), "safety module set");
-        assertEq(vault.targetLiquidityBuffer(), 0, "target liquidity buffer init");
+        assertEq(vault.targetBufferedAssets(), 0, "target buffered assets init");
         IOllaCore.LatestReport memory report = vault.latestReport();
         assertEq(report.exchangeRate, 1e18, "exchange rate init");
         assertEq(report.totalAssets, 0, "lastTotalAssets init");
@@ -1297,7 +1297,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
     event GovernanceUpdated(address oldGovernance, address newGovernance);
     event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
-    event TargetLiquidityBufferUpdated(uint256 oldBuffer, uint256 newBuffer);
+    event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
@@ -1398,14 +1398,14 @@ contract OllaCoreRewardsAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(alice));
     }
 
-    function test_RevertWhen_NonAdminSetsTargetLiquidityBuffer() external {
+    function test_RevertWhen_NonAdminSetsTargetBufferedAssets() external {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
             )
         );
         vm.prank(alice);
-        vault.setTargetLiquidityBuffer(1);
+        vault.setTargetBufferedAssets(1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1436,10 +1436,10 @@ contract OllaCoreRewardsAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(address(0)));
     }
 
-    function test_RevertWhen_TargetLiquidityBufferIsZero() external {
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidTargetLiquidityBuffer.selector, 0));
+    function test_RevertWhen_TargetBufferedAssetsIsZero() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidTargetBufferedAssets.selector, 0));
         vm.prank(governance);
-        vault.setTargetLiquidityBuffer(0);
+        vault.setTargetBufferedAssets(0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1494,17 +1494,17 @@ contract OllaCoreRewardsAccessControlTest is Test {
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault updated");
     }
 
-    function test_SetTargetLiquidityBuffer_UpdatesAndEmits() external {
-        uint256 oldBuffer = vault.targetLiquidityBuffer();
+    function test_SetTargetBufferedAssets_UpdatesAndEmits() external {
+        uint256 oldBuffer = vault.targetBufferedAssets();
         uint256 newBuffer = oldBuffer + 1;
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit TargetLiquidityBufferUpdated(oldBuffer, newBuffer);
+        emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
 
         vm.prank(governance);
-        vault.setTargetLiquidityBuffer(newBuffer);
+        vault.setTargetBufferedAssets(newBuffer);
 
-        assertEq(vault.targetLiquidityBuffer(), newBuffer, "target buffer updated");
+        assertEq(vault.targetBufferedAssets(), newBuffer, "target buffer updated");
     }
 
     /*//////////////////////////////////////////////////////////////

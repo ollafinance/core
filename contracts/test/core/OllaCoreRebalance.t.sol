@@ -213,12 +213,12 @@ contract OllaCoreRebalanceTest is Test {
     function test_Rebalance_FinalizeWithdrawals_ConsumesBuffer() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 withdrawalShares = 6 * DECIMALS;
-        uint256 targetLiquidityBuffer = 4 * DECIMALS;
+        uint256 targetBufferedAssets = 4 * DECIMALS;
 
         _performDeposit(alice, depositAmount);
 
         vm.prank(governance);
-        vault.setTargetLiquidityBuffer(targetLiquidityBuffer);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
 
         uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
@@ -282,20 +282,20 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered assets unchanged");
     }
 
-    function test_Rebalance_Unstake_TargetLiquidityBufferShortfall_NoPending() external {
+    function test_Rebalance_Unstake_TargetBufferedAssetsShortfall_NoPending() external {
         uint256 bufferAmount = 10 * DECIMALS;
-        uint256 targetLiquidityBuffer = 30 * DECIMALS;
+        uint256 targetBufferedAssets = 30 * DECIMALS;
 
         asset.mint(address(vault), bufferAmount);
 
         vm.prank(governance);
-        vault.setTargetLiquidityBuffer(targetLiquidityBuffer);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
         stakingManager.setPendingUnstakes(0);
 
-        uint256 shortfall = targetLiquidityBuffer - bufferAmount;
+        uint256 shortfall = targetBufferedAssets - bufferAmount;
 
         vm.expectEmit(true, true, true, true, address(vault));
         emit UnstakeInitiated(shortfall, shortfall);
@@ -327,15 +327,15 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - bufferAmount, "unstake initiated");
     }
 
-    function test_Rebalance_Unstake_PendingDominatesTargetLiquidityBuffer() external {
+    function test_Rebalance_Unstake_PendingDominatesTargetBufferedAssets() external {
         uint256 bufferAmount = 10 * DECIMALS;
         uint256 pendingAssets = 25 * DECIMALS;
-        uint256 targetLiquidityBuffer = 5 * DECIMALS;
+        uint256 targetBufferedAssets = 5 * DECIMALS;
 
         asset.mint(address(vault), bufferAmount);
 
         vm.prank(governance);
-        vault.setTargetLiquidityBuffer(targetLiquidityBuffer);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
 
         vm.prank(address(vault));
         withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);

@@ -248,7 +248,7 @@ sequenceDiagram
     Note over C: Step 4: Initiate unstake
     Note over C: Trigger when requested > pendingUnstakes
     C->>WQ: totalPendingAssets()
-    C->>C: requiredBuffer = max(pending, targetLiquidityBuffer)
+    C->>C: requiredBuffer = max(pending, targetBufferedAssets)
     C->>C: amountToUnstake = max(0, requiredBuffer - buffered)
     C->>SM: pendingUnstakes()
     SM-->>C: pendingUnstakes
@@ -294,14 +294,14 @@ sequenceDiagram
 
     Note over C: Step 4: Initiate unstake
     C->>WQ: totalPendingAssets()
-    C->>C: requiredBuffer = max(pending, targetLiquidityBuffer)
+    C->>C: requiredBuffer = max(pending, targetBufferedAssets)
     C->>C: amountToUnstake = max(0, requiredBuffer - buffered)
     C->>SM: pendingUnstakes()
     SM-->>C: pendingUnstakes
     C->>SM: unstake(initiated)
 
     Note over C: Step 5: Stake surplus
-    C->>C: stakeable = bufferedAssets - targetLiquidityBuffer
+    C->>C: stakeable = bufferedAssets - targetBufferedAssets
     loop while stakeable >= VALIDATOR_STAKE_UNIT
         C->>SM: stake(VALIDATOR_STAKE_UNIT)
         SM->>AR: stake()
