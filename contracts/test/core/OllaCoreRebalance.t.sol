@@ -15,6 +15,7 @@ import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingMa
 import { MaliciousReentrantStakingManager } from "test/mocks/MaliciousReentrantStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 contract OllaCoreRebalanceTest is Test {
@@ -626,6 +627,121 @@ contract OllaCoreRebalanceReentrancyTest is Test {
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(operator);
+        vault.rebalance();
+    }
+}
+
+contract RevertingSafetyModule is ISafetyModule {
+    error AccountingStale();
+
+    address public immutable CORE_ADDRESS;
+    bool internal stale;
+
+    constructor(address coreAddress) {
+        CORE_ADDRESS = coreAddress;
+    }
+
+    function setStale(bool value) external {
+        stale = value;
+    }
+
+    function pause() external override { }
+
+    function unpause() external override { }
+
+    function isPaused() external view override returns (bool pausedState) {
+        return pausedState;
+    }
+
+    function core() external view override returns (address) {
+        return CORE_ADDRESS;
+    }
+
+    function checkRateDrop(uint256, uint256) external pure override { }
+
+    function checkQueueRatio(uint256, uint256) external pure override { }
+
+    function checkAccountingLiveness() external view override {
+        if (stale) {
+            revert AccountingStale();
+        }
+    }
+
+    function setDepositCap(uint256) external pure override { }
+
+    function setWithdrawalMinimum(uint256) external pure override { }
+
+    function setMinRateDropBps(uint256) external pure override { }
+
+    function setMaxQueueRatioBps(uint256) external pure override { }
+
+    function setMaxAccountingDelay(uint256) external pure override { }
+
+    function setLatestAccountingTimestamp(uint256) external pure override { }
+
+    function checkDepositAllowed(uint256, uint256) external pure override returns (bool allowed) {
+        return allowed;
+    }
+
+    function checkWithdrawalMinimum(uint256) external pure override { }
+}
+
+contract OllaCoreRebalanceAccountingLivenessTest is Test {
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockAccountingStakingManager internal stakingManager;
+    address internal governance;
+    WithdrawalQueue internal withdrawalQueue;
+    MockRewardsVault internal rewardsVault;
+    RevertingSafetyModule internal safetyModule;
+    address internal operator;
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCore(address(proxy));
+
+        governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockAccountingStakingManager();
+        operator = makeAddr("operator");
+        WithdrawalQueue queueImplementation = new WithdrawalQueue();
+        ERC1967Proxy queueProxy = new ERC1967Proxy(
+            address(queueImplementation), abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance))
+        );
+        withdrawalQueue = WithdrawalQueue(address(queueProxy));
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new RevertingSafetyModule(address(vault));
+
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsVault(address(rewardsVault));
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vm.stopPrank();
+    }
+
+    function test_Rebalance_RevertsWhen_AccountingStale() external {
+        safetyModule.setStale(true);
+
+        vm.prank(operator);
+        vm.expectRevert(RevertingSafetyModule.AccountingStale.selector);
         vault.rebalance();
     }
 }

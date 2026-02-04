@@ -344,7 +344,12 @@ contract OllaCore is
         nonReentrant
         returns (uint256 harvestedAmount, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer)
     {
+        ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
+        // Slither: SafetyModule is a trusted dependency; rebalance is nonReentrant and role-gated.
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
+        safetyModuleRef.checkAccountingLiveness();
         _syncBufferedWithBalance();
+
         // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
         // slither-disable-next-line reentrancy-no-eth
         harvestedAmount = _harvestRewards();
