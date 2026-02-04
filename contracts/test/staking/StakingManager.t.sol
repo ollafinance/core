@@ -368,6 +368,54 @@ contract StakingManagerTest is Test {
         assertEq(aztec.balanceOf(core), coreBalanceBefore - ACTIVATION_THRESHOLD);
     }
 
+    function test_Stake_ReturnsRoundedAmountToActivationThreshold() external {
+        uint256 activationThreshold = 32 ether;
+        rollup.setActivationThreshold(activationThreshold);
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(4);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        uint256 stakeAmount = 100 ether;
+        aztec.mint(core, stakeAmount);
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), stakeAmount);
+        uint256 stakedAmount = stakingManager.stake(stakeAmount);
+        vm.stopPrank();
+
+        uint256 expectedStaked = 96 ether;
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(stakedAmount, expectedStaked, "stake returns rounded amount");
+        assertEq(state.stakedAmount, expectedStaked, "state uses rounded amount");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore - expectedStaked, "core keeps remainder");
+    }
+
+    function test_Stake_ReturnsAmountLimitedByKeys() external {
+        uint256 activationThreshold = 32 ether;
+        rollup.setActivationThreshold(activationThreshold);
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        uint256 stakeAmount = 100 ether;
+        aztec.mint(core, stakeAmount);
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), stakeAmount);
+        uint256 stakedAmount = stakingManager.stake(stakeAmount);
+        vm.stopPrank();
+
+        uint256 expectedStaked = 64 ether;
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(stakedAmount, expectedStaked, "stake returns amount limited by keys");
+        assertEq(state.stakedAmount, expectedStaked, "state uses key-limited amount");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore - expectedStaked, "core keeps remainder");
+    }
+
     function test_Stake_EmitsEvent() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
@@ -409,7 +457,7 @@ contract StakingManagerTest is Test {
         vm.stopPrank();
     }
 
-    function test_RevertWhen_Stake_BelowThreshold() external {
+    function test_Stake_ReturnsZeroWhen_BelowThreshold() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(keys);
@@ -419,9 +467,11 @@ contract StakingManagerTest is Test {
 
         vm.startPrank(core);
         aztec.approve(address(stakingManager), stakeAmount);
-        vm.expectRevert(IStakingManager.StakingManager__InsufficientAmount.selector);
-        stakingManager.stake(stakeAmount);
+        uint256 stakedAmount = stakingManager.stake(stakeAmount);
         vm.stopPrank();
+
+        assertEq(stakedAmount, 0);
+        assertEq(stakingManager.getActivatedAttesterCount(), 0);
     }
 
     /*//////////////////////////////////////////////////////////////

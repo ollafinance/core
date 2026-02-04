@@ -26,6 +26,9 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public lastUnstakeAmount;
     address public providerRewardsRecipient;
     address public providerAdmin;
+    uint256 public stakeReturnAmount;
+    bool public useStakeReturnAmount;
+    bool public allowStakeReturnExceeds;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -75,11 +78,47 @@ contract MockAccountingStakingManager is IStakingManager {
         providerAdmin = admin;
     }
 
+    function setStakeReturnAmount(uint256 amount) external {
+        stakeReturnAmount = amount;
+        useStakeReturnAmount = true;
+    }
+
+    function clearStakeReturnAmount() external {
+        useStakeReturnAmount = false;
+    }
+
+    function setAllowStakeReturnExceeds(bool allow) external {
+        allowStakeReturnExceeds = allow;
+    }
+
     /*//////////////////////////////////////////////////////////////
                           CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function stake(uint256) external pure override { }
+    function stake(uint256 amount) external override returns (uint256 stakedAmount) {
+        uint256 actualAmount = amount;
+        if (useStakeReturnAmount) {
+            actualAmount = stakeReturnAmount;
+            if (!allowStakeReturnExceeds && actualAmount > amount) {
+                actualAmount = amount;
+            }
+        }
+        if (actualAmount == 0) {
+            return 0;
+        }
+        IERC20 token = rewardsToken;
+        if (address(token) == address(0)) {
+            return 0;
+        }
+        uint256 transferAmount = actualAmount;
+        if (actualAmount > amount) {
+            transferAmount = amount;
+        }
+        if (transferAmount != 0) {
+            token.transferFrom(msg.sender, address(this), transferAmount);
+        }
+        return actualAmount;
+    }
 
     function unstake(uint256 amount) external override {
         lastUnstakeAmount = amount;
