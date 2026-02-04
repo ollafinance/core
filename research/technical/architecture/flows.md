@@ -166,7 +166,7 @@ sequenceDiagram
     C->>stkMan: getUnstakedFunds
     stkMan->>C: transfers unstakedFunds
 
-    C->>C: availableForWithdrawals = bufferedAssets + safetyBuffer
+    C->>C: availableForWithdrawals = bufferedAssets
     C->>WQ: finalizeWithdrawals(availableForWithdrawals)
 
     loop while availableForWithdrawals > pendingRequests[0].amount
@@ -210,17 +210,11 @@ sequenceDiagram
     op->>C: rebalance
     C->>WQ: getWithdrawalRequestsAmount
     WQ-->>C: withdrawalRequestsAmount
-    C->>C: amountToUnstake = max(0, withdrawalRequestsAmount - bufferedAssets)
+    C->>C: requiredBuffer = max(withdrawalRequestsAmount, targetBuffer)
+    C->>C: amountToUnstake = max(0, requiredBuffer - bufferedAssets)
     C->>stkMan: unStake(amountToUnstake)
-    stkMan->>stkMan: actualAmountToUnstake = max(0, amountToUnstake - pendingUnstakes)
-    loop while actualAmountToUnstake > 0
-        stkMan->>AR: initiateWithdrawal
-        stkMan->>stkMan: update actualAmountToUnstake
-        stkMan->>stkMan: update pendingUnstakes
-    end
     Note over stkMan,AR: Later, when AztecRollup processes the withdrawal
     loop for each initiated withdrawal
         AR-->>stkMan: transfer Aztec
     end
 ```
-

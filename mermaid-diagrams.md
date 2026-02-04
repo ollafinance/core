@@ -226,6 +226,7 @@ sequenceDiagram
     Note right of C: queued = WQ.totalPendingAssets()
     Note right of C: total = C.totalAssets()
     C->>C: syncBufferedWithBalance()
+    Note right of C: available = bufferedAssets
     C->>C: require available <= bufferedAssets
     C->>WQ: previewFinalizeWithdrawals(available)
     WQ-->>C: used
@@ -245,13 +246,13 @@ sequenceDiagram
 
     OP->>C: rebalance()
     Note over C: Step 4: Initiate unstake
-    Note over C: Trigger when requested >= unstakeThreshold
+    Note over C: Trigger when requested > pendingUnstakes
     C->>WQ: totalPendingAssets()
-    C->>C: amountToUnstake = max(0, pending - buffered)
+    C->>C: requiredBuffer = max(pending, targetBuffer)
+    C->>C: amountToUnstake = max(0, requiredBuffer - buffered)
     C->>SM: pendingUnstakes()
     SM-->>C: pendingUnstakes
-    C->>SM: activationThreshold()
-    C->>C: initiated = roundToUnit(requested, activationThreshold)
+    C->>C: initiated = requested
     C->>SM: unstake(initiated)
     Note right of C: emit UnstakeInitiated(requested, initiated)
 ```
@@ -293,7 +294,8 @@ sequenceDiagram
 
     Note over C: Step 4: Initiate unstake
     C->>WQ: totalPendingAssets()
-    C->>C: amountToUnstake = max(0, pending - buffered)
+    C->>C: requiredBuffer = max(pending, targetBuffer)
+    C->>C: amountToUnstake = max(0, requiredBuffer - buffered)
     C->>SM: pendingUnstakes()
     SM-->>C: pendingUnstakes
     C->>SM: unstake(initiated)
