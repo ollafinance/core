@@ -27,18 +27,23 @@ struct DeployConfig {
 }
 
 /// @title ConfigHelper
+/// @author Olla
 /// @notice Helper to load the correct config based on DEPLOY_ENV
 abstract contract ConfigHelper is Script {
     /// @notice Load config based on DEPLOY_ENV environment variable
     /// @dev Override this in child configs
+    /// @return The deployment configuration
     function getConfig() external virtual returns (DeployConfig memory);
 
     /// @notice Get environment name from DEPLOY_ENV, defaults to "local"
+    /// @return The environment name string
     function _getEnvName() internal view returns (string memory) {
         return vm.envOr("DEPLOY_ENV", string("local"));
     }
 
     /// @notice Check if current environment matches the given name
+    /// @param env The environment name to check
+    /// @return True if the current environment matches
     function _isEnv(string memory env) internal view returns (bool) {
         return keccak256(bytes(_getEnvName())) == keccak256(bytes(env));
     }

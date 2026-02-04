@@ -17,7 +17,7 @@ contract TestnetConfig is ConfigHelper {
         return DeployConfig({
             // Environment
             name: "testnet",
-            chainId: SEPOLIA_CHAIN_ID,
+            chainId: _SEPOLIA_CHAIN_ID,
             // Deployer
             deployerPrivateKey: deployerPrivateKey,
             deployer: deployer,

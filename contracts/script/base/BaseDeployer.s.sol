@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
+// solhint-disable no-console
 import { Script, console2 } from "@forge-std/Script.sol";
 
 /// @title BaseDeployer
@@ -9,9 +10,15 @@ abstract contract BaseDeployer is Script {
     /// @notice Path to deployments directory
     string internal constant _DEPLOYMENTS_PATH = "deployments/";
 
-    /// @notice Get the deployment file path for a given environment
-    function _getDeploymentPath(string memory env) internal pure returns (string memory) {
-        return string.concat(DEPLOYMENTS_PATH, env, ".json");
+    /// @notice Write deployment JSON to file
+    function _writeDeploymentJson(string memory env, string memory json) internal {
+        string memory path = _getDeploymentPath(env);
+        string memory finalJson = string.concat(json, "\n}");
+
+        // Create deployments directory if it doesn't exist
+        vm.createDir(_DEPLOYMENTS_PATH, true);
+
+        vm.writeFile(path, finalJson);
     }
 
     /// @notice Check if a deployment file exists for the given environment
@@ -43,6 +50,11 @@ abstract contract BaseDeployer is Script {
         }
     }
 
+    /// @notice Get the deployment file path for a given environment
+    function _getDeploymentPath(string memory env) internal pure returns (string memory) {
+        return string.concat(_DEPLOYMENTS_PATH, env, ".json");
+    }
+
     /// @notice Initialize a new deployment JSON with metadata
     function _initDeploymentJson(string memory env, uint256 chainId, address deployer)
         internal
@@ -50,13 +62,13 @@ abstract contract BaseDeployer is Script {
         returns (string memory)
     {
         return string.concat(
-            "{\n  'network': '",
+            "{\n  \"network\": \"",
             env,
-            "',\n  'chainId': ",
+            "\",\n  \"chainId\": ",
             _uint256ToString(chainId),
-            ",\n  'deployer': '",
+            ",\n  \"deployer\": \"",
             _addressToString(deployer),
-            "',\n  'addresses': {"
+            "\",\n  \"addresses\": {"
         );
     }
 
@@ -94,18 +106,6 @@ abstract contract BaseDeployer is Script {
         return string(str);
     }
 
-    /// @notice Write deployment JSON to file
-    function _writeDeploymentJson(string memory env, string memory json) internal {
-        string memory path = _getDeploymentPath(env);
-        string memory finalJson = string.concat(json, "\n}");
-
-        // Create deployments directory if it doesn't exist
-        vm.createDir(DEPLOYMENTS_PATH, true);
-
-        vm.writeFile(path, finalJson);
-        
-    }
-
     /// @notice Add an address to the deployment JSON (for building incrementally)
     function _addAddressToJson(string memory currentJson, string memory key, address addr, bool isFirst)
         internal
@@ -113,7 +113,7 @@ abstract contract BaseDeployer is Script {
         returns (string memory)
     {
         string memory comma = isFirst ? "" : ",";
-        string memory addressEntry = string.concat(comma, "\n    '", key, "': '", _addressToString(addr), "'");
+        string memory addressEntry = string.concat(comma, "\n    \"", key, "\": \"", _addressToString(addr), "\"");
 
         // Find the closing brace of addresses and insert before it
         return string.concat(currentJson, addressEntry);
@@ -130,11 +130,11 @@ abstract contract BaseDeployer is Script {
         pure
         returns (string memory)
     {
-        return string.concat(currentJson, ",\n  '", key, "': '", value, "'");
+        return string.concat(currentJson, ",\n  \"", key, "\": \"", value, "\"");
     }
 
     /// @notice Log deployment of a contract
     function _logDeployment(string memory name, address addr) internal pure {
-        
+        console2.log("Deployed %s at %s", name, addr);
     }
 }

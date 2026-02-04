@@ -13,13 +13,13 @@ contract LocalConfig is ConfigHelper {
     uint256 internal constant _ANVIL_CHAIN_ID = 31337;
 
     function getConfig() external view override returns (DeployConfig memory) {
-        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", ANVIL_PRIVATE_KEY);
+        uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", _ANVIL_PRIVATE_KEY);
         address deployer = vm.addr(deployerPrivateKey);
 
         return DeployConfig({
             // Environment
             name: "local",
-            chainId: ANVIL_CHAIN_ID,
+            chainId: _ANVIL_CHAIN_ID,
             // Deployer
             deployerPrivateKey: deployerPrivateKey,
             deployer: deployer,
