@@ -1296,7 +1296,7 @@ contract OllaCoreRewardsAccessControlTest is Test {
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
     event GovernanceUpdated(address oldGovernance, address newGovernance);
     event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
-    event TargetBufferUpdated(uint256 oldBuffer, uint256 newBuffer);
+    event TargetLiquidityBufferUpdated(uint256 oldBuffer, uint256 newBuffer);
 
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS
@@ -1397,14 +1397,14 @@ contract OllaCoreRewardsAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(alice));
     }
 
-    function test_RevertWhen_NonAdminSetsTargetBuffer() external {
+    function test_RevertWhen_NonAdminSetsTargetLiquidityBuffer() external {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
             )
         );
         vm.prank(alice);
-        vault.setTargetBuffer(1);
+        vault.setTargetLiquidityBuffer(1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1435,10 +1435,10 @@ contract OllaCoreRewardsAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(address(0)));
     }
 
-    function test_RevertWhen_TargetBufferIsZero() external {
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidTargetBuffer.selector, 0));
+    function test_RevertWhen_TargetLiquidityBufferIsZero() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidTargetLiquidityBuffer.selector, 0));
         vm.prank(governance);
-        vault.setTargetBuffer(0);
+        vault.setTargetLiquidityBuffer(0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1493,17 +1493,17 @@ contract OllaCoreRewardsAccessControlTest is Test {
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault updated");
     }
 
-    function test_SetTargetBuffer_UpdatesAndEmits() external {
-        uint256 oldBuffer = vault.targetBuffer();
+    function test_SetTargetLiquidityBuffer_UpdatesAndEmits() external {
+        uint256 oldBuffer = vault.targetLiquidityBuffer();
         uint256 newBuffer = oldBuffer + 1;
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit TargetBufferUpdated(oldBuffer, newBuffer);
+        emit TargetLiquidityBufferUpdated(oldBuffer, newBuffer);
 
         vm.prank(governance);
-        vault.setTargetBuffer(newBuffer);
+        vault.setTargetLiquidityBuffer(newBuffer);
 
-        assertEq(vault.targetBuffer(), newBuffer, "target buffer updated");
+        assertEq(vault.targetLiquidityBuffer(), newBuffer, "target buffer updated");
     }
 
     /*//////////////////////////////////////////////////////////////
