@@ -7,6 +7,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
@@ -111,7 +112,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
         vault.setTargetBufferedAssets(0);
 
         vm.prank(operator);
-        vm.expectRevert(IStakingManager.StakingManager__InsufficientKeys.selector);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__StakeFailed.selector, depositAmount));
         vault.rebalance();
     }
 }
