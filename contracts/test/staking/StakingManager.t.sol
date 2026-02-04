@@ -662,13 +662,6 @@ contract StakingManagerTest is Test {
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
     }
 
-    function test_ActivationThreshold_ReturnsRollupActivationThreshold() external {
-        uint256 newThreshold = 250 ether;
-        rollup.setActivationThreshold(newThreshold);
-
-        assertEq(stakingManager.activationThreshold(), newThreshold, "activation threshold matches rollup");
-    }
-
     /*//////////////////////////////////////////////////////////////
                            FUZZ TESTS
     //////////////////////////////////////////////////////////////*/

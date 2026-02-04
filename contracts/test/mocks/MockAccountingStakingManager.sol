@@ -26,7 +26,6 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public lastUnstakeAmount;
     address public providerRewardsRecipient;
     address public providerAdmin;
-    uint256 public activationThresholdValue = 1e18;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -74,10 +73,6 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setProviderAdmin(address admin) external {
         providerAdmin = admin;
-    }
-
-    function setActivationThreshold(uint256 value) external {
-        activationThresholdValue = value;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -143,10 +138,6 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function pendingUnstakes() external view override returns (uint256) {
         return pendingUnstakeAmount;
-    }
-
-    function activationThreshold() external view override returns (uint256) {
-        return activationThresholdValue;
     }
 
     function core() external pure virtual override returns (address) {

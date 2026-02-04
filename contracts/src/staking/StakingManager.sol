@@ -250,13 +250,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
-    function activationThreshold() external view override returns (uint256 threshold) {
-        (, IAztecRollup rollup) = _getRollup();
-        threshold = rollup.getActivationThreshold();
-        return threshold;
-    }
-
-    /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
         // TODO: research if we can assume moving with rollup is safe
         (, IAztecRollup rollup) = _getRollup();
