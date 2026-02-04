@@ -2,6 +2,7 @@
   "extends": "solhint:recommended",
   "plugins": ["explicit-return"],
   "rules": {
+    "use-natspec": "off",
     "private-vars-leading-underscore": "error",
     "no-global-import": "error",
     "interface-starts-with-i": "error",
