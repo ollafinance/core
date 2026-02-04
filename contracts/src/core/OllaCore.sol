@@ -325,9 +325,6 @@ contract OllaCore is
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.
     function setTargetBufferedAssets(uint256 newBuffer) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newBuffer == 0) {
-            revert OllaCore__InvalidTargetBufferedAssets(newBuffer);
-        }
         uint256 oldBuffer = targetBufferedAssets;
         targetBufferedAssets = newBuffer;
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
@@ -335,22 +332,36 @@ contract OllaCore is
 
     /// @notice Operator-triggered rebalance flow.
     /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
-    function rebalance() external override onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
+    /// @return harvestedAmount The amount of rewards harvested.
+    /// @return finalizedAmount The amount of assets used to finalize withdrawals.
+    /// @return stakedAmount The amount staked.
+    /// @return resultingBuffer The final buffered assets after rebalance.
+    function rebalance()
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (uint256 harvestedAmount, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer)
+    {
         _syncBufferedWithBalance();
         // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
         // slither-disable-next-line reentrancy-no-eth
-        uint256 rewardsDelta = _harvestRewards();
+        harvestedAmount = _harvestRewards();
 
         _pullUnstakedFunds();
 
-        uint256 finalizedAmount = _finalizeWithdrawals();
+        finalizedAmount = _finalizeWithdrawals();
 
         _initiateUnstake();
 
-        // TODO: Phase 5 - Stake surplus
-        uint256 stakedAmount = 0;
+        stakedAmount = _stakeSurplus();
 
-        emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
+        resultingBuffer = _accountingState.bufferedAssets;
+
+        emit Rebalanced(harvestedAmount, finalizedAmount, stakedAmount, resultingBuffer);
+
+        return (harvestedAmount, finalizedAmount, stakedAmount, resultingBuffer);
     }
 
     // Slither: accept multiple storage reads for readability in hot-path accounting.
@@ -709,6 +720,44 @@ contract OllaCore is
         }
 
         return initiated;
+    }
+
+    /// @notice Stakes surplus buffered assets above target buffer.
+    /// @return totalStaked The total amount staked during this operation.
+    function _stakeSurplus() internal returns (uint256 totalStaked) {
+        _syncBufferedWithBalance();
+
+        IOllaCore.AccountingState storage accountingStateRef = _accountingState;
+        uint256 bufferedAssets = accountingStateRef.bufferedAssets;
+
+        if (bufferedAssets < targetBufferedAssets) {
+            return 0;
+        }
+        if (bufferedAssets == targetBufferedAssets) {
+            return 0;
+        }
+
+        uint256 stakeable = bufferedAssets - targetBufferedAssets;
+        if (stakeable == 0) {
+            return 0;
+        }
+
+        IERC20 assetRef = _modules.asset;
+        IStakingManager stakingManagerRef = _modules.stakingManager;
+
+        assetRef.forceApprove(address(stakingManagerRef), stakeable);
+        try stakingManagerRef.stake(stakeable) returns (uint256 actualStaked) {
+            totalStaked = actualStaked;
+        } catch {
+            revert OllaCore__StakeFailed(stakeable);
+        }
+
+        if (totalStaked > 0) {
+            accountingStateRef.bufferedAssets = bufferedAssets - totalStaked;
+            accountingStateRef.stakedPrincipal += totalStaked;
+        }
+
+        return totalStaked;
     }
 
     function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {

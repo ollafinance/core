@@ -155,11 +155,11 @@ interface IOllaCore {
     event AttestersStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
 
     /// @notice Emitted when a rebalance operation completes.
-    /// @param rewardsDelta Amount of rewards harvested.
+    /// @param harvestedAmount Amount of rewards harvested.
     /// @param finalizedAmount Amount of assets used for withdrawal finalization.
     /// @param stakedAmount Amount of assets staked.
     /// @param resultingBuffer Final buffered assets after rebalance.
-    event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
+    event Rebalanced(uint256 harvestedAmount, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
 
     /// @notice Emitted when unstaked funds are claimed during rebalance.
     /// @param amount The amount of unstaked funds received.
@@ -239,6 +239,9 @@ interface IOllaCore {
 
     /// @notice Thrown when a split basis points value exceeds maximum.
     error OllaCore__InvalidSplitBP(uint256 splitBP);
+
+    /// @notice Thrown when stake operation fails.
+    error OllaCore__StakeFailed(uint256 amount);
 
     /// @notice Thrown when the target buffer is invalid.
     error OllaCore__InvalidTargetBufferedAssets(uint256 newBuffer);
@@ -329,7 +332,13 @@ interface IOllaCore {
     function unpause() external;
 
     /// @notice Operator-triggered rebalance hook.
-    function rebalance() external;
+    /// @return harvestedAmount The amount of rewards harvested.
+    /// @return finalizedAmount The amount of assets used for withdrawal finalization.
+    /// @return stakedAmount The amount of assets staked.
+    /// @return resultingBuffer The final buffered assets after rebalance.
+    function rebalance()
+        external
+        returns (uint256 harvestedAmount, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
 
     /// @notice Operator-triggered accounting update hook.
     function updateAccounting() external;
