@@ -3,6 +3,7 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { IERC20Mintable } from "src/interfaces/IERC20Mintable.sol";
 import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
@@ -33,6 +34,11 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     mapping(address sequencer => bool shouldFail) public claimShouldFail;
 
+    /// @notice Rewards accrued per second when `tick` is called.
+    uint256 public rewardRatePerSecond;
+    /// @notice Last timestamp used for reward accrual.
+    uint256 public lastTick;
+
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -40,6 +46,7 @@ contract MockAztecRollup is IMockAztecRollup {
     constructor(IERC20 stakingAsset, uint256 activationThreshold) {
         STAKING_ASSET = stakingAsset;
         _activationThreshold = activationThreshold;
+        lastTick = block.timestamp;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -104,8 +111,6 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
-    /// @dev For testing: looks up rewards for _coinbase (the attester), transfers to msg.sender (StakingManager).
-    /// This allows StakingManager to claim rewards on behalf of attesters and forward them to RewardsVault.
     function claimSequencerRewards(address _coinbase) external override returns (uint256) {
         if (claimShouldFail[_coinbase]) {
             revert MockAztecRollup__ClaimFailed();
@@ -113,10 +118,38 @@ contract MockAztecRollup is IMockAztecRollup {
         uint256 amount = pendingRewards[_coinbase];
         if (amount > 0) {
             pendingRewards[_coinbase] = 0;
-            STAKING_ASSET.safeTransfer(_coinbase, amount);
-            emit RewardsClaimed(msg.sender, _coinbase, amount);
+            IERC20Mintable(address(STAKING_ASSET)).mint(_coinbase, amount);
+            emit RewardsClaimed(_coinbase, _coinbase, amount);
         }
         return amount;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             REWARD ACCRUAL
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Accrues time-based rewards for a given coinbase.
+    /// @dev Designed for explicit operator/script control in local environments.
+    function tick(address coinbase) external returns (uint256 added) {
+        uint256 dt = block.timestamp - lastTick;
+        if (dt == 0) return 0;
+
+        added = rewardRatePerSecond * dt;
+        if (added > 0) {
+            pendingRewards[coinbase] += added;
+        }
+        lastTick = block.timestamp;
+    }
+
+    /// @notice Sets the reward rate per second.
+    /// @dev No permissioning (local/dev convenience).
+    function setRewardRatePerSecond(uint256 newRate) external {
+        rewardRatePerSecond = newRate;
+    }
+
+    /// @notice Adds an instant bump of rewards to a given coinbase.
+    function addRewards(address coinbase, uint256 amount) external {
+        pendingRewards[coinbase] += amount;
     }
 
     /*//////////////////////////////////////////////////////////////

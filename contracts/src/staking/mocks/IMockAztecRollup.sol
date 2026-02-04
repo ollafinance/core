@@ -101,7 +101,7 @@ interface IMockAztecRollup {
     function finalizeWithdraw(address attester) external;
 
     /// @notice Claims sequencer rewards for a coinbase/attester.
-    /// @dev For testing: looks up rewards for _coinbase, transfers to msg.sender.
+    /// @dev Looks up rewards for `coinbase` and pays out to `coinbase`.
     /// @param coinbase The coinbase/attester address to claim rewards for.
     /// @return amount The amount of rewards claimed.
     function claimSequencerRewards(address coinbase) external returns (uint256 amount);

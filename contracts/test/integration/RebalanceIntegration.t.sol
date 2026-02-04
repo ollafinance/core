@@ -20,7 +20,7 @@ contract RebalanceIntegrationTest is Test {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event Rebalanced(uint256 harvestedAmount, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
+    event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
 
     /*//////////////////////////////////////////////////////////////
                                CONSTANTS

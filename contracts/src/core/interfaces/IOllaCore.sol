@@ -338,7 +338,7 @@ interface IOllaCore {
     /// @return resultingBuffer The final buffered assets after rebalance.
     function rebalance()
         external
-        returns (uint256 harvestedAmount, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
+        returns (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
 
     /// @notice Operator-triggered accounting update hook.
     function updateAccounting() external;

@@ -332,7 +332,7 @@ contract OllaCore is
 
     /// @notice Operator-triggered rebalance flow.
     /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
-    /// @return harvestedAmount The amount of rewards harvested.
+    /// @return rewardsDelta The amount of rewards harvested.
     /// @return finalizedAmount The amount of assets used to finalize withdrawals.
     /// @return stakedAmount The amount staked.
     /// @return resultingBuffer The final buffered assets after rebalance.
@@ -342,7 +342,7 @@ contract OllaCore is
         onlyRole(OPERATOR_ROLE)
         whenNotPaused
         nonReentrant
-        returns (uint256 harvestedAmount, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer)
+        returns (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer)
     {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         // Slither: SafetyModule is a trusted dependency; rebalance is nonReentrant and role-gated.
@@ -352,7 +352,7 @@ contract OllaCore is
 
         // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
         // slither-disable-next-line reentrancy-no-eth
-        harvestedAmount = _harvestRewards();
+        rewardsDelta = _harvestRewards();
 
         _pullUnstakedFunds();
 
@@ -364,9 +364,9 @@ contract OllaCore is
 
         resultingBuffer = _accountingState.bufferedAssets;
 
-        emit Rebalanced(harvestedAmount, finalizedAmount, stakedAmount, resultingBuffer);
+        emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
 
-        return (harvestedAmount, finalizedAmount, stakedAmount, resultingBuffer);
+        return (rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
     }
 
     // Slither: accept multiple storage reads for readability in hot-path accounting.
