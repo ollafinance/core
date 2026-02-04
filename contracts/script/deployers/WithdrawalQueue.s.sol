@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { BaseDeployer } from "../base/BaseDeployer.s.sol";
-import { DeployConfig } from "../config/Config.s.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { BaseDeployer } from "./../base/BaseDeployer.s.sol";
+import { DeployConfig } from "./../config/Config.s.sol";
 
 /// @title WithdrawalQueueDeployer
 /// @notice Deploys WithdrawalQueue implementation and proxy.

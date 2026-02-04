@@ -7,10 +7,10 @@ import { ConfigHelper, DeployConfig } from "./Config.s.sol";
 /// @notice Configuration for local Anvil deployment
 contract LocalConfig is ConfigHelper {
     /// @notice Default Anvil private key (account 0)
-    uint256 internal constant ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+    uint256 internal constant _ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
     /// @notice Anvil chain ID
-    uint256 internal constant ANVIL_CHAIN_ID = 31337;
+    uint256 internal constant _ANVIL_CHAIN_ID = 31337;
 
     function getConfig() external view override returns (DeployConfig memory) {
         uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", ANVIL_PRIVATE_KEY);

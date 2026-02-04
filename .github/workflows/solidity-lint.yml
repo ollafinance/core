@@ -23,6 +23,8 @@ jobs:
         uses: ./.github/actions/setup-soldeer
       - name: Forge fmt check
         run: forge fmt --check
+      - name: Forge fmt check (scripts)
+        run: forge fmt script/ --check
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

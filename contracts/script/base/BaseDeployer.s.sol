@@ -7,7 +7,7 @@ import { Script, console2 } from "@forge-std/Script.sol";
 /// @notice Base contract for all deployers with shared utilities
 abstract contract BaseDeployer is Script {
     /// @notice Path to deployments directory
-    string internal constant DEPLOYMENTS_PATH = "deployments/";
+    string internal constant _DEPLOYMENTS_PATH = "deployments/";
 
     /// @notice Get the deployment file path for a given environment
     function _getDeploymentPath(string memory env) internal pure returns (string memory) {
@@ -50,13 +50,13 @@ abstract contract BaseDeployer is Script {
         returns (string memory)
     {
         return string.concat(
-            '{\n  "network": "',
+            "{\n  'network': '",
             env,
-            '",\n  "chainId": ',
+            "',\n  'chainId': ",
             _uint256ToString(chainId),
-            ',\n  "deployer": "',
+            ",\n  'deployer': '",
             _addressToString(deployer),
-            '",\n  "addresses": {'
+            "',\n  'addresses': {"
         );
     }
 
@@ -103,7 +103,7 @@ abstract contract BaseDeployer is Script {
         vm.createDir(DEPLOYMENTS_PATH, true);
 
         vm.writeFile(path, finalJson);
-        console2.log("Deployment saved to:", path);
+        
     }
 
     /// @notice Add an address to the deployment JSON (for building incrementally)
@@ -113,7 +113,7 @@ abstract contract BaseDeployer is Script {
         returns (string memory)
     {
         string memory comma = isFirst ? "" : ",";
-        string memory addressEntry = string.concat(comma, '\n    "', key, '": "', _addressToString(addr), '"');
+        string memory addressEntry = string.concat(comma, "\n    '", key, "': '", _addressToString(addr), "'");
 
         // Find the closing brace of addresses and insert before it
         return string.concat(currentJson, addressEntry);
@@ -130,11 +130,11 @@ abstract contract BaseDeployer is Script {
         pure
         returns (string memory)
     {
-        return string.concat(currentJson, ',\n  "', key, '": "', value, '"');
+        return string.concat(currentJson, ",\n  '", key, "': '", value, "'");
     }
 
     /// @notice Log deployment of a contract
     function _logDeployment(string memory name, address addr) internal pure {
-        console2.log(string.concat(name, " deployed at:"), addr);
+        
     }
 }
