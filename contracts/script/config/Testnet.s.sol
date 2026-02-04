@@ -7,7 +7,7 @@ import { ConfigHelper, DeployConfig } from "./Config.s.sol";
 /// @notice Configuration for testnet deployment (e.g., Sepolia)
 contract TestnetConfig is ConfigHelper {
     /// @notice Sepolia chain ID
-    uint256 internal constant SEPOLIA_CHAIN_ID = 11155111;
+    uint256 internal constant _SEPOLIA_CHAIN_ID = 11155111;
 
     function getConfig() external view override returns (DeployConfig memory) {
         // Private key must be provided via environment variable for testnet
@@ -17,7 +17,7 @@ contract TestnetConfig is ConfigHelper {
         return DeployConfig({
             // Environment
             name: "testnet",
-            chainId: SEPOLIA_CHAIN_ID,
+            chainId: _SEPOLIA_CHAIN_ID,
             // Deployer
             deployerPrivateKey: deployerPrivateKey,
             deployer: deployer,

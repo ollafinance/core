@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { BaseDeployer, console2 } from "../base/BaseDeployer.s.sol";
-import { DeployConfig } from "../config/Config.s.sol";
-import { OllaCore } from "src/core/OllaCore.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { IStAztec } from "src/core/interfaces/IStAztec.sol";
+import { OllaCore } from "src/core/OllaCore.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { BaseDeployer } from "./../base/BaseDeployer.s.sol";
+import { DeployConfig } from "./../config/Config.s.sol";
 
 /// @title OllaCoreDeployer
 /// @notice Deploys OllaCore implementation and proxy
@@ -62,13 +62,11 @@ contract OllaCoreDeployer is BaseDeployer {
                 IRewardsVault(config.rewardsVault),
                 safetyModule
             );
-        console2.log("OllaCore initialized");
 
         // Approve core to spend deployer's tokens (for local dev convenience)
         if (config.deployMocks) {
             IERC20(asset).approve(proxyAddress, type(uint256).max);
             IERC20(stAztec).approve(proxyAddress, type(uint256).max);
-            console2.log("Approved OllaCore to spend deployer's tokens (Asset & StAztec)");
         }
 
         vm.stopBroadcast();

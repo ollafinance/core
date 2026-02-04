@@ -21,8 +21,6 @@ jobs:
           version: stable
       - name: Setup Soldeer dependencies
         uses: ./.github/actions/setup-soldeer
-      - name: Forge fmt check
-        run: forge fmt --check
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -34,6 +32,9 @@ jobs:
         working-directory: .
       - name: Install dependencies
         run: yarn install --immutable
+        working-directory: .
+      - name: Forge fmt
+        run: yarn forge:fmt
         working-directory: .
       - name: Build solhint rules
         run: yarn solhint:build
