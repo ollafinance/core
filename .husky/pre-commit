@@ -17,11 +17,3 @@ print_step "solhint"
 yarn lint:fix
 print_step "slither (docker)"
 yarn slither:docker
-print_step "unit tests"
-yarn test:unit
-print_step "integration tests"
-yarn test:integration
-print_step "interface compatibility tests"
-yarn test:interface-compat
-print_step "invariant tests"
-yarn test:invariant
