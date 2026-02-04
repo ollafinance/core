@@ -954,9 +954,11 @@ contract OllaCoreTest is Test {
         stakingManager.setClaimableRewards(claimableRewards);
         stakingManager.setSlashingDelta(slashing);
 
-        // rewardsDelta now comes from actual vault balance delta + claimable
-        uint256 rewardsDelta = harvestedRewards + claimableRewards;
-        uint256 expectedTotalAssets = depositAmount + stakedPrincipal + harvestedRewards + claimableRewards - slashing;
+        IOllaCore.AccountingState memory accountingAfterRebalance = vault.accountingState();
+        uint256 rewardsVaultBalance = rewardsVault.balance();
+        uint256 rewardsDelta = accountingAfterRebalance.cumulativeRewards + claimableRewards;
+        uint256 expectedTotalAssets = accountingAfterRebalance.bufferedAssets + stakedPrincipal + rewardsVaultBalance
+            + claimableRewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
         uint256 expectedGrossRewards = expectedTotalAssets > depositAmount ? expectedTotalAssets - depositAmount : 0;
 

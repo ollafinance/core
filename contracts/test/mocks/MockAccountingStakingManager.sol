@@ -28,6 +28,7 @@ contract MockAccountingStakingManager is IStakingManager {
     address public providerAdmin;
     uint256 public stakeReturnAmount;
     bool public useStakeReturnAmount;
+    bool public allowStakeReturnExceeds;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -86,6 +87,10 @@ contract MockAccountingStakingManager is IStakingManager {
         useStakeReturnAmount = false;
     }
 
+    function setAllowStakeReturnExceeds(bool allow) external {
+        allowStakeReturnExceeds = allow;
+    }
+
     /*//////////////////////////////////////////////////////////////
                           CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -94,7 +99,7 @@ contract MockAccountingStakingManager is IStakingManager {
         uint256 actualAmount = amount;
         if (useStakeReturnAmount) {
             actualAmount = stakeReturnAmount;
-            if (actualAmount > amount) {
+            if (!allowStakeReturnExceeds && actualAmount > amount) {
                 actualAmount = amount;
             }
         }
@@ -105,7 +110,13 @@ contract MockAccountingStakingManager is IStakingManager {
         if (address(token) == address(0)) {
             return 0;
         }
-        token.transferFrom(msg.sender, address(this), actualAmount);
+        uint256 transferAmount = actualAmount;
+        if (actualAmount > amount) {
+            transferAmount = amount;
+        }
+        if (transferAmount != 0) {
+            token.transferFrom(msg.sender, address(this), transferAmount);
+        }
         return actualAmount;
     }
 

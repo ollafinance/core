@@ -129,6 +129,9 @@ contract OllaCoreRebalanceTest is Test {
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 expectedBuffer = accountingBefore.bufferedAssets;
 
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(expectedBuffer);
+
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
         vm.expectEmit(true, true, true, true, address(vault));
         emit RewardsDelta(rewardAmount);
@@ -158,6 +161,9 @@ contract OllaCoreRebalanceTest is Test {
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 expectedBuffer = accountingBefore.bufferedAssets;
 
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(expectedBuffer);
+
         stakingManager.setHarvestedRewards(0);
 
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
@@ -180,6 +186,10 @@ contract OllaCoreRebalanceTest is Test {
         asset.mint(address(stakingManager), unstakedAmount);
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 expectedBuffer = accountingBefore.bufferedAssets + unstakedAmount;
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(expectedBuffer);
 
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.getUnstakedFunds, ()));
         vm.expectEmit(true, true, true, true, address(vault));
@@ -189,11 +199,7 @@ contract OllaCoreRebalanceTest is Test {
         vault.rebalance();
 
         IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(
-            accountingAfter.bufferedAssets,
-            accountingBefore.bufferedAssets + unstakedAmount,
-            "buffered assets increased"
-        );
+        assertEq(accountingAfter.bufferedAssets, expectedBuffer, "buffered assets increased");
     }
 
     function test_Rebalance_PullUnstakedFunds_NoOp() external {
@@ -228,6 +234,8 @@ contract OllaCoreRebalanceTest is Test {
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 bufferBefore = accountingBefore.bufferedAssets;
+        uint256 bufferAfterFinalize = bufferBefore - request.assetsExpected;
+        uint256 expectedStaked = bufferAfterFinalize - targetBufferedAssets;
 
         vm.expectCall(address(withdrawalQueue), abi.encodeCall(withdrawalQueue.finalizeWithdrawals, (bufferBefore)));
         vm.expectEmit(true, true, true, true, address(vault));
@@ -235,13 +243,13 @@ contract OllaCoreRebalanceTest is Test {
         vm.expectEmit(true, true, true, true, address(vault));
         emit WithdrawalFinalized(bufferBefore, request.assetsExpected);
         vm.expectEmit(true, true, true, true, address(vault));
-        emit Rebalanced(0, request.assetsExpected, 0, bufferBefore);
+        emit Rebalanced(0, request.assetsExpected, expectedStaked, bufferAfterFinalize);
 
         vm.prank(operator);
         vault.rebalance();
 
         IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(accountingAfter.bufferedAssets, bufferBefore, "buffered assets reconciled after finalize");
+        assertEq(accountingAfter.bufferedAssets, bufferAfterFinalize, "buffered assets reduced by finalize");
     }
 
     function test_Rebalance_FinalizeWithdrawals_QueueDrains() external {
@@ -474,6 +482,28 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakedAmount, 0, "staked amount is zero when below target");
         assertEq(resultingBuffer, accountingBefore.bufferedAssets, "buffer unchanged when below target");
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked principal unchanged");
+    }
+
+    function test_Rebalance_StakeSurplus_RevertsWhenStakedExceedsStakeable() external {
+        uint256 depositAmount = 20 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 targetBufferedAssets = 10 * DECIMALS;
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 stakeable = accountingBefore.bufferedAssets - targetBufferedAssets;
+
+        stakingManager.setStakeReturnAmount(stakeable + 1);
+        stakingManager.setAllowStakeReturnExceeds(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__StakeFailed.selector, stakeable + 1));
+        vm.prank(operator);
+        vault.rebalance();
     }
 
     function test_Rebalance_StakeSurplus_EmitsAfterFinalize() external {

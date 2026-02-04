@@ -722,22 +722,29 @@ contract OllaCore is
         return initiated;
     }
 
+    // slither-disable-start pess-multiple-storage-read
     /// @notice Stakes surplus buffered assets above target buffer.
     /// @return totalStaked The total amount staked during this operation.
     function _stakeSurplus() internal returns (uint256 totalStaked) {
-        _syncBufferedWithBalance();
+        IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
+        uint256 bufferedAssets = accountingSnapshot.bufferedAssets;
+        uint256 stakedPrincipal = accountingSnapshot.stakedPrincipal;
+        uint256 targetBuffered = targetBufferedAssets;
 
-        IOllaCore.AccountingState storage accountingStateRef = _accountingState;
-        uint256 bufferedAssets = accountingStateRef.bufferedAssets;
-
-        if (bufferedAssets < targetBufferedAssets) {
+        // No timestamp usage; numeric guard only.
+        // slither-disable-next-line incorrect-equality,timestamp
+        if (bufferedAssets < targetBuffered) {
             return 0;
         }
-        if (bufferedAssets == targetBufferedAssets) {
+        // No timestamp usage; numeric guard only.
+        // slither-disable-next-line incorrect-equality,timestamp
+        if (bufferedAssets == targetBuffered) {
             return 0;
         }
 
-        uint256 stakeable = bufferedAssets - targetBufferedAssets;
+        uint256 stakeable = bufferedAssets - targetBuffered;
+        // No timestamp usage; numeric guard only.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (stakeable == 0) {
             return 0;
         }
@@ -746,19 +753,25 @@ contract OllaCore is
         IStakingManager stakingManagerRef = _modules.stakingManager;
 
         assetRef.forceApprove(address(stakingManagerRef), stakeable);
+        // Slither: rebalance is nonReentrant and stakingManager is a trusted module.
+        // slither-disable-next-line reentrancy-no-eth
         try stakingManagerRef.stake(stakeable) returns (uint256 actualStaked) {
+            if (actualStaked > stakeable) {
+                revert OllaCore__StakeFailed(actualStaked);
+            }
             totalStaked = actualStaked;
         } catch {
             revert OllaCore__StakeFailed(stakeable);
         }
 
         if (totalStaked > 0) {
-            accountingStateRef.bufferedAssets = bufferedAssets - totalStaked;
-            accountingStateRef.stakedPrincipal += totalStaked;
+            _accountingState.bufferedAssets = bufferedAssets - totalStaked;
+            _accountingState.stakedPrincipal = stakedPrincipal + totalStaked;
         }
 
         return totalStaked;
     }
+    // slither-disable-end pess-multiple-storage-read
 
     function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {
         if (recipient == address(0)) {
