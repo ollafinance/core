@@ -17,6 +17,17 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     using Address for address;
     using SafeERC20 for IERC20;
 
+    /// @notice Maximum basis points value (100%).
+    uint256 public constant MAX_BPS = 10_000;
+
+    /// @notice Default activation threshold used when constructor arg is 0.
+    uint256 public constant DEFAULT_ACTIVATION_THRESHOLD = 200_000e18;
+
+    uint8 private constant _REENTER_ON_DEPOSIT = 1 << 0;
+    uint8 private constant _REENTER_ON_INITIATE_WITHDRAW = 1 << 1;
+    uint8 private constant _REENTER_ON_FINALIZE_WITHDRAW = 1 << 2;
+    uint8 private constant _REENTER_ON_CLAIM_REWARDS = 1 << 3;
+
     /// @notice The staking asset token.
     IERC20 public immutable override STAKING_ASSET;
     uint256 private _activationThreshold;
@@ -39,27 +50,25 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @notice Last timestamp used for reward accrual.
     uint256 public lastTick;
 
+    /// @notice Recipient used for withdraw-linked reward bumps (set to RewardsVault in local deploy).
+    address public rewardsCoinbase;
+
+    /// @notice Withdraw-linked reward bump in basis points of exited stake amount.
+    uint256 public withdrawRewardBps = MAX_BPS;
+
     /// @notice Target called during reentrancy.
     address public reentryTarget;
 
     /// @notice Calldata used during reentrancy.
     bytes public reentryCalldata;
 
-    /// @notice Whether to attempt reentrancy during deposit.
-    bool public reenterOnDeposit;
-
-    /// @notice Whether to attempt reentrancy during initiateWithdraw.
-    bool public reenterOnInitiateWithdraw;
-
-    /// @notice Whether to attempt reentrancy during finalizeWithdraw.
-    bool public reenterOnFinalizeWithdraw;
-
-    /// @notice Whether to attempt reentrancy during claimSequencerRewards.
-    bool public reenterOnClaimSequencerRewards;
+    /// @notice Reentrancy flags for test scenarios.
+    /// @dev Packed into a single uint8 to reduce state count.
+    uint8 private _reenterFlags;
 
     constructor(IERC20 stakingAsset, uint256 activationThreshold) {
         STAKING_ASSET = stakingAsset;
-        _activationThreshold = activationThreshold;
+        _activationThreshold = activationThreshold == 0 ? DEFAULT_ACTIVATION_THRESHOLD : activationThreshold;
         lastTick = block.timestamp;
     }
 
@@ -76,28 +85,44 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @param enabled Whether reentrancy is enabled.
     /// @inheritdoc IMaliciousAztecRollup
     function setReenterOnDeposit(bool enabled) external override {
-        reenterOnDeposit = enabled;
+        if (enabled) {
+            _reenterFlags |= _REENTER_ON_DEPOSIT;
+        } else {
+            _reenterFlags &= ~_REENTER_ON_DEPOSIT;
+        }
     }
 
     /// @notice Enable/disable a reentrancy attempt during `initiateWithdraw`.
     /// @param enabled Whether reentrancy is enabled.
     /// @inheritdoc IMaliciousAztecRollup
     function setReenterOnInitiateWithdraw(bool enabled) external override {
-        reenterOnInitiateWithdraw = enabled;
+        if (enabled) {
+            _reenterFlags |= _REENTER_ON_INITIATE_WITHDRAW;
+        } else {
+            _reenterFlags &= ~_REENTER_ON_INITIATE_WITHDRAW;
+        }
     }
 
     /// @notice Enable/disable a reentrancy attempt during `finalizeWithdraw`.
     /// @param enabled Whether reentrancy is enabled.
     /// @inheritdoc IMaliciousAztecRollup
     function setReenterOnFinalizeWithdraw(bool enabled) external override {
-        reenterOnFinalizeWithdraw = enabled;
+        if (enabled) {
+            _reenterFlags |= _REENTER_ON_FINALIZE_WITHDRAW;
+        } else {
+            _reenterFlags &= ~_REENTER_ON_FINALIZE_WITHDRAW;
+        }
     }
 
     /// @notice Enable/disable a reentrancy attempt during `claimSequencerRewards`.
     /// @param enabled Whether reentrancy is enabled.
     /// @inheritdoc IMaliciousAztecRollup
     function setReenterOnClaimSequencerRewards(bool enabled) external override {
-        reenterOnClaimSequencerRewards = enabled;
+        if (enabled) {
+            _reenterFlags |= _REENTER_ON_CLAIM_REWARDS;
+        } else {
+            _reenterFlags &= ~_REENTER_ON_CLAIM_REWARDS;
+        }
     }
 
     /// @notice Deposit stake for an attester.
@@ -116,8 +141,8 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         bool _onCanonical
     ) external override {
         _onCanonical;
-        if (reenterOnDeposit) {
-            reenterOnDeposit = false;
+        if ((_reenterFlags & _REENTER_ON_DEPOSIT) != 0) {
+            _reenterFlags &= ~_REENTER_ON_DEPOSIT;
             reentryTarget.functionCall(reentryCalldata);
         }
 
@@ -133,8 +158,8 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @param _recipient The recipient address.
     /// @return success Whether the withdrawal was initiated.
     function initiateWithdraw(address _attester, address _recipient) external override returns (bool success) {
-        if (reenterOnInitiateWithdraw) {
-            reenterOnInitiateWithdraw = false;
+        if ((_reenterFlags & _REENTER_ON_INITIATE_WITHDRAW) != 0) {
+            _reenterFlags &= ~_REENTER_ON_INITIATE_WITHDRAW;
             reentryTarget.functionCall(reentryCalldata);
         }
 
@@ -146,6 +171,12 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         }
 
         uint256 amount = stakes[_attester];
+
+        address coinbase = rewardsCoinbase;
+        if (coinbase != address(0) && amount > 0 && withdrawRewardBps != 0) {
+            pendingRewards[coinbase] += (amount * withdrawRewardBps) / MAX_BPS;
+        }
+
         _exits[_attester] = Exit({
             withdrawalId: 0,
             amount: amount,
@@ -162,8 +193,8 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @notice Finalize a withdrawal for an attester.
     /// @param _attester The attester address.
     function finalizeWithdraw(address _attester) external override {
-        if (reenterOnFinalizeWithdraw) {
-            reenterOnFinalizeWithdraw = false;
+        if ((_reenterFlags & _REENTER_ON_FINALIZE_WITHDRAW) != 0) {
+            _reenterFlags &= ~_REENTER_ON_FINALIZE_WITHDRAW;
             reentryTarget.functionCall(reentryCalldata);
         }
 
@@ -187,8 +218,8 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @param _coinbase The coinbase address.
     /// @return amount The amount claimed.
     function claimSequencerRewards(address _coinbase) external override returns (uint256 amount) {
-        if (reenterOnClaimSequencerRewards) {
-            reenterOnClaimSequencerRewards = false;
+        if ((_reenterFlags & _REENTER_ON_CLAIM_REWARDS) != 0) {
+            _reenterFlags &= ~_REENTER_ON_CLAIM_REWARDS;
             reentryTarget.functionCall(reentryCalldata);
         }
 
@@ -224,6 +255,17 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @inheritdoc IMockAztecRollup
     function addRewards(address coinbase, uint256 amount) external override {
         pendingRewards[coinbase] += amount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setRewardsCoinbase(address coinbase) external override {
+        rewardsCoinbase = coinbase;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setWithdrawRewardBps(uint256 bps) external override {
+        if (bps > MAX_BPS) revert MockAztecRollup__InvalidBps();
+        withdrawRewardBps = bps;
     }
 
     /// @notice Set pending rewards for a sequencer.

@@ -16,6 +16,16 @@ contract MockAztecRollup is IMockAztecRollup {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
+                                 CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Default activation threshold used when constructor arg is 0.
+    uint256 public constant DEFAULT_ACTIVATION_THRESHOLD = 200_000e18;
+
+    /// @notice Maximum basis points value (100%).
+    uint256 public constant MAX_BPS = 10_000;
+
+    /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
 
@@ -39,13 +49,20 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @notice Last timestamp used for reward accrual.
     uint256 public lastTick;
 
+    /// @notice Recipient used for withdraw-linked reward bumps (set to RewardsVault in local deploy).
+    address public rewardsCoinbase;
+
+    /// @notice Withdraw-linked reward bump in basis points of exited stake amount.
+    /// @dev Default is 10_000 (100% of stake amount).
+    uint256 public withdrawRewardBps = MAX_BPS;
+
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     constructor(IERC20 stakingAsset, uint256 activationThreshold) {
         STAKING_ASSET = stakingAsset;
-        _activationThreshold = activationThreshold;
+        _activationThreshold = activationThreshold == 0 ? DEFAULT_ACTIVATION_THRESHOLD : activationThreshold;
         lastTick = block.timestamp;
     }
 
@@ -79,6 +96,12 @@ contract MockAztecRollup is IMockAztecRollup {
         }
 
         uint256 amount = stakes[_attester];
+
+        address coinbase = rewardsCoinbase;
+        if (coinbase != address(0) && amount > 0 && withdrawRewardBps != 0) {
+            pendingRewards[coinbase] += (amount * withdrawRewardBps) / MAX_BPS;
+        }
+
         _exits[_attester] = Exit({
             withdrawalId: 0,
             amount: amount,
@@ -148,6 +171,17 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     function addRewards(address coinbase, uint256 amount) external override {
         pendingRewards[coinbase] += amount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setRewardsCoinbase(address coinbase) external override {
+        rewardsCoinbase = coinbase;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setWithdrawRewardBps(uint256 bps) external override {
+        if (bps > MAX_BPS) revert MockAztecRollup__InvalidBps();
+        withdrawRewardBps = bps;
     }
 
     /*//////////////////////////////////////////////////////////////

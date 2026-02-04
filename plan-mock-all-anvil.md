@@ -1,6 +1,7 @@
 # Plan: Mock Aztec Parts On Local Anvil (Realistic Rebalance/Accounting)
 
 Goal: run an anvil-local deployment that is as close to reality as possible, with only the Aztec contracts mocked, such that:
+
 - `OllaCore.rebalance()` harvests sequencer rewards through `StakingManager.harvestRewards()` -> `rollup.claimSequencerRewards(RewardsVault)`.
 - harvested rewards materialize as an actual ERC20 balance increase in `RewardsVault` so `RewardsVault.recordBalance()` produces a non-zero delta.
 - claimable rewards grow over time for UI purposes (constant increase), and can be sped up/controlled by an operator script.
@@ -8,13 +9,24 @@ Goal: run an anvil-local deployment that is as close to reality as possible, wit
 - stake withdrawals pay out to the one staking/withdrawing (`StakingManager`).
 
 Constraints:
+
 - No "same-call" harvest after `initiateWithdraw` (rebalance ordering stays as-is).
 - Only use/extend `contracts/src/staking/mocks/MockAztecRollup.sol` (no new rollup mock).
 - Update `MockAztecRollup.sol` and any impacted tests accordingly.
 
+Validation checkpoints and useful commands
+Instead of using tools directly, refer to using yarn-commands which are proven to work from project root. When a check is needed here are some useful checks:
+
+- yarn forge:fmt
+- yarn lint:fix
+- yarn slither:docker
+- yarn forge:build
+- yarn test:unit
+
 ## Architecture (Real Contracts vs Mocked Aztec)
 
 Real protocol contracts:
+
 - `OllaCore` (core vault + accounting)
 - `RewardsVault` (delta accounting based on actual token balance)
 - `StakingManager` (calls rollup, manages attesters, initiates/finalizes stake withdrawals)
@@ -22,13 +34,16 @@ Real protocol contracts:
 - `WithdrawalQueue`, `StAztec`, `SafetyModule` (existing local-safe choices)
 
 Mocked Aztec-side:
+
 - `MockAztecRollup` (extended to support time-based + event-based rewards accrual)
 - `MockAztecRollupRegistry` (returns canonical rollup)
 
 Rewards/staking asset:
+
 - `MockAztec` (mintable ERC20; easiest for mint-on-cadence)
 
 Payment semantics to enforce:
+
 - Rewards payout: `claimSequencerRewards(coinbase)` MUST pay `coinbase` (RewardsVault address in our protocol).
 - Stake withdrawal payout: `finalizeWithdraw(attester)` transfers the stake to the stored exit recipient (StakingManager in our protocol).
 
@@ -39,11 +54,13 @@ Payment semantics to enforce:
 Current incorrect behavior: `claimSequencerRewards` transfers to `msg.sender`.
 
 Correct behavior:
+
 - `claimSequencerRewards(coinbase)` pays `coinbase`.
 - Clear `pendingRewards[coinbase]` after claim.
 - Return the claimed amount.
 
 Implementation direction:
+
 - Prefer mint-on-claim using `MockAztec.mint(coinbase, amount)` (simplest; no prefunding required).
 
 ### 2) Add reward accrual suitable for UI + operator control
@@ -51,11 +68,13 @@ Implementation direction:
 We want rewards to increase steadily and be controllable without modifying protocol code.
 
 State (minimum):
+
 - `uint256 public rewardRatePerSecond;`
 - `uint256 public lastTick;`
 - `mapping(address => uint256) public pendingRewards;` (already exists)
 
 Functions:
+
 - `tick(coinbase)` (recommended):
   - compute `dt = block.timestamp - lastTick`.
   - increment `pendingRewards[coinbase] += rewardRatePerSecond * dt`.
@@ -66,6 +85,7 @@ Functions:
   - keep existing `setRewards(coinbase, amount)` as an override lever.
 
 Coinbase target:
+
 - In our protocol, `coinbase == RewardsVault` address.
 - Prefer explicit `tick(coinbase)` for clarity and script ergonomics.
 
@@ -74,15 +94,18 @@ Coinbase target:
 Add an optional bump to rewards when `initiateWithdraw` is called.
 
 Baseline version:
+
 - On `initiateWithdraw(attester, recipient)`:
   - compute `amount = stakes[attester]`.
   - bump `pendingRewards[RewardsVault]` by a function of `amount`.
 
 Start with:
+
 - bump amount equals activation threshold (i.e. `amount`), as a simple first model.
 - Later upgrade to `amount * withdrawRewardBps / 10_000` (configurable) if needed.
 
 This ensures:
+
 - claimable increases immediately when unstakes are initiated.
 - harvest happens on the next `rebalance()` (since `rebalance()` harvestes before initiating unstakes).
 
@@ -126,20 +149,24 @@ This ensures:
 Provide scripts that work without UI and are UI-friendly.
 
 Core operator scripts:
+
 - `rebalance`: calls `OllaCore.rebalance()` as an address with `OPERATOR_ROLE`.
 - `updateAccounting`: calls `OllaCore.updateAccounting()` as operator.
 - `grantOperator`: grants operator role to a chosen EOA (local convenience).
 
 Rollup control scripts:
+
 - `tickRewards`: calls `MockAztecRollup.tick(RewardsVault)` (cron target).
 - `setRewardRate`: sets `rewardRatePerSecond`.
 - `addRewards`: instant bump (optional).
 - `setActivationThreshold`: for fast testing (optional).
 
 Provider scripts:
+
 - `addKeys`: adds N dummy keystores to `StakingProviderRegistry` (so stake can happen once stake surplus is implemented).
 
 Cron workflow example:
+
 - Terminal A: `anvil`
 - Terminal B: deploy via `forge script` (local deploy)
 - Terminal C (cron): loop calling `tickRewards` every N seconds
@@ -162,6 +189,7 @@ Cron workflow example:
 ## Test Updates
 
 Because `MockAztecRollup.claimSequencerRewards` payout target is corrected:
+
 - Update/repair any tests that assumed vault balances didn't change or that rewards were transferred to the staking manager.
 - Add/adjust tests to assert:
   - rewards are minted/transferred to RewardsVault on claim.
@@ -170,14 +198,14 @@ Because `MockAztecRollup.claimSequencerRewards` payout target is corrected:
 
 ## Implementation Order (High-Level)
 
-1) Fix `MockAztecRollup.claimSequencerRewards` payout target and adjust tests until green.
-2) Extend `MockAztecRollup` with `tick` + rate config + optional withdraw bump.
-3) Update local deploy scripts to deploy real staking stack + rollup mocks (no mock staking manager).
-4) Add forge scripts for:
+1. Fix `MockAztecRollup.claimSequencerRewards` payout target and adjust tests until green.
+2. Extend `MockAztecRollup` with `tick` + rate config + optional withdraw bump.
+3. Update local deploy scripts to deploy real staking stack + rollup mocks (no mock staking manager).
+4. Add forge scripts for:
    - rollup tick/rate controls
    - operator rebalance/accounting
    - provider key seeding
-5) Quick end-to-end local demo:
+5. Quick end-to-end local demo:
    - deploy
    - seed provider keys
    - deposit + stake surplus (once implemented)
