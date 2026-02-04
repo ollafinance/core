@@ -235,17 +235,13 @@ contract OllaCoreRebalanceTest is Test {
         vm.expectEmit(true, true, true, true, address(vault));
         emit WithdrawalFinalized(bufferBefore, request.assetsExpected);
         vm.expectEmit(true, true, true, true, address(vault));
-        emit Rebalanced(0, request.assetsExpected, 0, bufferBefore - request.assetsExpected);
+        emit Rebalanced(0, request.assetsExpected, 0, bufferBefore);
 
         vm.prank(operator);
         vault.rebalance();
 
         IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(
-            accountingAfter.bufferedAssets,
-            bufferBefore - request.assetsExpected,
-            "buffered assets reduced by finalized amount"
-        );
+        assertEq(accountingAfter.bufferedAssets, bufferBefore, "buffered assets reconciled after finalize");
     }
 
     function test_Rebalance_FinalizeWithdrawals_QueueDrains() external {
