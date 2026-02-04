@@ -107,6 +107,11 @@ interface IOllaCore {
     /// @param newSplitBP The new split in basis points.
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
 
+    /// @notice Emitted when the target buffer is updated.
+    /// @param oldBuffer The old target buffer.
+    /// @param newBuffer The new target buffer.
+    event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
+
     /// @notice Emitted when the governance address is updated.
     /// @param oldGovernance The old governance address.
     /// @param newGovernance The new governance address.
@@ -164,6 +169,11 @@ interface IOllaCore {
     /// @param available Available assets.
     /// @param used Used assets.
     event WithdrawalFinalized(uint256 available, uint256 used);
+
+    /// @notice Emitted when the core initiates unstaking to satisfy withdrawals.
+    /// @param requested Amount requested to unstake based on pending withdrawals.
+    /// @param initiated Amount actually initiated (after pendingUnstakes adjustments).
+    event UnstakeInitiated(uint256 requested, uint256 initiated);
 
     /// @notice Emitted when a withdrawal is claimed via queue.
     /// @param requestId Withdrawal request id.
@@ -229,6 +239,9 @@ interface IOllaCore {
 
     /// @notice Thrown when a split basis points value exceeds maximum.
     error OllaCore__InvalidSplitBP(uint256 splitBP);
+
+    /// @notice Thrown when the target buffer is invalid.
+    error OllaCore__InvalidTargetBufferedAssets(uint256 newBuffer);
 
     /// @notice Thrown when no active withdrawal request exists.
     error OllaCore__NoActiveWithdrawal(address owner);
@@ -341,6 +354,10 @@ interface IOllaCore {
     /// @param newRewardsVault The new rewards vault address.
     function setRewardsVault(IRewardsVault newRewardsVault) external;
 
+    /// @notice Sets the target buffer used to reserve liquid assets.
+    /// @param newBuffer The new target buffer.
+    function setTargetBufferedAssets(uint256 newBuffer) external;
+
     /// @notice Recovers stAztec sent directly to the core.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
     /// @param amount The amount of stAztec to recover.
@@ -395,6 +412,10 @@ interface IOllaCore {
     /// @notice Returns the safety module address.
     /// @return The safety module address.
     function safetyModule() external view returns (address);
+
+    /// @notice Returns the target liquid assets buffer.
+    /// @return The target buffer.
+    function targetBufferedAssets() external view returns (uint256);
 
     /// @notice Returns the latest accounting report snapshot.
     /// @return The latest report struct.

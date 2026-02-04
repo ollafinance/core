@@ -191,6 +191,24 @@ sequenceDiagram
     RV-->>C: rewardsDelta
 ```
 
+#### Pull unstaked funds
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant C as OllaCore
+    participant SM as StakingManager
+    participant AZ as AssetToken
+
+    OP->>C: rebalance()
+    Note over C: Step 2: Pull unstaked funds
+    C->>SM: getUnstakedFunds()
+    SM-->>C: transfer matured unstakes
+    C->>AZ: balanceOf(C) increases
+    C->>C: bufferedAssets += received
+    Note right of C: emit UnstakedFundsClaimed(received)
+```
+
 #### Process user withdrawal requests
 
 ```mermaid
@@ -208,12 +226,35 @@ sequenceDiagram
     Note right of C: queued = WQ.totalPendingAssets()
     Note right of C: total = C.totalAssets()
     C->>C: syncBufferedWithBalance()
+    Note right of C: available = bufferedAssets
     C->>C: require available <= bufferedAssets
     C->>WQ: previewFinalizeWithdrawals(available)
     WQ-->>C: used
     C->>WQ: finalizeWithdrawals(available)
     WQ-->>C: finalized
     Note right of C: require finalized == used
+```
+
+#### Initiate unstake
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant C as OllaCore
+    participant WQ as WithdrawalQueue
+    participant SM as StakingManager
+
+    OP->>C: rebalance()
+    Note over C: Step 4: Initiate unstake
+    Note over C: Trigger when requested > pendingUnstakes
+    C->>WQ: totalPendingAssets()
+    C->>C: requiredBuffer = max(pending, targetBufferedAssets)
+    C->>C: amountToUnstake = max(0, requiredBuffer - buffered)
+    C->>SM: pendingUnstakes()
+    SM-->>C: pendingUnstakes
+    C->>C: initiated = requested
+    C->>SM: unstake(initiated)
+    Note right of C: emit UnstakeInitiated(requested, initiated)
 ```
 
 #### Rebalance (full flow)
@@ -253,13 +294,14 @@ sequenceDiagram
 
     Note over C: Step 4: Initiate unstake
     C->>WQ: totalPendingAssets()
-    C->>C: amountToUnstake = max(0, pending - buffered)
+    C->>C: requiredBuffer = max(pending, targetBufferedAssets)
+    C->>C: amountToUnstake = max(0, requiredBuffer - buffered)
     C->>SM: pendingUnstakes()
     SM-->>C: pendingUnstakes
     C->>SM: unstake(initiated)
 
     Note over C: Step 5: Stake surplus
-    C->>C: stakeable = bufferedAssets - targetBuffer
+    C->>C: stakeable = bufferedAssets - targetBufferedAssets
     loop while stakeable >= VALIDATOR_STAKE_UNIT
         C->>SM: stake(VALIDATOR_STAKE_UNIT)
         SM->>AR: stake()

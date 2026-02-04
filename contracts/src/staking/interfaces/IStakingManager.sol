@@ -183,6 +183,10 @@ interface IStakingManager {
     /// @return state The aggregated staking state.
     function getStakingState() external view returns (StakingState memory state);
 
+    /// @notice Returns the total amount pending unstake across the rollup.
+    /// @return pendingUnstakeAmount The total pending unstake amount.
+    function pendingUnstakes() external view returns (uint256 pendingUnstakeAmount);
+
     /// @notice Returns the provider configuration.
     /// @dev Delegates to the StakingProviderRegistry.
     /// @return The provider config struct.

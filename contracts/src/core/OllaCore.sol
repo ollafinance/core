@@ -73,12 +73,15 @@ contract OllaCore is
     /// @notice The treasury fee split in basis points.
     uint256 public treasuryFeeSplitBP;
 
+    /// @notice Target liquid assets to keep buffered for withdrawals.
+    uint256 public targetBufferedAssets;
+
     mapping(address owner => uint256 requestId) private _activeRequestIds;
     mapping(uint256 requestId => address owner) private _requestOwners;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[48] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -146,6 +149,7 @@ contract OllaCore is
 
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
+        targetBufferedAssets = 0;
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         // Timestamp is used only for reporting/accounting liveness.
@@ -318,8 +322,19 @@ contract OllaCore is
         emit RewardsVaultUpdated(address(oldRewardsVault), address(newRewardsVault));
     }
 
+    /// @notice Sets the target buffer used to reserve liquid assets.
+    /// @param newBuffer The new target buffer.
+    function setTargetBufferedAssets(uint256 newBuffer) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newBuffer == 0) {
+            revert OllaCore__InvalidTargetBufferedAssets(newBuffer);
+        }
+        uint256 oldBuffer = targetBufferedAssets;
+        targetBufferedAssets = newBuffer;
+        emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
+    }
+
     /// @notice Operator-triggered rebalance flow.
-    /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> stake surplus
+    /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
     function rebalance() external override onlyRole(OPERATOR_ROLE) whenNotPaused nonReentrant {
         _syncBufferedWithBalance();
         // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
@@ -330,7 +345,9 @@ contract OllaCore is
 
         uint256 finalizedAmount = _finalizeWithdrawals();
 
-        // TODO: Phase 4 - Stake surplus
+        _initiateUnstake();
+
+        // TODO: Phase 5 - Stake surplus
         uint256 stakedAmount = 0;
 
         emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
@@ -649,6 +666,49 @@ contract OllaCore is
 
         emit WithdrawalFinalized(availableForWithdrawals, finalizedAmount);
         return finalizedAmount;
+    }
+
+    /// @notice Initiates unstaking when pending withdrawals exceed buffered assets.
+    /// @return initiated Amount actually initiated for unstake.
+    // slither-disable-next-line pess-unprotected-initialize
+    function _initiateUnstake() internal returns (uint256 initiated) {
+        IOllaCore.Modules memory modules = _modules;
+        uint256 pendingWithdrawals = modules.withdrawalQueue.totalPendingAssets();
+        uint256 bufferedAssets = _accountingState.bufferedAssets;
+        uint256 targetBuffered = targetBufferedAssets;
+        uint256 requiredBuffer = pendingWithdrawals > targetBuffered ? pendingWithdrawals : targetBuffered;
+
+        // slither-disable-next-line timestamp
+        if (requiredBuffer < bufferedAssets) {
+            return 0;
+        }
+        // slither-disable-next-line timestamp,incorrect-equality
+        if (requiredBuffer == bufferedAssets) {
+            return 0;
+        }
+
+        uint256 amountToUnstake = requiredBuffer - bufferedAssets;
+        uint256 pendingUnstakes = modules.stakingManager.pendingUnstakes();
+        // slither-disable-next-line timestamp
+        if (pendingUnstakes > amountToUnstake) {
+            return 0;
+        }
+        // slither-disable-next-line timestamp,incorrect-equality
+        if (pendingUnstakes == amountToUnstake) {
+            return 0;
+        }
+
+        uint256 requested = amountToUnstake - pendingUnstakes;
+
+        initiated = requested;
+
+        // slither-disable-next-line timestamp
+        if (initiated > 0) {
+            modules.stakingManager.unstake(initiated);
+            emit UnstakeInitiated(amountToUnstake, initiated);
+        }
+
+        return initiated;
     }
 
     function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {

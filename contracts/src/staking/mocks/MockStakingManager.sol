@@ -108,6 +108,11 @@ contract MockStakingManager is IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
+    function pendingUnstakes() external pure override returns (uint256) {
+        return 0;
+    }
+
+    /// @inheritdoc IStakingManager
     function getSlashingDelta() external pure override returns (uint256 slashingDelta) {
         return 0;
     }

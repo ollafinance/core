@@ -166,7 +166,7 @@ sequenceDiagram
     C->>stkMan: getUnstakedFunds
     stkMan->>C: transfers unstakedFunds
 
-    C->>C: availableForWithdrawals = bufferedAssets + safetyBuffer
+    C->>C: availableForWithdrawals = bufferedAssets
     C->>WQ: finalizeWithdrawals(availableForWithdrawals)
 
     loop while availableForWithdrawals > pendingRequests[0].amount
@@ -186,8 +186,8 @@ sequenceDiagram
     participant AR as AztecRollupContract
 
     OP->>C: rebalance
-    Note over C: targetBuffer is the amount we want to keep liquid for withdrawals
-    C->>C: stakeable = bufferedAssets - targetBuffer
+    Note over C: targetBufferedAssets is the amount we want to keep liquid for withdrawals
+    C->>C: stakeable = bufferedAssets - targetBufferedAssets
     loop while stakeable >= VALIDATOR_STAKE_UNIT
         C->>SR: stake(amount = VALIDATOR_STAKE_UNIT)
         SR->>AR: stake(VALIDATOR_STAKE_UNIT,<br/>Attester: nextValidatorKey,<br/>Withdrawer: StakingManager,<br/>Coinbase: RewardsVault)
@@ -210,17 +210,11 @@ sequenceDiagram
     op->>C: rebalance
     C->>WQ: getWithdrawalRequestsAmount
     WQ-->>C: withdrawalRequestsAmount
-    C->>C: amountToUnstake = max(0, withdrawalRequestsAmount - bufferedAssets)
+    C->>C: requiredBuffer = max(withdrawalRequestsAmount, targetBufferedAssets)
+    C->>C: amountToUnstake = max(0, requiredBuffer - bufferedAssets)
     C->>stkMan: unStake(amountToUnstake)
-    stkMan->>stkMan: actualAmountToUnstake = max(0, amountToUnstake - pendingUnstakes)
-    loop while actualAmountToUnstake > 0
-        stkMan->>AR: initiateWithdrawal
-        stkMan->>stkMan: update actualAmountToUnstake
-        stkMan->>stkMan: update pendingUnstakes
-    end
     Note over stkMan,AR: Later, when AztecRollup processes the withdrawal
     loop for each initiated withdrawal
         AR-->>stkMan: transfer Aztec
     end
 ```
-
