@@ -1065,8 +1065,8 @@ contract StakingManagerHarvestTest is Test {
         stakingManager.harvestRewards();
 
         uint256 vaultBalanceAfter = aztec.balanceOf(address(rewardsVault));
-        // Note: New implementation only calls hook, doesn't transfer tokens
-        assertEq(vaultBalanceAfter, vaultBalanceBefore, "Vault balance should not change (hook only)");
+        // Rewards are paid directly to the RewardsVault by the rollup claim.
+        assertEq(vaultBalanceAfter - vaultBalanceBefore, rewardAmount, "Vault balance should increase by rewards");
     }
 
     function test_HarvestRewards_EmitsRewardsHarvestedEvent() external {
