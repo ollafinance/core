@@ -264,6 +264,7 @@ contract OllaCoreTest is Test {
         assertEq(vault.withdrawalQueue(), address(withdrawalQueue), "withdrawal queue set");
         assertEq(vault.rewardsVault(), address(rewardsVault), "rewards vault set");
         assertEq(vault.safetyModule(), address(safetyModule), "safety module set");
+        assertEq(vault.targetLiquidityBuffer(), 0, "target liquidity buffer init");
         IOllaCore.LatestReport memory report = vault.latestReport();
         assertEq(report.exchangeRate, 1e18, "exchange rate init");
         assertEq(report.totalAssets, 0, "lastTotalAssets init");

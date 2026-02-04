@@ -327,6 +327,32 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - bufferAmount, "unstake initiated");
     }
 
+    function test_Rebalance_Unstake_PendingDominatesTargetLiquidityBuffer() external {
+        uint256 bufferAmount = 10 * DECIMALS;
+        uint256 pendingAssets = 25 * DECIMALS;
+        uint256 targetLiquidityBuffer = 5 * DECIMALS;
+
+        asset.mint(address(vault), bufferAmount);
+
+        vm.prank(governance);
+        vault.setTargetLiquidityBuffer(targetLiquidityBuffer);
+
+        vm.prank(address(vault));
+        withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit UnstakeInitiated(pendingAssets - bufferAmount, pendingAssets - bufferAmount);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - bufferAmount, "unstake uses pending assets");
+    }
+
     function test_Rebalance_Unstake_NoOpWhenBufferCoversPending() external {
         uint256 bufferAmount = 30 * DECIMALS;
         uint256 pendingAssets = 25 * DECIMALS;
