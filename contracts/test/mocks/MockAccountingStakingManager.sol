@@ -26,6 +26,8 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public lastUnstakeAmount;
     address public providerRewardsRecipient;
     address public providerAdmin;
+    uint256 public stakeReturnAmount;
+    bool public useStakeReturnAmount;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -75,20 +77,36 @@ contract MockAccountingStakingManager is IStakingManager {
         providerAdmin = admin;
     }
 
+    function setStakeReturnAmount(uint256 amount) external {
+        stakeReturnAmount = amount;
+        useStakeReturnAmount = true;
+    }
+
+    function clearStakeReturnAmount() external {
+        useStakeReturnAmount = false;
+    }
+
     /*//////////////////////////////////////////////////////////////
                           CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     function stake(uint256 amount) external override returns (uint256 stakedAmount) {
-        if (amount == 0) {
+        uint256 actualAmount = amount;
+        if (useStakeReturnAmount) {
+            actualAmount = stakeReturnAmount;
+            if (actualAmount > amount) {
+                actualAmount = amount;
+            }
+        }
+        if (actualAmount == 0) {
             return 0;
         }
         IERC20 token = rewardsToken;
         if (address(token) == address(0)) {
             return 0;
         }
-        token.transferFrom(msg.sender, address(this), amount);
-        return amount;
+        token.transferFrom(msg.sender, address(this), actualAmount);
+        return actualAmount;
     }
 
     function unstake(uint256 amount) external override {

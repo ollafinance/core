@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import { Test, Vm } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -410,6 +410,120 @@ contract OllaCoreRebalanceTest is Test {
         vault.rebalance();
 
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets, "unstake uses requested amount");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             STAKE SURPLUS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_StakeSurplus_UsesActualStakedAmount() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 targetBufferedAssets = 10 * DECIMALS;
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        uint256 actualStaked = 64 * DECIMALS;
+        stakingManager.setStakeReturnAmount(actualStaked);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 stakeable = accountingBefore.bufferedAssets - targetBufferedAssets;
+        uint256 expectedBufferAfter = accountingBefore.bufferedAssets - actualStaked;
+        uint256 expectedStakedPrincipal = accountingBefore.stakedPrincipal + actualStaked;
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.stake, (stakeable)));
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Rebalanced(0, 0, actualStaked, expectedBufferAfter);
+
+        vm.prank(operator);
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(stakedAmount, actualStaked, "staked amount uses staking manager return");
+        assertEq(resultingBuffer, expectedBufferAfter, "resulting buffer uses actual staked");
+        assertEq(accountingAfter.bufferedAssets, expectedBufferAfter, "buffered assets reduced by actual staked");
+        assertEq(
+            accountingAfter.stakedPrincipal, expectedStakedPrincipal, "staked principal increased by actual staked"
+        );
+    }
+
+    function test_Rebalance_StakeSurplus_NoStakeWhenBelowTarget() external {
+        uint256 depositAmount = 5 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 targetBufferedAssets = 10 * DECIMALS;
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Rebalanced(0, 0, 0, accountingBefore.bufferedAssets);
+
+        vm.prank(operator);
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(stakedAmount, 0, "staked amount is zero when below target");
+        assertEq(resultingBuffer, accountingBefore.bufferedAssets, "buffer unchanged when below target");
+        assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked principal unchanged");
+    }
+
+    function test_Rebalance_StakeSurplus_EmitsAfterFinalize() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 withdrawalShares = 20 * DECIMALS;
+        uint256 targetBufferedAssets = 10 * DECIMALS;
+        uint256 actualStaked = 64 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
+
+        uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(actualStaked);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 bufferAfterFinalize = accountingBefore.bufferedAssets - request.assetsExpected;
+        uint256 stakeable = bufferAfterFinalize - targetBufferedAssets;
+        uint256 expectedBufferAfter = bufferAfterFinalize - actualStaked;
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.stake, (stakeable)));
+
+        vm.recordLogs();
+
+        vm.prank(operator);
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 finalizedSelector = keccak256("WithdrawalFinalized(uint256,uint256)");
+        bytes32 rebalancedSelector = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+        uint256 finalizedIndex = type(uint256).max;
+        uint256 rebalancedIndex = type(uint256).max;
+
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].topics[0] == finalizedSelector) {
+                finalizedIndex = i;
+            }
+            if (entries[i].topics[0] == rebalancedSelector) {
+                rebalancedIndex = i;
+            }
+        }
+
+        assertTrue(finalizedIndex < rebalancedIndex, "finalize emits before rebalance");
+        assertEq(stakedAmount, actualStaked, "staked amount uses staking manager return");
+        assertEq(resultingBuffer, expectedBufferAfter, "resulting buffer accounts for stake");
     }
 }
 
