@@ -114,7 +114,7 @@ contract MockAztecRollup is IMockAztecRollup {
         if (amount > 0) {
             pendingRewards[_coinbase] = 0;
             STAKING_ASSET.safeTransfer(_coinbase, amount);
-            emit RewardsClaimed(_coinbase, msg.sender, amount);
+            emit RewardsClaimed(msg.sender, _coinbase, amount);
         }
         return amount;
     }
