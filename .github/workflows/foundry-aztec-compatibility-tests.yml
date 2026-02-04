@@ -2,11 +2,13 @@ name: Foundry Aztec Compatibility Tests
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
 
 jobs:
   compatibility:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Forge Aztec compatibility tests
     runs-on: ubuntu-latest
     defaults:

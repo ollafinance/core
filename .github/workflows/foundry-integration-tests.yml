@@ -2,11 +2,13 @@ name: Foundry Required Tests
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
 
 jobs:
   required:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Forge required tests
     runs-on: ubuntu-latest
     defaults:
