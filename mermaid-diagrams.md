@@ -257,6 +257,24 @@ sequenceDiagram
     Note right of C: emit UnstakeInitiated(requested, initiated)
 ```
 
+#### Stake surplus
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator
+    participant C as OllaCore
+    participant SM as StakingManager
+    participant AR as AztecRollup (canonical)
+
+    OP->>C: rebalance()
+    Note over C: Step 5: Stake surplus
+    C->>C: stakeable = bufferedAssets - targetBufferedAssets
+    C->>SM: stake(stakeable)
+    SM->>AR: stake()
+    C->>C: bufferedAssets -= stakedAmount
+    C->>C: stakedPrincipal += stakedAmount
+```
+
 #### Rebalance (full flow)
 
 ```mermaid
