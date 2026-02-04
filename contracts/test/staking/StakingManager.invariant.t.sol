@@ -444,11 +444,12 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Balance consistency across contract interactions
     function invariant_BalanceConsistency() external view {
-        // StakingManager accrues harvested rewards (RewardsVault only gets the accounting hook).
+        // Rewards are paid by the rollup directly to `rewardsVault` (the claim recipient).
+        // StakingManager only triggers the claim and emits accounting signals.
         assertEq(
-            stakingAsset.balanceOf(address(stakingManager)),
+            stakingAsset.balanceOf(address(rewardsVault)),
             handler.ghost_totalHarvested(),
-            "staking manager balance should equal harvested"
+            "rewards vault balance should equal harvested"
         );
     }
 
