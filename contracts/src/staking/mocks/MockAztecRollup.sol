@@ -128,9 +128,8 @@ contract MockAztecRollup is IMockAztecRollup {
                              REWARD ACCRUAL
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Accrues time-based rewards for a given coinbase.
-    /// @dev Designed for explicit operator/script control in local environments.
-    function tick(address coinbase) external returns (uint256 added) {
+    /// @inheritdoc IMockAztecRollup
+    function tick(address coinbase) external override returns (uint256 added) {
         uint256 dt = block.timestamp - lastTick;
         if (dt == 0) return 0;
 
@@ -141,14 +140,13 @@ contract MockAztecRollup is IMockAztecRollup {
         lastTick = block.timestamp;
     }
 
-    /// @notice Sets the reward rate per second.
-    /// @dev No permissioning (local/dev convenience).
-    function setRewardRatePerSecond(uint256 newRate) external {
+    /// @inheritdoc IMockAztecRollup
+    function setRewardRatePerSecond(uint256 newRate) external override {
         rewardRatePerSecond = newRate;
     }
 
-    /// @notice Adds an instant bump of rewards to a given coinbase.
-    function addRewards(address coinbase, uint256 amount) external {
+    /// @inheritdoc IMockAztecRollup
+    function addRewards(address coinbase, uint256 amount) external override {
         pendingRewards[coinbase] += amount;
     }
 

@@ -332,7 +332,7 @@ interface IOllaCore {
     function unpause() external;
 
     /// @notice Operator-triggered rebalance hook.
-    /// @return harvestedAmount The amount of rewards harvested.
+    /// @return rewardsDelta The amount of rewards harvested.
     /// @return finalizedAmount The amount of assets used for withdrawal finalization.
     /// @return stakedAmount The amount of assets staked.
     /// @return resultingBuffer The final buffered assets after rebalance.

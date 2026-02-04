@@ -131,6 +131,22 @@ interface IMockAztecRollup {
     /// @param shouldFail Whether the claim should revert.
     function setClaimShouldFail(address coinbase, bool shouldFail) external;
 
+    /// @notice Accrues time-based rewards for a given coinbase.
+    /// @dev Uses `rewardRatePerSecond` and updates `lastTick`.
+    /// @param coinbase The coinbase/attester address to accrue rewards for.
+    /// @return added The amount of rewards added to `pendingRewards[coinbase]`.
+    function tick(address coinbase) external returns (uint256 added);
+
+    /// @notice Sets the reward rate per second used by `tick`.
+    /// @dev No permissioning (local/dev convenience).
+    /// @param newRate The new reward rate per second.
+    function setRewardRatePerSecond(uint256 newRate) external;
+
+    /// @notice Adds an instant bump of rewards to a given coinbase.
+    /// @param coinbase The coinbase/attester address to add rewards to.
+    /// @param amount The amount of rewards to add.
+    function addRewards(address coinbase, uint256 amount) external;
+
     /// @notice Returns whether claim should fail for a coinbase/attester.
     /// @param coinbase The coinbase/attester address.
     /// @return Whether claim should fail.

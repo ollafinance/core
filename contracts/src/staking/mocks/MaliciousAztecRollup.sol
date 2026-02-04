@@ -4,9 +4,11 @@ pragma solidity >=0.8.27 <0.9.0;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@oz/utils/Address.sol";
+import { IERC20Mintable } from "src/interfaces/IERC20Mintable.sol";
 import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { IMaliciousAztecRollup } from "src/staking/mocks/IMaliciousAztecRollup.sol";
+import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 
 /// @title MaliciousAztecRollup
 /// @notice Test-only rollup mock that attempts reentrancy on selected entrypoints.
@@ -32,6 +34,11 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @notice Whether claiming should fail for a sequencer/coinbase.
     mapping(address sequencer => bool shouldFail) public override claimShouldFail;
 
+    /// @notice Rewards accrued per second when `tick` is called.
+    uint256 public rewardRatePerSecond;
+    /// @notice Last timestamp used for reward accrual.
+    uint256 public lastTick;
+
     /// @notice Target called during reentrancy.
     address public reentryTarget;
 
@@ -53,6 +60,7 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     constructor(IERC20 stakingAsset, uint256 activationThreshold) {
         STAKING_ASSET = stakingAsset;
         _activationThreshold = activationThreshold;
+        lastTick = block.timestamp;
     }
 
     /// @notice Configure the call to perform during a reentrancy attempt.
@@ -190,10 +198,32 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         amount = pendingRewards[_coinbase];
         if (amount > 0) {
             pendingRewards[_coinbase] = 0;
-            STAKING_ASSET.safeTransfer(msg.sender, amount);
-            emit RewardsClaimed(_coinbase, msg.sender, amount);
+            IERC20Mintable(address(STAKING_ASSET)).mint(_coinbase, amount);
+            emit RewardsClaimed(_coinbase, _coinbase, amount);
         }
         return amount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function tick(address coinbase) external override returns (uint256 added) {
+        uint256 dt = block.timestamp - lastTick;
+        if (dt == 0) return 0;
+
+        added = rewardRatePerSecond * dt;
+        if (added > 0) {
+            pendingRewards[coinbase] += added;
+        }
+        lastTick = block.timestamp;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setRewardRatePerSecond(uint256 newRate) external override {
+        rewardRatePerSecond = newRate;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function addRewards(address coinbase, uint256 amount) external override {
+        pendingRewards[coinbase] += amount;
     }
 
     /// @notice Set pending rewards for a sequencer.

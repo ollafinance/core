@@ -649,8 +649,8 @@ contract RevertingSafetyModule is ISafetyModule {
 
     function unpause() external override { }
 
-    function isPaused() external view override returns (bool pausedState) {
-        return pausedState;
+    function isPaused() external pure override returns (bool) {
+        return false;
     }
 
     function core() external view override returns (address) {
