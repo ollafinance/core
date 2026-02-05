@@ -70,9 +70,10 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @notice Records finalize calls and returns available amount.
     /// @param available The available assets to finalize.
     /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available) external override returns (uint256 used) {
+    /// @return finalizedCount The number of requests finalized.
+    function finalizeWithdrawals(uint256 available) external override returns (uint256 used, uint256 finalizedCount) {
         lastAvailable = available;
-        return available;
+        return (available, 0);
     }
 
     /// @notice Marks a request as claimed.

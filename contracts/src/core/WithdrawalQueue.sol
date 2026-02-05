@@ -19,7 +19,13 @@ contract WithdrawalQueue is
     IWithdrawalQueue
 {
     /*//////////////////////////////////////////////////////////////
-                                  STATE
+                               CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant _FINALIZE_GAS_THRESHOLD = 50_000;
+
+    /*//////////////////////////////////////////////////////////////
+                                   STATE
      //////////////////////////////////////////////////////////////*/
 
     /// @notice OllaCore address.
@@ -127,25 +133,44 @@ contract WithdrawalQueue is
     /// @notice Finalizes withdrawals using available liquidity.
     /// @param available The available assets to finalize.
     /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available) external override onlyCore nonReentrant returns (uint256 used) {
-        uint256 requestId;
-        uint256 pendingAssets;
-        (used, requestId, pendingAssets) = _previewFinalize(available);
-
-        uint256 upperBound = requestId;
+    /// @return finalizedCount The number of requests finalized.
+    function finalizeWithdrawals(uint256 available)
+        external
+        override
+        onlyCore
+        nonReentrant
+        returns (uint256 used, uint256 finalizedCount)
+    {
         uint256 currentId = nextPendingId;
+        uint256 upperBound = nextRequestId;
+        uint256 pendingAssets = totalPendingAssets;
+
         while (currentId < upperBound) {
+            if (gasleft() < _FINALIZE_GAS_THRESHOLD) {
+                break;
+            }
+
             WithdrawalRequest storage request = _requests[currentId];
             if (!request.finalized) {
+                uint256 assetsExpected = request.assetsExpected;
+                if (available < assetsExpected) {
+                    break;
+                }
+
+                available -= assetsExpected;
+                used += assetsExpected;
+                pendingAssets -= assetsExpected;
                 request.finalized = true;
-                emit WithdrawalFinalized(currentId, request.assetsExpected);
+                ++finalizedCount;
+                emit WithdrawalFinalized(currentId, assetsExpected);
             }
+
             ++currentId;
         }
 
         totalPendingAssets = pendingAssets;
-        nextPendingId = requestId;
-        return used;
+        nextPendingId = currentId;
+        return (used, finalizedCount);
     }
 
     // slither-disable-end pess-multiple-storage-read

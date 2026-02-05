@@ -647,11 +647,15 @@ contract OllaCore is
             revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, previewUsed, bufferedAssets);
         }
 
-        // slither-disable-next-line reentrancy-no-eth - external call under nonReentrant entrypoints
-        finalizedAmount = modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
-        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
-        if (finalizedAmount != previewUsed) {
+        // slither-disable-next-line reentrancy-no-eth,unused-return - external call under nonReentrant entrypoints
+        (finalizedAmount,) = modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
+        if (finalizedAmount > previewUsed) {
             revert OllaCore__FinalizeAmountMismatch(previewUsed, finalizedAmount);
+        }
+
+        // slither-disable-next-line incorrect-equality - zero guard only
+        if (finalizedAmount == 0) {
+            return 0;
         }
 
         _decreaseBuffered(finalizedAmount);

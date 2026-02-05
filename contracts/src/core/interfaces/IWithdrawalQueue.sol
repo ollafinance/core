@@ -89,7 +89,8 @@ interface IWithdrawalQueue {
     /// @notice Finalizes withdrawals using available liquidity.
     /// @param available The available assets to finalize.
     /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available) external returns (uint256 used);
+    /// @return finalizedCount The number of requests finalized.
+    function finalizeWithdrawals(uint256 available) external returns (uint256 used, uint256 finalizedCount);
 
     /// @notice Marks a finalized request as claimed.
     /// @param id The request id.

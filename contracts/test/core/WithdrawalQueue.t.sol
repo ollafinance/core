@@ -109,9 +109,10 @@ contract WithdrawalQueueTest is Test {
         emit WithdrawalFinalized(1, 100);
 
         vm.prank(core);
-        uint256 used = queue.finalizeWithdrawals(250);
+        (uint256 used, uint256 finalizedCount) = queue.finalizeWithdrawals(250);
 
         assertEq(used, 100, "finalization should only use available FIFO liquidity");
+        assertEq(finalizedCount, 1, "finalization should report finalized request count");
         assertEq(queue.nextPendingId(), 2, "next pending id should advance past finalized requests");
         assertEq(queue.totalPendingAssets(), 500, "pending assets should drop by finalized amount");
 
@@ -122,6 +123,86 @@ contract WithdrawalQueueTest is Test {
         assertTrue(first.finalized, "first request should be finalized");
         assertFalse(second.finalized, "second request should remain pending");
         assertFalse(third.finalized, "third request should remain pending");
+    }
+
+    function test_FinalizeWithdrawals_UsedMatchesCountForUniformAssets() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+        address carol = makeAddr("carol");
+
+        uint256 assetsExpected = 50;
+        _request(alice, 10, assetsExpected, 1e18);
+        _request(bob, 10, assetsExpected, 1e18);
+        _request(carol, 10, assetsExpected, 1e18);
+
+        vm.prank(core);
+        (uint256 used, uint256 finalizedCount) = queue.finalizeWithdrawals(assetsExpected * 2);
+
+        assertEq(used, finalizedCount * assetsExpected, "used should equal count times assetsExpected");
+    }
+
+    function test_FinalizeWithdrawals_BoundedGasMakesPartialProgress() public {
+        uint256 totalRequests = 20;
+        uint256 assetsExpected = 1;
+
+        for (uint256 i = 0; i < totalRequests; i++) {
+            // casting to uint160 is safe because 1000 + i stays within 160 bits
+            // forge-lint: disable-next-line(unsafe-typecast)
+            address user = address(uint160(1000 + i));
+            _request(user, assetsExpected, assetsExpected, 1e18);
+        }
+
+        uint256 available = totalRequests * assetsExpected;
+        uint256 snapshotId = vm.snapshot();
+
+        uint256 selectedGas;
+        uint256 probedUsed;
+        uint256 probedFinalizedCount;
+        uint256[5] memory gasOptions = [uint256(120_000), 160_000, 200_000, 240_000, 280_000];
+
+        for (uint256 i = 0; i < gasOptions.length; i++) {
+            vm.revertTo(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(queue).call{ gas: gasOptions[i] }(abi.encodeCall(queue.finalizeWithdrawals, (available)));
+
+            if (!success) {
+                continue;
+            }
+
+            (uint256 usedCandidate, uint256 finalizedCandidate) = abi.decode(data, (uint256, uint256));
+            if (finalizedCandidate > 0 && finalizedCandidate < totalRequests) {
+                selectedGas = gasOptions[i];
+                probedUsed = usedCandidate;
+                probedFinalizedCount = finalizedCandidate;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for partial finalization");
+
+        vm.revertTo(snapshotId);
+        vm.prank(core);
+        (uint256 usedObserved, uint256 finalizedCountObserved) =
+            queue.finalizeWithdrawals{ gas: selectedGas }(available);
+
+        assertEq(usedObserved, probedUsed, "used should match probe");
+        assertEq(finalizedCountObserved, probedFinalizedCount, "finalized count should match probe");
+        assertEq(
+            usedObserved, finalizedCountObserved * assetsExpected, "used should match finalized count times assets"
+        );
+        assertEq(queue.nextPendingId(), 1 + finalizedCountObserved, "next pending id advances by finalized count");
+        assertEq(
+            queue.totalPendingAssets(),
+            (totalRequests - finalizedCountObserved) * assetsExpected,
+            "pending assets track remaining"
+        );
+
+        vm.prank(core);
+        queue.finalizeWithdrawals(available);
+
+        assertEq(queue.nextPendingId(), totalRequests + 1, "next pending id reaches end");
+        assertEq(queue.totalPendingAssets(), 0, "pending assets drained");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -138,7 +219,7 @@ contract WithdrawalQueueTest is Test {
         uint256 previewUsed = queue.previewFinalizeWithdrawals(250);
 
         vm.prank(core);
-        uint256 used = queue.finalizeWithdrawals(250);
+        (uint256 used,) = queue.finalizeWithdrawals(250);
 
         assertEq(previewUsed, used, "preview should match finalize used");
         assertEq(queue.nextPendingId(), 2, "next pending id should advance");
@@ -236,9 +317,10 @@ contract WithdrawalQueueTest is Test {
         }
 
         vm.prank(core);
-        uint256 used = queue.finalizeWithdrawals(available);
+        (uint256 used, uint256 finalizedCountObserved) = queue.finalizeWithdrawals(available);
 
         assertEq(used, expectedUsed, "used assets should match FIFO fill");
+        assertEq(finalizedCountObserved, finalizedCount, "finalized count should match FIFO fill");
         assertEq(queue.nextPendingId(), 1 + finalizedCount, "next pending id should equal finalized count + 1");
         assertEq(queue.totalPendingAssets(), totalAssets - expectedUsed, "pending assets should match unfinalized sum");
 
@@ -271,7 +353,7 @@ contract WithdrawalQueueTest is Test {
         uint256 previewUsed = queue.previewFinalizeWithdrawals(available);
 
         vm.prank(core);
-        uint256 used = queue.finalizeWithdrawals(available);
+        (uint256 used,) = queue.finalizeWithdrawals(available);
 
         assertEq(previewUsed, used, "preview should match finalize used");
     }
