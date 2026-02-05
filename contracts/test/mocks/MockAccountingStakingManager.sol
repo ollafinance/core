@@ -24,6 +24,8 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public unstakedAmount;
     uint256 public pendingUnstakeAmount;
     uint256 public lastUnstakeAmount;
+    uint256 public unstakeReturnAmount;
+    bool public useUnstakeReturnAmount;
     address public providerRewardsRecipient;
     address public providerAdmin;
     uint256 public stakeReturnAmount;
@@ -68,6 +70,15 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setPendingUnstakes(uint256 value) external {
         pendingUnstakeAmount = value;
+    }
+
+    function setUnstakeReturnAmount(uint256 value) external {
+        unstakeReturnAmount = value;
+        useUnstakeReturnAmount = true;
+    }
+
+    function clearUnstakeReturnAmount() external {
+        useUnstakeReturnAmount = false;
     }
 
     function setProviderRewardsRecipient(address recipient) external {
@@ -122,6 +133,13 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function unstake(uint256 amount) external override returns (uint256 returnedAmount) {
         lastUnstakeAmount = amount;
+        if (useUnstakeReturnAmount) {
+            returnedAmount = unstakeReturnAmount;
+            if (returnedAmount > amount) {
+                returnedAmount = amount;
+            }
+            return returnedAmount;
+        }
         return amount;
     }
 

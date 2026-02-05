@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import { Test, Vm } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -242,6 +242,74 @@ contract RebalanceIntegrationTest is Test {
         assertEq(buffer, 48 * DECIMALS, "final buffer mismatch");
     }
 
+    function test_Rebalance_MultiCallAccountingConsistency() external {
+        uint256 depositAmount = 200 * DECIMALS;
+        uint256 withdrawalAmount = 60 * DECIMALS;
+        uint256 targetBufferAmount = 20 * DECIMALS;
+
+        _performDeposit(user, depositAmount);
+
+        uint256 withdrawalShares = vault.convertToShares(withdrawalAmount);
+        _requestRedeem(user, withdrawalShares, user);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferAmount);
+
+        _mockZeroHarvest();
+        _mockZeroUnstaked();
+        stakingManager.setStakeReturnAmount(120 * DECIMALS);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256[6] memory gasOptions = [uint256(160_000), 170_000, 180_000, 190_000, 200_000, 210_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success,) = address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+            if (!success) {
+                continue;
+            }
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step != IOllaCore.RebalanceStep.Done) {
+                selectedGas = gasOptions[i];
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for partial rebalance");
+
+        vm.revertToState(snapshotId);
+        vm.prank(operator);
+        vault.rebalance{ gas: selectedGas }();
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        assertTrue(progressAfter.step != IOllaCore.RebalanceStep.Done, "rebalance should not finish under low gas");
+
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            vm.prank(operator);
+            vault.rebalance();
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.Done) {
+                break;
+            }
+        }
+
+        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete");
+
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        assertEq(withdrawalQueue.totalPendingAssets(), 0, "withdrawal queue should be empty");
+        assertEq(accounting.bufferedAssets, targetBufferAmount, "buffer should match target after rebalance");
+        assertEq(accounting.stakedPrincipal, 120 * DECIMALS, "staked principal should match stake total");
+        assertEq(
+            accounting.bufferedAssets + accounting.stakedPrincipal,
+            depositAmount - withdrawalAmount,
+            "buffered + staked should match remaining assets"
+        );
+    }
+
     function test_Rebalance_EmitsCorrectEvents() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(user, depositAmount);
@@ -253,10 +321,28 @@ contract RebalanceIntegrationTest is Test {
         _mockZeroUnstaked();
         stakingManager.setStakeReturnAmount(64 * DECIMALS);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit Rebalanced(0, 0, 64 * DECIMALS, 36 * DECIMALS);
-
         vm.prank(operator);
         vault.rebalance();
+
+        vm.recordLogs();
+        vm.prank(operator);
+        vault.rebalance();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 topic = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+        bool found;
+        uint256 eventStaked;
+        uint256 eventBuffer;
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].emitter == address(vault) && entries[i].topics[0] == topic) {
+                (,, eventStaked, eventBuffer) = abi.decode(entries[i].data, (uint256, uint256, uint256, uint256));
+                found = true;
+                break;
+            }
+        }
+
+        assertTrue(found, "Rebalanced event should be emitted");
+        assertEq(eventStaked, 26 * DECIMALS, "staked amount mismatch");
+        assertEq(eventBuffer, 10 * DECIMALS, "buffer mismatch");
     }
 }

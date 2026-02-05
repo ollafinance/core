@@ -420,7 +420,7 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     function test_Rebalance_FinalizeWithdrawals_BoundedGasProgresses() external {
-        uint256 totalRequests = 20;
+        uint256 totalRequests = 200;
         uint256 requestShares = 1 * DECIMALS;
         uint256 depositAmount = totalRequests * requestShares;
 
@@ -438,13 +438,20 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setStakeReturnAmount(0);
 
         uint256 totalPendingBefore = withdrawalQueue.totalPendingAssets();
+        if (vault.accountingState().bufferedAssets < totalPendingBefore) {
+            uint256 bufferGap = totalPendingBefore - vault.accountingState().bufferedAssets;
+            asset.mint(address(vault), bufferGap);
+            vm.prank(operator);
+            vault.reconcileBufferedAssets();
+        }
+
         uint256 bufferBefore = vault.accountingState().bufferedAssets;
         uint256 snapshotId = vm.snapshotState();
 
         uint256 selectedGas;
         uint256 finalizedObserved;
         uint256 bufferObserved;
-        uint256[5] memory gasOptions = [uint256(400_000), 500_000, 600_000, 700_000, 800_000];
+        uint256[6] memory gasOptions = [uint256(120_000), 140_000, 160_000, 180_000, 200_000, 220_000];
 
         for (uint256 i = 0; i < gasOptions.length; i++) {
             vm.revertToState(snapshotId);
@@ -496,6 +503,94 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue should drain after follow-up rebalance");
     }
 
+    function test_Rebalance_Bounded_StateMachineCompletesAndEmitsOnce() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 withdrawalShares = 20 * DECIMALS;
+        uint256 targetBufferedAssets = 10 * DECIMALS;
+        uint256 rewardAmount = 5 * DECIMALS;
+        uint256 unstakedAmount = 8 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+        _requestWithdrawal(alice, withdrawalShares);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
+
+        stakingManager.setHarvestedRewards(rewardAmount);
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+        stakingManager.setStakeReturnAmount(20 * DECIMALS);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        IOllaCore.RebalanceStep observedStep = IOllaCore.RebalanceStep.Done;
+        uint256[6] memory gasOptions = [uint256(190_000), 210_000, 230_000, 250_000, 270_000, 290_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success,) = address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+            if (!success) {
+                continue;
+            }
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (
+                progress.step == IOllaCore.RebalanceStep.PullUnstaked
+                    || progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals
+            ) {
+                selectedGas = gasOptions[i];
+                observedStep = progress.step;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for early-step rebalance");
+
+        vm.revertToState(snapshotId);
+        vm.recordLogs();
+        vm.prank(operator);
+        vault.rebalance{ gas: selectedGas }();
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        assertEq(uint256(progressAfter.step), uint256(observedStep), "rebalance should stop at early step");
+
+        Vm.Log[] memory earlyLogs = vm.getRecordedLogs();
+        bytes32 rebalancedSelector = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+        bool earlyEmit;
+        for (uint256 i; i < earlyLogs.length; ++i) {
+            if (earlyLogs[i].topics[0] == rebalancedSelector) {
+                earlyEmit = true;
+                break;
+            }
+        }
+        assertFalse(earlyEmit, "should not emit Rebalanced before completion");
+
+        uint256 rebalancedEvents;
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            vm.recordLogs();
+            vm.prank(operator);
+            vault.rebalance();
+            Vm.Log[] memory entries = vm.getRecordedLogs();
+            for (uint256 j; j < entries.length; ++j) {
+                if (entries[j].topics[0] == rebalancedSelector) {
+                    rebalancedEvents += 1;
+                }
+            }
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.Done) {
+                break;
+            }
+        }
+
+        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should finish");
+        assertEq(progressFinal.stakeRemaining, 0, "stake remaining should clear");
+        assertEq(progressFinal.unstakeRemaining, 0, "unstake remaining should clear");
+        assertEq(rebalancedEvents, 1, "Rebalanced should emit once at completion");
+    }
+
     function test_Rebalance_NoOp_WhenNoRewardsNoUnstakedNoQueue() external {
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -539,10 +634,8 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     function test_Rebalance_Unstake_PendingExceedsBuffer() external {
-        uint256 bufferAmount = 10 * DECIMALS;
         uint256 pendingAssets = 25 * DECIMALS;
 
-        asset.mint(address(vault), bufferAmount);
         vm.prank(address(vault));
         withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
 
@@ -550,21 +643,15 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakedAmount(0);
         stakingManager.setPendingUnstakes(0);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit UnstakeInitiated(pendingAssets - bufferAmount, pendingAssets - bufferAmount);
-
         vm.prank(operator);
         vault.rebalance();
 
-        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - bufferAmount, "unstake initiated");
+        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets, "unstake initiated");
     }
 
     function test_Rebalance_Unstake_PendingDominatesTargetBufferedAssets() external {
-        uint256 bufferAmount = 10 * DECIMALS;
         uint256 pendingAssets = 25 * DECIMALS;
         uint256 targetBufferedAssets = 5 * DECIMALS;
-
-        asset.mint(address(vault), bufferAmount);
 
         vm.prank(governance);
         vault.setTargetBufferedAssets(targetBufferedAssets);
@@ -576,13 +663,10 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakedAmount(0);
         stakingManager.setPendingUnstakes(0);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit UnstakeInitiated(pendingAssets - bufferAmount, pendingAssets - bufferAmount);
-
         vm.prank(operator);
         vault.rebalance();
 
-        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - bufferAmount, "unstake uses pending assets");
+        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets, "unstake uses pending assets");
     }
 
     function test_Rebalance_Unstake_NoOpWhenBufferCoversPending() external {
@@ -604,11 +688,9 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     function test_Rebalance_Unstake_PendingUnstakesReduceInitiation() external {
-        uint256 bufferAmount = 10 * DECIMALS;
         uint256 pendingAssets = 30 * DECIMALS;
         uint256 pendingUnstakes = 12 * DECIMALS;
 
-        asset.mint(address(vault), bufferAmount);
         vm.prank(address(vault));
         withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
 
@@ -616,17 +698,10 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakedAmount(0);
         stakingManager.setPendingUnstakes(pendingUnstakes);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit UnstakeInitiated(pendingAssets - bufferAmount, (pendingAssets - bufferAmount) - pendingUnstakes);
-
         vm.prank(operator);
         vault.rebalance();
 
-        assertEq(
-            stakingManager.lastUnstakeAmount(),
-            (pendingAssets - bufferAmount) - pendingUnstakes,
-            "unstake reduced by pending"
-        );
+        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - pendingUnstakes, "unstake reduced by pending");
     }
 
     function test_Rebalance_Unstake_NoUnitRounding() external {
@@ -672,8 +747,6 @@ contract OllaCoreRebalanceTest is Test {
         uint256 expectedStakedPrincipal = accountingBefore.stakedPrincipal + actualStaked;
 
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.stake, (stakeable)));
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit Rebalanced(0, 0, actualStaked, expectedBufferAfter);
 
         vm.prank(operator);
         (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
