@@ -11,7 +11,7 @@ import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 /// @author Olla Core contributors
 interface IMockAztecRollup {
     /*//////////////////////////////////////////////////////////////
-                                  EVENTS
+                                    EVENTS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Emitted when a attester deposits stake.
@@ -49,7 +49,7 @@ interface IMockAztecRollup {
     event RewardsClaimed(address indexed sequencer, address indexed recipient, uint256 indexed amount);
 
     /*//////////////////////////////////////////////////////////////
-                                  ERRORS
+                                   ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when caller is not the withdrawer.
@@ -69,6 +69,9 @@ interface IMockAztecRollup {
 
     /// @notice Thrown when claim is set to fail for testing.
     error MockAztecRollup__ClaimFailed();
+
+    /// @notice Thrown when withdraw reward bps is invalid.
+    error MockAztecRollup__InvalidBps();
 
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL FUNCTIONS
@@ -101,7 +104,7 @@ interface IMockAztecRollup {
     function finalizeWithdraw(address attester) external;
 
     /// @notice Claims sequencer rewards for a coinbase/attester.
-    /// @dev For testing: looks up rewards for _coinbase, transfers to msg.sender.
+    /// @dev Looks up rewards for `coinbase` and pays out to `coinbase`.
     /// @param coinbase The coinbase/attester address to claim rewards for.
     /// @return amount The amount of rewards claimed.
     function claimSequencerRewards(address coinbase) external returns (uint256 amount);
@@ -131,6 +134,32 @@ interface IMockAztecRollup {
     /// @param shouldFail Whether the claim should revert.
     function setClaimShouldFail(address coinbase, bool shouldFail) external;
 
+    /// @notice Accrues time-based rewards for a given coinbase.
+    /// @dev Uses `rewardRatePerSecond` and updates `lastTick`.
+    /// @param coinbase The coinbase/attester address to accrue rewards for.
+    /// @return added The amount of rewards added to `pendingRewards[coinbase]`.
+    function tick(address coinbase) external returns (uint256 added);
+
+    /// @notice Sets the reward rate per second used by `tick`.
+    /// @dev No permissioning (local/dev convenience).
+    /// @param newRate The new reward rate per second.
+    function setRewardRatePerSecond(uint256 newRate) external;
+
+    /// @notice Adds an instant bump of rewards to a given coinbase.
+    /// @param coinbase The coinbase/attester address to add rewards to.
+    /// @param amount The amount of rewards to add.
+    function addRewards(address coinbase, uint256 amount) external;
+
+    /// @notice Sets the coinbase address that receives withdraw-linked reward bumps.
+    /// @dev No permissioning (local/dev convenience). Set this to RewardsVault.
+    /// @param coinbase The coinbase/recipient used for withdraw reward bumps.
+    function setRewardsCoinbase(address coinbase) external;
+
+    /// @notice Sets the withdraw reward bump in basis points of the exited stake amount.
+    /// @dev A value of 10_000 means 100% of stake amount, 0 disables bumps.
+    /// @param bps Basis points in [0, 10_000].
+    function setWithdrawRewardBps(uint256 bps) external;
+
     /// @notice Returns whether claim should fail for a coinbase/attester.
     /// @param coinbase The coinbase/attester address.
     /// @return Whether claim should fail.
@@ -158,6 +187,14 @@ interface IMockAztecRollup {
     /// @param sequencer The sequencer address.
     /// @return The pending rewards amount.
     function pendingRewards(address sequencer) external view returns (uint256);
+
+    /// @notice Returns the coinbase used for withdraw reward bumps.
+    /// @return coinbase The coinbase/recipient address.
+    function rewardsCoinbase() external view returns (address coinbase);
+
+    /// @notice Returns the withdraw reward bump basis points.
+    /// @return bps The withdraw reward bump basis points.
+    function withdrawRewardBps() external view returns (uint256 bps);
 
     /// @notice Returns the exit record for an attester.
     /// @param attester The attester address.

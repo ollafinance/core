@@ -5,6 +5,7 @@ import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { BaseDeployer } from "./base/BaseDeployer.s.sol";
 import { DeployConfig } from "./config/Config.s.sol";
 import { LocalConfig } from "./config/Local.s.sol";
@@ -41,6 +42,11 @@ contract DeployScript is BaseDeployer {
         // Track deployed addresses
         address asset;
         address stakingManager;
+        address stakingManagerImpl;
+        address stakingProviderRegistry;
+        address stakingProviderRegistryImpl;
+        address rollup;
+        address rollupRegistry;
         address ollaCoreImpl;
         address ollaCoreProxy;
         address stAztec;
@@ -54,12 +60,6 @@ contract DeployScript is BaseDeployer {
         string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
         bool isFirstAddress = true;
 
-        // Always write Asset and StakingManager to JSON (regardless of mock or real)
-
-        json = _addAddressToJson(json, "Asset", asset, isFirstAddress);
-        isFirstAddress = false;
-        json = _addAddressToJson(json, "StakingManager", stakingManager, false);
-
         // 1. Deploy OllaCore (implementation + proxy)
 
         (ollaCoreImpl, ollaCoreProxy) = _ollaCoreDeployer.deploy(config);
@@ -69,13 +69,8 @@ contract DeployScript is BaseDeployer {
 
         // 2. Deploy or use existing mocks/external contracts
         if (config.deployMocks) {
-            (asset, stakingManager) = _mocksDeployer.deploy(config);
-
-            // Local safety module stub: allows deposits/withdrawals without role setup.
-            vm.startBroadcast(config.deployerPrivateKey);
-            safetyModule = address(new MockSafetyModule(ollaCoreImpl));
-            vm.stopBroadcast();
-            _logDeployment("MockSafetyModule", safetyModule);
+            // Deploy local staking asset + Aztec mocks (rollup + registry)
+            (asset, rollup, rollupRegistry) = _mocksDeployer.deployAssetAndRollup(config);
         } else {
             asset = config.asset;
             stakingManager = config.stakingManager;
@@ -84,6 +79,10 @@ contract DeployScript is BaseDeployer {
             require(stakingManager != address(0), "Deploy: stakingManager address required for non-mock deployment");
             require(safetyModule != address(0), "Deploy: safetyModule address required for non-mock deployment");
         }
+
+        // Record asset early (now known)
+        json = _addAddressToJson(json, "Asset", asset, isFirstAddress);
+        isFirstAddress = false;
 
         // 3. Deploy StAztec (linked to OllaCore proxy)
 
@@ -103,6 +102,34 @@ contract DeployScript is BaseDeployer {
             _rewardsVaultDeployer.deploy(config, IERC20(asset), ollaCoreProxy, config.governance);
         json = _addAddressToJson(json, "RewardsVaultImplementation", rewardsVaultImpl, false);
         json = _addAddressToJson(json, "RewardsVaultProxy", rewardsVault, false);
+
+        // Local wiring for staking stack + safety module (requires RewardsVault and core proxy)
+        if (config.deployMocks) {
+            // Deploy + init StakingManager + StakingProviderRegistry behind proxies
+            (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
+                _mocksDeployer.deployStakingStack(config, ollaCoreProxy, rewardsVault, asset, rollupRegistry);
+            json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
+            json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
+            json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);
+            json = _addAddressToJson(json, "StakingProviderRegistryProxy", stakingProviderRegistry, false);
+
+            // Configure rollup mock to bump rewards to RewardsVault on withdraw initiation
+            vm.startBroadcast(config.deployerPrivateKey);
+            MockAztecRollup(rollup).setRewardsCoinbase(rewardsVault);
+            vm.stopBroadcast();
+
+            json = _addAddressToJson(json, "MockAztecRollup", rollup, false);
+            json = _addAddressToJson(json, "MockAztecRollupRegistry", rollupRegistry, false);
+
+            // Local safety module stub: allows deposits/withdrawals without role setup.
+            vm.startBroadcast(config.deployerPrivateKey);
+            safetyModule = address(new MockSafetyModule(ollaCoreImpl));
+            vm.stopBroadcast();
+            _logDeployment("MockSafetyModule", safetyModule);
+        }
+
+        // Always write StakingManager to JSON once known
+        json = _addAddressToJson(json, "StakingManager", stakingManager, false);
 
         // Safety module (required by OllaCore deposit/withdraw paths)
         json = _addAddressToJson(json, "SafetyModule", safetyModule, false);

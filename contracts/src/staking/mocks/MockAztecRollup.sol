@@ -3,6 +3,7 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { IERC20Mintable } from "src/interfaces/IERC20Mintable.sol";
 import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
@@ -13,6 +14,16 @@ import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 /// @author Olla Core contributors
 contract MockAztecRollup is IMockAztecRollup {
     using SafeERC20 for IERC20;
+
+    /*//////////////////////////////////////////////////////////////
+                                 CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Default activation threshold used when constructor arg is 0.
+    uint256 public constant DEFAULT_ACTIVATION_THRESHOLD = 200_000e18;
+
+    /// @notice Maximum basis points value (100%).
+    uint256 public constant MAX_BPS = 10_000;
 
     /*//////////////////////////////////////////////////////////////
                                   STATE
@@ -33,13 +44,26 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     mapping(address sequencer => bool shouldFail) public claimShouldFail;
 
+    /// @notice Rewards accrued per second when `tick` is called.
+    uint256 public rewardRatePerSecond;
+    /// @notice Last timestamp used for reward accrual.
+    uint256 public lastTick;
+
+    /// @notice Recipient used for withdraw-linked reward bumps (set to RewardsVault in local deploy).
+    address public rewardsCoinbase;
+
+    /// @notice Withdraw-linked reward bump in basis points of exited stake amount.
+    /// @dev Default is 10_000 (100% of stake amount).
+    uint256 public withdrawRewardBps = MAX_BPS;
+
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     constructor(IERC20 stakingAsset, uint256 activationThreshold) {
         STAKING_ASSET = stakingAsset;
-        _activationThreshold = activationThreshold;
+        _activationThreshold = activationThreshold == 0 ? DEFAULT_ACTIVATION_THRESHOLD : activationThreshold;
+        lastTick = block.timestamp;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -72,6 +96,12 @@ contract MockAztecRollup is IMockAztecRollup {
         }
 
         uint256 amount = stakes[_attester];
+
+        address coinbase = rewardsCoinbase;
+        if (coinbase != address(0) && amount > 0 && withdrawRewardBps != 0) {
+            pendingRewards[coinbase] += (amount * withdrawRewardBps) / MAX_BPS;
+        }
+
         _exits[_attester] = Exit({
             withdrawalId: 0,
             amount: amount,
@@ -104,8 +134,6 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
-    /// @dev For testing: looks up rewards for _coinbase (the attester), transfers to msg.sender (StakingManager).
-    /// This allows StakingManager to claim rewards on behalf of attesters and forward them to RewardsVault.
     function claimSequencerRewards(address _coinbase) external override returns (uint256) {
         if (claimShouldFail[_coinbase]) {
             revert MockAztecRollup__ClaimFailed();
@@ -113,10 +141,47 @@ contract MockAztecRollup is IMockAztecRollup {
         uint256 amount = pendingRewards[_coinbase];
         if (amount > 0) {
             pendingRewards[_coinbase] = 0;
-            STAKING_ASSET.safeTransfer(_coinbase, amount);
-            emit RewardsClaimed(msg.sender, _coinbase, amount);
+            IERC20Mintable(address(STAKING_ASSET)).mint(_coinbase, amount);
+            emit RewardsClaimed(_coinbase, _coinbase, amount);
         }
         return amount;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             REWARD ACCRUAL
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IMockAztecRollup
+    function tick(address coinbase) external override returns (uint256 added) {
+        uint256 dt = block.timestamp - lastTick;
+        if (dt == 0) return 0;
+
+        added = rewardRatePerSecond * dt;
+        if (added > 0) {
+            pendingRewards[coinbase] += added;
+        }
+        lastTick = block.timestamp;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setRewardRatePerSecond(uint256 newRate) external override {
+        rewardRatePerSecond = newRate;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function addRewards(address coinbase, uint256 amount) external override {
+        pendingRewards[coinbase] += amount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setRewardsCoinbase(address coinbase) external override {
+        rewardsCoinbase = coinbase;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setWithdrawRewardBps(uint256 bps) external override {
+        if (bps > MAX_BPS) revert MockAztecRollup__InvalidBps();
+        withdrawRewardBps = bps;
     }
 
     /*//////////////////////////////////////////////////////////////
