@@ -155,11 +155,6 @@ interface IMockAztecRollup {
     /// @param coinbase The coinbase/recipient used for withdraw reward bumps.
     function setRewardsCoinbase(address coinbase) external;
 
-    /// @notice Sets the withdraw reward bump in basis points of the exited stake amount.
-    /// @dev A value of 10_000 means 100% of stake amount, 0 disables bumps.
-    /// @param bps Basis points in [0, 10_000].
-    function setWithdrawRewardBps(uint256 bps) external;
-
     /// @notice Returns whether claim should fail for a coinbase/attester.
     /// @param coinbase The coinbase/attester address.
     /// @return Whether claim should fail.
@@ -191,10 +186,6 @@ interface IMockAztecRollup {
     /// @notice Returns the coinbase used for withdraw reward bumps.
     /// @return coinbase The coinbase/recipient address.
     function rewardsCoinbase() external view returns (address coinbase);
-
-    /// @notice Returns the withdraw reward bump basis points.
-    /// @return bps The withdraw reward bump basis points.
-    function withdrawRewardBps() external view returns (uint256 bps);
 
     /// @notice Returns the exit record for an attester.
     /// @param attester The attester address.

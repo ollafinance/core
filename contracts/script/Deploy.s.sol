@@ -5,7 +5,10 @@ import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
+import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { BaseDeployer } from "./base/BaseDeployer.s.sol";
 import { DeployConfig } from "./config/Config.s.sol";
 import { LocalConfig } from "./config/Local.s.sol";
@@ -113,7 +116,23 @@ contract DeployScript is BaseDeployer {
             json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);
             json = _addAddressToJson(json, "StakingProviderRegistryProxy", stakingProviderRegistry, false);
 
-            // Configure rollup mock to bump rewards to RewardsVault on withdraw initiation
+            // Seed deterministic provider keys for local dev so staking works immediately.
+            uint256 keyCount = vm.envOr("PROVIDER_KEY_COUNT", uint256(5));
+            IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](keyCount);
+            for (uint256 i; i < keyCount; ++i) {
+                address attester = address(uint160(uint256(keccak256(abi.encodePacked("olla-attester", i)))));
+                keys[i] = IStakingManager.KeyStore({
+                    attester: attester,
+                    publicKeyG1: G1Point({ x: 1, y: 2 }),
+                    publicKeyG2: G2Point({ x0: 1, x1: 2, y0: 3, y1: 4 }),
+                    proofOfPossession: G1Point({ x: 5, y: 6 })
+                });
+            }
+            vm.startBroadcast(config.deployerPrivateKey);
+            StakingProviderRegistry(stakingProviderRegistry).addKeysToProvider(keys);
+            vm.stopBroadcast();
+
+            // Configure rollup mock to send tick() rewards to RewardsVault
             vm.startBroadcast(config.deployerPrivateKey);
             MockAztecRollup(rollup).setRewardsCoinbase(rewardsVault);
             vm.stopBroadcast();

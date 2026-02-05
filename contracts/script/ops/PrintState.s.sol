@@ -19,6 +19,15 @@ contract PrintState is BaseScript {
         }
         require(core != address(0), "CORE missing: set CORE or deploy local");
 
+        if (core.code.length == 0) {
+            console2.log("env", env);
+            console2.log("core", core);
+            console2.log("chainid", block.chainid);
+            console2.log("No code at CORE on this RPC.");
+            console2.log("Set FOUNDRY_ETH_RPC_URL or pass --rpc-url to forge script.");
+            return;
+        }
+
         IOllaCore c = IOllaCore(core);
 
         address asset = c.asset();

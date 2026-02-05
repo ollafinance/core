@@ -12,6 +12,10 @@ optimizer_runs = 200
 match_path = "test/**/*.t.sol"
 fs_permissions = [{ access = "read-write", path = "./" }]
 
+# Local scripts profile - use with FOUNDRY_PROFILE=local
+[profile.local]
+eth_rpc_url = "http://127.0.0.1:8545"
+
 
 [rpc_endpoints]
 default_network = "http://127.0.0.1:8545"
