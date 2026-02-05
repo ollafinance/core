@@ -15,6 +15,15 @@ interface IOllaCore {
                                 STRUCTS
     //////////////////////////////////////////////////////////////*/
 
+    enum RebalanceStep {
+        Harvest,
+        PullUnstaked,
+        FinalizeWithdrawals,
+        InitiateUnstake,
+        StakeSurplus,
+        Done
+    }
+
     struct AccountingState {
         uint256 bufferedAssets;
         uint256 stakedPrincipal;
@@ -39,6 +48,12 @@ interface IOllaCore {
         int256 netFlows;
         uint256 rewardsSnapshot;
         uint256 timestamp;
+    }
+
+    struct RebalanceProgress {
+        RebalanceStep step;
+        uint256 stakeRemaining;
+        uint256 unstakeRemaining;
     }
 
     struct Modules {
@@ -413,6 +428,10 @@ interface IOllaCore {
     /// @notice Returns the latest accounting report snapshot.
     /// @return The latest report struct.
     function latestReport() external view returns (LatestReport memory);
+
+    /// @notice Returns the current rebalance progress snapshot.
+    /// @return The rebalance progress struct.
+    function rebalanceProgress() external view returns (RebalanceProgress memory);
 
     /// @notice Returns the flow counter snapshots.
     /// @return The flow counters struct.

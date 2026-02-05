@@ -45,7 +45,23 @@ contract OllaCore is
         SlashingDelta
     }
 
+    enum RebalanceStep {
+        Harvest,
+        PullUnstaked,
+        FinalizeWithdrawals,
+        InitiateUnstake,
+        StakeSurplus,
+        Done
+    }
+
+    struct RebalanceProgress {
+        RebalanceStep step;
+        uint256 stakeRemaining;
+        uint256 unstakeRemaining;
+    }
+
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
+    uint256 private constant _REBALANCE_GAS_THRESHOLD = 180_000;
 
     /// @notice Role for guardian pause/unpause actions.
     bytes32 public constant GUARDIAN_ROLE = RolesLib.GUARDIAN_ROLE;
@@ -56,7 +72,7 @@ contract OllaCore is
     uint256 public constant BP_DIVISOR = 10_000;
 
     /*//////////////////////////////////////////////////////////////
-                                 STATE
+                                  STATE
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Contract related interfaces and addresses
@@ -66,6 +82,8 @@ contract OllaCore is
     IOllaCore.AccountingState private _accountingState;
     IOllaCore.FlowCounters private _flowCounters;
     IOllaCore.LatestReport private _latestReport;
+
+    RebalanceProgress private _rebalanceProgress;
 
     /// @notice The protocol fee in basis points.
     uint256 public protocolFeeBP;
@@ -151,6 +169,9 @@ contract OllaCore is
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
         targetBufferedAssets = 0;
+        _rebalanceProgress.step = RebalanceStep.Done;
+
+        _modules.stakingManager.setGasThreshold(_REBALANCE_GAS_THRESHOLD);
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         // Timestamp is used only for reporting/accounting liveness.
@@ -322,6 +343,7 @@ contract OllaCore is
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
     }
 
+    // solhint-disable function-max-lines
     /// @notice Operator-triggered rebalance flow.
     /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
     /// @return rewardsDelta The amount of rewards harvested.
@@ -340,26 +362,103 @@ contract OllaCore is
         // Slither: SafetyModule is a trusted dependency; rebalance is nonReentrant and role-gated.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
         safetyModuleRef.checkAccountingLiveness();
-        _syncBufferedWithBalance();
+        RebalanceProgress memory progress = _rebalanceProgress;
+        if (progress.step == RebalanceStep.Done) {
+            _syncBufferedWithBalance();
+            progress.step = RebalanceStep.Harvest;
+            progress.stakeRemaining = 0;
+            progress.unstakeRemaining = 0;
+        }
 
-        // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
-        // slither-disable-next-line reentrancy-no-eth
-        rewardsDelta = _harvestRewards();
+        if (progress.step == RebalanceStep.Harvest) {
+            // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
+            // slither-disable-next-line reentrancy-no-eth
+            rewardsDelta = _harvestRewards();
+            progress.step = RebalanceStep.PullUnstaked;
+        }
 
-        _pullUnstakedFunds();
+        if (progress.step == RebalanceStep.PullUnstaked) {
+            if (!_hasGasForStep()) {
+                _rebalanceProgress = progress;
+                return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
+            }
+            _pullUnstakedFunds();
+            progress.step = RebalanceStep.FinalizeWithdrawals;
+        }
 
-        finalizedAmount = _finalizeWithdrawals();
+        if (progress.step == RebalanceStep.FinalizeWithdrawals) {
+            if (!_hasGasForStep()) {
+                _rebalanceProgress = progress;
+                return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
+            }
+            finalizedAmount = _finalizeWithdrawals();
+            uint256 pending = _modules.withdrawalQueue.totalPendingAssets();
+            if (pending == 0 || _accountingState.bufferedAssets == 0) {
+                (uint256 requiredBuffer,) = _computeRequiredBuffer();
+                progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
+                progress.step = RebalanceStep.InitiateUnstake;
+            } else {
+                _rebalanceProgress = progress;
+                return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
+            }
+        }
 
-        _initiateUnstake();
+        if (progress.step == RebalanceStep.InitiateUnstake) {
+            if (progress.unstakeRemaining == 0) {
+                progress.step = RebalanceStep.StakeSurplus;
+            } else {
+                if (!_hasGasForStep()) {
+                    _rebalanceProgress = progress;
+                    return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
+                }
+                uint256 initiated = _initiateUnstake(progress.unstakeRemaining);
+                progress.unstakeRemaining -= initiated;
+                if (progress.unstakeRemaining != 0) {
+                    _rebalanceProgress = progress;
+                    return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
+                }
+                progress.step = RebalanceStep.StakeSurplus;
+            }
+        }
 
-        stakedAmount = _stakeSurplus();
+        if (progress.step == RebalanceStep.StakeSurplus) {
+            if (progress.stakeRemaining == 0) {
+                (uint256 requiredBuffer,) = _computeRequiredBuffer();
+                progress.stakeRemaining = _computeStakeRemaining(requiredBuffer);
+                if (progress.stakeRemaining == 0) {
+                    progress.step = RebalanceStep.Done;
+                }
+            }
+            if (progress.step == RebalanceStep.StakeSurplus) {
+                if (!_hasGasForStep()) {
+                    _rebalanceProgress = progress;
+                    return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
+                }
+                stakedAmount = _stakeSurplus(progress.stakeRemaining);
+                progress.stakeRemaining -= stakedAmount;
+                if (progress.stakeRemaining != 0) {
+                    _rebalanceProgress = progress;
+                    return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
+                }
+                progress.step = RebalanceStep.Done;
+            }
+        }
 
+        if (progress.step == RebalanceStep.Done) {
+            progress.stakeRemaining = 0;
+            progress.unstakeRemaining = 0;
+        }
+
+        _rebalanceProgress = progress;
         resultingBuffer = _accountingState.bufferedAssets;
-
-        emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
+        if (progress.step == RebalanceStep.Done) {
+            emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
+        }
 
         return (rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
     }
+
+    // solhint-enable function-max-lines
 
     // Slither: accept multiple storage reads for readability in hot-path accounting.
     // Slither: accept multiple storage reads for readability in withdrawal finalization.
@@ -482,6 +581,16 @@ contract OllaCore is
     /// @return The latest report struct.
     function latestReport() external view override returns (IOllaCore.LatestReport memory) {
         return _latestReport;
+    }
+
+    /// @notice Returns the current rebalance progress snapshot.
+    /// @return The rebalance progress struct.
+    function rebalanceProgress() external view override returns (IOllaCore.RebalanceProgress memory) {
+        return IOllaCore.RebalanceProgress({
+            step: IOllaCore.RebalanceStep(_rebalanceProgress.step),
+            stakeRemaining: _rebalanceProgress.stakeRemaining,
+            unstakeRemaining: _rebalanceProgress.unstakeRemaining
+        });
     }
 
     /// @notice Returns the flow counter snapshots.
@@ -665,75 +774,35 @@ contract OllaCore is
         return finalizedAmount;
     }
 
-    /// @notice Initiates unstaking when pending withdrawals exceed buffered assets.
+    /// @notice Initiates unstaking for a bounded amount.
+    /// @param requested The remaining amount to initiate for unstake.
     /// @return initiated Amount actually initiated for unstake.
-    // slither-disable-next-line pess-unprotected-initialize
-    function _initiateUnstake() internal returns (uint256 initiated) {
+    function _initiateUnstake(uint256 requested) internal returns (uint256 initiated) {
+        if (requested == 0) {
+            return 0;
+        }
+
         IOllaCore.Modules memory modules = _modules;
-        uint256 pendingWithdrawals = modules.withdrawalQueue.totalPendingAssets();
-        uint256 bufferedAssets = _accountingState.bufferedAssets;
-        uint256 targetBuffered = targetBufferedAssets;
-        uint256 requiredBuffer = pendingWithdrawals > targetBuffered ? pendingWithdrawals : targetBuffered;
-
-        // slither-disable-next-line timestamp
-        if (requiredBuffer < bufferedAssets) {
-            return 0;
-        }
-        // slither-disable-next-line timestamp,incorrect-equality
-        if (requiredBuffer == bufferedAssets) {
-            return 0;
-        }
-
-        uint256 amountToUnstake = requiredBuffer - bufferedAssets;
         uint256 pendingUnstakes = modules.stakingManager.pendingUnstakes();
-        // slither-disable-next-line timestamp
-        if (pendingUnstakes > amountToUnstake) {
-            return 0;
-        }
-        // slither-disable-next-line timestamp,incorrect-equality
-        if (pendingUnstakes == amountToUnstake) {
-            return 0;
-        }
-
-        uint256 requested = amountToUnstake - pendingUnstakes;
-
-        initiated = requested;
-
-        // slither-disable-next-line timestamp
+        initiated = modules.stakingManager.unstake(requested);
         if (initiated > 0) {
-            modules.stakingManager.unstake(initiated);
-            emit UnstakeInitiated(amountToUnstake, initiated);
+            emit UnstakeInitiated(requested + pendingUnstakes, initiated);
         }
-
         return initiated;
     }
 
     // slither-disable-start pess-multiple-storage-read
-    /// @notice Stakes surplus buffered assets above target buffer.
+    /// @notice Stakes surplus buffered assets above the required buffer.
+    /// @param stakeable The amount to attempt staking.
     /// @return totalStaked The total amount staked during this operation.
-    function _stakeSurplus() internal returns (uint256 totalStaked) {
-        IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
-        uint256 bufferedAssets = accountingSnapshot.bufferedAssets;
-        uint256 stakedPrincipal = accountingSnapshot.stakedPrincipal;
-        uint256 targetBuffered = targetBufferedAssets;
-
-        // No timestamp usage; numeric guard only.
-        // slither-disable-next-line incorrect-equality,timestamp
-        if (bufferedAssets < targetBuffered) {
-            return 0;
-        }
-        // No timestamp usage; numeric guard only.
-        // slither-disable-next-line incorrect-equality,timestamp
-        if (bufferedAssets == targetBuffered) {
-            return 0;
-        }
-
-        uint256 stakeable = bufferedAssets - targetBuffered;
-        // No timestamp usage; numeric guard only.
-        // slither-disable-next-line incorrect-equality,timestamp
+    function _stakeSurplus(uint256 stakeable) internal returns (uint256 totalStaked) {
         if (stakeable == 0) {
             return 0;
         }
+
+        IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
+        uint256 bufferedAssets = accountingSnapshot.bufferedAssets;
+        uint256 stakedPrincipal = accountingSnapshot.stakedPrincipal;
 
         IERC20 assetRef = _modules.asset;
         IStakingManager stakingManagerRef = _modules.stakingManager;
@@ -1068,6 +1137,43 @@ contract OllaCore is
 
     function _syncBufferedWithBalance() internal {
         _reconcileBufferedAssets(address(this));
+    }
+
+    function _hasGasForStep() internal view returns (bool) {
+        return gasleft() > _REBALANCE_GAS_THRESHOLD;
+    }
+
+    function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {
+        pendingWithdrawals = _modules.withdrawalQueue.totalPendingAssets();
+        uint256 targetBuffered = targetBufferedAssets;
+        requiredBuffer = pendingWithdrawals > targetBuffered ? pendingWithdrawals : targetBuffered;
+        return (requiredBuffer, pendingWithdrawals);
+    }
+
+    function _computeUnstakeRemaining(uint256 requiredBuffer) internal view returns (uint256 remaining) {
+        uint256 bufferedAssets = _accountingState.bufferedAssets;
+        // slither-disable-next-line timestamp
+        if (requiredBuffer < bufferedAssets) {
+            return 0;
+        }
+        uint256 amountToUnstake = requiredBuffer - bufferedAssets;
+        uint256 pendingUnstakes = _modules.stakingManager.pendingUnstakes();
+        // slither-disable-next-line timestamp
+        if (pendingUnstakes > amountToUnstake) {
+            return 0;
+        }
+        remaining = amountToUnstake - pendingUnstakes;
+        return remaining;
+    }
+
+    function _computeStakeRemaining(uint256 requiredBuffer) internal view returns (uint256 remaining) {
+        uint256 bufferedAssets = _accountingState.bufferedAssets;
+        // slither-disable-next-line timestamp
+        if (bufferedAssets < requiredBuffer) {
+            return 0;
+        }
+        remaining = bufferedAssets - requiredBuffer;
+        return remaining;
     }
 
     function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) {
