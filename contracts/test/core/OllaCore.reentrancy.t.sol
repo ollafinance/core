@@ -60,8 +60,18 @@ contract MockHarvestStakingManager is IStakingManager {
     function stake(uint256) external pure override returns (uint256) {
         return 0;
     }
-    function unstake(uint256) external pure override { }
-    function cleanActivatedAttesters() external pure override { }
+
+    function setGasThreshold(uint256 threshold) external pure override {
+        threshold;
+    }
+
+    function unstake(uint256) external pure override returns (uint256) {
+        return 0;
+    }
+
+    function cleanActivatedAttesters() external pure override {
+        return;
+    }
 
     function getUnstakedFunds() external pure override returns (uint256) {
         return 0;
@@ -101,6 +111,10 @@ contract MockHarvestStakingManager is IStakingManager {
 
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
+    }
+
+    function getUnstakeCursor() external pure override returns (uint256) {
+        return 0;
     }
 
     function initialize(IERC20, address, address, address, address, address) external pure override { }

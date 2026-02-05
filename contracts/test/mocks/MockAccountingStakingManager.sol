@@ -120,11 +120,18 @@ contract MockAccountingStakingManager is IStakingManager {
         return actualAmount;
     }
 
-    function unstake(uint256 amount) external override {
+    function unstake(uint256 amount) external override returns (uint256 returnedAmount) {
         lastUnstakeAmount = amount;
+        return amount;
     }
 
-    function cleanActivatedAttesters() external pure override { }
+    function setGasThreshold(uint256 threshold) external override {
+        threshold;
+    }
+
+    function cleanActivatedAttesters() external pure override {
+        return;
+    }
 
     function getUnstakedFunds() public virtual override returns (uint256 received) {
         uint256 amount = unstakedAmount;
@@ -189,6 +196,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function getProviderConfig() external view override returns (ProviderConfig memory) {
         return ProviderConfig({ admin: providerAdmin, rewardsRecipient: providerRewardsRecipient });
+    }
+
+    function getUnstakeCursor() external pure override returns (uint256 cursor) {
+        return 0;
     }
 
     function getActivatedAttesterCount() external pure override returns (uint256) {

@@ -73,12 +73,19 @@ contract MockStakingManager is IStakingManager {
 
     /// @notice Records an unstake request.
     /// @param amount The amount to unstake.
-    function unstake(uint256 amount) external override {
+    /// @return unstakedAmount The amount initiated for unstake.
+    function unstake(uint256 amount) external override returns (uint256 unstakedAmount) {
         lastUnstakeAmount = amount;
         if (amount != 0 && _stakedAmount > amount - 1) {
             _stakedAmount -= amount;
         }
         ++unstakeCalls;
+        return amount;
+    }
+
+    /// @inheritdoc IStakingManager
+    function setGasThreshold(uint256 threshold) external override {
+        threshold;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -103,6 +110,11 @@ contract MockStakingManager is IStakingManager {
     /// @inheritdoc IStakingManager
     function getProviderConfig() external view override returns (ProviderConfig memory) {
         return _providerConfig;
+    }
+
+    /// @inheritdoc IStakingManager
+    function getUnstakeCursor() external pure override returns (uint256 cursor) {
+        return 0;
     }
 
     /*//////////////////////////////////////////////////////////////
