@@ -35,6 +35,7 @@ abstract contract BaseScript is BaseDeployer {
             addr = _tryReadDeployment(_deployEnv(), deploymentKey);
         }
         require(addr != address(0), err);
+        return addr;
     }
 
     function _uintOr(string memory envVar, uint256 defaultValue) internal view returns (uint256) {
