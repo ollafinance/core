@@ -45,21 +45,6 @@ contract OllaCore is
         SlashingDelta
     }
 
-    enum RebalanceStep {
-        Harvest,
-        PullUnstaked,
-        FinalizeWithdrawals,
-        InitiateUnstake,
-        StakeSurplus,
-        Done
-    }
-
-    struct RebalanceProgress {
-        RebalanceStep step;
-        uint256 stakeRemaining;
-        uint256 unstakeRemaining;
-    }
-
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
     uint256 private constant _REBALANCE_GAS_THRESHOLD = 180_000;
 
@@ -83,7 +68,7 @@ contract OllaCore is
     IOllaCore.FlowCounters private _flowCounters;
     IOllaCore.LatestReport private _latestReport;
 
-    RebalanceProgress private _rebalanceProgress;
+    IOllaCore.RebalanceProgress private _rebalanceProgress;
 
     /// @notice The protocol fee in basis points.
     uint256 public protocolFeeBP;
@@ -169,7 +154,7 @@ contract OllaCore is
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
         targetBufferedAssets = 0;
-        _rebalanceProgress.step = RebalanceStep.Done;
+        _rebalanceProgress.step = IOllaCore.RebalanceStep.Done;
 
         _modules.stakingManager.setGasThreshold(_REBALANCE_GAS_THRESHOLD);
 
@@ -362,31 +347,31 @@ contract OllaCore is
         // Slither: SafetyModule is a trusted dependency; rebalance is nonReentrant and role-gated.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
         safetyModuleRef.checkAccountingLiveness();
-        RebalanceProgress memory progress = _rebalanceProgress;
-        if (progress.step == RebalanceStep.Done) {
+        IOllaCore.RebalanceProgress memory progress = _rebalanceProgress;
+        if (progress.step == IOllaCore.RebalanceStep.Done) {
             _syncBufferedWithBalance();
-            progress.step = RebalanceStep.Harvest;
+            progress.step = IOllaCore.RebalanceStep.Harvest;
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
         }
 
-        if (progress.step == RebalanceStep.Harvest) {
+        if (progress.step == IOllaCore.RebalanceStep.Harvest) {
             // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
             // slither-disable-next-line reentrancy-no-eth
             rewardsDelta = _harvestRewards();
-            progress.step = RebalanceStep.PullUnstaked;
+            progress.step = IOllaCore.RebalanceStep.PullUnstaked;
         }
 
-        if (progress.step == RebalanceStep.PullUnstaked) {
+        if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
             if (!_hasGasForStep()) {
                 _rebalanceProgress = progress;
                 return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
             }
             _pullUnstakedFunds();
-            progress.step = RebalanceStep.FinalizeWithdrawals;
+            progress.step = IOllaCore.RebalanceStep.FinalizeWithdrawals;
         }
 
-        if (progress.step == RebalanceStep.FinalizeWithdrawals) {
+        if (progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals) {
             if (!_hasGasForStep()) {
                 _rebalanceProgress = progress;
                 return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
@@ -396,16 +381,16 @@ contract OllaCore is
             if (pending == 0 || _accountingState.bufferedAssets == 0) {
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
-                progress.step = RebalanceStep.InitiateUnstake;
+                progress.step = IOllaCore.RebalanceStep.InitiateUnstake;
             } else {
                 _rebalanceProgress = progress;
                 return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
             }
         }
 
-        if (progress.step == RebalanceStep.InitiateUnstake) {
+        if (progress.step == IOllaCore.RebalanceStep.InitiateUnstake) {
             if (progress.unstakeRemaining == 0) {
-                progress.step = RebalanceStep.StakeSurplus;
+                progress.step = IOllaCore.RebalanceStep.StakeSurplus;
             } else {
                 if (!_hasGasForStep()) {
                     _rebalanceProgress = progress;
@@ -417,19 +402,19 @@ contract OllaCore is
                     _rebalanceProgress = progress;
                     return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
                 }
-                progress.step = RebalanceStep.StakeSurplus;
+                progress.step = IOllaCore.RebalanceStep.StakeSurplus;
             }
         }
 
-        if (progress.step == RebalanceStep.StakeSurplus) {
+        if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
             if (progress.stakeRemaining == 0) {
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 progress.stakeRemaining = _computeStakeRemaining(requiredBuffer);
                 if (progress.stakeRemaining == 0) {
-                    progress.step = RebalanceStep.Done;
+                    progress.step = IOllaCore.RebalanceStep.Done;
                 }
             }
-            if (progress.step == RebalanceStep.StakeSurplus) {
+            if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
                 if (!_hasGasForStep()) {
                     _rebalanceProgress = progress;
                     return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
@@ -440,18 +425,18 @@ contract OllaCore is
                     _rebalanceProgress = progress;
                     return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
                 }
-                progress.step = RebalanceStep.Done;
+                progress.step = IOllaCore.RebalanceStep.Done;
             }
         }
 
-        if (progress.step == RebalanceStep.Done) {
+        if (progress.step == IOllaCore.RebalanceStep.Done) {
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
         }
 
         _rebalanceProgress = progress;
         resultingBuffer = _accountingState.bufferedAssets;
-        if (progress.step == RebalanceStep.Done) {
+        if (progress.step == IOllaCore.RebalanceStep.Done) {
             emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
         }
 
@@ -587,7 +572,7 @@ contract OllaCore is
     /// @return The rebalance progress struct.
     function rebalanceProgress() external view override returns (IOllaCore.RebalanceProgress memory) {
         return IOllaCore.RebalanceProgress({
-            step: IOllaCore.RebalanceStep(_rebalanceProgress.step),
+            step: _rebalanceProgress.step,
             stakeRemaining: _rebalanceProgress.stakeRemaining,
             unstakeRemaining: _rebalanceProgress.unstakeRemaining
         });
