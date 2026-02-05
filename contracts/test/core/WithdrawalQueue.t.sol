@@ -153,7 +153,7 @@ contract WithdrawalQueueTest is Test {
         }
 
         uint256 available = totalRequests * assetsExpected;
-        uint256 snapshotId = vm.snapshot();
+        uint256 snapshotId = vm.snapshotState();
 
         uint256 selectedGas;
         uint256 probedUsed;
@@ -161,7 +161,7 @@ contract WithdrawalQueueTest is Test {
         uint256[5] memory gasOptions = [uint256(120_000), 160_000, 200_000, 240_000, 280_000];
 
         for (uint256 i = 0; i < gasOptions.length; i++) {
-            vm.revertTo(snapshotId);
+            vm.revertToState(snapshotId);
             vm.prank(core);
             (bool success, bytes memory data) =
                 address(queue).call{ gas: gasOptions[i] }(abi.encodeCall(queue.finalizeWithdrawals, (available)));
@@ -181,7 +181,7 @@ contract WithdrawalQueueTest is Test {
 
         assertGt(selectedGas, 0, "should find gas stipend for partial finalization");
 
-        vm.revertTo(snapshotId);
+        vm.revertToState(snapshotId);
         vm.prank(core);
         (uint256 usedObserved, uint256 finalizedCountObserved) =
             queue.finalizeWithdrawals{ gas: selectedGas }(available);
@@ -203,43 +203,6 @@ contract WithdrawalQueueTest is Test {
 
         assertEq(queue.nextPendingId(), totalRequests + 1, "next pending id reaches end");
         assertEq(queue.totalPendingAssets(), 0, "pending assets drained");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                         PREVIEW FINALIZE
-    //////////////////////////////////////////////////////////////*/
-
-    function test_PreviewFinalizeWithdrawals_MatchesFinalizeUsed() public {
-        address alice = makeAddr("alice");
-        address bob = makeAddr("bob");
-
-        _request(alice, 10, 100, 1e18);
-        _request(bob, 10, 200, 1e18);
-
-        uint256 previewUsed = queue.previewFinalizeWithdrawals(250);
-
-        vm.prank(core);
-        (uint256 used,) = queue.finalizeWithdrawals(250);
-
-        assertEq(previewUsed, used, "preview should match finalize used");
-        assertEq(queue.nextPendingId(), 2, "next pending id should advance");
-    }
-
-    function test_PreviewFinalizeWithdrawals_DoesNotMutateState() public {
-        address alice = makeAddr("alice");
-        address bob = makeAddr("bob");
-
-        _request(alice, 10, 100, 1e18);
-        _request(bob, 10, 200, 1e18);
-
-        uint256 nextPendingBefore = queue.nextPendingId();
-        uint256 pendingBefore = queue.totalPendingAssets();
-
-        uint256 previewUsed = queue.previewFinalizeWithdrawals(150);
-
-        assertEq(previewUsed, 100, "preview should include only first request");
-        assertEq(queue.nextPendingId(), nextPendingBefore, "preview should not advance pending id");
-        assertEq(queue.totalPendingAssets(), pendingBefore, "preview should not change pending assets");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -332,30 +295,6 @@ contract WithdrawalQueueTest is Test {
                 assertFalse(request.finalized, "requests beyond liquidity should remain pending");
             }
         }
-    }
-
-    function testFuzz_PreviewFinalizeWithdrawals_MatchesFinalize(uint96[6] memory assetsRaw, uint96 availableRaw)
-        public
-    {
-        uint256[6] memory assets;
-        uint256 totalAssets = 0;
-
-        for (uint256 i = 0; i < assetsRaw.length; i++) {
-            assets[i] = uint256(bound(assetsRaw[i], 1, 1e18));
-            totalAssets += assets[i];
-            // casting to uint160 is safe because 200 + i stays within 160 bits
-            // forge-lint: disable-next-line(unsafe-typecast)
-            address user = address(uint160(200 + i));
-            _request(user, assets[i], assets[i], 1e18);
-        }
-
-        uint256 available = uint256(bound(availableRaw, 0, totalAssets * 2));
-        uint256 previewUsed = queue.previewFinalizeWithdrawals(available);
-
-        vm.prank(core);
-        (uint256 used,) = queue.finalizeWithdrawals(available);
-
-        assertEq(previewUsed, used, "preview should match finalize used");
     }
 
     /*//////////////////////////////////////////////////////////////

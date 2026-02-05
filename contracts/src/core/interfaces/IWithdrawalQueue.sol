@@ -126,11 +126,6 @@ interface IWithdrawalQueue {
     /// @return requestId The next unfinalized request id.
     function nextUnfinalized() external view returns (uint256 requestId);
 
-    /// @notice Previews assets used for withdrawal finalization.
-    /// @param available The available assets to finalize.
-    /// @return used The assets that would be used.
-    function previewFinalizeWithdrawals(uint256 available) external view returns (uint256 used);
-
     /// @notice Returns the core address.
     /// @return The core contract address.
     function core() external view returns (address);
