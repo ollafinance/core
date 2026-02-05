@@ -8,12 +8,14 @@ import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol
 import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title AddKeys
-/// @notice Adds N dummy keystores to the provider registry.
+/// @notice Adds N dummy keystores to the staking provider registry.
 /// @dev Keys are not used by the mock rollup, but must be present for StakingManager.stake().
 contract AddKeys is BaseScript {
     function run() external {
-        address registry = _addrOrDeployment(
-            "REGISTRY", "StakingProviderRegistryProxy", "REGISTRY missing: set REGISTRY or deploy local"
+        address stakingProviderRegistry = _addrOrDeployment(
+            "STAKING_PROVIDER_REGISTRY",
+            "StakingProviderRegistryProxy",
+            "STAKING_PROVIDER_REGISTRY missing: set STAKING_PROVIDER_REGISTRY or deploy local"
         );
         uint256 count = _uintOr("COUNT", 5);
         uint256 pk = _privateKey();
@@ -31,7 +33,7 @@ contract AddKeys is BaseScript {
         }
 
         vm.startBroadcast(pk);
-        StakingProviderRegistry(registry).addKeysToProvider(keys);
+        StakingProviderRegistry(stakingProviderRegistry).addKeysToProvider(keys);
         vm.stopBroadcast();
     }
 }
