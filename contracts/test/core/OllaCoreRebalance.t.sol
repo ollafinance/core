@@ -242,7 +242,8 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setHarvestedRewards(rewardAmount);
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 expectedBuffer = accountingBefore.bufferedAssets;
+        // Expected buffer after rebalance includes rewards pulled from rewards vault
+        uint256 expectedBuffer = accountingBefore.bufferedAssets + rewardAmount;
 
         vm.prank(governance);
         vault.setTargetBufferedAssets(expectedBuffer);
@@ -1102,6 +1103,243 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
 
         vm.prank(operator);
         vm.expectRevert(RevertingSafetyModule.AccountingStale.selector);
+        vault.rebalance();
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+                    REWARDS LIQUIDITY TESTS
+//////////////////////////////////////////////////////////////*/
+
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
+import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+
+/// @notice Staking manager that reverts on unstake when amount exceeds staked principal.
+/// @dev Used to test that rebalance correctly accounts for rewards vault liquidity.
+contract UnstakeRevertingStakingManager is IStakingManager {
+    IERC20 public immutable STAKING_ASSET;
+
+    uint256 public staked;
+    uint256 public pending;
+    uint256 public claimable;
+    uint256 public slashing;
+    address public rewardsRecipient;
+
+    ProviderConfig internal _providerConfig;
+
+    constructor(IERC20 stakingAsset_) {
+        STAKING_ASSET = stakingAsset_;
+    }
+
+    function setClaimableRewards(uint256 value) external {
+        claimable = value;
+    }
+
+    function setSlashingDelta(uint256 value) external {
+        slashing = value;
+    }
+
+    function setPendingUnstakes(uint256 value) external {
+        pending = value;
+    }
+
+    function setRewardsRecipient(address recipient) external {
+        rewardsRecipient = recipient;
+    }
+
+    function setProviderConfig(address admin, address rewardsRecipient_) external {
+        _providerConfig = ProviderConfig({ admin: admin, rewardsRecipient: rewardsRecipient_ });
+    }
+
+    function initialize(IERC20, address, address, address, address, address) external pure override { }
+
+    function stake(uint256 amount) external override returns (uint256 stakedAmount) {
+        STAKING_ASSET.transferFrom(msg.sender, address(this), amount);
+        staked += amount;
+        return amount;
+    }
+
+    function unstake(uint256 amount) external override {
+        if (amount > staked) {
+            revert StakingManager__InsufficientStake();
+        }
+        staked -= amount;
+    }
+
+    function cleanActivatedAttesters() external pure override { }
+
+    function getUnstakedFunds() external pure override returns (uint256 received) {
+        return 0;
+    }
+
+    function harvestRewards() external override returns (uint256 harvested) {
+        harvested = claimable;
+        if (harvested > 0 && rewardsRecipient != address(0)) {
+            MockAztec(address(STAKING_ASSET)).mint(rewardsRecipient, harvested);
+            claimable = 0;
+        }
+        return harvested;
+    }
+
+    function getSlashingDelta() external view override returns (uint256 slashingDelta) {
+        return slashing;
+    }
+
+    function getClaimableRewards() external view override returns (uint256 claimableRewards) {
+        return claimable;
+    }
+
+    function totalStaked() external view override returns (uint256 stakedTotal) {
+        return staked;
+    }
+
+    function getStakingState() external view override returns (StakingState memory state) {
+        return StakingState({ stakedAmount: staked, pendingUnstakeAmount: pending, withdrawableAmount: 0 });
+    }
+
+    function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
+        return pending;
+    }
+
+    function getProviderConfig() external view override returns (ProviderConfig memory) {
+        return _providerConfig;
+    }
+
+    function getActivatedAttesterCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getPendingUnstakeCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function isUnstakePending(address) external pure override returns (bool) {
+        return false;
+    }
+
+    function core() external pure override returns (address) {
+        return address(0);
+    }
+
+    function stakingProviderRegistry() external pure override returns (IStakingProviderRegistry) {
+        return IStakingProviderRegistry(address(0));
+    }
+}
+
+contract OllaCoreRebalanceRewardsLiquidityTest is Test {
+    uint256 internal constant DECIMALS = 1e18;
+
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    UnstakeRevertingStakingManager internal stakingManager;
+    MockWithdrawalQueue internal withdrawalQueue;
+    MockRewardsVault internal rewardsVault;
+    MockSafetyModule internal safetyModule;
+
+    address internal governance;
+    address internal alice;
+    address internal operator;
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+        stakingManager = new UnstakeRevertingStakingManager(asset);
+
+        governance = makeAddr("governance");
+        alice = makeAddr("alice");
+        operator = makeAddr("operator");
+
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCore(address(proxy));
+
+        stAztec = new StAztec(governance, address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule(address(vault));
+        withdrawalQueue = new MockWithdrawalQueue();
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vm.stopPrank();
+    }
+
+    function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
+        asset.mint(owner, assets);
+        vm.prank(owner);
+        asset.approve(address(vault), assets);
+        vm.prank(owner);
+        shares = vault.deposit(assets, owner);
+        return shares;
+    }
+
+    function test_Rebalance_HandlesWithdrawalsBackedByRewardsVaultLiquidity() external {
+        uint256 principal = 200_000 * DECIMALS;
+        _performDeposit(alice, principal);
+
+        // Stake everything so buffered liquidity is zero.
+        vm.prank(operator);
+        vault.rebalance();
+        assertEq(vault.accountingState().bufferedAssets, 0, "buffer should be zero after stake");
+
+        // Simulate rewards sitting in the rewards vault (counted in totalAssets via accounting).
+        uint256 rewards = 69 * DECIMALS;
+        asset.mint(address(rewardsVault), rewards);
+
+        // Persist rewardsVaultBalance into accounting so exchangeRate/totalAssets includes it.
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        // Request redeem of all shares; assetsExpected includes rewards.
+        uint256 shares = stAztec.balanceOf(alice);
+        vm.prank(alice);
+        vault.requestRedeem(shares, alice);
+
+        // Rebalance should use rewards-vault funds as liquidity and avoid over-unstaking.
+        // Previously this would revert with StakingManager__InsufficientStake because
+        // _initiateUnstake sized against bufferedAssets only.
+        vm.prank(operator);
+        vault.rebalance();
+    }
+
+    function test_Rebalance_HandlesWithdrawalsBackedByClaimableRewards() external {
+        uint256 principal = 200_000 * DECIMALS;
+        _performDeposit(alice, principal);
+
+        vm.prank(operator);
+        vault.rebalance();
+        assertEq(vault.accountingState().bufferedAssets, 0, "buffer should be zero after stake");
+
+        // Set rewards recipient so harvest actually transfers tokens to rewards vault
+        stakingManager.setRewardsRecipient(address(rewardsVault));
+
+        // Simulate claimable rewards being included in totalAssets.
+        uint256 claimableRewards = 69 * DECIMALS;
+        stakingManager.setClaimableRewards(claimableRewards);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        uint256 shares = stAztec.balanceOf(alice);
+        vm.prank(alice);
+        vault.requestRedeem(shares, alice);
+
+        // Rebalance should not over-request unstake when withdrawals include claimable rewards.
+        // The harvest step pulls the rewards into the buffer before unstake sizing.
+        vm.prank(operator);
         vault.rebalance();
     }
 }
