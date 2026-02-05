@@ -4,7 +4,7 @@ This doc assumes you have a local deployment file at `deployments/local.json` (c
 
 ## RPC configuration
 
-Configure Foundry to point at your local node via `FOUNDRY_ETH_RPC_URL`.
+By default, this repo is configured to use a local Anvil node. If you run scripts against a different RPC, set `FOUNDRY_ETH_RPC_URL`.
 
 ## Address + signer defaults
 
