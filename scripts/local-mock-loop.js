@@ -93,6 +93,18 @@ function fmtDeltaU256(d) {
   return sign + formatU256(d);
 }
 
+function callUintWithArg(rpcUrl, to, sig, arg) {
+  const res = spawnSync(
+    'cast',
+    ['call', to, sig, arg, '--rpc-url', rpcUrl],
+    { encoding: 'utf8' }
+  );
+  if (res.status !== 0) {
+    throw new Error(res.stderr || res.stdout || 'cast call failed');
+  }
+  return parseFirstInt(res.stdout);
+}
+
 async function main() {
   const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545';
   const intervalMs = getEnvInt('INTERVAL_MS', 3000);
@@ -123,6 +135,9 @@ async function main() {
       `[mock-loop] warning: Missing deployments.addresses.WithdrawalQueueProxy in ${deploymentsPath}; queued withdrawal logs will be limited\n`
     );
   }
+
+  const asset = deployments.addresses && deployments.addresses.Asset;
+  const rollup = deployments.addresses && deployments.addresses.MockAztecRollup;
 
   // One-time: configure reward rate.
   run(
@@ -167,13 +182,27 @@ async function main() {
     return callUint(rpcUrl, withdrawalQueue, 'totalPendingAssets()(uint256)');
   }
 
+  function readTokenBalances() {
+    if (!asset) return null;
+    const coreBalance = core ? callUintWithArg(rpcUrl, asset, 'balanceOf(address)(uint256)', core) : 0n;
+    const stakingManagerBalance = callUintWithArg(rpcUrl, asset, 'balanceOf(address)(uint256)', stakingManager);
+    const rollupBalance = rollup ? callUintWithArg(rpcUrl, asset, 'balanceOf(address)(uint256)', rollup) : 0n;
+    return { coreBalance, stakingManagerBalance, rollupBalance };
+  }
+
+  function readPendingUnstakeCount() {
+    return callUint(rpcUrl, stakingManager, 'getPendingUnstakeCount()(uint256)');
+  }
+
   while (true) {
     try {
       const loopStart = Date.now();
       const stakedBefore = callUint(rpcUrl, stakingManager, 'totalStaked()(uint256)');
       const pendingUnstakesBefore = callUint(rpcUrl, stakingManager, 'pendingUnstakes()(uint256)');
+      const pendingUnstakeCountBefore = readPendingUnstakeCount();
       const stateBefore = readCoreState();
       const queuedBefore = readQueuedWithdrawals();
+      const balancesBefore = readTokenBalances();
 
       const hasDeposits = stateBefore ? stateBefore.totalAssets > 0n : stakedBefore > 0n;
       if (!hasDeposits) {
@@ -202,6 +231,12 @@ async function main() {
         if (queuedBefore != null) parts.push(`queued=${formatU256(queuedBefore)}`);
         parts.push(`totalStaked=${formatU256(stakedBefore)}`);
         parts.push(`pendingUnstakes=${formatU256(pendingUnstakesBefore)}`);
+        parts.push(`pendingUnstakeCount=${pendingUnstakeCountBefore}`);
+        if (balancesBefore) {
+          parts.push(`tokenBal:core=${formatU256(balancesBefore.coreBalance)}`);
+          parts.push(`tokenBal:sm=${formatU256(balancesBefore.stakingManagerBalance)}`);
+          parts.push(`tokenBal:rollup=${formatU256(balancesBefore.rollupBalance)}`);
+        }
         process.stdout.write(parts.join(' ') + '\n');
       }
 
@@ -219,8 +254,10 @@ async function main() {
 
       const stakedAfter = callUint(rpcUrl, stakingManager, 'totalStaked()(uint256)');
       const pendingUnstakesAfter = callUint(rpcUrl, stakingManager, 'pendingUnstakes()(uint256)');
+      const pendingUnstakeCountAfter = readPendingUnstakeCount();
       const stateAfter = readCoreState();
       const queuedAfter = readQueuedWithdrawals();
+      const balancesAfter = readTokenBalances();
 
       const durationMs = Date.now() - loopStart;
       const parts = [`[mock-loop] did ${steps.join(' -> ')} (${durationMs}ms)`];
@@ -228,6 +265,11 @@ async function main() {
       parts.push(
         `pendingUnstakes=${formatU256(pendingUnstakesAfter)} (${fmtDeltaU256(
           delta(pendingUnstakesBefore, pendingUnstakesAfter)
+        )})`
+      );
+      parts.push(
+        `pendingUnstakeCount=${pendingUnstakeCountAfter} (${fmtDeltaU256(
+          delta(BigInt(pendingUnstakeCountBefore), BigInt(pendingUnstakeCountAfter))
         )})`
       );
 
@@ -260,6 +302,24 @@ async function main() {
           )})`
         );
         parts.push(`rewardsDelta=${formatU256(stateAfter.rewardsDelta)} slashingDelta=${formatU256(stateAfter.slashingDelta)}`);
+      }
+
+      if (balancesBefore && balancesAfter) {
+        parts.push(
+          `tokenBal:core=${formatU256(balancesAfter.coreBalance)} (${fmtDeltaU256(
+            delta(balancesBefore.coreBalance, balancesAfter.coreBalance)
+          )})`
+        );
+        parts.push(
+          `tokenBal:sm=${formatU256(balancesAfter.stakingManagerBalance)} (${fmtDeltaU256(
+            delta(balancesBefore.stakingManagerBalance, balancesAfter.stakingManagerBalance)
+          )})`
+        );
+        parts.push(
+          `tokenBal:rollup=${formatU256(balancesAfter.rollupBalance)} (${fmtDeltaU256(
+            delta(balancesBefore.rollupBalance, balancesAfter.rollupBalance)
+          )})`
+        );
       }
 
       if (queuedBefore != null && queuedAfter != null) {
