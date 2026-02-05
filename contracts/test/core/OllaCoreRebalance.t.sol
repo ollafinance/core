@@ -269,6 +269,83 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending queue drained");
     }
 
+    function test_Rebalance_FinalizeWithdrawals_BoundedGasProgresses() external {
+        uint256 totalRequests = 20;
+        uint256 requestShares = 1 * DECIMALS;
+        uint256 depositAmount = totalRequests * requestShares;
+
+        _performDeposit(alice, depositAmount);
+
+        for (uint256 i = 0; i < totalRequests; i++) {
+            _requestWithdrawal(alice, requestShares);
+        }
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(0);
+
+        uint256 totalPendingBefore = withdrawalQueue.totalPendingAssets();
+        uint256 bufferBefore = vault.accountingState().bufferedAssets;
+        uint256 snapshotId = vm.snapshotState();
+
+        uint256 selectedGas;
+        uint256 finalizedObserved;
+        uint256 bufferObserved;
+        uint256[5] memory gasOptions = [uint256(400_000), 500_000, 600_000, 700_000, 800_000];
+
+        for (uint256 i = 0; i < gasOptions.length; i++) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success, bytes memory data) =
+                address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+
+            if (!success) {
+                continue;
+            }
+
+            (, uint256 finalizedCandidate,, uint256 bufferCandidate) =
+                abi.decode(data, (uint256, uint256, uint256, uint256));
+            if (finalizedCandidate > 0 && finalizedCandidate < totalPendingBefore) {
+                selectedGas = gasOptions[i];
+                finalizedObserved = finalizedCandidate;
+                bufferObserved = bufferCandidate;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for partial finalize");
+
+        vm.revertToState(snapshotId);
+        vm.prank(operator);
+        (, uint256 finalizedAmount,, uint256 bufferAfter) = vault.rebalance{ gas: selectedGas }();
+
+        assertEq(finalizedAmount, finalizedObserved, "finalized amount should match probe");
+        assertEq(bufferAfter, bufferObserved, "buffer should match probe");
+        assertEq(
+            withdrawalQueue.totalPendingAssets(),
+            totalPendingBefore - finalizedAmount,
+            "pending assets should decrease by finalized amount"
+        );
+        assertEq(
+            vault.accountingState().bufferedAssets,
+            bufferBefore - finalizedAmount,
+            "buffered assets should decrease by finalized amount"
+        );
+
+        for (uint256 i = 0; i < 50; i++) {
+            vm.prank(operator);
+            vault.rebalance();
+            if (withdrawalQueue.totalPendingAssets() == 0) {
+                break;
+            }
+        }
+
+        assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue should drain after follow-up rebalance");
+    }
+
     function test_Rebalance_NoOp_WhenNoRewardsNoUnstakedNoQueue() external {
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);

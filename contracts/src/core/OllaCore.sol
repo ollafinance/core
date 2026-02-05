@@ -636,25 +636,21 @@ contract OllaCore is
             return 0;
         }
 
-        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
-        uint256 previewUsed = modules.withdrawalQueue.previewFinalizeWithdrawals(availableForWithdrawals);
-        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
-        if (previewUsed == 0) {
-            return 0;
-        }
+        // slither-disable-next-line reentrancy-no-eth - external call under nonReentrant entrypoints
+        uint256 finalizedCount;
+        (finalizedAmount, finalizedCount) = modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
 
-        if (previewUsed > bufferedAssets) {
-            revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, previewUsed, bufferedAssets);
-        }
-
-        // slither-disable-next-line reentrancy-no-eth,unused-return - external call under nonReentrant entrypoints
-        (finalizedAmount,) = modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
-        if (finalizedAmount > previewUsed) {
-            revert OllaCore__FinalizeAmountMismatch(previewUsed, finalizedAmount);
+        if (finalizedAmount > bufferedAssets) {
+            revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, finalizedAmount, bufferedAssets);
         }
 
         // slither-disable-next-line incorrect-equality - zero guard only
         if (finalizedAmount == 0) {
+            return 0;
+        }
+
+        // slither-disable-next-line incorrect-equality - zero guard only
+        if (finalizedCount == 0) {
             return 0;
         }
 
