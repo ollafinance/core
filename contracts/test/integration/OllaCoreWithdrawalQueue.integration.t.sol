@@ -343,14 +343,17 @@ contract RealisticStakingManager is IStakingManager {
         return amount;
     }
 
-    function unstake(uint256 amount) external override {
+    function unstake(uint256 amount) external override returns (uint256 unstakedAmount) {
         // Move from staked to pending unstake
         if (amount > totalStakedAmount) {
             amount = totalStakedAmount;
         }
         totalStakedAmount -= amount;
         pendingUnstakeAmount += amount;
+        return amount;
     }
+
+    function setGasThreshold(uint256) external pure override { }
 
     function getUnstakedFunds() external override returns (uint256 received) {
         // Transfer pending unstaked funds back to caller (OllaCore)
@@ -398,6 +401,10 @@ contract RealisticStakingManager is IStakingManager {
     }
 
     function getPendingUnstakeCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getUnstakeCursor() external pure override returns (uint256 cursor) {
         return 0;
     }
 
@@ -575,5 +582,39 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
 
         assertEq(claimed, expectedAssets, "user should receive full expected assets");
         assertEq(asset.balanceOf(alice), expectedAssets, "alice should have her assets back");
+    }
+
+    function test_Rebalance_DoesNotReduceBalanceBelowFinalizedAssets() external {
+        uint256 depositAmount = 100 ether;
+
+        asset.mint(alice, depositAmount);
+        vm.prank(alice);
+        asset.approve(address(vault), depositAmount);
+        vm.prank(alice);
+        vault.deposit(depositAmount, alice);
+
+        vault.rebalance();
+
+        uint256 shares = stAztec.balanceOf(alice);
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, alice);
+
+        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        uint256 expectedAssets = request.assetsExpected;
+
+        vault.rebalance();
+        vault.rebalance();
+
+        request = queue.getRequest(requestId);
+        assertTrue(request.finalized, "withdrawal should be finalized");
+        assertFalse(request.claimed, "withdrawal should not be claimed");
+
+        uint256 vaultBalanceBeforeRebalance = asset.balanceOf(address(vault));
+        assertEq(vaultBalanceBeforeRebalance, expectedAssets, "vault should hold finalized assets");
+
+        vault.rebalance();
+
+        uint256 vaultBalanceAfterRebalance = asset.balanceOf(address(vault));
+        assertGe(vaultBalanceAfterRebalance, expectedAssets, "rebalance should not reduce below finalized assets");
     }
 }

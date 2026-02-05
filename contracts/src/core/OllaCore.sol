@@ -79,6 +79,8 @@ contract OllaCore is
     /// @notice Target liquid assets to keep buffered for withdrawals.
     uint256 public targetBufferedAssets;
 
+    uint256 private _finalizedUnclaimedAssets;
+
     mapping(uint256 requestId => address owner) private _requestOwners;
     mapping(address owner => uint256[] requestIds) private _ownerRequestIds;
     mapping(uint256 requestId => uint256 index) private _ownerRequestIndex;
@@ -777,6 +779,7 @@ contract OllaCore is
         }
 
         _decreaseBuffered(finalizedAmount);
+        _finalizedUnclaimedAssets += finalizedAmount;
 
         emit WithdrawalFinalized(availableForWithdrawals, finalizedAmount);
         return finalizedAmount;
@@ -904,6 +907,9 @@ contract OllaCore is
             revert OllaCore__ClaimAssetsMismatch(requestId, assets, assetsClaimed);
         }
 
+        if (request.finalized) {
+            _finalizedUnclaimedAssets -= assets;
+        }
         _modules.asset.safeTransfer(receiver, assets);
         emit WithdrawalClaimed(requestId, receiver, assets);
         return assets;
@@ -1131,14 +1137,18 @@ contract OllaCore is
     function _reconcileBufferedAssets(address recipient) internal returns (uint256 delta) {
         uint256 buffered = _accountingState.bufferedAssets;
         uint256 actual = _modules.asset.balanceOf(address(this));
-        // slither-disable-next-line timestamp
-        if (actual < buffered) {
+        if (actual < _finalizedUnclaimedAssets) {
             revert OllaCore__BufferedBalanceMismatch(buffered, actual);
         }
-        delta = actual - buffered;
+        uint256 available = actual - _finalizedUnclaimedAssets;
+        // slither-disable-next-line timestamp
+        if (available < buffered) {
+            revert OllaCore__BufferedBalanceMismatch(buffered, available);
+        }
+        delta = available - buffered;
         if (delta != 0) {
-            _accountingState.bufferedAssets = actual;
-            emit BufferedAssetsReconciled(delta, actual, recipient);
+            _accountingState.bufferedAssets = available;
+            emit BufferedAssetsReconciled(delta, available, recipient);
         }
         return delta;
     }

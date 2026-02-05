@@ -1234,12 +1234,15 @@ contract UnstakeRevertingStakingManager is IStakingManager {
         return amount;
     }
 
-    function unstake(uint256 amount) external override {
+    function unstake(uint256 amount) external override returns (uint256 unstakedAmount) {
         if (amount > staked) {
             revert StakingManager__InsufficientStake();
         }
         staked -= amount;
+        return amount;
     }
+
+    function setGasThreshold(uint256) external pure override { }
 
     function cleanActivatedAttesters() external pure override { }
 
@@ -1274,6 +1277,10 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
         return pending;
+    }
+
+    function getUnstakeCursor() external pure override returns (uint256 cursor) {
+        return 0;
     }
 
     function getProviderConfig() external view override returns (ProviderConfig memory) {
