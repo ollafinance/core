@@ -73,7 +73,13 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @return finalizedCount The number of requests finalized.
     function finalizeWithdrawals(uint256 available) external override returns (uint256 used, uint256 finalizedCount) {
         lastAvailable = available;
-        return (available, 0);
+        // Finalize up to available amount, capped by totalPendingAssets
+        used = available > totalPendingAssets ? totalPendingAssets : available;
+        if (used > 0) {
+            totalPendingAssets -= used;
+            finalizedCount = 1; // Simplified: assume 1 request finalized if any used
+        }
+        return (used, finalizedCount);
     }
 
     /// @notice Marks a request as claimed.

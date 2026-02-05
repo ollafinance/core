@@ -239,7 +239,8 @@ contract RebalanceIntegrationTest is Test {
         assertEq(harvested, harvestAmount, "harvest mismatch");
         assertEq(finalized, withdrawalAmount, "finalize mismatch");
         assertEq(staked, 32 * DECIMALS, "stake mismatch");
-        assertEq(buffer, 48 * DECIMALS, "final buffer mismatch");
+        // Buffer = deposit(100) + harvest(5) + unstaked(10) - finalized(30) - staked(32) = 53
+        assertEq(buffer, 53 * DECIMALS, "final buffer mismatch");
     }
 
     function test_Rebalance_MultiCallAccountingConsistency() external {
