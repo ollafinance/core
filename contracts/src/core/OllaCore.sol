@@ -592,19 +592,24 @@ contract OllaCore is
         }
         emit RewardsDelta(rewardsDelta);
 
-        // Pull accumulated rewards vault funds into core buffer so they become available
-        // for withdrawal finalization and unstake sizing.
-        uint256 rewardsVaultBalance = rewardsVaultRef.balance();
-        // slither-disable-next-line timestamp,incorrect-equality - zero guard only, no timestamp usage
-        if (rewardsVaultBalance > 0) {
-            // slither-disable-next-line reentrancy-benign - rewardsVault is trusted; rebalance is nonReentrant
-            rewardsVaultRef.withdrawToCore();
-            _accountingState.bufferedAssets += rewardsVaultBalance;
-            _accountingState.rewardsVaultBalance = 0;
-            emit RewardsVaultFundsPulled(rewardsVaultBalance);
-        }
+        _pullRewardsVaultFunds();
 
         return rewardsDelta;
+    }
+
+    function _pullRewardsVaultFunds() internal returns (uint256 pulledAmount) {
+        IRewardsVault rewardsVaultRef = _modules.rewardsVault;
+        uint256 rewardsVaultBalance = rewardsVaultRef.balance();
+        // slither-disable-next-line timestamp,incorrect-equality - zero guard only, no timestamp usage
+        if (rewardsVaultBalance == 0) {
+            return 0;
+        }
+        // slither-disable-next-line reentrancy-benign - rewardsVault is trusted; rebalance is nonReentrant
+        rewardsVaultRef.withdrawToCore();
+        _accountingState.bufferedAssets += rewardsVaultBalance;
+        _accountingState.rewardsVaultBalance = 0;
+        emit RewardsVaultFundsPulled(rewardsVaultBalance);
+        return rewardsVaultBalance;
     }
 
     /// @notice Pulls unstaked funds from the staking manager.
