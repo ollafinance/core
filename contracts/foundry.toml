@@ -9,7 +9,6 @@ evm_version = "cancun"
 via_ir = true
 optimizer = true
 optimizer_runs = 200
-eth_rpc_url = "http://127.0.0.1:8545"
 match_path = "test/**/*.t.sol"
 fs_permissions = [{ access = "read-write", path = "./" }]
 
