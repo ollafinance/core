@@ -75,12 +75,14 @@ interface IOllaCore {
 
     /// @notice Emitted when a withdrawal request is created.
     /// @param requestId The withdrawal request id.
+    /// @param owner The share owner that initiated the request.
     /// @param recipient The address receiving the assets.
     /// @param shares The shares burned.
     /// @param assetsExpected The assets expected at request time.
     /// @param exchangeRate The exchange rate locked at request time.
     event WithdrawalRequested(
         uint256 indexed requestId,
+        address indexed owner,
         address indexed recipient,
         uint256 shares,
         uint256 assetsExpected,
@@ -207,9 +209,6 @@ interface IOllaCore {
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when a pending withdrawal already exists.
-    error OllaCore__PendingWithdrawalExists(address owner);
-
     /// @notice Thrown when a zero address is provided.
     error OllaCore__ZeroAddress(string param);
 
@@ -218,6 +217,7 @@ interface IOllaCore {
 
     /// @notice Thrown when previewed and finalized amounts mismatch.
     error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
+    error OllaCore__FinalizeInconsistent(uint256 finalizedAmount, uint256 finalizedCount);
 
     /// @notice Thrown when claimed unstaked funds don't match expected.
     error OllaCore__UnstakedFundsMismatch(uint256 expected, uint256 actual);
@@ -245,9 +245,6 @@ interface IOllaCore {
 
     /// @notice Thrown when the target buffer is invalid.
     error OllaCore__InvalidTargetBufferedAssets(uint256 newBuffer);
-
-    /// @notice Thrown when no active withdrawal request exists.
-    error OllaCore__NoActiveWithdrawal(address owner);
 
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
@@ -310,11 +307,6 @@ interface IOllaCore {
     function requestRedeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
         external
         returns (uint256 requestId);
-
-    /// @notice Claims a finalized withdrawal request for a controller.
-    /// @param owner The request owner.
-    /// @return assets The assets claimed for the request.
-    function claimActiveRequest(address owner) external returns (uint256 assets);
 
     /// @notice Claims a finalized withdrawal request by id.
     /// @param requestId The withdrawal request id.
@@ -388,23 +380,15 @@ interface IOllaCore {
     /// @return The staking manager address.
     function stakingManager() external view returns (address);
 
-    /// @notice Returns the active withdrawal request id for an owner.
-    /// @param owner The request owner.
-    /// @return requestId The active request id or zero if none.
-    function activeRequestId(address owner) external view returns (uint256 requestId);
-
     /// @notice Returns the recorded owner for a withdrawal request id.
     /// @param requestId The withdrawal request id.
     /// @return owner The request owner.
     function requestOwner(uint256 requestId) external view returns (address owner);
 
-    /// @notice Returns the active withdrawal request for an owner.
+    /// @notice Returns the active withdrawal request ids for an owner.
     /// @param owner The request owner.
-    /// @return request The withdrawal request struct.
-    function getActiveWithdrawalRequest(address owner)
-        external
-        view
-        returns (IWithdrawalQueue.WithdrawalRequest memory request);
+    /// @return requestIds The active request ids.
+    function activeRequestIds(address owner) external view returns (uint256[] memory requestIds);
 
     /// @notice Returns the governance address.
     /// @return The governance address.

@@ -19,7 +19,13 @@ contract WithdrawalQueue is
     IWithdrawalQueue
 {
     /*//////////////////////////////////////////////////////////////
-                                  STATE
+                               CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant _FINALIZE_GAS_THRESHOLD = 50_000;
+
+    /*//////////////////////////////////////////////////////////////
+                                   STATE
      //////////////////////////////////////////////////////////////*/
 
     /// @notice OllaCore address.
@@ -127,25 +133,44 @@ contract WithdrawalQueue is
     /// @notice Finalizes withdrawals using available liquidity.
     /// @param available The available assets to finalize.
     /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available) external override onlyCore nonReentrant returns (uint256 used) {
-        uint256 requestId;
-        uint256 pendingAssets;
-        (used, requestId, pendingAssets) = _previewFinalize(available);
-
-        uint256 upperBound = requestId;
+    /// @return finalizedCount The number of requests finalized.
+    function finalizeWithdrawals(uint256 available)
+        external
+        override
+        onlyCore
+        nonReentrant
+        returns (uint256 used, uint256 finalizedCount)
+    {
         uint256 currentId = nextPendingId;
+        uint256 upperBound = nextRequestId;
+        uint256 pendingAssets = totalPendingAssets;
+
         while (currentId < upperBound) {
+            if (gasleft() < _FINALIZE_GAS_THRESHOLD) {
+                break;
+            }
+
             WithdrawalRequest storage request = _requests[currentId];
             if (!request.finalized) {
+                uint256 assetsExpected = request.assetsExpected;
+                if (available < assetsExpected) {
+                    break;
+                }
+
+                available -= assetsExpected;
+                used += assetsExpected;
+                pendingAssets -= assetsExpected;
                 request.finalized = true;
-                emit WithdrawalFinalized(currentId, request.assetsExpected);
+                ++finalizedCount;
+                emit WithdrawalFinalized(currentId, assetsExpected);
             }
+
             ++currentId;
         }
 
         totalPendingAssets = pendingAssets;
-        nextPendingId = requestId;
-        return used;
+        nextPendingId = currentId;
+        return (used, finalizedCount);
     }
 
     // slither-disable-end pess-multiple-storage-read
@@ -195,49 +220,9 @@ contract WithdrawalQueue is
         return nextPendingId;
     }
 
-    /// @notice Previews assets used for withdrawal finalization.
-    /// @param available The available assets to finalize.
-    /// @return usedAssets The assets that would be used.
-    function previewFinalizeWithdrawals(uint256 available) external view override returns (uint256 usedAssets) {
-        (usedAssets,,) = _previewFinalize(available);
-        return usedAssets;
-    }
-
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    // slither-disable-start pess-multiple-storage-read
-    function _previewFinalize(uint256 available)
-        internal
-        view
-        returns (uint256 usedAssets, uint256 nextPendingId_, uint256 pendingAssets)
-    {
-        nextPendingId_ = nextPendingId;
-        uint256 upperBound = nextRequestId;
-        pendingAssets = totalPendingAssets;
-
-        while (nextPendingId_ < upperBound) {
-            WithdrawalRequest storage request = _requests[nextPendingId_];
-            uint256 assetsExpected = request.assetsExpected;
-
-            if (!request.finalized) {
-                if (available < assetsExpected) {
-                    break;
-                }
-
-                available -= assetsExpected;
-                usedAssets += assetsExpected;
-                pendingAssets -= assetsExpected;
-            }
-
-            ++nextPendingId_;
-        }
-
-        return (usedAssets, nextPendingId_, pendingAssets);
-    }
-
-    // slither-disable-end pess-multiple-storage-read
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (newImplementation == address(0)) {

@@ -89,7 +89,8 @@ interface IWithdrawalQueue {
     /// @notice Finalizes withdrawals using available liquidity.
     /// @param available The available assets to finalize.
     /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available) external returns (uint256 used);
+    /// @return finalizedCount The number of requests finalized.
+    function finalizeWithdrawals(uint256 available) external returns (uint256 used, uint256 finalizedCount);
 
     /// @notice Marks a finalized request as claimed.
     /// @param id The request id.
@@ -124,11 +125,6 @@ interface IWithdrawalQueue {
     /// @notice Returns the next unfinalized request id.
     /// @return requestId The next unfinalized request id.
     function nextUnfinalized() external view returns (uint256 requestId);
-
-    /// @notice Previews assets used for withdrawal finalization.
-    /// @param available The available assets to finalize.
-    /// @return used The assets that would be used.
-    function previewFinalizeWithdrawals(uint256 available) external view returns (uint256 used);
 
     /// @notice Returns the core address.
     /// @return The core contract address.

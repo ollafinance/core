@@ -111,14 +111,15 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
     /// @notice Records finalize calls and returns available amount.
     /// @param available The available assets to finalize.
     /// @return used The assets used for finalization.
-    function finalizeWithdrawals(uint256 available) external override returns (uint256 used) {
+    /// @return finalizedCount The number of requests finalized.
+    function finalizeWithdrawals(uint256 available) external override returns (uint256 used, uint256 finalizedCount) {
         if (_reenterOnFinalize) {
             _reenterOnFinalize = false;
             _reentryTarget.functionCall(_reentryCalldata);
         }
 
         lastAvailable = available;
-        return available;
+        return (available, 0);
     }
 
     /// @notice Marks a request as claimed.
@@ -151,12 +152,5 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
     /// @return requestId The next pending request id.
     function nextUnfinalized() external view override returns (uint256 requestId) {
         return nextPendingId;
-    }
-
-    /// @notice Previews assets used for withdrawal finalization.
-    /// @param available The available assets to finalize.
-    /// @return used The assets that would be used.
-    function previewFinalizeWithdrawals(uint256 available) external pure override returns (uint256 used) {
-        return available;
     }
 }

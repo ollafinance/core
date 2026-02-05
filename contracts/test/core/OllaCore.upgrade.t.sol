@@ -224,7 +224,8 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(accountingAfter.rewardsDelta, accountingBefore.rewardsDelta, "rewards delta preserved");
         assertEq(accountingAfter.slashingDelta, accountingBefore.slashingDelta, "slashing delta preserved");
 
-        uint256 claimedAssets = v2.claimActiveRequest(alice);
+        vm.prank(alice);
+        uint256 claimedAssets = v2.claimRequestById(requestId);
         assertEq(claimedAssets, expectedAssets, "request assets preserved");
         assertEq(asset.balanceOf(bob) - bobBalanceBefore, expectedAssets, "recipient receives assets");
         assertEq(stAztec.balanceOf(alice), aliceSharesBefore, "shares preserved");

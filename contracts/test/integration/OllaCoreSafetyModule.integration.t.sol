@@ -291,12 +291,13 @@ contract OllaCoreSafetyModuleTest is Test {
 
     function test_ClaimWithdrawal_AllowsWhenPaused() external {
         uint256 shares = _performDeposit(alice, 10 * DECIMALS);
-        _performRequestRedeem(alice, shares / 2, alice);
+        uint256 requestId = _performRequestRedeem(alice, shares / 2, alice);
 
         vm.prank(governance);
         vault.pause();
 
-        uint256 claimed = vault.claimActiveRequest(alice);
+        vm.prank(alice);
+        uint256 claimed = vault.claimRequestById(requestId);
 
         assertEq(claimed, 5 * DECIMALS, "claim should succeed while paused");
     }
