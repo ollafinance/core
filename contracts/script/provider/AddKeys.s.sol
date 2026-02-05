@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Script } from "@forge-std/Script.sol";
-
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 
+import { BaseScript } from "../base/BaseScript.s.sol";
+
 /// @title AddKeys
 /// @notice Adds N dummy keystores to the provider registry.
 /// @dev Keys are not used by the mock rollup, but must be present for StakingManager.stake().
-contract AddKeys is Script {
+contract AddKeys is BaseScript {
     function run() external {
-        address registry = vm.envAddress("REGISTRY");
-        uint256 count = vm.envUint("COUNT");
-        uint256 pk = vm.envUint("PRIVATE_KEY");
+        address registry = _addrOrDeployment(
+            "REGISTRY", "StakingProviderRegistryProxy", "REGISTRY missing: set REGISTRY or deploy local"
+        );
+        uint256 count = _uintOr("COUNT", 5);
+        uint256 pk = _privateKey();
 
         IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](count);
         for (uint256 i; i < count; ++i) {

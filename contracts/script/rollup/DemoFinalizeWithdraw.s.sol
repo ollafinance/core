@@ -5,13 +5,13 @@ import { console2 } from "@forge-std/console2.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
-import { BaseDeployer } from "./../base/BaseDeployer.s.sol";
+import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title DemoFinalizeWithdraw
 /// @notice Demonstrates stake deposit -> initiateWithdraw -> finalizeWithdraw on MockAztecRollup.
-contract DemoFinalizeWithdraw is BaseDeployer {
+contract DemoFinalizeWithdraw is BaseScript {
     function run() external {
-        string memory env = vm.envOr("DEPLOY_ENV", string("local"));
+        string memory env = _deployEnv();
 
         address rollup = vm.envOr("ROLLUP", address(0));
         if (rollup == address(0)) {
@@ -19,7 +19,7 @@ contract DemoFinalizeWithdraw is BaseDeployer {
         }
         require(rollup != address(0), "ROLLUP missing: set ROLLUP or deploy local");
 
-        uint256 pk = vm.envUint("PRIVATE_KEY");
+        uint256 pk = _privateKey();
         address broadcaster = vm.addr(pk);
 
         address attester = vm.envOr("ATTESTER", broadcaster);

@@ -5,13 +5,13 @@ import { console2 } from "@forge-std/console2.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
-import { BaseDeployer } from "./../base/BaseDeployer.s.sol";
+import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title PrintState
 /// @notice Prints OllaCore state (latestReport + accountingState) and key balances.
-contract PrintState is BaseDeployer {
+contract PrintState is BaseScript {
     function run() external view {
-        string memory env = vm.envOr("DEPLOY_ENV", string("local"));
+        string memory env = _deployEnv();
 
         address core = vm.envOr("CORE", address(0));
         if (core == address(0)) {

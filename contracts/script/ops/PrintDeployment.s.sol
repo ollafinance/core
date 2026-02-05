@@ -3,13 +3,13 @@ pragma solidity ^0.8.27;
 
 import { console2 } from "@forge-std/console2.sol";
 
-import { BaseDeployer } from "../base/BaseDeployer.s.sol";
+import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title PrintDeployment
 /// @notice Prints key addresses from `deployments/<env>.json`.
-contract PrintDeployment is BaseDeployer {
+contract PrintDeployment is BaseScript {
     function run() external view {
-        string memory env = vm.envOr("DEPLOY_ENV", string("local"));
+        string memory env = _deployEnv();
 
         console2.log("Deployment env", env);
 
