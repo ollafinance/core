@@ -132,9 +132,11 @@ contract DeployScript is BaseDeployer {
             StakingProviderRegistry(stakingProviderRegistry).addKeysToProvider(keys);
             vm.stopBroadcast();
 
-            // Configure rollup mock to bump rewards to RewardsVault on withdraw initiation
+            // Configure rollup mock for local testing
             vm.startBroadcast(config.deployerPrivateKey);
             MockAztecRollup(rollup).setRewardsCoinbase(rewardsVault);
+            // Disable withdraw-linked reward bumps - rewards should only accumulate via tick().
+            MockAztecRollup(rollup).setWithdrawRewardBps(0);
             vm.stopBroadcast();
 
             json = _addAddressToJson(json, "MockAztecRollup", rollup, false);
