@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { OllaCore } from "src/core/OllaCore.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-
-import { BaseScript } from "../base/BaseScript.s.sol";
+import { OllaCore } from "src/core/OllaCore.sol";
+import { BaseScript } from "./../base/BaseScript.s.sol";
 
 /// @title UserClaimWithdrawals
 /// @notice Local convenience: claims all finalized withdrawals for the broadcaster.

@@ -5,10 +5,10 @@ import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
+import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
+import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { BaseDeployer } from "./base/BaseDeployer.s.sol";
 import { DeployConfig } from "./config/Config.s.sol";
 import { LocalConfig } from "./config/Local.s.sol";
@@ -132,11 +132,9 @@ contract DeployScript is BaseDeployer {
             StakingProviderRegistry(stakingProviderRegistry).addKeysToProvider(keys);
             vm.stopBroadcast();
 
-            // Configure rollup mock for local testing
+            // Configure rollup mock to send tick() rewards to RewardsVault
             vm.startBroadcast(config.deployerPrivateKey);
             MockAztecRollup(rollup).setRewardsCoinbase(rewardsVault);
-            // Disable withdraw-linked reward bumps - rewards should only accumulate via tick().
-            MockAztecRollup(rollup).setWithdrawRewardBps(0);
             vm.stopBroadcast();
 
             json = _addAddressToJson(json, "MockAztecRollup", rollup, false);

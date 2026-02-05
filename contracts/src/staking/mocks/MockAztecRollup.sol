@@ -49,12 +49,8 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @notice Last timestamp used for reward accrual.
     uint256 public lastTick;
 
-    /// @notice Recipient used for withdraw-linked reward bumps (set to RewardsVault in local deploy).
+    /// @notice Recipient used for tick() reward accrual.
     address public rewardsCoinbase;
-
-    /// @notice Withdraw-linked reward bump in basis points of exited stake amount.
-    /// @dev Default is 10_000 (100% of stake amount).
-    uint256 public withdrawRewardBps = MAX_BPS;
 
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
@@ -96,11 +92,6 @@ contract MockAztecRollup is IMockAztecRollup {
         }
 
         uint256 amount = stakes[_attester];
-
-        address coinbase = rewardsCoinbase;
-        if (coinbase != address(0) && amount > 0 && withdrawRewardBps != 0) {
-            pendingRewards[coinbase] += (amount * withdrawRewardBps) / MAX_BPS;
-        }
 
         _exits[_attester] = Exit({
             withdrawalId: 0,
@@ -176,12 +167,6 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     function setRewardsCoinbase(address coinbase) external override {
         rewardsCoinbase = coinbase;
-    }
-
-    /// @inheritdoc IMockAztecRollup
-    function setWithdrawRewardBps(uint256 bps) external override {
-        if (bps > MAX_BPS) revert MockAztecRollup__InvalidBps();
-        withdrawRewardBps = bps;
     }
 
     /*//////////////////////////////////////////////////////////////
