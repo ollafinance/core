@@ -116,6 +116,7 @@ contract OllaCoreTest is Test {
     event WithdrawalFinalized(uint256 available, uint256 used);
     event WithdrawalRequested(
         uint256 indexed requestId,
+        address indexed owner,
         address indexed recipient,
         uint256 shares,
         uint256 assetsExpected,
@@ -331,8 +332,8 @@ contract OllaCoreTest is Test {
         uint256 shares = 6 * DECIMALS;
         uint256 expectedAssets = shares * rate / 1e18;
 
-        vm.expectEmit(true, true, false, true, address(vault));
-        emit WithdrawalRequested(1, bob, shares, expectedAssets, rate);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit WithdrawalRequested(1, alice, bob, shares, expectedAssets, rate);
 
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, bob);
@@ -346,35 +347,6 @@ contract OllaCoreTest is Test {
         assertEq(recordedRate, rate, "queue receives exchange rate");
     }
 
-    /*//////////////////////////////////////////////////////////////
-                      WITHDRAWAL REQUEST VIEWS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_ActiveRequestId_ReturnsZeroWhenNoRequest() external view {
-        assertEq(vault.activeRequestId(alice), 0, "active request id is zero without request");
-    }
-
-    function test_RequestRedeem_SetsActiveRequestIdAndActiveRequest() external {
-        _performDeposit(alice, 20 * DECIMALS);
-
-        uint256 rate = vault.exchangeRate();
-        uint256 shares = 7 * DECIMALS;
-        uint256 expectedAssets = shares * rate / DECIMALS;
-
-        vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, bob);
-
-        assertEq(vault.activeRequestId(alice), requestId, "active request id matches request");
-
-        IWithdrawalQueue.WithdrawalRequest memory request = vault.getActiveWithdrawalRequest(alice);
-        assertEq(request.recipient, bob, "active request recipient matches");
-        assertEq(request.shares, shares, "active request shares match");
-        assertEq(request.assetsExpected, expectedAssets, "active request assets expected match");
-        assertEq(request.rate, rate, "active request exchange rate matches");
-        assertEq(request.finalized, false, "active request not finalized");
-        assertEq(request.claimed, false, "active request not claimed");
-    }
-
     function test_RequestOwner_ReturnsOwnerWhenRecipientDiffers() external {
         _performDeposit(alice, 12 * DECIMALS);
 
@@ -382,6 +354,27 @@ contract OllaCoreTest is Test {
         uint256 requestId = vault.requestRedeem(4 * DECIMALS, bob);
 
         assertEq(vault.requestOwner(requestId), alice, "request owner tracked separately from recipient");
+    }
+
+    function test_ActiveRequestIds_ReturnsOutstandingRequests() external {
+        _performDeposit(alice, 20 * DECIMALS);
+
+        vm.prank(alice);
+        uint256 firstRequestId = vault.requestRedeem(6 * DECIMALS, bob);
+        vm.prank(alice);
+        uint256 secondRequestId = vault.requestRedeem(4 * DECIMALS, alice);
+
+        uint256[] memory activeRequests = vault.activeRequestIds(alice);
+        assertEq(activeRequests.length, 2, "active request count");
+        assertEq(activeRequests[0], firstRequestId, "first request id stored");
+        assertEq(activeRequests[1], secondRequestId, "second request id stored");
+
+        vm.prank(alice);
+        vault.claimRequestById(firstRequestId);
+
+        activeRequests = vault.activeRequestIds(alice);
+        assertEq(activeRequests.length, 1, "active request count after claim");
+        assertEq(activeRequests[0], secondRequestId, "remaining request id stored");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -408,28 +401,42 @@ contract OllaCoreTest is Test {
                            WITHDRAWAL CLAIMS
     //////////////////////////////////////////////////////////////*/
 
-    function test_ClaimActiveRequest_ClearsActiveRequest() external {
+    function test_RequestRedeem_AllowsMultipleRequestsAndClaimsById() external {
         _performDeposit(alice, 20 * DECIMALS);
 
-        uint256 rate = vault.exchangeRate();
-        uint256 shares = 6 * DECIMALS;
-        uint256 assetsExpected = shares * rate / 1e18;
+        uint256 sharesFirst = 6 * DECIMALS;
+        uint256 sharesSecond = 4 * DECIMALS;
 
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, alice);
-        assertEq(requestId, 1, "request id starts at 1");
+        uint256 firstRequestId = vault.requestRedeem(sharesFirst, bob);
+        vm.prank(alice);
+        uint256 secondRequestId = vault.requestRedeem(sharesSecond, alice);
 
-        uint256 balanceBefore = asset.balanceOf(alice);
+        IWithdrawalQueue.WithdrawalRequest memory firstRequest = withdrawalQueue.getRequest(firstRequestId);
+        IWithdrawalQueue.WithdrawalRequest memory secondRequest = withdrawalQueue.getRequest(secondRequestId);
+        uint256 expectedFirst = firstRequest.assetsExpected;
+        uint256 expectedSecond = secondRequest.assetsExpected;
 
-        uint256 claimed = vault.claimActiveRequest(alice);
+        assertEq(firstRequestId, 1, "first request id");
+        assertEq(secondRequestId, 2, "second request id");
 
-        uint256 balanceAfter = asset.balanceOf(alice);
-        assertEq(claimed, assetsExpected, "claimed assets match expected");
-        assertEq(balanceAfter - balanceBefore, assetsExpected, "assets transferred to recipient");
+        uint256 bobBalanceBefore = asset.balanceOf(bob);
+        uint256 aliceBalanceBefore = asset.balanceOf(alice);
 
         vm.prank(alice);
-        uint256 newRequestId = vault.requestRedeem(2 * DECIMALS, alice);
-        assertEq(newRequestId, 2, "active request cleared after claim");
+        uint256 claimedFirst = vault.claimRequestById(firstRequestId);
+        vm.prank(alice);
+        uint256 claimedSecond = vault.claimRequestById(secondRequestId);
+
+        uint256 bobBalanceAfter = asset.balanceOf(bob);
+        uint256 aliceBalanceAfter = asset.balanceOf(alice);
+
+        assertEq(claimedFirst, expectedFirst, "first claim matches expected");
+        assertEq(claimedSecond, expectedSecond, "second claim matches expected");
+        assertEq(bobBalanceAfter - bobBalanceBefore, expectedFirst, "recipient receives first claim");
+        assertEq(aliceBalanceAfter - aliceBalanceBefore, expectedSecond, "recipient receives second claim");
+        assertEq(vault.requestOwner(firstRequestId), address(0), "first request owner cleared");
+        assertEq(vault.requestOwner(secondRequestId), address(0), "second request owner cleared");
     }
 
     function test_ClaimRequestById_AllowsNonOwner() external {
@@ -437,7 +444,7 @@ contract OllaCoreTest is Test {
 
         uint256 rate = vault.exchangeRate();
         uint256 shares = 5 * DECIMALS;
-        uint256 assetsExpected = shares * rate / 1e18;
+        uint256 assetsExpected = shares * rate / DECIMALS;
 
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, bob);
@@ -450,10 +457,7 @@ contract OllaCoreTest is Test {
         uint256 balanceAfter = asset.balanceOf(bob);
         assertEq(claimed, assetsExpected, "claimed assets match expected");
         assertEq(balanceAfter - balanceBefore, assetsExpected, "assets sent to receiver");
-
-        vm.prank(alice);
-        uint256 newRequestId = vault.requestRedeem(1 * DECIMALS, alice);
-        assertEq(newRequestId, 2, "owner can request again after claim by id");
+        assertEq(vault.requestOwner(requestId), address(0), "request owner cleared");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -588,8 +592,8 @@ contract OllaCoreTest is Test {
         (uint8 v, bytes32 r, bytes32 s) =
             _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
 
-        vm.expectEmit(true, true, false, true, address(vault));
-        emit WithdrawalRequested(1, bob, shares, assetsExpected, rate);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit WithdrawalRequested(1, permitOwner, bob, shares, assetsExpected, rate);
 
         vm.prank(permitOwner);
         uint256 requestId = vault.requestRedeemWithPermit(shares, bob, deadline, v, r, s);

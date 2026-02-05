@@ -76,8 +76,9 @@ contract OllaCore is
     /// @notice Target liquid assets to keep buffered for withdrawals.
     uint256 public targetBufferedAssets;
 
-    mapping(address owner => uint256 requestId) private _activeRequestIds;
     mapping(uint256 requestId => address owner) private _requestOwners;
+    mapping(address owner => uint256[] requestIds) private _ownerRequestIds;
+    mapping(uint256 requestId => uint256 index) private _ownerRequestIndex;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
@@ -228,15 +229,6 @@ contract OllaCore is
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
         requestId = _requestRedeem(msg.sender, shares, recipient);
         return requestId;
-    }
-
-    /// @notice Claims a finalized withdrawal request for a controller.
-    /// @param owner The request owner.
-    /// @return assets The assets claimed for the request.
-    function claimActiveRequest(address owner) external override nonReentrant returns (uint256 assets) {
-        uint256 requestId = _activeRequestIds[owner];
-        assets = _claimWithdrawal(requestId);
-        return assets;
     }
 
     /// @notice Claims a finalized withdrawal request by id.
@@ -448,13 +440,6 @@ contract OllaCore is
         return address(_modules.stakingManager);
     }
 
-    /// @notice Returns the active withdrawal request id for an owner.
-    /// @param owner The request owner.
-    /// @return requestId The active request id or zero if none.
-    function activeRequestId(address owner) external view override returns (uint256 requestId) {
-        return _activeRequestIds[owner];
-    }
-
     /// @notice Returns the recorded owner for a withdrawal request id.
     /// @param requestId The withdrawal request id.
     /// @return owner The request owner.
@@ -462,20 +447,11 @@ contract OllaCore is
         return _requestOwners[requestId];
     }
 
-    /// @notice Returns the active withdrawal request for an owner.
+    /// @notice Returns the active withdrawal request ids for an owner.
     /// @param owner The request owner.
-    /// @return request The withdrawal request struct.
-    function getActiveWithdrawalRequest(address owner)
-        external
-        view
-        override
-        returns (IWithdrawalQueue.WithdrawalRequest memory request)
-    {
-        uint256 requestId = _activeRequestIds[owner];
-        if (requestId == 0) {
-            revert IOllaCore.OllaCore__NoActiveWithdrawal(owner);
-        }
-        return _modules.withdrawalQueue.getRequest(requestId);
+    /// @return requestIds The active request ids.
+    function activeRequestIds(address owner) external view override returns (uint256[] memory requestIds) {
+        return _ownerRequestIds[owner];
     }
 
     /// @notice Returns the governance address.
@@ -660,22 +636,27 @@ contract OllaCore is
             return 0;
         }
 
-        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
-        uint256 previewUsed = modules.withdrawalQueue.previewFinalizeWithdrawals(availableForWithdrawals);
-        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
-        if (previewUsed == 0) {
-            return 0;
-        }
-
-        if (previewUsed > bufferedAssets) {
-            revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, previewUsed, bufferedAssets);
-        }
-
         // slither-disable-next-line reentrancy-no-eth - external call under nonReentrant entrypoints
-        finalizedAmount = modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
-        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
-        if (finalizedAmount != previewUsed) {
-            revert OllaCore__FinalizeAmountMismatch(previewUsed, finalizedAmount);
+        uint256 finalizedCount;
+        (finalizedAmount, finalizedCount) = modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
+
+        uint256 queuedAfter = modules.withdrawalQueue.totalPendingAssets();
+        if (queued - queuedAfter != finalizedAmount) {
+            revert OllaCore__FinalizeAmountMismatch(queued - queuedAfter, finalizedAmount);
+        }
+
+        if (finalizedAmount > bufferedAssets) {
+            revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, finalizedAmount, bufferedAssets);
+        }
+
+        // slither-disable-next-line incorrect-equality - zero guard only
+        if ((finalizedAmount == 0) != (finalizedCount == 0)) {
+            revert OllaCore__FinalizeInconsistent(finalizedAmount, finalizedCount);
+        }
+
+        // slither-disable-next-line incorrect-equality - zero guard only
+        if (finalizedAmount == 0) {
+            return 0;
         }
 
         _decreaseBuffered(finalizedAmount);
@@ -783,10 +764,6 @@ contract OllaCore is
             revert OllaCore__ZeroAddress("recipient");
         }
 
-        if (_activeRequestIds[owner] != 0) {
-            revert OllaCore__PendingWithdrawalExists(owner);
-        }
-
         Modules memory modules = _modules;
 
         uint256 rate = _exchangeRate();
@@ -794,8 +771,9 @@ contract OllaCore is
         ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
         uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
 
-        _activeRequestIds[owner] = expectedRequestId;
         _requestOwners[expectedRequestId] = owner;
+        _ownerRequestIndex[expectedRequestId] = _ownerRequestIds[owner].length + 1;
+        _ownerRequestIds[owner].push(expectedRequestId);
         _increaseCumulativeWithdrawals(assetsExpected);
         modules.stAztec.burn(owner, shares);
 
@@ -804,7 +782,7 @@ contract OllaCore is
             revert OllaCore__UnexpectedRequestId(expectedRequestId, requestId);
         }
 
-        emit WithdrawalRequested(requestId, recipient, shares, assetsExpected, rate);
+        emit WithdrawalRequested(requestId, owner, recipient, shares, assetsExpected, rate);
         return requestId;
     }
 
@@ -840,10 +818,9 @@ contract OllaCore is
         address receiver = request.recipient;
         assets = request.assetsExpected;
         address owner = _requestOwners[requestId];
-        if (owner != address(0)) {
-            _activeRequestIds[owner] = 0;
-            delete _requestOwners[requestId];
-        }
+
+        _removeOwnerRequest(owner, requestId);
+        delete _requestOwners[requestId];
 
         uint256 assetsClaimed = queue.claimWithdrawal(requestId);
         if (assetsClaimed != assets) {
@@ -853,6 +830,26 @@ contract OllaCore is
         _modules.asset.safeTransfer(receiver, assets);
         emit WithdrawalClaimed(requestId, receiver, assets);
         return assets;
+    }
+
+    function _removeOwnerRequest(address owner, uint256 requestId) internal {
+        uint256 index = _ownerRequestIndex[requestId];
+        if (index == 0) {
+            return;
+        }
+
+        uint256[] storage requestIds = _ownerRequestIds[owner];
+        uint256 lastIndex = requestIds.length;
+        uint256 removeIndex = index - 1;
+
+        if (removeIndex != lastIndex - 1) {
+            uint256 lastRequestId = requestIds[lastIndex - 1];
+            requestIds[removeIndex] = lastRequestId;
+            _ownerRequestIndex[lastRequestId] = index;
+        }
+
+        requestIds.pop();
+        delete _ownerRequestIndex[requestId];
     }
 
     function _increaseCumulativeDeposits(uint256 amount) internal {
