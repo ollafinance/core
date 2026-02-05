@@ -604,7 +604,6 @@ contract OllaCore is
         if (rewardsVaultBalance == 0) {
             return 0;
         }
-
         // slither-disable-next-line reentrancy-benign - rewardsVault is trusted; rebalance is nonReentrant
         rewardsVaultRef.withdrawToCore();
         _accountingState.bufferedAssets += rewardsVaultBalance;
