@@ -4,7 +4,12 @@ This doc assumes you have a local deployment file at `deployments/local.json` (c
 
 ## RPC configuration
 
-Configure Foundry to point at your local node via `FOUNDRY_ETH_RPC_URL`.
+Scripts need an RPC endpoint. For local Anvil, either:
+
+1. Set the profile: `export FOUNDRY_PROFILE=local`
+2. Or pass explicitly: `forge script ... --rpc-url http://127.0.0.1:8545`
+
+The examples below assume `FOUNDRY_PROFILE=local` is set.
 
 ## Address + signer defaults
 
@@ -31,6 +36,46 @@ forge script script/rollup/TickRewards.s.sol --broadcast  # COINBASE defaults to
 forge script script/ops/Rebalance.s.sol --broadcast  # CORE defaults to OllaCoreProxy
 forge script script/ops/UpdateAccounting.s.sol --broadcast  # CORE defaults to OllaCoreProxy
 ```
+
+## Local dev (3 terminals)
+
+term-1:
+
+```bash
+yarn dev:chain
+```
+
+term-2:
+
+```bash
+yarn deploy:local && yarn dev:local-start-mock-loop
+```
+
+term-3:
+
+```bash
+yarn dev:local-god-mint-user 200000
+yarn dev:local-user-deposit 200000
+
+# Later, as needed
+yarn dev:local-operator-rebalance
+yarn dev:local-operator-update-accounting
+yarn dev:local-user-initiate-withdraw-all
+
+# After withdrawals are finalized by operator rebalances
+yarn dev:local-user-claim-withdrawals
+```
+
+Defaults:
+
+- God/admin/operator: Anvil account-0.
+- User: Anvil account-1 (override with `USER_PRIVATE_KEY`/`USER_ADDRESS`).
+- CLI amounts like `200000` are interpreted as whole tokens (18 decimals).
+
+Notes:
+
+- `deploy:local` seeds provider keys automatically, so staking can start immediately.
+- The mock loop only accrues rewards when there is rollup stake.
 
 ## Provider keys
 

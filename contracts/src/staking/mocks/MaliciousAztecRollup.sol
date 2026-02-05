@@ -50,11 +50,8 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @notice Last timestamp used for reward accrual.
     uint256 public lastTick;
 
-    /// @notice Recipient used for withdraw-linked reward bumps (set to RewardsVault in local deploy).
+    /// @notice Recipient used for tick() reward accrual.
     address public rewardsCoinbase;
-
-    /// @notice Withdraw-linked reward bump in basis points of exited stake amount.
-    uint256 public withdrawRewardBps = MAX_BPS;
 
     /// @notice Target called during reentrancy.
     address public reentryTarget;
@@ -172,11 +169,6 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
 
         uint256 amount = stakes[_attester];
 
-        address coinbase = rewardsCoinbase;
-        if (coinbase != address(0) && amount > 0 && withdrawRewardBps != 0) {
-            pendingRewards[coinbase] += (amount * withdrawRewardBps) / MAX_BPS;
-        }
-
         _exits[_attester] = Exit({
             withdrawalId: 0,
             amount: amount,
@@ -260,12 +252,6 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @inheritdoc IMockAztecRollup
     function setRewardsCoinbase(address coinbase) external override {
         rewardsCoinbase = coinbase;
-    }
-
-    /// @inheritdoc IMockAztecRollup
-    function setWithdrawRewardBps(uint256 bps) external override {
-        if (bps > MAX_BPS) revert MockAztecRollup__InvalidBps();
-        withdrawRewardBps = bps;
     }
 
     /// @notice Set pending rewards for a sequencer.
