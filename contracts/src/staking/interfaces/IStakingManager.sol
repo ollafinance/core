@@ -145,9 +145,14 @@ interface IStakingManager {
     /// @return stakedAmount The actual amount staked.
     function stake(uint256 amount) external returns (uint256 stakedAmount);
 
+    /// @notice Sets the gas threshold used for bounded rebalance work.
+    /// @param threshold The gas threshold to enforce.
+    function setGasThreshold(uint256 threshold) external;
+
     /// @notice Initiates an unstake with the staking provider.
     /// @param amount The amount to unstake.
-    function unstake(uint256 amount) external;
+    /// @return unstakedAmount The amount initiated for unstake in this call.
+    function unstake(uint256 amount) external returns (uint256 unstakedAmount);
 
     /// @notice Syncs the activated attesters with the rollup and moves them to pendingUnstake if needed.
     /// @dev Since attesters can exit due to external reasons activatedAtesters is not guranteed to be in sync.
@@ -192,6 +197,10 @@ interface IStakingManager {
     /// @dev Delegates to the StakingProviderRegistry.
     /// @return The provider config struct.
     function getProviderConfig() external view returns (ProviderConfig memory);
+
+    /// @notice Returns the current unstake cursor.
+    /// @return cursor The current cursor into activated attesters.
+    function getUnstakeCursor() external view returns (uint256 cursor);
 
     /// @notice Returns the number of activated attesters.
     /// @return The count of activated attesters.
