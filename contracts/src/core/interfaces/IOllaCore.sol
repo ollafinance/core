@@ -217,6 +217,7 @@ interface IOllaCore {
 
     /// @notice Thrown when previewed and finalized amounts mismatch.
     error OllaCore__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
+    error OllaCore__FinalizeInconsistent(uint256 finalizedAmount, uint256 finalizedCount);
 
     /// @notice Thrown when claimed unstaked funds don't match expected.
     error OllaCore__UnstakedFundsMismatch(uint256 expected, uint256 actual);

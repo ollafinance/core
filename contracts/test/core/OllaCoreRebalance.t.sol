@@ -18,6 +18,120 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
+contract InconsistentWithdrawalQueue is IWithdrawalQueue {
+    uint256 internal _totalPendingAssets;
+    address internal _core;
+
+    function setTotalPendingAssets(uint256 amount) external {
+        _totalPendingAssets = amount;
+    }
+
+    function initialize(address core_, address) external override {
+        _core = core_;
+    }
+
+    function requestWithdrawal(address, uint256, uint256, uint256) external pure override returns (uint256) {
+        return 0;
+    }
+
+    function finalizeWithdrawals(uint256 available) external override returns (uint256 used, uint256 finalizedCount) {
+        uint256 usedAssets = 1e18;
+        if (available < usedAssets || _totalPendingAssets < usedAssets) {
+            return (0, 0);
+        }
+
+        _totalPendingAssets -= usedAssets;
+        return (usedAssets, 0);
+    }
+
+    function claimWithdrawal(uint256) external pure override returns (uint256) {
+        return 0;
+    }
+
+    function nextRequestId() external pure override returns (uint256) {
+        return 1;
+    }
+
+    function nextPendingId() external pure override returns (uint256) {
+        return 1;
+    }
+
+    function totalPendingAssets() external view override returns (uint256) {
+        return _totalPendingAssets;
+    }
+
+    function getRequest(uint256) external pure override returns (WithdrawalRequest memory request) {
+        return request;
+    }
+
+    function nextUnfinalized() external pure override returns (uint256) {
+        return 1;
+    }
+
+    function core() external view override returns (address) {
+        return _core;
+    }
+}
+
+contract MismatchWithdrawalQueue is IWithdrawalQueue {
+    uint256 internal _totalPendingAssets;
+    address internal _core;
+
+    function setTotalPendingAssets(uint256 amount) external {
+        _totalPendingAssets = amount;
+    }
+
+    function initialize(address core_, address) external override {
+        _core = core_;
+    }
+
+    function requestWithdrawal(address, uint256, uint256, uint256) external pure override returns (uint256) {
+        return 0;
+    }
+
+    function finalizeWithdrawals(uint256 available)
+        external
+        pure
+        override
+        returns (uint256 used, uint256 finalizedCount)
+    {
+        uint256 usedAssets = 1e18;
+        if (available < usedAssets) {
+            return (0, 0);
+        }
+
+        return (usedAssets, 1);
+    }
+
+    function claimWithdrawal(uint256) external pure override returns (uint256) {
+        return 0;
+    }
+
+    function nextRequestId() external pure override returns (uint256) {
+        return 1;
+    }
+
+    function nextPendingId() external pure override returns (uint256) {
+        return 1;
+    }
+
+    function totalPendingAssets() external view override returns (uint256) {
+        return _totalPendingAssets;
+    }
+
+    function getRequest(uint256) external pure override returns (WithdrawalRequest memory request) {
+        return request;
+    }
+
+    function nextUnfinalized() external pure override returns (uint256) {
+        return 1;
+    }
+
+    function core() external view override returns (address) {
+        return _core;
+    }
+}
+
 contract OllaCoreRebalanceTest is Test {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -267,6 +381,42 @@ contract OllaCoreRebalanceTest is Test {
         vault.rebalance();
 
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending queue drained");
+    }
+
+    function test_Rebalance_FinalizeWithdrawals_NoLiquidityNoEvent() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 targetBuffered = 1 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBuffered);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        _requestWithdrawal(alice, depositAmount);
+
+        vm.recordLogs();
+        vm.prank(operator);
+        vault.rebalance();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 topic = keccak256("WithdrawalFinalized(uint256,uint256)");
+        bool found;
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].emitter == address(vault) && entries[i].topics[0] == topic) {
+                found = true;
+                break;
+            }
+        }
+
+        assertFalse(found, "should not emit WithdrawalFinalized without liquidity");
+        assertEq(withdrawalQueue.totalPendingAssets(), depositAmount, "pending assets unchanged");
+        assertEq(vault.accountingState().bufferedAssets, targetBuffered, "buffer unchanged");
     }
 
     function test_Rebalance_FinalizeWithdrawals_BoundedGasProgresses() external {
@@ -632,6 +782,139 @@ contract OllaCoreRebalanceTest is Test {
         assertTrue(finalizedIndex < rebalancedIndex, "finalize emits before rebalance");
         assertEq(stakedAmount, actualStaked, "staked amount uses staking manager return");
         assertEq(resultingBuffer, expectedBufferAfter, "resulting buffer accounts for stake");
+    }
+}
+
+contract OllaCoreRebalanceInconsistentQueueTest is Test {
+    uint256 internal constant DECIMALS = 1e18;
+
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockAccountingStakingManager internal stakingManager;
+    InconsistentWithdrawalQueue internal withdrawalQueue;
+    MockRewardsVault internal rewardsVault;
+    MockSafetyModule internal safetyModule;
+    address internal governance;
+    address internal operator;
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCore(address(proxy));
+
+        governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockAccountingStakingManager();
+        operator = makeAddr("operator");
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule(address(vault));
+
+        withdrawalQueue = new InconsistentWithdrawalQueue();
+        withdrawalQueue.initialize(address(vault), governance);
+
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsVault(address(rewardsVault));
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vm.stopPrank();
+    }
+
+    function test_Rebalance_RevertsOnInconsistentFinalize() external {
+        uint256 bufferedAmount = 5 * DECIMALS;
+
+        asset.mint(address(vault), bufferedAmount);
+        withdrawalQueue.setTotalPendingAssets(bufferedAmount);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__FinalizeInconsistent.selector, 1e18, 0));
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(vault.accountingState().bufferedAssets, 0, "buffered assets unchanged on revert");
+        assertEq(withdrawalQueue.totalPendingAssets(), bufferedAmount, "pending assets unchanged on revert");
+    }
+}
+
+contract OllaCoreRebalanceMismatchQueueTest is Test {
+    uint256 internal constant DECIMALS = 1e18;
+
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockAccountingStakingManager internal stakingManager;
+    MismatchWithdrawalQueue internal withdrawalQueue;
+    MockRewardsVault internal rewardsVault;
+    MockSafetyModule internal safetyModule;
+    address internal governance;
+    address internal operator;
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCore(address(proxy));
+
+        governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockAccountingStakingManager();
+        operator = makeAddr("operator");
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule(address(vault));
+
+        withdrawalQueue = new MismatchWithdrawalQueue();
+        withdrawalQueue.initialize(address(vault), governance);
+
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsVault(address(rewardsVault));
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vm.stopPrank();
+    }
+
+    function test_Rebalance_RevertsOnFinalizeAmountMismatch() external {
+        uint256 bufferedAmount = 5 * DECIMALS;
+        uint256 queuedAmount = 2 * DECIMALS;
+
+        asset.mint(address(vault), bufferedAmount);
+        withdrawalQueue.setTotalPendingAssets(queuedAmount);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__FinalizeAmountMismatch.selector, 0, 1e18));
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(vault.accountingState().bufferedAssets, 0, "buffered assets unchanged on revert");
+        assertEq(withdrawalQueue.totalPendingAssets(), queuedAmount, "pending assets unchanged on revert");
     }
 }
 

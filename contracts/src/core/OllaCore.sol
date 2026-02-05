@@ -640,17 +640,22 @@ contract OllaCore is
         uint256 finalizedCount;
         (finalizedAmount, finalizedCount) = modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
 
+        uint256 queuedAfter = modules.withdrawalQueue.totalPendingAssets();
+        if (queued - queuedAfter != finalizedAmount) {
+            revert OllaCore__FinalizeAmountMismatch(queued - queuedAfter, finalizedAmount);
+        }
+
         if (finalizedAmount > bufferedAssets) {
             revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, finalizedAmount, bufferedAssets);
         }
 
         // slither-disable-next-line incorrect-equality - zero guard only
-        if (finalizedAmount == 0) {
-            return 0;
+        if ((finalizedAmount == 0) != (finalizedCount == 0)) {
+            revert OllaCore__FinalizeInconsistent(finalizedAmount, finalizedCount);
         }
 
         // slither-disable-next-line incorrect-equality - zero guard only
-        if (finalizedCount == 0) {
+        if (finalizedAmount == 0) {
             return 0;
         }
 
