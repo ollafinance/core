@@ -167,6 +167,10 @@ interface IOllaCore {
     /// @param amount The amount of unstaked funds received.
     event UnstakedFundsClaimed(uint256 amount);
 
+    /// @notice Emitted when rewards vault funds are pulled to core during rebalance.
+    /// @param amount The amount of rewards vault funds received.
+    event RewardsVaultFundsPulled(uint256 amount);
+
     /// @notice Emitted when withdrawals are finalized.
     /// @param available Available assets.
     /// @param used Used assets.

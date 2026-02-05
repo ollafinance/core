@@ -323,7 +323,8 @@ contract OllaCore is
     }
 
     /// @notice Operator-triggered rebalance flow.
-    /// @dev Executes: harvest -> pull unstaked -> finalize withdrawals -> initiate unstake -> stake surplus
+    /// @dev Executes: harvest (includes pulling rewards vault funds) -> pull unstaked ->
+    /// @dev     finalize withdrawals -> initiate unstake -> stake surplus
     /// @return rewardsDelta The amount of rewards harvested.
     /// @return finalizedAmount The amount of assets used to finalize withdrawals.
     /// @return stakedAmount The amount staked.
@@ -572,6 +573,9 @@ contract OllaCore is
         return shares;
     }
 
+    // Slither: reentrancy-no-eth is a false positive; _harvestRewards is only called from rebalance()
+    // which is protected by nonReentrant. Multiple storage reads are acceptable for clarity.
+    // slither-disable-next-line reentrancy-no-eth,pess-multiple-storage-read
     function _harvestRewards() internal returns (uint256 rewardsDelta) {
         // Trigger the actual claiming on the rollup (rewards are sent directly to RewardsVault)
         // We intentionally ignore the return value because rewards may be permissionlessly harvested.
@@ -580,13 +584,32 @@ contract OllaCore is
         _modules.stakingManager.harvestRewards();
 
         // Get the actual delta from RewardsVault and update cumulative rewards
+        IRewardsVault rewardsVaultRef = _modules.rewardsVault;
         // slither-disable-next-line reentrancy-benign
-        rewardsDelta = _modules.rewardsVault.recordBalance();
+        rewardsDelta = rewardsVaultRef.recordBalance();
         if (rewardsDelta != 0) {
             _accountingState.cumulativeRewards += rewardsDelta;
         }
         emit RewardsDelta(rewardsDelta);
+
+        _pullRewardsVaultFunds();
+
         return rewardsDelta;
+    }
+
+    function _pullRewardsVaultFunds() internal returns (uint256 pulledAmount) {
+        IRewardsVault rewardsVaultRef = _modules.rewardsVault;
+        uint256 rewardsVaultBalance = rewardsVaultRef.balance();
+        // slither-disable-next-line timestamp,incorrect-equality - zero guard only, no timestamp usage
+        if (rewardsVaultBalance == 0) {
+            return 0;
+        }
+        // slither-disable-next-line reentrancy-benign - rewardsVault is trusted; rebalance is nonReentrant
+        rewardsVaultRef.withdrawToCore();
+        _accountingState.bufferedAssets += rewardsVaultBalance;
+        _accountingState.rewardsVaultBalance = 0;
+        emit RewardsVaultFundsPulled(rewardsVaultBalance);
+        return rewardsVaultBalance;
     }
 
     /// @notice Pulls unstaked funds from the staking manager.
