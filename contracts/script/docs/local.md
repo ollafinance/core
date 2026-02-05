@@ -4,7 +4,12 @@ This doc assumes you have a local deployment file at `deployments/local.json` (c
 
 ## RPC configuration
 
-By default, this repo is configured to use a local Anvil node. If you run scripts against a different RPC, set `FOUNDRY_ETH_RPC_URL`.
+Scripts need an RPC endpoint. For local Anvil, either:
+
+1. Set the profile: `export FOUNDRY_PROFILE=local`
+2. Or pass explicitly: `forge script ... --rpc-url http://127.0.0.1:8545`
+
+The examples below assume `FOUNDRY_PROFILE=local` is set.
 
 ## Address + signer defaults
 
