@@ -276,11 +276,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
-        (, IAztecRollup rollup) = _getRollup();
-        StakingState memory state = _getActivatedAttestersStakingState(rollup);
-        StakingState memory pendingState = _getPendingUnstakeRequestsStakingState(rollup);
-        pendingUnstakeAmount = state.pendingUnstakeAmount + pendingState.pendingUnstakeAmount;
-        return pendingUnstakeAmount;
+        return _pendingUnstakes();
+    }
+
+    /// @inheritdoc IStakingManager
+    function hasPendingUnstakes() external view override returns (bool) {
+        return _pendingUnstakes() != 0;
     }
 
     /// @inheritdoc IStakingManager
@@ -317,7 +318,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /*//////////////////////////////////////////////////////////////
-                           INTERNAL FUNCTIONS
+                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Internal stake implementation.
@@ -678,6 +679,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             emit UnstakedFundsClaimed(claimed);
         }
         return claimed;
+    }
+
+    function _pendingUnstakes() internal view returns (uint256 pendingUnstakeAmount) {
+        (, IAztecRollup rollup) = _getRollup();
+        StakingState memory state = _getActivatedAttestersStakingState(rollup);
+        StakingState memory pendingState = _getPendingUnstakeRequestsStakingState(rollup);
+        pendingUnstakeAmount = state.pendingUnstakeAmount + pendingState.pendingUnstakeAmount;
+        return pendingUnstakeAmount;
     }
 
     /// @notice Returns the canonical rollup address and interface.

@@ -228,6 +228,10 @@ contract MockAccountingStakingManager is IStakingManager {
         return pendingUnstakeAmount;
     }
 
+    function hasPendingUnstakes() external view override returns (bool) {
+        return pendingUnstakeAmount != 0;
+    }
+
     function core() external pure virtual override returns (address) {
         return address(0);
     }

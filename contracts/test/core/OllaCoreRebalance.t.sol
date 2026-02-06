@@ -466,6 +466,64 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(vault.accountingState().bufferedAssets, targetBuffered, "buffer unchanged");
     }
 
+    function test_Rebalance_PullUnstaked_WaitsForPendingUnstakes() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 withdrawalShares = 4 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(depositAmount);
+
+        uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(1);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfterFirst = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressAfterFirst.step),
+            uint256(IOllaCore.RebalanceStep.PullUnstaked),
+            "rebalance should hold at pull unstaked while pending unstakes"
+        );
+        assertEq(withdrawalQueue.totalPendingAssets(), pendingBefore, "pending assets unchanged with pending unstakes");
+        assertEq(
+            vault.accountingState().bufferedAssets,
+            accountingBefore.bufferedAssets,
+            "buffer unchanged with pending unstakes"
+        );
+
+        stakingManager.setPendingUnstakes(0);
+
+        uint256 bufferBeforeFinalize = vault.accountingState().bufferedAssets;
+        vm.expectCall(
+            address(withdrawalQueue), abi.encodeCall(withdrawalQueue.finalizeWithdrawals, (bufferBeforeFinalize))
+        );
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfterSecond = vault.rebalanceProgress();
+        assertTrue(
+            uint256(progressAfterSecond.step) != uint256(IOllaCore.RebalanceStep.PullUnstaked),
+            "rebalance should advance after pending unstakes cleared"
+        );
+        assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending assets finalized after pending unstakes cleared");
+        assertEq(
+            vault.accountingState().bufferedAssets,
+            bufferBeforeFinalize - request.assetsExpected,
+            "buffer reduced after finalize"
+        );
+    }
+
     /*//////////////////////////////////////////////////////////////
                         REBALANCE PARTIAL PROGRESS
     //////////////////////////////////////////////////////////////*/
@@ -985,7 +1043,20 @@ contract OllaCoreRebalanceTest is Test {
         vm.prank(operator);
         vault.rebalance();
 
-        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - pendingUnstakes, "unstake reduced by pending");
+        IOllaCore.RebalanceProgress memory progressAfterFirst = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressAfterFirst.step),
+            uint256(IOllaCore.RebalanceStep.PullUnstaked),
+            "rebalance should hold at pull unstaked with pending unstakes"
+        );
+        assertEq(stakingManager.lastUnstakeAmount(), 0, "unstake not initiated while pending unstakes exist");
+
+        stakingManager.setPendingUnstakes(0);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets, "unstake initiated after pending cleared");
     }
 
     function test_Rebalance_Unstake_NoUnitRounding() external {
@@ -1597,6 +1668,10 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
         return pending;
+    }
+
+    function hasPendingUnstakes() external view override returns (bool) {
+        return pending != 0;
     }
 
     function getUnstakeCursor() external pure override returns (uint256 cursor) {

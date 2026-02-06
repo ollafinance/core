@@ -402,6 +402,10 @@ contract OllaCore is
                 return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
             }
             _pullUnstakedFunds();
+            if (_modules.stakingManager.hasPendingUnstakes()) {
+                _rebalanceProgress = progress;
+                return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
+            }
             progress.step = IOllaCore.RebalanceStep.FinalizeWithdrawals;
         }
 

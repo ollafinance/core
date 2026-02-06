@@ -193,6 +193,10 @@ interface IStakingManager {
     /// @return pendingUnstakeAmount The total pending unstake amount.
     function pendingUnstakes() external view returns (uint256 pendingUnstakeAmount);
 
+    /// @notice Returns true if any pending unstake exists.
+    /// @return True if there are pending unstakes.
+    function hasPendingUnstakes() external view returns (bool);
+
     /// @notice Returns the provider configuration.
     /// @dev Delegates to the StakingProviderRegistry.
     /// @return The provider config struct.
