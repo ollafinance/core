@@ -16,6 +16,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 
+// solhint-disable max-states-count
 /// @title StakingManager
 /// @notice Manages staking delegation, attester keys, and reward harvesting.
 /// @author Olla Core contributors
@@ -23,7 +24,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
-                                   STATE
+                                    STATE
     //////////////////////////////////////////////////////////////*/
 
     // Storage layout (v1): do not reorder or remove variables.
@@ -67,12 +68,31 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cumulative slashing delta tracked across rollup snapshots.
     uint256 private _cumulativeSlashingDelta;
 
+    /// @dev Cursor for bounded unstake initiation.
+    uint256 private _unstakeCursor;
+
+    /// @dev Cursor for bounded finalize of pending unstakes.
+    uint256 private _finalizeCursor;
+
+    /// @dev Gas threshold for bounded rebalance work.
+    // solhint-disable-next-line private-vars-leading-underscore
+    uint256 private gasThreshold;
+
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
     uint256[48] private __gap;
 
     /*//////////////////////////////////////////////////////////////
-                                   ERRORS
+                                  EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Emitted when the gas threshold is updated.
+    /// @param oldValue The previous gas threshold.
+    /// @param newValue The new gas threshold.
+    event GasThresholdUpdated(uint256 indexed oldValue, uint256 indexed newValue);
+
+    /*//////////////////////////////////////////////////////////////
+                                    ERRORS
      //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a caller is not authorized governance.
@@ -137,6 +157,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         core = core_;
         governance = defaultAdmin_;
         stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
+        gasThreshold = 50_000;
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
     }
@@ -153,9 +174,18 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
-    function unstake(uint256 amount) external override onlyCore nonReentrant {
+    function setGasThreshold(uint256 threshold) external override onlyCore {
+        if (threshold == 0) revert StakingManager__ZeroAmount();
+        uint256 previousThreshold = gasThreshold;
+        gasThreshold = threshold;
+        emit GasThresholdUpdated(previousThreshold, threshold);
+    }
+
+    /// @inheritdoc IStakingManager
+    function unstake(uint256 amount) external override onlyCore nonReentrant returns (uint256 unstakedAmount) {
         if (amount == 0) revert StakingManager__ZeroAmount();
-        _unstake(amount);
+        unstakedAmount = _unstake(amount);
+        return unstakedAmount;
     }
 
     // slither-disable-start calls-loop
@@ -171,6 +201,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         uint256 i = 0;
         while (i < _activatedAttesters.length) {
+            if (gasleft() < gasThreshold) {
+                break;
+            }
             AttesterStake storage attesterStake = _activatedAttesters[i];
             address attester = attesterStake.attester;
             AttesterView memory view_ = rollup.getAttesterView(attester);
@@ -251,6 +284,17 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
+    function hasExitableUnstakes() external view override returns (bool) {
+        (, IAztecRollup rollup) = _getRollup();
+        StakingState memory state = _getActivatedAttestersStakingState(rollup);
+        if (state.withdrawableAmount != 0) {
+            return true;
+        }
+        StakingState memory pendingState = _getPendingUnstakeRequestsStakingState(rollup);
+        return pendingState.withdrawableAmount != 0;
+    }
+
+    /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
         // TODO: research if we can assume moving with rollup is safe
         (, IAztecRollup rollup) = _getRollup();
@@ -261,6 +305,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @inheritdoc IStakingManager
     function getProviderConfig() external view override returns (ProviderConfig memory) {
         return stakingProviderRegistry.getStakingProviderConfig();
+    }
+
+    /// @inheritdoc IStakingManager
+    function getUnstakeCursor() external view override returns (uint256 cursor) {
+        return _unstakeCursor;
     }
 
     /// @inheritdoc IStakingManager
@@ -279,7 +328,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /*//////////////////////////////////////////////////////////////
-                           INTERNAL FUNCTIONS
+                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @dev Internal stake implementation.
@@ -302,10 +351,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (attestersToStakeTo == 0) {
             return 0;
         }
-        actualStakeAmount = attestersToStakeTo * activationThresholdValue;
-
-        _transferAndApproveStake(rollupAddress, actualStakeAmount);
-        _stakeAttesters(rollup, attestersToStakeTo, activationThresholdValue);
+        uint256 plannedStakeAmount = attestersToStakeTo * activationThresholdValue;
+        _transferAndApproveStake(rollupAddress, plannedStakeAmount);
+        uint256 stakedAttesters = _stakeAttesters(rollup, attestersToStakeTo, activationThresholdValue);
+        actualStakeAmount = stakedAttesters * activationThresholdValue;
+        if (actualStakeAmount < plannedStakeAmount) {
+            stakingAsset.safeTransfer(core, plannedStakeAmount - actualStakeAmount);
+        }
         stakingAsset.forceApprove(rollupAddress, 0);
         return actualStakeAmount;
     }
@@ -323,12 +375,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // Reentrancy safe: caller (unstake) has nonReentrant modifier
     //   also the called contract is trusted Aztec protocol contract
     // slither-disable-start reentrancy-no-eth
-    function _unstake(uint256 amount) internal {
+    function _unstake(uint256 amount) internal returns (uint256 unstakedAmount) {
         (, IAztecRollup rollup) = _getRollup();
-        uint256 totalUnstakedAmount = _initiateUnstakeRequests(rollup, amount);
-        if (totalUnstakedAmount < amount) {
-            revert StakingManager__InsufficientStake();
-        }
+        unstakedAmount = _initiateUnstakeRequests(rollup, amount);
+        return unstakedAmount;
     }
 
     // slither-disable-end reentrancy-no-eth
@@ -414,8 +464,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-start reentrancy-benign
     function _stakeAttesters(IAztecRollup rollup, uint256 attestersToStakeTo, uint256 activationThresholdValue)
         internal
+        returns (uint256 stakedCount)
     {
         for (uint256 i; i < attestersToStakeTo; ++i) {
+            if (gasleft() < gasThreshold) {
+                break;
+            }
             KeyStore memory keyStore = stakingProviderRegistry.getAttesterKeystore();
             _addActivatedAttester(keyStore.attester, activationThresholdValue);
             emit StakedWithProvider(keyStore.attester, activationThresholdValue);
@@ -431,7 +485,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 keyStore.proofOfPossession,
                 true
             );
+            ++stakedCount;
         }
+        return stakedCount;
     }
 
     // slither-disable-end reentrancy-benign
@@ -452,19 +508,38 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         onlyCore
         returns (uint256 totalUnstakedAmount)
     {
-        uint256 i = 0;
+        uint256 activatedLength = _activatedAttesters.length;
+        if (activatedLength == 0) {
+            _unstakeCursor = 0;
+            return 0;
+        }
+
+        uint256 i = _unstakeCursor;
+        if (i > activatedLength - 1) {
+            i = 0;
+        }
+
+        // Do not cache array length: swap-pop removes elements during iteration.
+        // slither-disable-next-line cache-array-length
         while (i < _activatedAttesters.length) {
-            AttesterStake storage attesterStake = _activatedAttesters[i];
-            (bool incrementIndex, uint256 exitAmount) =
-                _processUnstakeAttester(rollup, attesterStake.attester, attesterStake.stakedAmount);
-            totalUnstakedAmount += exitAmount;
-            if (totalUnstakedAmount > amount - 1) {
+            if (gasleft() < gasThreshold) {
                 break;
             }
-            if (incrementIndex) {
-                ++i;
+            AttesterStake storage attesterStake = _activatedAttesters[i];
+            uint256 exitAmount = _processUnstakeAttester(rollup, attesterStake.attester, attesterStake.stakedAmount);
+            totalUnstakedAmount += exitAmount;
+            if (totalUnstakedAmount > amount || totalUnstakedAmount == amount) {
+                break;
             }
         }
+
+        uint256 currentLength = _activatedAttesters.length;
+        if (currentLength == 0 || i > currentLength - 1) {
+            _unstakeCursor = 0;
+        } else {
+            _unstakeCursor = i;
+        }
+
         return totalUnstakedAmount;
     }
 
@@ -478,29 +553,32 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param rollup The rollup staking interface.
     /// @param attester The attester address to process.
     /// @param stakedAmount The amount originally staked for this attester.
-    /// @return incrementIndex Whether the caller should advance the index.
     /// @return exitAmount The unstake amount initiated for the attester.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
     function _processUnstakeAttester(IAztecRollup rollup, address attester, uint256 stakedAmount)
         internal
-        returns (bool incrementIndex, uint256 exitAmount)
+        returns (uint256 exitAmount)
     {
         AttesterView memory view_ = rollup.getAttesterView(attester);
         exitAmount = view_.effectiveBalance;
 
+        // External call is safe:
+        // - rollup is a trusted Aztec contract
+        // - onlyCore entrypoints are nonReentrant
+        // slither-disable-next-line reentrancy-no-eth
         bool isInitiated = rollup.initiateWithdraw(attester, address(this));
         if (!isInitiated) {
             if (view_.exit.exists) {
                 _moveToPendingUnstake(attester, stakedAmount, false);
-                return (true, 0);
+                return 0;
             }
             revert StakingManager__UnstakeFailed(attester);
         }
 
         _moveToPendingUnstake(attester, stakedAmount, true);
         emit UnstakeInitiated(attester, exitAmount);
-        return (false, exitAmount);
+        return exitAmount;
     }
 
     // slither-disable-end reentrancy-benign
@@ -527,8 +605,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // Array length cannot be cached because elements are removed during iteration
     // slither-disable-start pess-multiple-storage-read,cache-array-length
     function _finalizePendingUnstakes(IAztecRollup rollup) internal returns (uint256 sumOfExitAmounts) {
-        uint256 i = 0;
+        uint256 pendingLength = _pendingUnstakeRequests.length;
+        if (pendingLength == 0) {
+            _finalizeCursor = 0;
+            return 0;
+        }
+        uint256 i = _finalizeCursor;
+        if (i > pendingLength - 1) {
+            i = 0;
+        }
         while (i < _pendingUnstakeRequests.length) {
+            if (gasleft() < gasThreshold) {
+                break;
+            }
             AttesterStake storage attesterStake = _pendingUnstakeRequests[i];
             address attester = attesterStake.attester;
             AttesterView memory view_ = rollup.getAttesterView(attester);
@@ -555,6 +644,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             // slither-disable-next-line reentrancy-no-eth
             rollup.finalizeWithdraw(attester);
         }
+
+        uint256 currentLength = _pendingUnstakeRequests.length;
+        if (currentLength == 0 || i > currentLength - 1) {
+            _finalizeCursor = 0;
+        } else {
+            _finalizeCursor = i;
+        }
+
         return sumOfExitAmounts;
     }
 

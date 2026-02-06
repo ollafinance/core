@@ -4,6 +4,8 @@ pragma solidity ^0.8.27;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
@@ -11,6 +13,8 @@ import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
@@ -317,5 +321,306 @@ contract OllaCoreWithdrawalQueueTest is Test {
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);
+    }
+}
+
+/// @title RealisticStakingManager
+/// @notice Staking manager mock that actually transfers tokens to simulate real staking behavior.
+/// @dev Used to test the finalized withdrawal claim bug where tokens get re-staked.
+contract RealisticStakingManager is IStakingManager {
+    using SafeERC20 for IERC20;
+    IERC20 public stakingAsset;
+    uint256 public totalStakedAmount;
+    uint256 public pendingUnstakeAmount;
+    uint256 public withdrawableAmount;
+
+    function initialize(IERC20 stakingAsset_, address, address, address, address, address) external override {
+        stakingAsset = stakingAsset_;
+    }
+
+    function stake(uint256 amount) external override returns (uint256 stakedAmount) {
+        // Actually transfer tokens from caller (OllaCore) to this contract
+        stakingAsset.safeTransferFrom(msg.sender, address(this), amount);
+        totalStakedAmount += amount;
+        return amount;
+    }
+
+    function unstake(uint256 amount) external override returns (uint256 unstakedAmount) {
+        // Move from staked to pending unstake
+        if (amount > totalStakedAmount) {
+            amount = totalStakedAmount;
+        }
+        totalStakedAmount -= amount;
+        pendingUnstakeAmount += amount;
+        return amount;
+    }
+
+    function setGasThreshold(uint256) external pure override { }
+
+    function getUnstakedFunds() external override returns (uint256 received) {
+        // Transfer pending unstaked funds back to caller (OllaCore)
+        received = pendingUnstakeAmount;
+        if (received > 0) {
+            pendingUnstakeAmount = 0;
+            withdrawableAmount = 0;
+            stakingAsset.safeTransfer(msg.sender, received);
+        }
+        return received;
+    }
+
+    function totalStaked() external view override returns (uint256) {
+        return totalStakedAmount;
+    }
+
+    function pendingUnstakes() external view override returns (uint256) {
+        return pendingUnstakeAmount;
+    }
+
+    function hasExitableUnstakes() external view override returns (bool) {
+        return withdrawableAmount != 0;
+    }
+
+    function getStakingState() external view override returns (StakingState memory) {
+        return StakingState({
+            stakedAmount: totalStakedAmount,
+            pendingUnstakeAmount: pendingUnstakeAmount,
+            withdrawableAmount: withdrawableAmount
+        });
+    }
+
+    function getSlashingDelta() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getClaimableRewards() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function harvestRewards() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function cleanActivatedAttesters() external pure override { }
+
+    function getActivatedAttesterCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getPendingUnstakeCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getUnstakeCursor() external pure override returns (uint256 cursor) {
+        return 0;
+    }
+
+    function isUnstakePending(address) external pure override returns (bool) {
+        return false;
+    }
+
+    function core() external pure override returns (address) {
+        return address(0);
+    }
+
+    function stakingProviderRegistry() external pure override returns (IStakingProviderRegistry) {
+        return IStakingProviderRegistry(address(0));
+    }
+
+    function getProviderConfig() external pure override returns (ProviderConfig memory) {
+        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+    }
+}
+
+/// @title OllaCoreFinalizedWithdrawalBugTest
+/// @notice Tests the bug where finalized-but-unclaimed withdrawals get re-staked on subsequent rebalances.
+contract OllaCoreFinalizedWithdrawalBugTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                              EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event WithdrawalRequested(
+        uint256 indexed requestId,
+        address indexed owner,
+        address indexed recipient,
+        uint256 shares,
+        uint256 assetsExpected,
+        uint256 exchangeRate
+    );
+
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    MockAztec internal asset;
+    OllaCoreWithdrawalQueueHarness internal vault;
+    StAztec internal stAztec;
+    RealisticStakingManager internal stakingManager;
+    WithdrawalQueue internal queue;
+    address internal governance;
+    MockRewardsVault internal rewardsVault;
+    SafetyModule internal safetyModule;
+    address internal admin;
+    address internal guardian;
+    address internal alice;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        OllaCoreWithdrawalQueueHarness coreImplementation = new OllaCoreWithdrawalQueueHarness();
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCoreWithdrawalQueueHarness(address(coreProxy));
+
+        stakingManager = new RealisticStakingManager();
+        governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
+        admin = makeAddr("admin");
+        guardian = makeAddr("guardian");
+        safetyModule = new SafetyModule(admin, guardian, address(vault), 1_000_000 ether, 500, 6_000, 1 days);
+
+        WithdrawalQueue queueImplementation = new WithdrawalQueue();
+        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
+        queue = WithdrawalQueue(address(queueProxy));
+
+        vault.initialize(
+            asset, stAztec, stakingManager, 0, 0, governance, address(queue), rewardsVault, address(safetyModule)
+        );
+        queue.initialize(address(vault), governance);
+
+        // Initialize staking manager with asset
+        stakingManager.initialize(asset, address(0), address(0), address(vault), address(0), address(0));
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, address(this));
+        vm.stopPrank();
+
+        alice = makeAddr("alice");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    FINALIZED WITHDRAWAL CLAIM BUG
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Tests that finalized-but-unclaimed withdrawals can be claimed after a rebalance.
+    /// @dev This test reproduces a bug where finalized withdrawal funds get re-staked on subsequent
+    ///      rebalances, making them unclaimable due to insufficient balance.
+    ///
+    ///      The bug flow:
+    ///      1. User deposits and funds get staked
+    ///      2. User requests withdrawal
+    ///      3. Rebalance #1: initiates unstake from staking manager
+    ///      4. Rebalance #2: pulls unstaked funds back, finalizes withdrawal
+    ///         - _finalizeWithdrawals() calls _decreaseBuffered() to reduce accounting
+    ///         - But actual tokens remain in the core contract for user to claim
+    ///      5. Rebalance #3: _syncBufferedWithBalance() sees actual balance > buffered
+    ///         - Reconciles by INCREASING buffered to match actual balance
+    ///         - _stakeSurplus() then stakes these tokens that should be reserved for claims
+    ///      6. User tries to claim → ERC20InsufficientBalance error
+    function test_FinalizedWithdrawal_CanBeClaimedAfterRebalance() external {
+        uint256 depositAmount = 100 ether;
+
+        // Step 1: User deposits
+        asset.mint(alice, depositAmount);
+        vm.prank(alice);
+        asset.approve(address(vault), depositAmount);
+        vm.prank(alice);
+        vault.deposit(depositAmount, alice);
+
+        // Verify initial state: funds are buffered in vault
+        assertEq(asset.balanceOf(address(vault)), depositAmount, "funds should be in vault");
+
+        // Step 2: First rebalance stakes the funds (no target buffer means all gets staked)
+        vault.rebalance();
+
+        // Verify funds moved to staking manager
+        assertEq(asset.balanceOf(address(vault)), 0, "vault should have 0 after staking");
+        assertEq(asset.balanceOf(address(stakingManager)), depositAmount, "staking manager should have funds");
+
+        // Step 3: User requests full withdrawal
+        uint256 shares = stAztec.balanceOf(alice);
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, alice);
+
+        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        uint256 expectedAssets = request.assetsExpected;
+        assertEq(expectedAssets, depositAmount, "expected assets should match deposit");
+
+        // Step 4: Rebalance to initiate unstake (pending withdrawals > buffered)
+        vault.rebalance();
+
+        // Funds should now be pending unstake in staking manager
+        assertEq(stakingManager.pendingUnstakes(), depositAmount, "funds should be pending unstake");
+
+        // Step 5: Rebalance to pull unstaked funds and finalize withdrawal
+        vault.rebalance();
+
+        // Verify withdrawal is finalized
+        request = queue.getRequest(requestId);
+        assertTrue(request.finalized, "withdrawal should be finalized");
+        assertFalse(request.claimed, "withdrawal should not be claimed yet");
+
+        // Funds should be back in vault, reserved for the claim
+        uint256 vaultBalanceAfterFinalize = asset.balanceOf(address(vault));
+        assertEq(vaultBalanceAfterFinalize, depositAmount, "vault should have funds for claim");
+
+        // Step 6: Another rebalance - regression check for finalized funds.
+        // Finalized-but-unclaimed funds should remain reserved in the vault.
+        vault.rebalance();
+
+        // Check if funds were incorrectly re-staked
+        uint256 vaultBalanceAfterExtraRebalance = asset.balanceOf(address(vault));
+
+        // Assertion should pass post-fix: funds remain reserved for claim.
+        assertGe(
+            vaultBalanceAfterExtraRebalance,
+            expectedAssets,
+            "vault should still have funds reserved for finalized withdrawal"
+        );
+
+        // Step 7: User claims finalized withdrawal.
+        vm.prank(alice);
+        uint256 claimed = vault.claimRequestById(requestId);
+
+        assertEq(claimed, expectedAssets, "user should receive full expected assets");
+        assertEq(asset.balanceOf(alice), expectedAssets, "alice should have her assets back");
+    }
+
+    function test_Rebalance_DoesNotReduceBalanceBelowFinalizedAssets() external {
+        uint256 depositAmount = 100 ether;
+
+        asset.mint(alice, depositAmount);
+        vm.prank(alice);
+        asset.approve(address(vault), depositAmount);
+        vm.prank(alice);
+        vault.deposit(depositAmount, alice);
+
+        vault.rebalance();
+
+        uint256 shares = stAztec.balanceOf(alice);
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(shares, alice);
+
+        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        uint256 expectedAssets = request.assetsExpected;
+
+        vault.rebalance();
+        vault.rebalance();
+
+        request = queue.getRequest(requestId);
+        assertTrue(request.finalized, "withdrawal should be finalized");
+        assertFalse(request.claimed, "withdrawal should not be claimed");
+
+        uint256 vaultBalanceBeforeRebalance = asset.balanceOf(address(vault));
+        assertEq(vaultBalanceBeforeRebalance, expectedAssets, "vault should hold finalized assets");
+
+        vault.rebalance();
+
+        uint256 vaultBalanceAfterRebalance = asset.balanceOf(address(vault));
+        assertGe(vaultBalanceAfterRebalance, expectedAssets, "rebalance should not reduce below finalized assets");
     }
 }

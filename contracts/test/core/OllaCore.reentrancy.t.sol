@@ -60,8 +60,18 @@ contract MockHarvestStakingManager is IStakingManager {
     function stake(uint256) external pure override returns (uint256) {
         return 0;
     }
-    function unstake(uint256) external pure override { }
-    function cleanActivatedAttesters() external pure override { }
+
+    function setGasThreshold(uint256 threshold) external pure override {
+        threshold;
+    }
+
+    function unstake(uint256) external pure override returns (uint256) {
+        return 0;
+    }
+
+    function cleanActivatedAttesters() external pure override {
+        return;
+    }
 
     function getUnstakedFunds() external pure override returns (uint256) {
         return 0;
@@ -87,6 +97,10 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
+    function hasExitableUnstakes() external pure override returns (bool) {
+        return false;
+    }
+
     function getProviderConfig() external pure override returns (ProviderConfig memory) {
         return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
     }
@@ -101,6 +115,10 @@ contract MockHarvestStakingManager is IStakingManager {
 
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
+    }
+
+    function getUnstakeCursor() external pure override returns (uint256) {
+        return 0;
     }
 
     function initialize(IERC20, address, address, address, address, address) external pure override { }
@@ -221,7 +239,7 @@ contract OllaCoreReentrancyTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                             CLAIM REQUEST
+                              CLAIM REQUEST
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_ClaimRequestById_ReenteredFromQueue() external {
@@ -257,6 +275,25 @@ contract OllaCoreReentrancyTest is Test {
         uint256[] memory activeRequests = vault.activeRequestIds(owner);
         require(activeRequests.length == 0, "request still active");
         require(vault.requestOwner(requestId) == address(0), "request owner not cleared");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                               REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_Rebalance_ReenteredFromQueueFinalize() external {
+        _deposit(alice, 10 * DECIMALS);
+
+        uint256 shares = 2 * DECIMALS;
+        vm.prank(alice);
+        vault.requestRedeem(shares, bob);
+
+        withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.rebalance, ()));
+        withdrawalQueue.setReenterOnFinalize(true);
+
+        vm.expectRevert();
+        vm.prank(governance);
+        vault.rebalance();
     }
 }
 

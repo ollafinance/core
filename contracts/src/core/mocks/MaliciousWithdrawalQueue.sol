@@ -119,7 +119,14 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
         }
 
         lastAvailable = available;
-        return (available, 0);
+        if (available == 0 || totalPendingAssets == 0) {
+            return (0, 0);
+        }
+
+        used = available > totalPendingAssets ? totalPendingAssets : available;
+        totalPendingAssets -= used;
+        finalizedCount = 1;
+        return (used, finalizedCount);
     }
 
     /// @notice Marks a request as claimed.

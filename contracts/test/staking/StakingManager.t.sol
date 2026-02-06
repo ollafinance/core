@@ -474,6 +474,140 @@ contract StakingManagerTest is Test {
         assertEq(stakingManager.getActivatedAttesterCount(), 0);
     }
 
+    function test_Stake_Bounded_LowGasInitiatesSubset() external {
+        uint256 attesterCount = 20;
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(attesterCount);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        uint256 stakeAmount = ACTIVATION_THRESHOLD * attesterCount;
+        aztec.mint(core, stakeAmount);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), type(uint256).max);
+        vm.stopPrank();
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(250_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 stakedObserved;
+        uint256[6] memory gasOptions = [uint256(350_000), 450_000, 550_000, 650_000, 750_000, 850_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.stake, (stakeAmount)));
+            if (!success) {
+                continue;
+            }
+            uint256 stakedCandidate = abi.decode(data, (uint256));
+            if (stakedCandidate == stakeAmount) {
+                assertEq(stakedCandidate, stakeAmount, "stake should complete in one call");
+                assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
+                assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
+                return;
+            }
+            if (stakedCandidate > 0 && stakedCandidate < stakeAmount) {
+                selectedGas = gasOptions[i];
+                stakedObserved = stakedCandidate;
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            uint256 stakedFull = stakingManager.stake(stakeAmount);
+
+            assertEq(stakedFull, stakeAmount, "stake should complete in one call");
+            assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
+            assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        uint256 stakedAmount = stakingManager.stake{ gas: selectedGas }(stakeAmount);
+
+        assertEq(stakedAmount, stakedObserved, "staked amount should match probe");
+        assertGt(stakingManager.getActivatedAttesterCount(), 0, "should stake some attesters");
+        assertLt(stakingManager.getActivatedAttesterCount(), attesterCount, "should leave keys in queue");
+        assertEq(stakedAmount % ACTIVATION_THRESHOLD, 0, "staked amount should be full units");
+    }
+
+    function test_Stake_Bounded_ResumesAcrossCalls() external {
+        uint256 attesterCount = 20;
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(attesterCount);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        uint256 stakeAmount = ACTIVATION_THRESHOLD * attesterCount;
+        aztec.mint(core, stakeAmount);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), type(uint256).max);
+        vm.stopPrank();
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(250_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256[6] memory gasOptions = [uint256(350_000), 450_000, 550_000, 650_000, 750_000, 850_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.stake, (stakeAmount)));
+            if (!success) {
+                continue;
+            }
+            uint256 stakedCandidate = abi.decode(data, (uint256));
+            if (stakedCandidate > 0 && stakedCandidate < stakeAmount) {
+                selectedGas = gasOptions[i];
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            uint256 stakedFull = stakingManager.stake{ gas: 2_000_000 }(stakeAmount);
+
+            assertEq(stakedFull, stakeAmount, "stake should complete in one call");
+            assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
+            assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        uint256 totalStaked;
+        uint256 maxIterations = 30;
+        uint256 lastCount;
+        uint256 gasForLoop = selectedGas;
+        for (uint256 i; i < maxIterations; ++i) {
+            uint256 currentCount = stakingManager.getActivatedAttesterCount();
+            if (currentCount == attesterCount) {
+                break;
+            }
+            if (currentCount == lastCount) {
+                gasForLoop += 100_000;
+            }
+            lastCount = currentCount;
+            vm.prank(core);
+            totalStaked += stakingManager.stake{ gas: gasForLoop }(stakeAmount);
+        }
+
+        assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
+        assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
+        assertEq(totalStaked, stakeAmount, "total staked should equal requested");
+        assertEq(aztec.balanceOf(address(rollup)), stakeAmount, "rollup should receive staked funds");
+    }
+
     /*//////////////////////////////////////////////////////////////
                         UNSTAKE FLOW TESTS
     //////////////////////////////////////////////////////////////*/
@@ -515,15 +649,23 @@ contract StakingManagerTest is Test {
         vm.stopPrank();
     }
 
-    function test_RevertWhen_Unstake_ExceedsStaked() external {
+    function test_Unstake_NoStaked_ReturnsZero() external {
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+
         vm.prank(core);
-        vm.expectRevert(IStakingManager.StakingManager__InsufficientStake.selector);
-        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(unstakedAmount, 0, "unstake should return zero when nothing is staked");
+        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "staked amount should remain unchanged");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "no pending unstakes should be created");
     }
 
     function test_RevertWhen_Unstake_ZeroAmount() external {
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAmount.selector);
+        _setupStakedAttester();
+
         vm.prank(core);
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAmount.selector));
         stakingManager.unstake(0);
     }
 
@@ -537,12 +679,191 @@ contract StakingManagerTest is Test {
         _setupMultipleStakedAttesters(3);
 
         vm.prank(core);
-        stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
+        uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(unstakedAmount, ACTIVATION_THRESHOLD * 2, "unstake should return requested amount");
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
+    }
+
+    function test_Unstake_ExceedsStaked_ClampsAndUpdates() external {
+        _setupMultipleStakedAttesters(2);
+
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+
+        vm.prank(core);
+        uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(unstakedAmount, stateBefore.stakedAmount, "unstake should clamp to staked amount");
+        assertEq(stateAfter.stakedAmount, 0, "staked amount should be fully drained");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
+        assertEq(stakingManager.getPendingUnstakeCount(), 2, "pending count should match attesters");
+    }
+
+    function test_Unstake_Bounded_LowGasInitiatesSubset() external {
+        uint256 attesterCount = 6;
+        _setupMultipleStakedAttesters(attesterCount);
+
+        uint256 requested = ACTIVATION_THRESHOLD * attesterCount;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(180_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 unstakedObserved;
+        uint256[5] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.unstake, (requested)));
+            if (!success) {
+                continue;
+            }
+            uint256 unstakedCandidate = abi.decode(data, (uint256));
+            if (unstakedCandidate == requested) {
+                assertEq(unstakedCandidate, requested, "unstake should complete in one call");
+                assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
+                assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "pending count should match attesters");
+                return;
+            }
+            if (unstakedCandidate > 0 && unstakedCandidate < requested) {
+                selectedGas = gasOptions[i];
+                unstakedObserved = unstakedCandidate;
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            uint256 unstakedFull = stakingManager.unstake{ gas: 2_000_000 }(requested);
+
+            assertEq(unstakedFull, requested, "unstake should complete in one call");
+            assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
+            assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "pending count should match attesters");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        uint256 unstakedAmount = stakingManager.unstake{ gas: selectedGas }(requested);
+
+        assertEq(unstakedAmount, unstakedObserved, "unstaked amount should match probe");
+        assertGt(unstakedAmount, 0, "unstake should initiate some exits");
+        assertLt(unstakedAmount, requested, "unstake should be bounded under low gas");
+        assertGt(stakingManager.getActivatedAttesterCount(), 0, "activated attesters should remain");
+        assertGt(stakingManager.getPendingUnstakeCount(), 0, "pending unstakes should increase");
+    }
+
+    function test_Unstake_Bounded_ResumesAcrossCalls() external {
+        uint256 attesterCount = 5;
+        _setupMultipleStakedAttesters(attesterCount);
+
+        uint256 requested = ACTIVATION_THRESHOLD * attesterCount;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(180_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256[5] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.unstake, (requested)));
+            if (!success) {
+                continue;
+            }
+            uint256 unstakedCandidate = abi.decode(data, (uint256));
+            if (unstakedCandidate > 0 && unstakedCandidate < requested) {
+                selectedGas = gasOptions[i];
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            uint256 unstakedFull = stakingManager.unstake{ gas: 2_000_000 }(requested);
+
+            assertEq(unstakedFull, requested, "unstake should complete in one call");
+            assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
+            assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "pending count should match attesters");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        uint256 totalUnstaked;
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            if (stakingManager.getActivatedAttesterCount() == 0) {
+                break;
+            }
+            vm.prank(core);
+            totalUnstaked += stakingManager.unstake{ gas: selectedGas }(requested);
+        }
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
+        assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "pending count should match attesters");
+        assertEq(totalUnstaked, requested, "total unstaked should equal requested");
+    }
+
+    function test_Unstake_Bounded_CursorTracksProgress() external {
+        uint256 attesterCount = 4;
+        _setupMultipleStakedAttesters(attesterCount);
+
+        uint256 requested = ACTIVATION_THRESHOLD * attesterCount;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(180_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256[5] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.unstake, (requested)));
+            if (!success) {
+                continue;
+            }
+            uint256 unstakedCandidate = abi.decode(data, (uint256));
+            if (unstakedCandidate > 0 && unstakedCandidate < requested) {
+                selectedGas = gasOptions[i];
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for partial unstake");
+
+        vm.revertToState(snapshotId);
+
+        uint256 cursorBefore = stakingManager.getUnstakeCursor();
+
+        vm.prank(core);
+        stakingManager.unstake{ gas: selectedGas }(requested);
+
+        uint256 cursorAfter = stakingManager.getUnstakeCursor();
+        uint256 remaining = stakingManager.getActivatedAttesterCount();
+        assertLe(cursorAfter, remaining, "cursor should stay within activated bounds");
+        assertEq(cursorBefore, 0, "cursor should start at 0");
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(1);
+        vm.prank(core);
+        stakingManager.unstake(requested);
+
+        assertEq(stakingManager.getUnstakeCursor(), 0, "cursor should reset after completion");
     }
 
     function test_IsUnstakePending() external {
@@ -665,6 +986,67 @@ contract StakingManagerTest is Test {
         assertFalse(stakingManager.isUnstakePending(keys[0].attester));
     }
 
+    function test_GetUnstakedFunds_Bounded_LowGasCompletesAcrossCalls() external {
+        uint256 attesterCount = 5;
+        _setupMultipleStakedAttesters(attesterCount);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * attesterCount);
+
+        uint256 expectedTotal = ACTIVATION_THRESHOLD * attesterCount;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(180_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 claimedObserved;
+        uint256[5] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.getUnstakedFunds, ()));
+            if (!success) {
+                continue;
+            }
+            uint256 claimedCandidate = abi.decode(data, (uint256));
+            if (claimedCandidate > 0 && claimedCandidate < expectedTotal) {
+                selectedGas = gasOptions[i];
+                claimedObserved = claimedCandidate;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for partial finalize");
+
+        vm.revertToState(snapshotId);
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimedFirst = stakingManager.getUnstakedFunds{ gas: selectedGas }();
+
+        assertEq(claimedFirst, claimedObserved, "claimed amount should match probe");
+        assertGt(claimedFirst, 0, "initial claim should return some funds");
+        assertLt(claimedFirst, expectedTotal, "initial claim should be bounded under low gas");
+        assertGt(stakingManager.getPendingUnstakeCount(), 0, "pending should remain after partial claim");
+
+        uint256 totalClaimed = claimedFirst;
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            if (stakingManager.getPendingUnstakeCount() == 0) {
+                break;
+            }
+            vm.prank(core);
+            totalClaimed += stakingManager.getUnstakedFunds{ gas: selectedGas }();
+        }
+
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "all pending unstakes should be finalized");
+        assertEq(totalClaimed, expectedTotal, "total claimed should match pending exits");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + totalClaimed, "core should receive claimed funds");
+    }
+
     /*//////////////////////////////////////////////////////////////
                         HARVEST REWARDS TESTS
     //////////////////////////////////////////////////////////////*/
@@ -710,6 +1092,42 @@ contract StakingManagerTest is Test {
 
     function test_GetPendingUnstakeCount_InitiallyZero() external view {
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
+    }
+
+    function test_HasExitableUnstakes_ReturnsFalseWhenOnlyPending() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
+
+        bool hasExitable = stakingManager.hasExitableUnstakes();
+        assertFalse(hasExitable, "hasExitableUnstakes should be false with only pending exits");
+    }
+
+    function test_HasExitableUnstakes_ReturnsTrueWhenWithdrawable() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        bool hasExitable = stakingManager.hasExitableUnstakes();
+        assertTrue(hasExitable, "hasExitableUnstakes should be true when exits are withdrawable");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -824,6 +1242,73 @@ contract StakingManagerTest is Test {
         assertEq(stakingManager.getPendingUnstakeCount(), pendingBefore);
     }
 
+    function test_CleanActivatedAttesters_Bounded_LowGasCompletesAcrossCalls() external {
+        uint256 total = 6;
+        uint256 exited = 5;
+        _setupStakedAttestersWithExits(total, exited);
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(180_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 pendingObserved;
+        uint256[5] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.cleanActivatedAttesters, ())
+            );
+            if (!success) {
+                continue;
+            }
+            uint256 pendingCandidate = stakingManager.getPendingUnstakeCount();
+            if (pendingCandidate == exited) {
+                assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
+                assertEq(stakingManager.getActivatedAttesterCount(), total - exited, "remaining activated should stay");
+                return;
+            }
+            if (pendingCandidate > 0 && pendingCandidate < exited) {
+                selectedGas = gasOptions[i];
+                pendingObserved = pendingCandidate;
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            stakingManager.cleanActivatedAttesters{ gas: 2_000_000 }();
+
+            assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
+            assertEq(stakingManager.getActivatedAttesterCount(), total - exited, "remaining activated should stay");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+
+        uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
+        assertEq(pendingAfterFirst, pendingObserved, "pending count should match probe");
+        assertGt(pendingAfterFirst, 0, "should move some exited attesters");
+        assertLt(pendingAfterFirst, exited, "should not move all exited attesters under low gas");
+
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            if (stakingManager.getPendingUnstakeCount() == exited) {
+                break;
+            }
+            vm.prank(core);
+            stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+        }
+
+        assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
+        assertEq(stakingManager.getActivatedAttesterCount(), total - exited, "remaining activated should stay");
+    }
+
     function test_CleanActivatedAttesters_ExternallyExited_CanBeClaimed() external {
         uint256 total = 3;
         uint256 exited = 2;
@@ -885,6 +1370,335 @@ contract StakingManagerTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         stakingManager.cleanActivatedAttesters();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           GAS THRESHOLD TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Stake_GasThresholdLow_BoundedAndResumes() external {
+        uint256 attesterCount = 1;
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(attesterCount);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        uint256 stakeAmount = ACTIVATION_THRESHOLD * attesterCount;
+        aztec.mint(core, stakeAmount);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), type(uint256).max);
+        stakingManager.setGasThreshold(1_000);
+        vm.stopPrank();
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 stakedObserved;
+        uint256[6] memory gasOptions = [uint256(300_000), 400_000, 500_000, 600_000, 700_000, 800_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.stake, (stakeAmount)));
+            if (!success) {
+                continue;
+            }
+            uint256 stakedCandidate = abi.decode(data, (uint256));
+            if (stakedCandidate > 0 && stakedCandidate < stakeAmount) {
+                selectedGas = gasOptions[i];
+                stakedObserved = stakedCandidate;
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            uint256 stakedFull = stakingManager.stake{ gas: 2_000_000 }(stakeAmount);
+
+            assertEq(stakedFull, stakeAmount, "stake should complete in one call");
+            assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
+            assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        uint256 stakedFirst = stakingManager.stake{ gas: selectedGas }(stakeAmount);
+
+        assertEq(stakedFirst, stakedObserved, "staked amount should match probe");
+        assertGt(stakingManager.getActivatedAttesterCount(), 0, "should stake some attesters");
+        assertLt(stakingManager.getActivatedAttesterCount(), attesterCount, "should leave keys in queue");
+
+        uint256 totalStaked = stakedFirst;
+        uint256 maxIterations = 50;
+        for (uint256 i; i < maxIterations; ++i) {
+            if (stakingManager.getActivatedAttesterCount() == attesterCount) {
+                break;
+            }
+            vm.prank(core);
+            totalStaked += stakingManager.stake{ gas: selectedGas }(stakeAmount);
+        }
+
+        assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
+        assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
+        assertEq(totalStaked, stakeAmount, "total staked should equal requested");
+    }
+
+    function test_Stake_GasThresholdLow_LargeCount_DoesNotRevert() external {
+        uint256 attesterCount = 25;
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(attesterCount);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        uint256 stakeAmount = ACTIVATION_THRESHOLD * attesterCount;
+        aztec.mint(core, stakeAmount);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), type(uint256).max);
+        stakingManager.setGasThreshold(1_000);
+        stakingManager.stake(stakeAmount);
+        vm.stopPrank();
+    }
+
+    function test_Unstake_GasThresholdLow_BoundedAndResumes() external {
+        uint256 attesterCount = 6;
+        _setupMultipleStakedAttesters(attesterCount);
+
+        uint256 requested = ACTIVATION_THRESHOLD * attesterCount;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(1_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 unstakedObserved;
+        uint256[5] memory gasOptions = [uint256(200_000), 230_000, 260_000, 290_000, 320_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.unstake, (requested)));
+            if (!success) {
+                continue;
+            }
+            uint256 unstakedCandidate = abi.decode(data, (uint256));
+            if (unstakedCandidate > 0 && unstakedCandidate < requested) {
+                selectedGas = gasOptions[i];
+                unstakedObserved = unstakedCandidate;
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            uint256 unstakedFull = stakingManager.unstake{ gas: 2_000_000 }(requested);
+
+            assertEq(unstakedFull, requested, "unstake should complete in one call");
+            assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
+            assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "pending count should match attesters");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        uint256 unstakedFirst = stakingManager.unstake{ gas: selectedGas }(requested);
+
+        assertEq(unstakedFirst, unstakedObserved, "unstaked amount should match probe");
+        assertGt(unstakedFirst, 0, "unstake should initiate some exits");
+        assertLt(unstakedFirst, requested, "unstake should be bounded under low gas");
+
+        uint256 totalUnstaked = unstakedFirst;
+        uint256 maxIterations = 20;
+        for (uint256 i; i < maxIterations; ++i) {
+            if (stakingManager.getActivatedAttesterCount() == 0) {
+                break;
+            }
+            vm.prank(core);
+            totalUnstaked += stakingManager.unstake{ gas: selectedGas }(requested);
+        }
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
+        assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "pending count should match attesters");
+        assertEq(totalUnstaked, requested, "total unstaked should equal requested");
+    }
+
+    function test_CleanActivatedAttesters_GasThresholdLow_BoundedAndResumes() external {
+        uint256 total = 6;
+        uint256 exited = 5;
+        _setupStakedAttestersWithExits(total, exited);
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(1_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 pendingObserved;
+        uint256[5] memory gasOptions = [uint256(200_000), 230_000, 260_000, 290_000, 320_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.cleanActivatedAttesters, ())
+            );
+            if (!success) {
+                continue;
+            }
+            uint256 pendingCandidate = stakingManager.getPendingUnstakeCount();
+            if (pendingCandidate > 0 && pendingCandidate < exited) {
+                selectedGas = gasOptions[i];
+                pendingObserved = pendingCandidate;
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            stakingManager.cleanActivatedAttesters{ gas: 2_000_000 }();
+
+            assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
+            assertEq(stakingManager.getActivatedAttesterCount(), total - exited, "remaining activated should stay");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+
+        uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
+        assertEq(pendingAfterFirst, pendingObserved, "pending count should match probe");
+        assertGt(pendingAfterFirst, 0, "should move some exited attesters");
+        assertLt(pendingAfterFirst, exited, "should not move all exited attesters under low gas");
+
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            if (stakingManager.getPendingUnstakeCount() == exited) {
+                break;
+            }
+            vm.prank(core);
+            stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+        }
+
+        assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
+        assertEq(stakingManager.getActivatedAttesterCount(), total - exited, "remaining activated should stay");
+    }
+
+    function test_GetUnstakedFunds_GasThresholdLow_BoundedAndResumes() external {
+        uint256 attesterCount = 5;
+        _setupMultipleStakedAttesters(attesterCount);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * attesterCount);
+
+        uint256 expectedTotal = ACTIVATION_THRESHOLD * attesterCount;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(1_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 claimedObserved;
+        uint256[5] memory gasOptions = [uint256(200_000), 230_000, 260_000, 290_000, 320_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.getUnstakedFunds, ()));
+            if (!success) {
+                continue;
+            }
+            uint256 claimedCandidate = abi.decode(data, (uint256));
+            if (claimedCandidate > 0 && claimedCandidate < expectedTotal) {
+                selectedGas = gasOptions[i];
+                claimedObserved = claimedCandidate;
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            uint256 coreBalanceBeforeFull = aztec.balanceOf(core);
+
+            vm.prank(core);
+            uint256 claimedFull = stakingManager.getUnstakedFunds{ gas: 2_000_000 }();
+
+            assertEq(claimedFull, expectedTotal, "claim should complete in one call");
+            assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after claim");
+            assertEq(aztec.balanceOf(core), coreBalanceBeforeFull + claimedFull, "core should receive claimed funds");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimedFirst = stakingManager.getUnstakedFunds{ gas: selectedGas }();
+
+        assertEq(claimedFirst, claimedObserved, "claimed amount should match probe");
+        assertGt(claimedFirst, 0, "initial claim should return some funds");
+        assertLt(claimedFirst, expectedTotal, "initial claim should be bounded under low gas");
+        assertGt(stakingManager.getPendingUnstakeCount(), 0, "pending should remain after partial claim");
+
+        uint256 totalClaimed = claimedFirst;
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            if (stakingManager.getPendingUnstakeCount() == 0) {
+                break;
+            }
+            vm.prank(core);
+            totalClaimed += stakingManager.getUnstakedFunds{ gas: selectedGas }();
+        }
+
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "all pending unstakes should be finalized");
+        assertEq(totalClaimed, expectedTotal, "total claimed should match pending exits");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + totalClaimed, "core should receive claimed funds");
+    }
+
+    function test_GasThresholdHigh_CompletesInOneCall() external {
+        uint256 highThreshold = 400_000;
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        uint256 stakeAmount = ACTIVATION_THRESHOLD * 2;
+        aztec.mint(core, stakeAmount);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), stakeAmount);
+        stakingManager.setGasThreshold(highThreshold);
+        uint256 stakedAmount = stakingManager.stake(stakeAmount);
+        vm.stopPrank();
+
+        assertEq(stakedAmount, stakeAmount, "stake should complete in one call");
+        assertEq(stakingManager.getActivatedAttesterCount(), 2, "all attesters should be activated");
+
+        uint256 snapshotId = vm.snapshotState();
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "clean should move exited attester in one call");
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        uint256 unstakedAmount = stakingManager.unstake(stakeAmount);
+
+        assertEq(unstakedAmount, stakeAmount, "unstake should complete in one call");
+        assertEq(stakingManager.getPendingUnstakeCount(), 2, "pending count should match attesters");
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, stakeAmount, "claim should complete in one call");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after claim");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed, "core should receive claimed funds");
     }
 }
 

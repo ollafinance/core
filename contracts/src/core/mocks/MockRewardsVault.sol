@@ -2,6 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IMockRewardsVault } from "src/core/mocks/IMockRewardsVault.sol";
@@ -11,6 +12,7 @@ import { IMockRewardsVault } from "src/core/mocks/IMockRewardsVault.sol";
 /// @dev Implements IRewardsVault interface with test helpers.
 /// @author Olla Core contributors
 contract MockRewardsVault is IMockRewardsVault {
+    using SafeERC20 for IERC20;
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
     //////////////////////////////////////////////////////////////*/
@@ -67,7 +69,7 @@ contract MockRewardsVault is IMockRewardsVault {
     function withdrawToCore() external override {
         uint256 available = REWARDS_TOKEN.balanceOf(address(this));
         _latestRecordedRewardsAmount = 0;
-        REWARDS_TOKEN.transfer(CORE_ADDRESS, available);
+        REWARDS_TOKEN.safeTransfer(CORE_ADDRESS, available);
         emit RewardsWithdrawn(available);
     }
 
