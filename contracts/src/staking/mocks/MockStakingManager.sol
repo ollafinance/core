@@ -83,11 +83,6 @@ contract MockStakingManager is IStakingManager {
         return amount;
     }
 
-    /// @inheritdoc IStakingManager
-    function setGasThreshold(uint256 threshold) external override {
-        threshold;
-    }
-
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -120,6 +115,11 @@ contract MockStakingManager is IStakingManager {
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function setGasThreshold(uint256 threshold) external pure override {
+        threshold;
+    }
 
     /// @inheritdoc IStakingManager
     function pendingUnstakes() external pure override returns (uint256) {

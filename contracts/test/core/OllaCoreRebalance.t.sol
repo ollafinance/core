@@ -420,6 +420,129 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(vault.accountingState().bufferedAssets, targetBuffered, "buffer unchanged");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        REBALANCE PARTIAL PROGRESS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtPullUnstaked() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 rewardAmount = 3 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+        stakingManager.setHarvestedRewards(rewardAmount);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 expectedBuffer = accountingBefore.bufferedAssets + rewardAmount;
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256[6] memory gasOptions = [uint256(120_000), 140_000, 160_000, 180_000, 200_000, 220_000];
+
+        for (uint256 i = 0; i < gasOptions.length; i++) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success, bytes memory data) =
+                address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+            if (!success) {
+                continue;
+            }
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
+                (
+                    uint256 loopRewardsDelta,
+                    uint256 loopFinalizedAmount,
+                    uint256 loopStakedAmount,
+                    uint256 loopResultingBuffer
+                ) = abi.decode(data, (uint256, uint256, uint256, uint256));
+                if (loopRewardsDelta == rewardAmount && loopFinalizedAmount == 0 && loopStakedAmount == 0) {
+                    selectedGas = gasOptions[i];
+                    assertEq(loopResultingBuffer, expectedBuffer, "buffer should include harvested rewards");
+                    break;
+                }
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for pull-unstaked stop");
+
+        vm.revertToState(snapshotId);
+        vm.prank(operator);
+        (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
+            vault.rebalance{ gas: selectedGas }();
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.PullUnstaked),
+            "rebalance should stop at pull unstaked"
+        );
+        assertEq(rewardsDelta, rewardAmount, "rewards delta should return harvested amount");
+        assertEq(finalizedAmount, 0, "finalized amount should be zero on partial progress");
+        assertEq(stakedAmount, 0, "staked amount should be zero on partial progress");
+        assertEq(resultingBuffer, expectedBuffer, "buffer should include harvested rewards");
+    }
+
+    function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtFinalizeWithdrawals() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 rewardAmount = 4 * DECIMALS;
+        uint256 unstakedAmount = 1 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+        stakingManager.setHarvestedRewards(rewardAmount);
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+        stakingManager.setGasBurnTarget(60_000);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 expectedBuffer = accountingBefore.bufferedAssets + rewardAmount + unstakedAmount;
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+
+        for (uint256 gasLimit = 250_000; gasLimit <= 800_000; gasLimit += 25_000) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success, bytes memory data) =
+                address(vault).call{ gas: gasLimit }(abi.encodeCall(vault.rebalance, ()));
+            if (!success) {
+                continue;
+            }
+
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals) {
+                (
+                    uint256 loopRewardsDelta,
+                    uint256 loopFinalizedAmount,
+                    uint256 loopStakedAmount,
+                    uint256 loopResultingBuffer
+                ) = abi.decode(data, (uint256, uint256, uint256, uint256));
+                if (loopRewardsDelta == rewardAmount && loopFinalizedAmount == 0 && loopStakedAmount == 0) {
+                    selectedGas = gasLimit;
+                    assertEq(loopResultingBuffer, expectedBuffer, "buffer should include harvested rewards");
+                    break;
+                }
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for finalize stop");
+
+        vm.revertToState(snapshotId);
+        vm.prank(operator);
+        (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
+            vault.rebalance{ gas: selectedGas }();
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "rebalance should stop at finalize withdrawals"
+        );
+        assertEq(rewardsDelta, rewardAmount, "rewards delta should return harvested amount");
+        assertEq(finalizedAmount, 0, "finalized amount should be zero on partial progress");
+        assertEq(stakedAmount, 0, "staked amount should be zero on partial progress");
+        assertEq(resultingBuffer, expectedBuffer, "buffer should include harvested rewards");
+    }
+
     function test_Rebalance_FinalizeWithdrawals_BoundedGasProgresses() external {
         uint256 totalRequests = 200;
         uint256 requestShares = 1 * DECIMALS;

@@ -26,6 +26,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public lastUnstakeAmount;
     uint256 public unstakeReturnAmount;
     bool public useUnstakeReturnAmount;
+    uint256 public gasBurnTarget;
     address public providerRewardsRecipient;
     address public providerAdmin;
     uint256 public stakeReturnAmount;
@@ -66,6 +67,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setUnstakedAmount(uint256 value) external {
         unstakedAmount = value;
+    }
+
+    function setGasBurnTarget(uint256 target) external {
+        gasBurnTarget = target;
     }
 
     function setPendingUnstakes(uint256 value) external {
@@ -143,7 +148,7 @@ contract MockAccountingStakingManager is IStakingManager {
         return amount;
     }
 
-    function setGasThreshold(uint256 threshold) external override {
+    function setGasThreshold(uint256 threshold) external pure override {
         threshold;
     }
 
@@ -152,6 +157,15 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function getUnstakedFunds() public virtual override returns (uint256 received) {
+        uint256 target = gasBurnTarget;
+        if (target != 0) {
+            while (gasleft() > target) {
+                assembly {
+                    mstore(0x00, add(mload(0x00), 1))
+                }
+            }
+        }
+
         uint256 amount = unstakedAmount;
         if (amount == 0) {
             return 0;
