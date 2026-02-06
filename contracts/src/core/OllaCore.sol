@@ -341,6 +341,9 @@ contract OllaCore is
     /// @notice Sets the gas threshold used for rebalance step gating.
     /// @param newThreshold The new gas threshold.
     function setRebalanceGasThreshold(uint256 newThreshold) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (msg.sender != _modules.governance) {
+            revert OllaCore__UnauthorizedGovernance(msg.sender);
+        }
         uint256 oldThreshold = rebalanceGasThreshold;
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);

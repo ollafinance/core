@@ -251,6 +251,19 @@ contract OllaCoreRebalanceTest is Test {
         vault.setRebalanceGasThreshold(200_000);
     }
 
+    function test_RevertWhen_NonGovernanceAdminSetsRebalanceGasThreshold() external {
+        address otherAdmin = makeAddr("otherAdmin");
+        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
+        vm.prank(governance);
+        vault.grantRole(adminRole, otherAdmin);
+
+        assertTrue(vault.hasRole(adminRole, otherAdmin), "test admin role");
+
+        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCore__UnauthorizedGovernance.selector, otherAdmin));
+        vm.prank(otherAdmin);
+        vault.setRebalanceGasThreshold(200_000);
+    }
+
     function test_SetRebalanceGasThreshold_UpdatesAndForwards() external {
         uint256 newThreshold = 240_000;
 
