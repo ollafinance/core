@@ -517,7 +517,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             AttesterStake storage attesterStake = _activatedAttesters[i];
             uint256 exitAmount = _processUnstakeAttester(rollup, attesterStake.attester, attesterStake.stakedAmount);
             totalUnstakedAmount += exitAmount;
-            if (totalUnstakedAmount > amount - 1) {
+            if (totalUnstakedAmount > amount || totalUnstakedAmount == amount) {
                 break;
             }
         }

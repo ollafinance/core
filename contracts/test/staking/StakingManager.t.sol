@@ -649,16 +649,23 @@ contract StakingManagerTest is Test {
         vm.stopPrank();
     }
 
-    function test_Unstake_ExceedsStaked_ReturnsZero() external {
+    function test_Unstake_NoStaked_ReturnsZero() external {
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+
         vm.prank(core);
         uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(unstakedAmount, 0, "unstake should return zero when nothing is staked");
+        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "staked amount should remain unchanged");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "no pending unstakes should be created");
     }
 
     function test_RevertWhen_Unstake_ZeroAmount() external {
-        vm.expectRevert(IStakingManager.StakingManager__ZeroAmount.selector);
+        _setupStakedAttester();
+
         vm.prank(core);
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAmount.selector));
         stakingManager.unstake(0);
     }
 
@@ -672,12 +679,28 @@ contract StakingManagerTest is Test {
         _setupMultipleStakedAttesters(3);
 
         vm.prank(core);
-        stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
+        uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(unstakedAmount, ACTIVATION_THRESHOLD * 2, "unstake should return requested amount");
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
+    }
+
+    function test_Unstake_ExceedsStaked_ClampsAndUpdates() external {
+        _setupMultipleStakedAttesters(2);
+
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+
+        vm.prank(core);
+        uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(unstakedAmount, stateBefore.stakedAmount, "unstake should clamp to staked amount");
+        assertEq(stateAfter.stakedAmount, 0, "staked amount should be fully drained");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
+        assertEq(stakingManager.getPendingUnstakeCount(), 2, "pending count should match attesters");
     }
 
     function test_Unstake_Bounded_LowGasInitiatesSubset() external {

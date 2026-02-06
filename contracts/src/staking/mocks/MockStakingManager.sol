@@ -76,11 +76,13 @@ contract MockStakingManager is IStakingManager {
     /// @return unstakedAmount The amount initiated for unstake.
     function unstake(uint256 amount) external override returns (uint256 unstakedAmount) {
         lastUnstakeAmount = amount;
-        if (amount != 0 && _stakedAmount > amount - 1) {
-            _stakedAmount -= amount;
+        unstakedAmount = amount;
+        if (unstakedAmount > _stakedAmount) {
+            unstakedAmount = _stakedAmount;
         }
+        _stakedAmount -= unstakedAmount;
         ++unstakeCalls;
-        return amount;
+        return unstakedAmount;
     }
 
     /*//////////////////////////////////////////////////////////////
