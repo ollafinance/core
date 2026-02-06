@@ -1274,7 +1274,7 @@ contract OllaCore is
     function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {
         pendingWithdrawals = _modules.withdrawalQueue.totalPendingAssets();
         uint256 targetBuffered = targetBufferedAssets;
-        requiredBuffer = pendingWithdrawals > targetBuffered ? pendingWithdrawals : targetBuffered;
+        requiredBuffer = pendingWithdrawals + targetBuffered;
         return (requiredBuffer, pendingWithdrawals);
     }
 
