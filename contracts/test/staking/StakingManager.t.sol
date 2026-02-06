@@ -1094,6 +1094,42 @@ contract StakingManagerTest is Test {
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
     }
 
+    function test_HasExitableUnstakes_ReturnsFalseWhenOnlyPending() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
+
+        bool hasExitable = stakingManager.hasExitableUnstakes();
+        assertFalse(hasExitable, "hasExitableUnstakes should be false with only pending exits");
+    }
+
+    function test_HasExitableUnstakes_ReturnsTrueWhenWithdrawable() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        bool hasExitable = stakingManager.hasExitableUnstakes();
+        assertTrue(hasExitable, "hasExitableUnstakes should be true when exits are withdrawable");
+    }
+
     /*//////////////////////////////////////////////////////////////
                            FUZZ TESTS
     //////////////////////////////////////////////////////////////*/

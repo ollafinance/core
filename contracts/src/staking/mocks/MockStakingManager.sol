@@ -129,7 +129,7 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function hasPendingUnstakes() external pure override returns (bool) {
+    function hasExitableUnstakes() external pure override returns (bool) {
         return false;
     }
 

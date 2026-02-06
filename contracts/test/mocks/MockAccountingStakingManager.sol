@@ -25,6 +25,7 @@ contract MockAccountingStakingManager is IStakingManager {
     IERC20 public unstakedToken;
     uint256 public unstakedAmount;
     uint256 public pendingUnstakeAmount;
+    uint256 public withdrawableUnstakeAmount;
     uint256 public activatedAttesterCount;
     uint256 public lastUnstakeAmount;
     uint256 public unstakeReturnAmount;
@@ -79,6 +80,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setPendingUnstakes(uint256 value) external {
         pendingUnstakeAmount = value;
+    }
+
+    function setWithdrawableUnstakes(uint256 value) external {
+        withdrawableUnstakeAmount = value;
     }
 
     function setActivatedAttesterCount(uint256 value) external {
@@ -220,7 +225,9 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function getStakingState() external view override returns (StakingState memory) {
         return StakingState({
-            stakedAmount: totalStakedAmount, pendingUnstakeAmount: pendingUnstakeAmount, withdrawableAmount: 0
+            stakedAmount: totalStakedAmount,
+            pendingUnstakeAmount: pendingUnstakeAmount,
+            withdrawableAmount: withdrawableUnstakeAmount
         });
     }
 
@@ -228,8 +235,8 @@ contract MockAccountingStakingManager is IStakingManager {
         return pendingUnstakeAmount;
     }
 
-    function hasPendingUnstakes() external view override returns (bool) {
-        return pendingUnstakeAmount != 0;
+    function hasExitableUnstakes() external view override returns (bool) {
+        return withdrawableUnstakeAmount != 0;
     }
 
     function core() external pure virtual override returns (address) {
