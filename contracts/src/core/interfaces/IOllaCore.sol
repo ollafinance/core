@@ -129,6 +129,11 @@ interface IOllaCore {
     /// @param newBuffer The new target buffer.
     event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
+    /// @notice Emitted when the rebalance gas threshold is updated.
+    /// @param oldThreshold The old gas threshold.
+    /// @param newThreshold The new gas threshold.
+    event RebalanceGasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
+
     /// @notice Emitted when the governance address is updated.
     /// @param oldGovernance The old governance address.
     /// @param newGovernance The new governance address.
@@ -378,6 +383,10 @@ interface IOllaCore {
     /// @param newBuffer The new target buffer.
     function setTargetBufferedAssets(uint256 newBuffer) external;
 
+    /// @notice Sets the gas threshold used for rebalance step gating.
+    /// @param newThreshold The new gas threshold.
+    function setRebalanceGasThreshold(uint256 newThreshold) external;
+
     /// @notice Recovers stAztec sent directly to the core.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
     /// @param amount The amount of stAztec to recover.
@@ -428,6 +437,10 @@ interface IOllaCore {
     /// @notice Returns the target liquid assets buffer.
     /// @return The target buffer.
     function targetBufferedAssets() external view returns (uint256);
+
+    /// @notice Returns the rebalance gas threshold.
+    /// @return The gas threshold for rebalance step gating.
+    function rebalanceGasThreshold() external view returns (uint256);
 
     /// @notice Returns the latest accounting report snapshot.
     /// @return The latest report struct.

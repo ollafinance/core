@@ -28,6 +28,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public unstakeReturnAmount;
     bool public useUnstakeReturnAmount;
     uint256 public gasBurnTarget;
+    uint256 public gasThreshold;
     address public providerRewardsRecipient;
     address public providerAdmin;
     uint256 public stakeReturnAmount;
@@ -153,8 +154,8 @@ contract MockAccountingStakingManager is IStakingManager {
         return amount;
     }
 
-    function setGasThreshold(uint256 threshold) external pure override {
-        threshold;
+    function setGasThreshold(uint256 threshold) external override {
+        gasThreshold = threshold;
     }
 
     function cleanActivatedAttesters() external pure override {

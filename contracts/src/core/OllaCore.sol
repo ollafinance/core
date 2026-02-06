@@ -82,6 +82,9 @@ contract OllaCore is
     /// @notice Target liquid assets to keep buffered for withdrawals.
     uint256 public targetBufferedAssets;
 
+    /// @notice Gas threshold used to gate rebalance step execution.
+    uint256 public rebalanceGasThreshold;
+
     uint256 private _finalizedUnclaimedAssets;
 
     mapping(uint256 requestId => address owner) private _requestOwners;
@@ -159,9 +162,10 @@ contract OllaCore is
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
         targetBufferedAssets = 0;
+        rebalanceGasThreshold = _REBALANCE_GAS_THRESHOLD;
         _rebalanceProgress.step = IOllaCore.RebalanceStep.Done;
 
-        _modules.stakingManager.setGasThreshold(_REBALANCE_GAS_THRESHOLD);
+        _modules.stakingManager.setGasThreshold(rebalanceGasThreshold);
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         // Timestamp is used only for reporting/accounting liveness.
@@ -332,6 +336,15 @@ contract OllaCore is
         uint256 oldBuffer = targetBufferedAssets;
         targetBufferedAssets = newBuffer;
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
+    }
+
+    /// @notice Sets the gas threshold used for rebalance step gating.
+    /// @param newThreshold The new gas threshold.
+    function setRebalanceGasThreshold(uint256 newThreshold) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 oldThreshold = rebalanceGasThreshold;
+        rebalanceGasThreshold = newThreshold;
+        emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
+        _modules.stakingManager.setGasThreshold(newThreshold);
     }
 
     // Slither: rebalance is a linear state machine; complexity is intentional and reviewed.
@@ -1248,7 +1261,7 @@ contract OllaCore is
     }
 
     function _hasGasForStep() internal view returns (bool) {
-        return gasleft() > _REBALANCE_GAS_THRESHOLD;
+        return gasleft() > rebalanceGasThreshold;
     }
 
     function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {

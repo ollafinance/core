@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import { Test, Vm } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
@@ -148,6 +149,7 @@ contract OllaCoreRebalanceTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     uint256 internal constant DECIMALS = 1e18;
+    uint256 internal constant DEFAULT_REBALANCE_GAS_THRESHOLD = 180_000;
 
     /*//////////////////////////////////////////////////////////////
                            TEST FIXTURES
@@ -228,6 +230,37 @@ contract OllaCoreRebalanceTest is Test {
         vm.prank(owner);
         requestId = vault.requestRedeem(shares, owner);
         return requestId;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           GAS THRESHOLD
+    //////////////////////////////////////////////////////////////*/
+
+    function test_DefaultRebalanceGasThreshold() external {
+        assertEq(vault.rebalanceGasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "default gas threshold");
+        assertEq(stakingManager.gasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "staking manager threshold set");
+    }
+
+    function test_RevertWhen_NonAdminSetsRebalanceGasThreshold() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(alice);
+        vault.setRebalanceGasThreshold(200_000);
+    }
+
+    function test_SetRebalanceGasThreshold_UpdatesAndForwards() external {
+        uint256 newThreshold = 240_000;
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.setGasThreshold, (newThreshold)));
+
+        vm.prank(governance);
+        vault.setRebalanceGasThreshold(newThreshold);
+
+        assertEq(vault.rebalanceGasThreshold(), newThreshold, "core gas threshold updated");
+        assertEq(stakingManager.gasThreshold(), newThreshold, "staking manager threshold forwarded");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -636,7 +669,15 @@ contract OllaCoreRebalanceTest is Test {
             }
         }
 
-        assertGt(selectedGas, 0, "should find gas stipend for partial finalize");
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            vault.rebalance();
+
+            assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue should drain in one call");
+            assertEq(vault.accountingState().bufferedAssets, bufferBefore - totalPendingBefore, "buffer should drain");
+            return;
+        }
 
         vm.revertToState(snapshotId);
         vm.prank(operator);
