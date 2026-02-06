@@ -165,7 +165,9 @@ contract MockAccountingStakingManager is IStakingManager {
     function getUnstakedFunds() public virtual override returns (uint256 received) {
         uint256 target = gasBurnTarget;
         if (target != 0) {
-            while (gasleft() > target) {
+            uint256 safetyMargin = 25_000;
+            uint256 burnTarget = target + safetyMargin;
+            while (gasleft() > burnTarget) {
                 assembly {
                     mstore(0x00, add(mload(0x00), 1))
                 }
