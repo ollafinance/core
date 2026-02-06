@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
@@ -10,6 +11,7 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 /// @title MockAccountingStakingManager
 /// @notice Test mock for IStakingManager that allows setting claimable rewards, slashing delta, and staked amounts.
 contract MockAccountingStakingManager is IStakingManager {
+    using SafeERC20 for IERC20;
     /*//////////////////////////////////////////////////////////////
                                 STATE
     //////////////////////////////////////////////////////////////*/
@@ -137,7 +139,7 @@ contract MockAccountingStakingManager is IStakingManager {
             transferAmount = amount;
         }
         if (transferAmount != 0) {
-            token.transferFrom(msg.sender, address(this), transferAmount);
+            token.safeTransferFrom(msg.sender, address(this), transferAmount);
         }
         return actualAmount;
     }
@@ -185,7 +187,7 @@ contract MockAccountingStakingManager is IStakingManager {
         }
 
         unstakedAmount = 0;
-        token.transfer(msg.sender, amount);
+        token.safeTransfer(msg.sender, amount);
         return amount;
     }
 
@@ -195,7 +197,7 @@ contract MockAccountingStakingManager is IStakingManager {
         if (harvested > 0 && address(rewardsToken) != address(0) && rewardsVault != address(0)) {
             // Cast to MockAztec and mint tokens to this contract first, then transfer to vault
             MockAztec(address(rewardsToken)).mint(address(this), harvested);
-            rewardsToken.transfer(rewardsVault, harvested);
+            rewardsToken.safeTransfer(rewardsVault, harvested);
         }
         return harvested;
     }

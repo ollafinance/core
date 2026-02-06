@@ -1490,6 +1490,7 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
 //////////////////////////////////////////////////////////////*/
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
@@ -1497,6 +1498,7 @@ import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 /// @notice Staking manager that reverts on unstake when amount exceeds staked principal.
 /// @dev Used to test that rebalance correctly accounts for rewards vault liquidity.
 contract UnstakeRevertingStakingManager is IStakingManager {
+    using SafeERC20 for IERC20;
     IERC20 public immutable STAKING_ASSET;
 
     uint256 public staked;
@@ -1534,7 +1536,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     function initialize(IERC20, address, address, address, address, address) external pure override { }
 
     function stake(uint256 amount) external override returns (uint256 stakedAmount) {
-        STAKING_ASSET.transferFrom(msg.sender, address(this), amount);
+        STAKING_ASSET.safeTransferFrom(msg.sender, address(this), amount);
         staked += amount;
         return amount;
     }

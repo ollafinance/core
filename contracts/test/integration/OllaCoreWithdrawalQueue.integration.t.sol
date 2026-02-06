@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
@@ -327,6 +328,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 /// @notice Staking manager mock that actually transfers tokens to simulate real staking behavior.
 /// @dev Used to test the finalized withdrawal claim bug where tokens get re-staked.
 contract RealisticStakingManager is IStakingManager {
+    using SafeERC20 for IERC20;
     IERC20 public stakingAsset;
     uint256 public totalStakedAmount;
     uint256 public pendingUnstakeAmount;
@@ -338,7 +340,7 @@ contract RealisticStakingManager is IStakingManager {
 
     function stake(uint256 amount) external override returns (uint256 stakedAmount) {
         // Actually transfer tokens from caller (OllaCore) to this contract
-        stakingAsset.transferFrom(msg.sender, address(this), amount);
+        stakingAsset.safeTransferFrom(msg.sender, address(this), amount);
         totalStakedAmount += amount;
         return amount;
     }
@@ -361,7 +363,7 @@ contract RealisticStakingManager is IStakingManager {
         if (received > 0) {
             pendingUnstakeAmount = 0;
             withdrawableAmount = 0;
-            stakingAsset.transfer(msg.sender, received);
+            stakingAsset.safeTransfer(msg.sender, received);
         }
         return received;
     }
