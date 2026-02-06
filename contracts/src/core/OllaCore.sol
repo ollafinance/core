@@ -243,6 +243,7 @@ contract OllaCore is
     /// @param requestId The withdrawal request id.
     /// @return assets The assets claimed for the request.
     function claimRequestById(uint256 requestId) external override nonReentrant returns (uint256 assets) {
+        // Trust: withdrawal queue is authoritative for request state and asset amounts.
         assets = _claimWithdrawal(requestId);
         return assets;
     }
@@ -330,6 +331,9 @@ contract OllaCore is
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
     }
 
+    // Slither: rebalance is a linear state machine; complexity is intentional and reviewed.
+    // slither-disable-start cyclomatic-complexity
+    // slither-disable-start pess-multiple-storage-read
     // solhint-disable function-max-lines
     /// @notice Operator-triggered rebalance flow.
     /// @dev Executes: harvest (includes pulling rewards vault funds) -> pull unstaked ->
@@ -347,10 +351,14 @@ contract OllaCore is
         returns (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer)
     {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
+        // Trust: rebalance assumes safety module, staking manager, rewards vault, and withdrawal queue are trusted.
         // Slither: SafetyModule is a trusted dependency; rebalance is nonReentrant and role-gated.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
         safetyModuleRef.checkAccountingLiveness();
         IOllaCore.RebalanceProgress memory progress = _rebalanceProgress;
+
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             _syncBufferedWithBalance();
             progress.step = IOllaCore.RebalanceStep.Harvest;
@@ -358,6 +366,8 @@ contract OllaCore is
             progress.unstakeRemaining = 0;
         }
 
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.Harvest) {
             // Slither: rebalance is nonReentrant and uses trusted modules for external calls.
             // slither-disable-next-line reentrancy-no-eth
@@ -365,6 +375,8 @@ contract OllaCore is
             progress.step = IOllaCore.RebalanceStep.PullUnstaked;
         }
 
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
             if (!_hasGasForStep()) {
                 _rebalanceProgress = progress;
@@ -374,6 +386,8 @@ contract OllaCore is
             progress.step = IOllaCore.RebalanceStep.FinalizeWithdrawals;
         }
 
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals) {
             if (!_hasGasForStep()) {
                 _rebalanceProgress = progress;
@@ -381,6 +395,8 @@ contract OllaCore is
             }
             finalizedAmount = _finalizeWithdrawals();
             uint256 pending = _modules.withdrawalQueue.totalPendingAssets();
+            // Slither: zero guard only; no timestamp usage.
+            // slither-disable-next-line incorrect-equality,timestamp
             if (pending == 0 || _accountingState.bufferedAssets == 0) {
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
@@ -391,7 +407,11 @@ contract OllaCore is
             }
         }
 
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.InitiateUnstake) {
+            // Slither: zero guard only; no timestamp usage.
+            // slither-disable-next-line incorrect-equality,timestamp
             if (progress.unstakeRemaining == 0) {
                 progress.step = IOllaCore.RebalanceStep.StakeSurplus;
             } else {
@@ -401,6 +421,8 @@ contract OllaCore is
                 }
                 uint256 initiated = _initiateUnstake(progress.unstakeRemaining);
                 progress.unstakeRemaining -= initiated;
+                // Slither: explicit nonzero check; no timestamp usage.
+                // slither-disable-next-line timestamp
                 if (progress.unstakeRemaining != 0) {
                     _rebalanceProgress = progress;
                     return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
@@ -409,14 +431,22 @@ contract OllaCore is
             }
         }
 
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
+            // Slither: zero guard only; no timestamp usage.
+            // slither-disable-next-line incorrect-equality,timestamp
             if (progress.stakeRemaining == 0) {
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 progress.stakeRemaining = _computeStakeRemaining(requiredBuffer);
+                // Slither: zero guard only; no timestamp usage.
+                // slither-disable-next-line incorrect-equality,timestamp
                 if (progress.stakeRemaining == 0) {
                     progress.step = IOllaCore.RebalanceStep.Done;
                 }
             }
+            // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+            // slither-disable-next-line incorrect-equality,timestamp
             if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
                 if (!_hasGasForStep()) {
                     _rebalanceProgress = progress;
@@ -424,6 +454,8 @@ contract OllaCore is
                 }
                 stakedAmount = _stakeSurplus(progress.stakeRemaining);
                 progress.stakeRemaining -= stakedAmount;
+                // Slither: explicit nonzero check; no timestamp usage.
+                // slither-disable-next-line timestamp
                 if (progress.stakeRemaining != 0) {
                     _rebalanceProgress = progress;
                     return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
@@ -432,6 +464,8 @@ contract OllaCore is
             }
         }
 
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
@@ -439,6 +473,9 @@ contract OllaCore is
 
         _rebalanceProgress = progress;
         resultingBuffer = _accountingState.bufferedAssets;
+
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
         }
@@ -446,6 +483,8 @@ contract OllaCore is
         return (rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
     }
 
+    // slither-disable-end pess-multiple-storage-read
+    // slither-disable-end cyclomatic-complexity
     // solhint-enable function-max-lines
 
     // Slither: accept multiple storage reads for readability in hot-path accounting.
@@ -696,10 +735,13 @@ contract OllaCore is
     function _pullRewardsVaultFunds() internal returns (uint256 pulledAmount) {
         IRewardsVault rewardsVaultRef = _modules.rewardsVault;
         uint256 rewardsVaultBalance = rewardsVaultRef.balance();
-        // slither-disable-next-line timestamp,incorrect-equality - zero guard only, no timestamp usage
+
+        // Slither: zero guard only; no timestamp usage.
+        // slither-disable-next-line timestamp,incorrect-equality
         if (rewardsVaultBalance == 0) {
             return 0;
         }
+
         // slither-disable-next-line reentrancy-benign - rewardsVault is trusted; rebalance is nonReentrant
         rewardsVaultRef.withdrawToCore();
         _accountingState.bufferedAssets += rewardsVaultBalance;
@@ -733,6 +775,9 @@ contract OllaCore is
         return actualReceived;
     }
 
+    // Slither: external calls under nonReentrant entrypoints; module is trusted.
+    // slither-disable-next-line reentrancy-benign
+    // solhint-disable-next-line function-max-lines
     /// @notice Finalizes pending withdrawal requests using available liquidity.
     /// @return finalizedAmount The amount of assets used to finalize withdrawals.
     function _finalizeWithdrawals() internal returns (uint256 finalizedAmount) {
@@ -740,22 +785,25 @@ contract OllaCore is
         uint256 bufferedAssets = _accountingState.bufferedAssets;
         uint256 availableForWithdrawals = bufferedAssets;
 
-        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
+        // Slither: zero guard only; no timestamp usage.
+        // slither-disable-next-line timestamp,incorrect-equality
         if (availableForWithdrawals == 0) {
             return 0;
         }
-
         IOllaCore.Modules memory modules = _modules;
         uint256 queued = modules.withdrawalQueue.totalPendingAssets();
         uint256 total = totalAssets();
-        // slither-disable-next-line reentrancy-no-eth - external calls under nonReentrant entrypoints
+
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign - external calls under nonReentrant entrypoints
         ISafetyModule(modules.safetyModule).checkQueueRatio(queued, total);
-        // slither-disable-next-line timestamp,incorrect-equality - zero guards only, no timestamp usage
+
+        // Slither: zero guard only; no timestamp usage.
+        // slither-disable-next-line timestamp,incorrect-equality
         if (queued == 0) {
             return 0;
         }
 
-        // slither-disable-next-line reentrancy-no-eth - external call under nonReentrant entrypoints
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign - external call under nonReentrant entrypoints
         uint256 finalizedCount;
         (finalizedAmount, finalizedCount) = modules.withdrawalQueue.finalizeWithdrawals(availableForWithdrawals);
 
@@ -768,12 +816,14 @@ contract OllaCore is
             revert OllaCore__InsufficientBucketBalance(Bucket.Buffered, finalizedAmount, bufferedAssets);
         }
 
-        // slither-disable-next-line incorrect-equality - zero guard only
+        // Slither: zero guard only.
+        // slither-disable-next-line incorrect-equality
         if ((finalizedAmount == 0) != (finalizedCount == 0)) {
             revert OllaCore__FinalizeInconsistent(finalizedAmount, finalizedCount);
         }
 
-        // slither-disable-next-line incorrect-equality - zero guard only
+        // Slither: zero guard only.
+        // slither-disable-next-line incorrect-equality
         if (finalizedAmount == 0) {
             return 0;
         }
@@ -785,28 +835,41 @@ contract OllaCore is
         return finalizedAmount;
     }
 
+    // Slither: internal helper, not an initializer.
+    // slither-disable-start pess-unprotected-initialize
     /// @notice Initiates unstaking for a bounded amount.
     /// @param requested The remaining amount to initiate for unstake.
     /// @return initiated Amount actually initiated for unstake.
     function _initiateUnstake(uint256 requested) internal returns (uint256 initiated) {
+        // Slither: zero guard only; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (requested == 0) {
             return 0;
         }
 
         IOllaCore.Modules memory modules = _modules;
         uint256 pendingUnstakes = modules.stakingManager.pendingUnstakes();
+
+        // Slither: internal rebalance state machine; trusted module call under nonReentrant entrypoint.
+        // slither-disable-next-line reentrancy-no-eth
         initiated = modules.stakingManager.unstake(requested);
+        // Slither: explicit nonzero check; no timestamp usage.
+        // slither-disable-next-line timestamp
         if (initiated > 0) {
             emit UnstakeInitiated(requested + pendingUnstakes, initiated);
         }
         return initiated;
     }
 
+    // slither-disable-end pess-unprotected-initialize
+
     // slither-disable-start pess-multiple-storage-read
     /// @notice Stakes surplus buffered assets above the required buffer.
     /// @param stakeable The amount to attempt staking.
     /// @return totalStaked The total amount staked during this operation.
     function _stakeSurplus(uint256 stakeable) internal returns (uint256 totalStaked) {
+        // Slither: zero guard only; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
         if (stakeable == 0) {
             return 0;
         }
@@ -822,6 +885,8 @@ contract OllaCore is
         // Slither: rebalance is nonReentrant and stakingManager is a trusted module.
         // slither-disable-next-line reentrancy-no-eth
         try stakingManagerRef.stake(stakeable) returns (uint256 actualStaked) {
+            // Slither: bounds check only; no timestamp usage.
+            // slither-disable-next-line timestamp
             if (actualStaked > stakeable) {
                 revert OllaCore__StakeFailed(actualStaked);
             }
@@ -830,6 +895,8 @@ contract OllaCore is
             revert OllaCore__StakeFailed(stakeable);
         }
 
+        // Slither: explicit nonzero check; no timestamp usage.
+        // slither-disable-next-line timestamp
         if (totalStaked > 0) {
             _accountingState.bufferedAssets = bufferedAssets - totalStaked;
             _accountingState.stakedPrincipal = stakedPrincipal + totalStaked;
@@ -876,8 +943,7 @@ contract OllaCore is
         onlyRole(OPERATOR_ROLE)
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
-        //Rationale: strict equality here is intentional and safe for unsigned values;
-        //timestamp detector is inapplicable because no timestamp is used.
+        // Slither: zero guard only; no timestamp usage.
         // slither-disable-next-line incorrect-equality,timestamp
         if (grossAssetRewards == 0 || protocolFeeBP == 0 || totalAssets() == 0) {
             return (0, 0, 0);
@@ -892,6 +958,8 @@ contract OllaCore is
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
 
+    // Slither: external calls under nonReentrant entrypoints; module is trusted.
+    // slither-disable-next-line reentrancy-benign
     function _claimWithdrawal(uint256 requestId) internal returns (uint256 assets) {
         IWithdrawalQueue queue = _modules.withdrawalQueue;
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
@@ -997,7 +1065,8 @@ contract OllaCore is
     }
 
     function _decreaseBuffered(uint256 amount) internal {
-        // slither-disable-next-line timestamp,incorrect-equality - zero guard only, no timestamp usage
+        // Slither: zero guard only; no timestamp usage.
+        // slither-disable-next-line timestamp,incorrect-equality
         if (amount == 0) {
             revert OllaCore__InvalidAmount();
         }
@@ -1020,9 +1089,11 @@ contract OllaCore is
         currentRewards = accountingSnapshot.cumulativeRewards + claimableRewards;
 
         uint256 latestReportRewards = _latestReport.rewardsSnapshot;
+
         // Clamp signed delta; no timestamp-based control flow.
         // slither-disable-next-line timestamp
         int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(latestReportRewards);
+
         // slither-disable-next-line timestamp
         // Defensive: currentRewards should be non-decreasing, but clamp if a downstream module reports a drop.
         // slither-disable-next-line timestamp
