@@ -543,6 +543,45 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(resultingBuffer, expectedBuffer, "buffer should include harvested rewards");
     }
 
+    function test_Rebalance_LowGas_PullUnstakedResumesAcrossCalls() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 unstakedAmount = 3 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        stakingManager.setGasBurnTarget(90_000);
+        asset.mint(address(stakingManager), unstakedAmount);
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 expectedBuffer = accountingBefore.bufferedAssets + unstakedAmount;
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(expectedBuffer);
+
+        vm.prank(operator);
+        vault.rebalance{ gas: 400_000 }();
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "rebalance should pause after pull unstaked under low gas"
+        );
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressFinal.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should complete after follow-up"
+        );
+    }
+
     function test_Rebalance_FinalizeWithdrawals_BoundedGasProgresses() external {
         uint256 totalRequests = 200;
         uint256 requestShares = 1 * DECIMALS;
@@ -625,6 +664,49 @@ contract OllaCoreRebalanceTest is Test {
         }
 
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue should drain after follow-up rebalance");
+    }
+
+    function test_Rebalance_Liveness_ZeroUnstakeReturn_Stuck() external {
+        uint256 bufferAmount = 5 * DECIMALS;
+        uint256 targetBufferedAssets = 20 * DECIMALS;
+
+        asset.mint(address(vault), bufferAmount);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+        stakingManager.setUnstakeReturnAmount(0);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.InitiateUnstake),
+            "rebalance should be stuck at initiate unstake when returning 0"
+        );
+        assertEq(
+            progressAfter.unstakeRemaining,
+            targetBufferedAssets - bufferAmount,
+            "unstake remaining should not change when zero progress"
+        );
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressFinal.step),
+            uint256(IOllaCore.RebalanceStep.InitiateUnstake),
+            "rebalance remains stuck without progress"
+        );
+        assertEq(
+            progressFinal.unstakeRemaining, progressAfter.unstakeRemaining, "unstake remaining should remain unchanged"
+        );
     }
 
     function test_Rebalance_Bounded_StateMachineCompletesAndEmitsOnce() external {
@@ -907,6 +989,46 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakedAmount, 0, "staked amount is zero when below target");
         assertEq(resultingBuffer, accountingBefore.bufferedAssets, "buffer unchanged when below target");
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked principal unchanged");
+    }
+
+    function test_Rebalance_Liveness_ZeroStakeReturn_Stuck() external {
+        uint256 depositAmount = 30 * DECIMALS;
+        uint256 targetBufferedAssets = 10 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(0);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.StakeSurplus),
+            "rebalance should be stuck at stake surplus when returning 0"
+        );
+        assertEq(
+            progressAfter.stakeRemaining,
+            depositAmount - targetBufferedAssets,
+            "stake remaining should not change when zero progress"
+        );
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressFinal.step),
+            uint256(IOllaCore.RebalanceStep.StakeSurplus),
+            "rebalance remains stuck without progress"
+        );
+        assertEq(progressFinal.stakeRemaining, progressAfter.stakeRemaining, "stake remaining should remain unchanged");
     }
 
     function test_Rebalance_StakeSurplus_RevertsWhenStakedExceedsStakeable() external {
