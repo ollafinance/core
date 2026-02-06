@@ -466,7 +466,7 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(vault.accountingState().bufferedAssets, targetBuffered, "buffer unchanged");
     }
 
-    function test_Rebalance_PullUnstaked_WaitsForPendingUnstakes() external {
+    function test_Rebalance_PullUnstaked_WaitsForExitableUnstakes() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 withdrawalShares = 4 * DECIMALS;
 
@@ -480,7 +480,7 @@ contract OllaCoreRebalanceTest is Test {
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
-        stakingManager.setPendingUnstakes(1);
+        stakingManager.setWithdrawableUnstakes(1);
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
@@ -492,16 +492,16 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(
             uint256(progressAfterFirst.step),
             uint256(IOllaCore.RebalanceStep.PullUnstaked),
-            "rebalance should hold at pull unstaked while pending unstakes"
+            "rebalance should hold at pull unstaked while exitable unstakes"
         );
-        assertEq(withdrawalQueue.totalPendingAssets(), pendingBefore, "pending assets unchanged with pending unstakes");
+        assertEq(withdrawalQueue.totalPendingAssets(), pendingBefore, "pending assets unchanged with exitable unstakes");
         assertEq(
             vault.accountingState().bufferedAssets,
             accountingBefore.bufferedAssets,
-            "buffer unchanged with pending unstakes"
+            "buffer unchanged with exitable unstakes"
         );
 
-        stakingManager.setPendingUnstakes(0);
+        stakingManager.setWithdrawableUnstakes(0);
 
         uint256 bufferBeforeFinalize = vault.accountingState().bufferedAssets;
         vm.expectCall(
@@ -1043,20 +1043,7 @@ contract OllaCoreRebalanceTest is Test {
         vm.prank(operator);
         vault.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressAfterFirst = vault.rebalanceProgress();
-        assertEq(
-            uint256(progressAfterFirst.step),
-            uint256(IOllaCore.RebalanceStep.PullUnstaked),
-            "rebalance should hold at pull unstaked with pending unstakes"
-        );
-        assertEq(stakingManager.lastUnstakeAmount(), 0, "unstake not initiated while pending unstakes exist");
-
-        stakingManager.setPendingUnstakes(0);
-
-        vm.prank(operator);
-        vault.rebalance();
-
-        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets, "unstake initiated after pending cleared");
+        assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - pendingUnstakes, "unstake reduced by pending");
     }
 
     function test_Rebalance_Unstake_NoUnitRounding() external {
@@ -1587,6 +1574,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     uint256 public staked;
     uint256 public pending;
+    uint256 public withdrawable;
     uint256 public claimable;
     uint256 public slashing;
     address public rewardsRecipient;
@@ -1607,6 +1595,10 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function setPendingUnstakes(uint256 value) external {
         pending = value;
+    }
+
+    function setWithdrawableUnstakes(uint256 value) external {
+        withdrawable = value;
     }
 
     function setRewardsRecipient(address recipient) external {
@@ -1663,15 +1655,15 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function getStakingState() external view override returns (StakingState memory state) {
-        return StakingState({ stakedAmount: staked, pendingUnstakeAmount: pending, withdrawableAmount: 0 });
+        return StakingState({ stakedAmount: staked, pendingUnstakeAmount: pending, withdrawableAmount: withdrawable });
     }
 
     function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
         return pending;
     }
 
-    function hasPendingUnstakes() external view override returns (bool) {
-        return pending != 0;
+    function hasExitableUnstakes() external view override returns (bool) {
+        return withdrawable != 0;
     }
 
     function getUnstakeCursor() external pure override returns (uint256 cursor) {

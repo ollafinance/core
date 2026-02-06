@@ -97,7 +97,7 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function hasPendingUnstakes() external pure override returns (bool) {
+    function hasExitableUnstakes() external pure override returns (bool) {
         return false;
     }
 
