@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import {Test} from "@forge-std/Test.sol";
 
-import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
+import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import {IERC20} from "@oz/token/ERC20/IERC20.sol";
+import {PausableUpgradeable} from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 
-import { OllaCore } from "src/core/OllaCore.sol";
-import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import {OllaCore} from "src/core/OllaCore.sol";
+import {SafetyModule} from "src/safetymodule/SafetyModule.sol";
+import {WithdrawalQueue} from "src/core/WithdrawalQueue.sol";
+import {IOllaCore} from "src/core/interfaces/IOllaCore.sol";
+import {IWithdrawalQueue} from "src/core/interfaces/IWithdrawalQueue.sol";
+import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
+import {IStakingProviderRegistry} from "src/staking/interfaces/IStakingProviderRegistry.sol";
+import {StAztec} from "src/core/StAztec.sol";
+import {MockAztec} from "src/staking/mocks/MockAztec.sol";
+import {MockRewardsVault} from "src/core/mocks/MockRewardsVault.sol";
+import {MockStakingManager} from "src/staking/mocks/MockStakingManager.sol";
 
 contract OllaCoreWithdrawalQueueHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
@@ -353,7 +353,7 @@ contract RealisticStakingManager is IStakingManager {
         return amount;
     }
 
-    function setGasThreshold(uint256) external pure override { }
+    function setGasThreshold(uint256) external pure override {}
 
     function getUnstakedFunds() external override returns (uint256 received) {
         // Transfer pending unstaked funds back to caller (OllaCore)
@@ -394,7 +394,7 @@ contract RealisticStakingManager is IStakingManager {
         return 0;
     }
 
-    function cleanActivatedAttesters() external pure override { }
+    function cleanActivatedAttesters() external pure override {}
 
     function getActivatedAttesterCount() external pure override returns (uint256) {
         return 0;
@@ -421,7 +421,7 @@ contract RealisticStakingManager is IStakingManager {
     }
 
     function getProviderConfig() external pure override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+        return ProviderConfig({admin: address(0), rewardsRecipient: address(0)});
     }
 }
 
@@ -562,21 +562,21 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         uint256 vaultBalanceAfterFinalize = asset.balanceOf(address(vault));
         assertEq(vaultBalanceAfterFinalize, depositAmount, "vault should have funds for claim");
 
-        // Step 6: Another rebalance - THIS IS WHERE THE BUG MANIFESTS
-        // The finalized withdrawal funds should NOT be re-staked, but they are
+        // Step 6: Another rebalance - regression check for finalized funds.
+        // Finalized-but-unclaimed funds should remain reserved in the vault.
         vault.rebalance();
 
         // Check if funds were incorrectly re-staked
         uint256 vaultBalanceAfterExtraRebalance = asset.balanceOf(address(vault));
 
-        // This assertion will FAIL due to the bug - funds get re-staked
+        // Assertion should pass post-fix: funds remain reserved for claim.
         assertGe(
             vaultBalanceAfterExtraRebalance,
             expectedAssets,
             "vault should still have funds reserved for finalized withdrawal"
         );
 
-        // Step 7: User tries to claim - this will revert with ERC20InsufficientBalance due to the bug
+        // Step 7: User claims finalized withdrawal.
         vm.prank(alice);
         uint256 claimed = vault.claimRequestById(requestId);
 
