@@ -23,6 +23,7 @@ contract MockAccountingStakingManager is IStakingManager {
     IERC20 public unstakedToken;
     uint256 public unstakedAmount;
     uint256 public pendingUnstakeAmount;
+    uint256 public activatedAttesterCount;
     uint256 public lastUnstakeAmount;
     uint256 public unstakeReturnAmount;
     bool public useUnstakeReturnAmount;
@@ -75,6 +76,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setPendingUnstakes(uint256 value) external {
         pendingUnstakeAmount = value;
+    }
+
+    function setActivatedAttesterCount(uint256 value) external {
+        activatedAttesterCount = value;
     }
 
     function setUnstakeReturnAmount(uint256 value) external {
@@ -234,8 +239,8 @@ contract MockAccountingStakingManager is IStakingManager {
         return 0;
     }
 
-    function getActivatedAttesterCount() external pure override returns (uint256) {
-        return 0;
+    function getActivatedAttesterCount() external view override returns (uint256) {
+        return activatedAttesterCount;
     }
 
     function getPendingUnstakeCount() external pure override returns (uint256) {

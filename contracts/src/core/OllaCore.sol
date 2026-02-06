@@ -5,12 +5,15 @@ import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUp
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
+
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+
 import { Math } from "@oz/utils/math/Math.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
@@ -424,8 +427,15 @@ contract OllaCore is
                 // Slither: explicit nonzero check; no timestamp usage.
                 // slither-disable-next-line timestamp
                 if (progress.unstakeRemaining != 0) {
-                    _rebalanceProgress = progress;
-                    return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
+                    // Slither: zero return is an intentional sentinel for no progress
+                    // slither-disable-next-line incorrect-equality
+                    if (initiated == 0 && _modules.stakingManager.getActivatedAttesterCount() == 0) {
+                        progress.unstakeRemaining = 0;
+                        progress.step = IOllaCore.RebalanceStep.StakeSurplus;
+                    } else {
+                        _rebalanceProgress = progress;
+                        return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
+                    }
                 }
                 progress.step = IOllaCore.RebalanceStep.StakeSurplus;
             }
@@ -457,8 +467,15 @@ contract OllaCore is
                 // Slither: explicit nonzero check; no timestamp usage.
                 // slither-disable-next-line timestamp
                 if (progress.stakeRemaining != 0) {
-                    _rebalanceProgress = progress;
-                    return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
+                    // Slither: zero return is an intentional sentinel for no progress
+                    // slither-disable-next-line incorrect-equality
+                    if (stakedAmount == 0) {
+                        progress.stakeRemaining = 0;
+                        progress.step = IOllaCore.RebalanceStep.Done;
+                    } else {
+                        _rebalanceProgress = progress;
+                        return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
+                    }
                 }
                 progress.step = IOllaCore.RebalanceStep.Done;
             }
@@ -777,7 +794,7 @@ contract OllaCore is
 
     // Slither: external calls under nonReentrant entrypoints; module is trusted.
     // slither-disable-next-line reentrancy-benign
-    // solhint-disable-next-line function-max-lines
+    // solhint-disable function-max-lines
     /// @notice Finalizes pending withdrawal requests using available liquidity.
     /// @return finalizedAmount The amount of assets used to finalize withdrawals.
     function _finalizeWithdrawals() internal returns (uint256 finalizedAmount) {
@@ -834,6 +851,8 @@ contract OllaCore is
         emit WithdrawalFinalized(availableForWithdrawals, finalizedAmount);
         return finalizedAmount;
     }
+
+    // solhint-enable function-max-lines
 
     // Slither: internal helper, not an initializer.
     // slither-disable-start pess-unprotected-initialize

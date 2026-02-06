@@ -666,7 +666,7 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue should drain after follow-up rebalance");
     }
 
-    function test_Rebalance_Liveness_ZeroUnstakeReturn_Stuck() external {
+    function test_Rebalance_Liveness_ZeroUnstakeReturn_Recovers() external {
         uint256 bufferAmount = 5 * DECIMALS;
         uint256 targetBufferedAssets = 20 * DECIMALS;
 
@@ -686,14 +686,10 @@ contract OllaCoreRebalanceTest is Test {
         IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
         assertEq(
             uint256(progressAfter.step),
-            uint256(IOllaCore.RebalanceStep.InitiateUnstake),
-            "rebalance should be stuck at initiate unstake when returning 0"
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should advance when no unstake capacity"
         );
-        assertEq(
-            progressAfter.unstakeRemaining,
-            targetBufferedAssets - bufferAmount,
-            "unstake remaining should not change when zero progress"
-        );
+        assertEq(progressAfter.unstakeRemaining, 0, "unstake remaining should clear when no capacity");
 
         vm.prank(operator);
         vault.rebalance();
@@ -701,11 +697,39 @@ contract OllaCoreRebalanceTest is Test {
         IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
         assertEq(
             uint256(progressFinal.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should remain done after recovery"
+        );
+    }
+
+    function test_Rebalance_Liveness_ZeroUnstakeReturn_WithCapacity_DoesNotAdvance() external {
+        uint256 bufferAmount = 5 * DECIMALS;
+        uint256 targetBufferedAssets = 20 * DECIMALS;
+
+        asset.mint(address(vault), bufferAmount);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBufferedAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+        stakingManager.setUnstakeReturnAmount(0);
+        stakingManager.setActivatedAttesterCount(1);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
             uint256(IOllaCore.RebalanceStep.InitiateUnstake),
-            "rebalance remains stuck without progress"
+            "rebalance should stay in initiate unstake with capacity"
         );
         assertEq(
-            progressFinal.unstakeRemaining, progressAfter.unstakeRemaining, "unstake remaining should remain unchanged"
+            progressAfter.unstakeRemaining,
+            targetBufferedAssets - bufferAmount,
+            "unstake remaining should persist when capacity exists"
         );
     }
 
@@ -991,7 +1015,7 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked principal unchanged");
     }
 
-    function test_Rebalance_Liveness_ZeroStakeReturn_Stuck() external {
+    function test_Rebalance_Liveness_ZeroStakeReturn_Recovers() external {
         uint256 depositAmount = 30 * DECIMALS;
         uint256 targetBufferedAssets = 10 * DECIMALS;
 
@@ -1010,14 +1034,10 @@ contract OllaCoreRebalanceTest is Test {
         IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
         assertEq(
             uint256(progressAfter.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "rebalance should be stuck at stake surplus when returning 0"
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should advance when no stake capacity"
         );
-        assertEq(
-            progressAfter.stakeRemaining,
-            depositAmount - targetBufferedAssets,
-            "stake remaining should not change when zero progress"
-        );
+        assertEq(progressAfter.stakeRemaining, 0, "stake remaining should clear when no capacity");
 
         vm.prank(operator);
         vault.rebalance();
@@ -1025,10 +1045,9 @@ contract OllaCoreRebalanceTest is Test {
         IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
         assertEq(
             uint256(progressFinal.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "rebalance remains stuck without progress"
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should remain done after recovery"
         );
-        assertEq(progressFinal.stakeRemaining, progressAfter.stakeRemaining, "stake remaining should remain unchanged");
     }
 
     function test_Rebalance_StakeSurplus_RevertsWhenStakedExceedsStakeable() external {
