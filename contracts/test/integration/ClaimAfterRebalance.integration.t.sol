@@ -17,12 +17,12 @@ import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 
 /// @title ClaimAfterRebalanceTest
-/// @notice Reproduces a bug where finalized-but-unclaimed withdrawal tokens are re-staked
-///         by a subsequent rebalance, causing the claim to revert with ERC20InsufficientBalance.
+/// @notice Validates that finalized-but-unclaimed withdrawal tokens are NOT re-staked
+///         by a subsequent rebalance, thanks to the _finalizedUnclaimedAssets mechanism.
 ///
-///         Root cause: _syncBufferedWithBalance() reconciles bufferedAssets upward to match the
-///         actual token balance, but does not account for tokens earmarked for finalized claims.
-///         _stakeSurplus() then sends those tokens to the staking manager.
+///         The _finalizedUnclaimedAssets counter reserves tokens in OllaCore so that
+///         _syncBufferedWithBalance() and _stakeSurplus() do not treat them as available
+///         buffer to re-stake.
 contract ClaimAfterRebalanceTest is Test {
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -112,23 +112,23 @@ contract ClaimAfterRebalanceTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                      BUG REPRODUCTION: CLAIM REVERTS
-                AFTER REBALANCE RE-STAKES FINALIZED TOKENS
+             CLAIM SUCCEEDS AFTER INTERVENING REBALANCES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Demonstrates that a finalized withdrawal claim reverts after a subsequent
-    ///         rebalance re-stakes the earmarked tokens.
+    /// @notice Verifies that a finalized withdrawal claim succeeds even after a subsequent
+    ///         rebalance, because _finalizedUnclaimedAssets prevents the earmarked tokens
+    ///         from being reconciled into bufferedAssets and re-staked.
     ///
     ///         Timeline:
     ///         1. Alice deposits 100 ETH
     ///         2. Rebalance #1: stakes 100 ETH to staking manager (tokens leave OllaCore)
     ///         3. Alice requests full withdrawal
-    ///         4. Rebalance #2: unstaked funds become available (mock), pulled into buffer,
-    ///            withdrawal finalized. Tokens are back in OllaCore, earmarked for Alice's claim.
-    ///         5. Rebalance #3: _syncBufferedWithBalance() reconciles the earmarked tokens into
-    ///            bufferedAssets. _stakeSurplus() re-stakes them. Tokens leave OllaCore again.
-    ///         6. Alice tries to claim -> ERC20InsufficientBalance
-    function test_ClaimAfterSubsequentRebalance_RestakesTokens_ThenClaimReverts() external {
+    ///         4. Rebalance #2: unstaked funds pulled back, withdrawal finalized.
+    ///            Tokens are in OllaCore, reserved via _finalizedUnclaimedAssets.
+    ///         5. Rebalance #3: _syncBufferedWithBalance() correctly excludes reserved tokens.
+    ///            _stakeSurplus() does not re-stake them.
+    ///         6. Alice claims successfully.
+    function test_ClaimSucceeds_AfterSubsequentRebalance() external {
         uint256 depositAmount = 100 * DECIMALS;
 
         // Step 1: Alice deposits
@@ -150,12 +150,13 @@ contract ClaimAfterRebalanceTest is Test {
         uint256 requestId = vault.requestRedeem(aliceShares, alice);
 
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        uint256 assetsExpected = request.assetsExpected;
         assertFalse(request.finalized, "request not yet finalized");
-        assertEq(queue.totalPendingAssets(), request.assetsExpected, "queue tracks pending amount");
+        assertEq(queue.totalPendingAssets(), assetsExpected, "queue tracks pending amount");
 
-        // Step 4: Second rebalance - simulate unstaked funds becoming available
+        // Step 4: Second rebalance - simulate unstaked funds becoming available.
         // In the real StakingManager + MockAztecRollup, _pullUnstakedFunds would pull from
-        // the rollup. With MockAccountingStakingManager, we need to set the unstaked amount
+        // the rollup. With MockAccountingStakingManager, we set the unstaked amount
         // and fund the mock so it can transfer back.
         asset.mint(address(stakingManager), depositAmount);
         stakingManager.setUnstakedAmount(depositAmount);
@@ -167,29 +168,29 @@ contract ClaimAfterRebalanceTest is Test {
         assertTrue(request.finalized, "request should be finalized after rebalance #2");
         assertEq(queue.totalPendingAssets(), 0, "no more pending assets");
 
-        // Critical: OllaCore should hold the tokens for Alice's claim
+        // OllaCore holds the tokens, reserved for Alice's claim
         uint256 vaultBalanceAfterFinalize = asset.balanceOf(address(vault));
-        assertEq(vaultBalanceAfterFinalize, depositAmount, "vault should hold tokens for claim");
+        assertGe(vaultBalanceAfterFinalize, assetsExpected, "vault holds tokens for claim");
 
-        // Step 5: Another rebalance runs (this is the bug trigger)
-        // _syncBufferedWithBalance() will reconcile the earmarked tokens into bufferedAssets
-        // _stakeSurplus() will then re-stake them
+        // Step 5: Another rebalance runs -- tokens must NOT be re-staked
         _rebalance();
 
-        // The tokens earmarked for Alice's claim have been re-staked
-        uint256 vaultBalanceAfterRestake = asset.balanceOf(address(vault));
-        assertEq(vaultBalanceAfterRestake, 0, "BUG: vault tokens re-staked away");
+        // Tokens are still in OllaCore (protected by _finalizedUnclaimedAssets)
+        uint256 vaultBalanceAfterRebalance = asset.balanceOf(address(vault));
+        assertGe(vaultBalanceAfterRebalance, assetsExpected, "vault still holds claim tokens after rebalance #3");
 
-        // Step 6: Alice tries to claim - this should succeed but reverts
-        // because OllaCore no longer has the tokens
-        vm.expectRevert();
+        // Step 6: Alice claims successfully
+        uint256 aliceBalanceBefore = asset.balanceOf(alice);
         vm.prank(alice);
-        vault.claimRequestById(requestId);
+        uint256 claimed = vault.claimRequestById(requestId);
+
+        uint256 aliceBalanceAfter = asset.balanceOf(alice);
+        assertEq(claimed, assetsExpected, "claimed amount matches expected");
+        assertEq(aliceBalanceAfter - aliceBalanceBefore, assetsExpected, "alice received expected assets");
     }
 
-    /// @notice Same scenario but verifying the claim works correctly when no extra rebalance
-    ///         runs between finalization and claim. This proves the basic flow is correct and
-    ///         only breaks when a rebalance intervenes.
+    /// @notice Same scenario but the claim happens immediately after finalization (no intervening
+    ///         rebalance). This is the simplest happy path.
     function test_ClaimSucceeds_WhenNoRebalanceBetweenFinalizeAndClaim() external {
         uint256 depositAmount = 100 * DECIMALS;
 
@@ -226,50 +227,9 @@ contract ClaimAfterRebalanceTest is Test {
         assertEq(aliceBalanceAfter - aliceBalanceBefore, assetsExpected, "alice received expected assets");
     }
 
-    /// @notice Scenario with rewards, closer to the local dev loop.
-    ///         Deposits, accumulates rewards via harvest, requests full withdrawal,
-    ///         and attempts claim after multiple rebalance cycles.
-    function test_ClaimAfterRebalanceWithRewards_RestakesTokens_ThenClaimReverts() external {
-        uint256 depositAmount = 200_000 * DECIMALS;
-
-        // Step 1: Alice deposits
-        _deposit(alice, depositAmount);
-
-        // Step 2: First rebalance stakes all assets
-        _rebalance();
-        assertEq(asset.balanceOf(address(vault)), 0, "vault empty after initial stake");
-
-        // Step 3: Simulate reward harvest - rewards are minted by the mock to the rewards vault.
-        // On rebalance, harvestRewards() mints tokens to the vault, then _pullRewardsVaultFunds()
-        // transfers them to OllaCore.
-        uint256 rewardAmount = 150 * DECIMALS;
-        stakingManager.setHarvestedRewards(rewardAmount);
-        _rebalance();
-        stakingManager.setHarvestedRewards(0); // reset to avoid re-harvesting
-
-        // After this rebalance, the rewards should be pulled into OllaCore.
-        // But since targetBufferedAssets is 0, the rewards will be immediately re-staked
-        // by _stakeSurplus(). The buffer is 0 but cumulativeRewards tracks them.
-        // To keep rewards in buffer, set a target buffer.
-        // Let's re-approach: set target buffer high enough to keep rewards.
-
-        // Actually, with targetBufferedAssets = 0 the rewards are staked away.
-        // Let's verify: the rewards get staked, so buffer = 0.
-        // For the withdrawal scenario to include rewards in assetsExpected,
-        // we need to update accounting to raise the exchange rate.
-
-        // The buffer is 0 (rewards were staked). But cumulativeRewards = 150.
-        // updateAccounting is needed to raise the exchange rate.
-        // Since this test focuses on the re-staking bug (not accounting),
-        // let's keep it simple: just show the same re-staking bug with a target buffer.
-
-        // Reset and use targetBufferedAssets so rewards stay in buffer
-        // (this simulates the real deployment where there's a non-zero target buffer)
-    }
-
-    /// @notice Same bug but with a non-zero targetBufferedAssets and rewards in the buffer.
-    ///         This is the closest reproduction of the local dev loop scenario.
-    function test_ClaimWithRewardsBuffer_RestakesTokens_ThenClaimReverts() external {
+    /// @notice Verifies claim succeeds with a non-zero targetBufferedAssets and rewards,
+    ///         even after multiple intervening rebalances. Closest to the local dev loop.
+    function test_ClaimSucceeds_WithRewardsBuffer_AfterMultipleRebalances() external {
         uint256 depositAmount = 100 * DECIMALS;
         uint256 targetBuffer = 10 * DECIMALS;
 
@@ -293,12 +253,6 @@ contract ClaimAfterRebalanceTest is Test {
         _rebalance();
         stakingManager.setHarvestedRewards(0);
 
-        // The buffer now has targetBuffer + rewards (minus any re-staked portion).
-        // Actually: buffer was targetBuffer, then rewards added = targetBuffer + 5.
-        // _stakeSurplus: surplus = (targetBuffer + 5) - targetBuffer = 5, stakes 5.
-        // So buffer goes back to targetBuffer. Rewards are staked away.
-        // The exchange rate hasn't been updated though.
-
         // Step 4: Alice requests full withdrawal
         uint256 aliceShares = stAztec.balanceOf(alice);
         vm.prank(alice);
@@ -308,8 +262,7 @@ contract ClaimAfterRebalanceTest is Test {
         uint256 assetsExpected = request.assetsExpected;
 
         // Step 5: Rebalance that pulls unstaked funds and finalizes
-        // Need to simulate unstaked funds returning (the staked principal)
-        asset.mint(address(stakingManager), staked + rewardAmount); // staked + rewards that got staked
+        asset.mint(address(stakingManager), staked + rewardAmount);
         stakingManager.setUnstakedAmount(staked + rewardAmount);
         _rebalance();
 
@@ -318,20 +271,25 @@ contract ClaimAfterRebalanceTest is Test {
         assertTrue(request.finalized, "request should be finalized");
         assertEq(queue.totalPendingAssets(), 0, "no pending assets");
 
-        // OllaCore should hold enough for the claim
+        // OllaCore holds enough for the claim
         uint256 vaultBalance = asset.balanceOf(address(vault));
         assertGe(vaultBalance, assetsExpected, "vault should have enough for claim");
 
-        // Step 6: Another rebalance (the bug trigger) -- re-stakes claim tokens
+        // Step 6: Multiple rebalances run before Alice claims
+        _rebalance();
         _rebalance();
 
-        // Verify the tokens were re-staked away
+        // Tokens are still reserved
         uint256 vaultBalanceAfter = asset.balanceOf(address(vault));
-        assertLt(vaultBalanceAfter, assetsExpected, "BUG: claim tokens re-staked");
+        assertGe(vaultBalanceAfter, assetsExpected, "vault still holds claim tokens after rebalances");
 
-        // Step 7: Alice tries to claim
-        vm.expectRevert();
+        // Step 7: Alice claims successfully
+        uint256 aliceBalanceBefore = asset.balanceOf(alice);
         vm.prank(alice);
-        vault.claimRequestById(requestId);
+        uint256 claimed = vault.claimRequestById(requestId);
+
+        uint256 aliceBalanceAfter = asset.balanceOf(alice);
+        assertEq(claimed, assetsExpected, "claimed amount matches expected");
+        assertEq(aliceBalanceAfter - aliceBalanceBefore, assetsExpected, "alice received expected assets");
     }
 }
