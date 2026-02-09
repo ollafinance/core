@@ -203,7 +203,7 @@ contract ExternalExitIntegrationTest is Test {
     ///         - Rebalance returns early, never claims the 100 ether from external exit
     ///      8. BUG: Only 100 ether claimed, 100 ether stuck forever in _activatedAttesters
     function test_ExternalExit_Bug_FundsStuckInActivatedAttesters() external {
-        // 
+        //
         // rebalance() steps:
         // 1. Harvest - harvest rewards
         // 2. PullUnstaked - call _pullUnstakedFunds() which calls getUnstakedFunds()
@@ -218,11 +218,11 @@ contract ExternalExitIntegrationTest is Test {
         // - rebalance returns early at PullUnstaked step
         // - Never reaches FinalizeWithdrawals
         // - Withdrawals stuck forever
-        
+
         // But how do attesters get into _activatedAttesters and then exit externally?
         // Answer: They get staked, then exit via rollup directly (e.g., validator chooses to exit).
         // The protocol doesn't know until cleanActivatedAttesters() is called or unstake() is attempted.
-        
+
         // Scenario:
         // 1. Stake 2 attesters (both in _activatedAttesters)
         // 2. Alice deposits 100 ether
@@ -241,7 +241,7 @@ contract ExternalExitIntegrationTest is Test {
         //    - rebalance returns early!
         // 7. Funds from the externally-exited attester are never claimed
         // 8. But Alice's withdrawal might still be finalized if we got enough from the first attester
-        
+
         // Hmm, let me adjust the scenario to make it clearly a bug:
         // 1. Stake 1 attester with 100 ether
         // 2. Alice deposits 100 ether (buffer = 100)
@@ -265,17 +265,17 @@ contract ExternalExitIntegrationTest is Test {
         // 8. bufferedAssets = 100, but totalPending = 100, so _finalizeWithdrawals can run
         //    - Alice gets her 100 ether
         //    - But the vault loses 100 ether that should be in the buffer!
-        
+
         // Actually wait, let me re-read hasExitableUnstakes()...
         // It checks both lists for withdrawableAmount != 0
         // So if ANY attester in either list is exitable, it returns true
         // This causes early return
-        
+
         // The problem is: getUnstakedFunds() should claim ALL exitable funds,
         // not just from _pendingUnstakeRequests. But it only calls _finalizePendingUnstakes().
-        
+
         // OK let me write the test with this understanding:
-        
+
         // Setup: Need to stake 2 attesters with enough funds
         // 1. Add 2 attester keys
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
@@ -319,13 +319,13 @@ contract ExternalExitIntegrationTest is Test {
         // The pending one would be address(1) (first one processed)
         // The activated one would be address(2)
         address activatedAttester = address(uint160(2));
-        
+
         // Simulate external exit on the rollup
         rollup.setExternalExit(activatedAttester, ACTIVATION_THRESHOLD, block.timestamp);
 
         // Verify: exit exists in rollup for the activated attester
         assertTrue(rollup.getExit(activatedAttester).exists, "Exit should exist in rollup");
-        
+
         // Verify: hasExitableUnstakes() returns true (this is the key check)
         // It checks both _activatedAttesters and _pendingUnstakeRequests
         assertTrue(stakingManager.hasExitableUnstakes(), "hasExitableUnstakes should return true");
@@ -337,7 +337,7 @@ contract ExternalExitIntegrationTest is Test {
         // Then hasExitableUnstakes() returns true (because activated attester has exit)
         // So rebalance returns early at line 405-408
         // The 100 ether from the externally-exited attester is NEVER claimed!
-        
+
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 bufferBefore = accountingBefore.bufferedAssets;
 
@@ -346,21 +346,59 @@ contract ExternalExitIntegrationTest is Test {
 
         // THE BUG: Only 100 ether was claimed (from pending), not 200 ether (both exits)
         // The activated attester with external exit was not processed!
-        
+
         // Calculate expected vs actual
         uint256 expectedClaimed = 200 ether; // Both exits should be claimed
         uint256 actualClaimed = resultingBuffer - bufferBefore; // What actually got added to buffer
-        
+
         // This assertion demonstrates the bug - we only claimed 100, not 200
         // The test should FAIL here, showing the bug exists
         assertEq(
-            actualClaimed, 
-            expectedClaimed, 
+            actualClaimed,
+            expectedClaimed,
             "BUG: Should have claimed both exits (200 ether), but only claimed funds from pending list"
         );
-        
+
         // Also verify the withdrawal is finalized
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         assertTrue(request.finalized, "Withdrawal should be finalized");
     }
+
+    /// @notice DOCUMENTATION: Potential partial finalization logic bug.
+    /// @dev This comment documents a potential logic flaw in the FinalizeWithdrawals step.
+    ///
+    ///      Issue Location: OllaCore.sol lines 501-507
+    ///      ```solidity
+    ///      if (pending == 0 || _accountingState.bufferedAssets == 0) {
+    ///          (uint256 requiredBuffer,) = _computeRequiredBuffer();
+    ///          progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
+    ///          progress.step = IOllaCore.RebalanceStep.InitiateUnstake;
+    ///      } else {
+    ///          _rebalanceProgress = progress;
+    ///          return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
+    ///      }
+    ///      ```
+    ///
+    ///      Potential Bug Scenario:
+    ///      - Buffer = 150 ether, Pending = 200 ether (2 withdrawals: 100 + 100)
+    ///      - FinalizeWithdrawals finalizes 1 withdrawal (100 ether)
+    ///      - Buffer = 50 ether, Pending = 100 ether (1 withdrawal remaining)
+    ///      - Condition: pending != 0 && bufferedAssets > 0 (50 > 0)
+    ///      - Result: REBALANCE RETURNS EARLY without initiating more unstakes!
+    ///
+    ///      According to protocol requirements (from user Q&A):
+    ///      "The protocol should always initiate unstakes if there are not enough funds,
+    ///      or pending funds to cover all current withdrawals."
+    ///
+    ///      However, the current condition only initiates unstakes when:
+    ///      - pending == 0 (no withdrawals left), OR
+    ///      - bufferedAssets == 0 (buffer exhausted)
+    ///
+    ///      This means if partial finalization leaves some buffer remaining but insufficient
+    ///      to cover remaining withdrawals, no more unstakes will be initiated.
+    ///
+    ///      Note: Creating a test for this scenario hits a different bug in the unstake
+    ///      initiation where `initiated > requested` causes an arithmetic underflow
+    ///      (see rebalance trace). This suggests there may be multiple issues in the
+    ///      rebalance/unstake flow that need investigation.
 }
