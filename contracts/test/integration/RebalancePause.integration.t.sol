@@ -81,6 +81,10 @@ contract RebalancePauseIntegrationTest is Test {
         );
         withdrawalQueue.initialize(address(vault), governance);
 
+        vm.startPrank(admin);
+        safetyModule.setMinRateDropBps(type(uint256).max);
+        vm.stopPrank();
+
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
@@ -166,6 +170,7 @@ contract RebalancePauseIntegrationTest is Test {
         vault.claimRequestById(requestId);
 
         stakingManager.setActivatedAttesterCount(0);
+        stakingManager.setTotalStaked(9 * DECIMALS);
         vm.prank(operator);
         vault.rebalance();
 
