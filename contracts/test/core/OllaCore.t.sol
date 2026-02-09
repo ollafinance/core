@@ -27,6 +27,7 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { MockBuggyStakingManager } from "test/mocks/MockBuggyStakingManager.sol";
 
 contract OllaCoreHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
@@ -1980,5 +1981,156 @@ contract OllaCoreProtocolFeesTest is Test {
 
         // This assertion will fail, demonstrating the rounding error
         assertEq(contractResult, expectedResult, "convertToAssets matches spec");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+         CLEAN ACTIVATED ATTESTERS BUG REGRESSION TEST
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice This test demonstrates the bug where rebalance() cannot finalize withdrawals
+    /// because cleanActivatedAttesters() is never called during the rebalance flow.
+    /// 
+    /// The bug flow:
+    /// 1. User deposits and all funds are staked (bufferedAssets = 0)
+    /// 2. User requests a withdrawal
+    /// 3. Rebalance #1: Initiates unstake from staking manager
+    /// 4. Attesters exit (withdrawableUnstakeAmount > 0), but _activatedAttesters still contains them
+    /// 5. Rebalance #2: hasExitableUnstakes() returns true, causing early return at line 405-408
+    ///    - getUnstakedFunds() returns 0 because cleanActivatedAttesters() was never called
+    ///    - bufferedAssets remains 0
+    ///    - _finalizeWithdrawals() cannot run because bufferedAssets == 0
+    /// 6. Withdrawal remains unfinalized forever
+    function test_Rebalance_Bug_CannotFinalizeWithoutCleanActivatedAttesters() external {
+        // Use MockBuggyStakingManager which simulates the bug condition
+        MockBuggyStakingManager buggyStakingManager = new MockBuggyStakingManager();
+        buggyStakingManager.setRewardsToken(asset);
+        buggyStakingManager.setRewardsVault(address(rewardsVault));
+        buggyStakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
+        buggyStakingManager.setUnstakedToken(asset);
+
+        // Deploy a new vault with the buggy staking manager
+        OllaCoreHarness buggyVaultImpl = new OllaCoreHarness();
+        ERC1967Proxy buggyProxy = new ERC1967Proxy(address(buggyVaultImpl), "");
+        OllaCoreHarness buggyVault = OllaCoreHarness(address(buggyProxy));
+
+        buggyVault.initialize(
+            asset,
+            stAztec,
+            buggyStakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        bytes32 operatorRole = buggyVault.OPERATOR_ROLE();
+        bytes32 minterRole = stAztec.MINTER_ROLE();
+        bytes32 burnerRole = stAztec.BURNER_ROLE();
+        vm.startPrank(governance);
+        buggyVault.grantRole(operatorRole, operator);
+        buggyVault.grantRole(operatorRole, address(this));
+        stAztec.grantRole(minterRole, address(buggyVault));
+        stAztec.grantRole(burnerRole, address(buggyVault));
+        vm.stopPrank();
+
+        // Step 1: Alice deposits 100 tokens - but don't actually deposit
+        // Instead, simulate that funds are already staked by setting accounting directly
+        uint256 depositAmount = 100 * DECIMALS;
+        
+        // Mint tokens directly to the staking manager to simulate staked funds
+        asset.mint(address(buggyStakingManager), depositAmount);
+        
+        // Mint shares to alice to simulate her having deposited
+        // Grant ourselves the minter role (already declared above)
+        vm.startPrank(governance);
+        stAztec.grantRole(minterRole, address(this));
+        vm.stopPrank();
+        stAztec.mint(alice, depositAmount);
+        
+        // Set the accounting: all funds are staked, bufferedAssets = 0
+        buggyStakingManager.setTotalStaked(depositAmount);
+        buggyVault.exposedApplyAccountingUpdates(depositAmount, 0, 0, 0, 0);
+        
+        // Verify: bufferedAssets should be 0 (all funds staked)
+        IOllaCore.AccountingState memory accountingBefore = buggyVault.accountingState();
+        assertEq(accountingBefore.bufferedAssets, 0, "buffered assets should be 0 after staking");
+        assertEq(accountingBefore.stakedPrincipal, depositAmount, "staked principal should be deposit amount");
+
+        // Step 2: Alice requests to redeem all her shares
+        uint256 aliceShares = stAztec.balanceOf(alice);
+        vm.prank(alice);
+        uint256 requestId = buggyVault.requestRedeem(aliceShares, alice);
+
+        // Verify the withdrawal request was created
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        assertEq(request.recipient, alice, "request recipient should be alice");
+        assertFalse(request.finalized, "request should not be finalized yet");
+        uint256 assetsExpected = request.assetsExpected;
+
+        // Step 3: First rebalance - initiates unstake but can't finalize (no buffered assets)
+        // The rebalance should initiate an unstake to free up funds
+        buggyStakingManager.setUnstakeReturnAmount(assetsExpected);
+        vm.prank(operator);
+        buggyVault.rebalance();
+
+        // Simulate the unstake being initiated
+        buggyStakingManager.setPendingUnstakes(assetsExpected);
+
+        // Step 4: Simulate attesters exiting - this makes hasExitableUnstakes() return true
+        // But cleanActivatedAttesters() was never called, so funds are stuck
+        buggyStakingManager.setPendingUnstakes(0);
+        buggyStakingManager.setWithdrawableUnstakes(assetsExpected);
+        buggyStakingManager.setUnstakedFundsAfterClean(assetsExpected);
+
+        // Ensure clean flag is reset (simulating that clean was never called)
+        buggyStakingManager.resetCleanedFlag();
+        assertFalse(buggyStakingManager.cleanedAttesters(), "cleanActivatedAttesters should not have been called");
+
+        // Step 5: Second rebalance - should try to pull unstaked funds and finalize
+        // BUT: hasExitableUnstakes() returns true, causing early return
+        // AND: getUnstakedFunds() returns 0 because cleanActivatedAttesters was never called
+        // Result: finalizedAmount = 0, bufferedAssets remains 0
+        vm.prank(operator);
+        (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
+            buggyVault.rebalance();
+
+        // THE BUG: finalizedAmount should be > 0, but it's 0 because:
+        // 1. hasExitableUnstakes() returned true, causing early return
+        // 2. getUnstakedFunds() returned 0 (no funds were actually pulled)
+        // 3. bufferedAssets remained 0
+        // 4. _finalizeWithdrawals() couldn't run
+        assertEq(finalizedAmount, 0, "BUG: finalizedAmount should be 0 because cleanActivatedAttesters was never called");
+        assertEq(resultingBuffer, 0, "BUG: buffer should remain 0 because no unstaked funds were received");
+
+        // Verify the withdrawal is still NOT finalized
+        request = withdrawalQueue.getRequest(requestId);
+        assertFalse(request.finalized, "BUG: withdrawal should still be pending because rebalance couldn't finalize");
+
+        // Verify: bufferedAssets is still 0 (funds couldn't be retrieved)
+        IOllaCore.AccountingState memory accountingAfter = buggyVault.accountingState();
+        assertEq(accountingAfter.bufferedAssets, 0, "BUG: buffered assets should still be 0");
+
+        // Step 6: Show that calling cleanActivatedAttesters() fixes the issue
+        // This is what OllaCore.rebalance() SHOULD do but doesn't
+        vm.prank(address(buggyVault)); // Only core can call
+        buggyStakingManager.cleanActivatedAttesters();
+        assertTrue(buggyStakingManager.cleanedAttesters(), "cleanActivatedAttesters was called");
+
+        // Now mint the unstaked funds to the staking manager (simulating the fix)
+        asset.mint(address(buggyStakingManager), assetsExpected);
+
+        // Step 7: Third rebalance - now it should work because clean was called
+        vm.prank(operator);
+        (rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer) = buggyVault.rebalance();
+
+        // NOW it works because getUnstakedFunds() can return the funds
+        assertEq(finalizedAmount, assetsExpected, "After clean: withdrawal should be finalized");
+        assertEq(resultingBuffer, depositAmount - assetsExpected, "After clean: buffer should have remaining funds");
+
+        // Verify the withdrawal IS now finalized
+        request = withdrawalQueue.getRequest(requestId);
+        assertTrue(request.finalized, "After clean: withdrawal should be finalized");
     }
 }
