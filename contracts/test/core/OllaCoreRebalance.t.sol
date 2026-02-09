@@ -236,22 +236,22 @@ contract OllaCoreRebalanceTest is Test {
                            GAS THRESHOLD
     //////////////////////////////////////////////////////////////*/
 
-    function test_DefaultRebalanceGasThreshold() external {
+    function test_DefaultRebalanceGasThreshold() external view {
         assertEq(vault.rebalanceGasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "default gas threshold");
         assertEq(stakingManager.gasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "staking manager threshold set");
     }
 
-    function test_RevertWhen_NonAdminSetsRebalanceGasThreshold() external {
+    function test_RevertWhen_NonOperatorSetsRebalanceGasThreshold() external {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.OPERATOR_ROLE()
             )
         );
         vm.prank(alice);
         vault.setRebalanceGasThreshold(200_000);
     }
 
-    function test_RevertWhen_NonGovernanceAdminSetsRebalanceGasThreshold() external {
+    function test_RevertWhen_AdminWithoutOperatorSetsRebalanceGasThreshold() external {
         address otherAdmin = makeAddr("otherAdmin");
         bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
         vm.prank(governance);
@@ -259,7 +259,11 @@ contract OllaCoreRebalanceTest is Test {
 
         assertTrue(vault.hasRole(adminRole, otherAdmin), "test admin role");
 
-        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCore__UnauthorizedGovernance.selector, otherAdmin));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, otherAdmin, vault.OPERATOR_ROLE()
+            )
+        );
         vm.prank(otherAdmin);
         vault.setRebalanceGasThreshold(200_000);
     }
@@ -432,7 +436,7 @@ contract OllaCoreRebalanceTest is Test {
 
     function test_Rebalance_FinalizeWithdrawals_NoLiquidityNoEvent() external {
         uint256 depositAmount = 10 * DECIMALS;
-        uint256 targetBuffered = 1 * DECIMALS;
+        uint256 targetBuffered = 0;
 
         _performDeposit(alice, depositAmount);
 
@@ -441,6 +445,8 @@ contract OllaCoreRebalanceTest is Test {
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        stakingManager.setTotalStaked(depositAmount);
 
         vm.prank(operator);
         vault.rebalance();

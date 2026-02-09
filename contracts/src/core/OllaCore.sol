@@ -73,6 +73,10 @@ contract OllaCore is
 
     IOllaCore.RebalanceProgress private _rebalanceProgress;
 
+    bool private _rebalancePaused;
+    uint8 private _rebalancePauseReason;
+    uint256 private _rebalanceRequiredBufferSnapshot;
+
     /// @notice The protocol fee in basis points.
     uint256 public protocolFeeBP;
 
@@ -110,6 +114,13 @@ contract OllaCore is
 
     /// @notice Thrown when queue assets do not match stored request data.
     error OllaCore__ClaimAssetsMismatch(uint256 requestId, uint256 expected, uint256 actual);
+
+    modifier whenNotRebalancePaused() {
+        if (_rebalancePaused) {
+            revert OllaCore__RebalancePaused();
+        }
+        _;
+    }
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -186,6 +197,7 @@ contract OllaCore is
         override
         nonReentrant
         whenNotPaused
+        whenNotRebalancePaused
         returns (uint256 shares)
     {
         shares = _deposit(msg.sender, assets, recipient);
@@ -205,6 +217,7 @@ contract OllaCore is
         override
         nonReentrant
         whenNotPaused
+        whenNotRebalancePaused
         returns (uint256 shares)
     {
         IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
@@ -220,6 +233,8 @@ contract OllaCore is
         external
         override
         nonReentrant
+        whenNotPaused
+        whenNotRebalancePaused
         returns (uint256 requestId)
     {
         requestId = _requestRedeem(msg.sender, shares, recipient);
@@ -238,6 +253,8 @@ contract OllaCore is
         external
         override
         nonReentrant
+        whenNotPaused
+        whenNotRebalancePaused
         returns (uint256 requestId)
     {
         // slither-disable-next-line reentrancy-benign
@@ -249,7 +266,14 @@ contract OllaCore is
     /// @notice Claims a finalized withdrawal request by id.
     /// @param requestId The withdrawal request id.
     /// @return assets The assets claimed for the request.
-    function claimRequestById(uint256 requestId) external override nonReentrant returns (uint256 assets) {
+    function claimRequestById(uint256 requestId)
+        external
+        override
+        nonReentrant
+        whenNotPaused
+        whenNotRebalancePaused
+        returns (uint256 assets)
+    {
         // Trust: withdrawal queue is authoritative for request state and asset amounts.
         assets = _claimWithdrawal(requestId);
         return assets;
@@ -271,9 +295,26 @@ contract OllaCore is
         emit Unpaused();
     }
 
+    /// @notice Forces rebalance pause to end once progress is done.
+    function forceRebalanceUnpause() external override onlyRole(GUARDIAN_ROLE) whenNotPaused {
+        if (!_rebalancePaused || _rebalanceProgress.step != IOllaCore.RebalanceStep.Done) {
+            revert OllaCore__RebalancePauseOverrideNotAllowed();
+        }
+        _rebalancePaused = false;
+        _rebalancePauseReason = uint8(IOllaCore.RebalancePauseReason.GovernanceOverride);
+        _rebalanceRequiredBufferSnapshot = 0;
+        emit RebalancePauseUpdated(false, IOllaCore.RebalancePauseReason.GovernanceOverride);
+    }
+
     /// @notice Sets the protocol fee in basis points.
     /// @param newFeeBP The new fee (0-10000).
-    function setProtocolFeeBP(uint256 newFeeBP) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setProtocolFeeBP(uint256 newFeeBP)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
         if (newFeeBP > BP_DIVISOR) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
@@ -284,7 +325,13 @@ contract OllaCore is
 
     /// @notice Sets the treasury fee split in basis points.
     /// @param newSplitBP The new split (0-10000).
-    function setTreasuryFeeSplitBP(uint256 newSplitBP) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setTreasuryFeeSplitBP(uint256 newSplitBP)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
         if (newSplitBP > BP_DIVISOR) {
             revert OllaCore__InvalidSplitBP(newSplitBP);
         }
@@ -295,7 +342,13 @@ contract OllaCore is
 
     /// @notice Sets the governance address.
     /// @param newGovernance The new governance address.
-    function setGovernance(address newGovernance) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setGovernance(address newGovernance)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
         if (newGovernance == address(0)) {
             revert OllaCore__ZeroAddress("newGovernance");
         }
@@ -321,7 +374,13 @@ contract OllaCore is
 
     /// @notice Sets the rewards vault address.
     /// @param newRewardsVault The new rewards vault address.
-    function setRewardsVault(IRewardsVault newRewardsVault) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setRewardsVault(IRewardsVault newRewardsVault)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
         if (address(newRewardsVault) == address(0)) {
             revert OllaCore__ZeroAddress("newRewardsVault");
         }
@@ -332,7 +391,13 @@ contract OllaCore is
 
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.
-    function setTargetBufferedAssets(uint256 newBuffer) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setTargetBufferedAssets(uint256 newBuffer)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
         uint256 oldBuffer = targetBufferedAssets;
         targetBufferedAssets = newBuffer;
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
@@ -340,7 +405,13 @@ contract OllaCore is
 
     /// @notice Sets the gas threshold used for rebalance step gating.
     /// @param newThreshold The new gas threshold.
-    function setRebalanceGasThreshold(uint256 newThreshold) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setRebalanceGasThreshold(uint256 newThreshold)
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
         if (msg.sender != _modules.governance) {
             revert OllaCore__UnauthorizedGovernance(msg.sender);
         }
@@ -379,6 +450,13 @@ contract OllaCore is
         // Slither: enum state machine uses explicit equality checks; no timestamp usage.
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.Done) {
+            if (!_rebalancePaused) {
+                _rebalancePaused = true;
+                _rebalancePauseReason = uint8(IOllaCore.RebalancePauseReason.RebalanceStart);
+                emit RebalancePauseUpdated(true, IOllaCore.RebalancePauseReason.RebalanceStart);
+                (uint256 requiredBuffer,) = _computeRequiredBuffer();
+                _rebalanceRequiredBufferSnapshot = requiredBuffer;
+            }
             _syncBufferedWithBalance();
             progress.step = IOllaCore.RebalanceStep.Harvest;
             progress.stakeRemaining = 0;
@@ -517,6 +595,15 @@ contract OllaCore is
             emit Rebalanced(rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
         }
 
+        IOllaCore.RebalanceProgress memory progressSnapshot = _rebalanceProgress;
+        if (_rebalancePaused && _rebalanceCompletionSatisfied(progressSnapshot)) {
+            _updateAccountingInternal();
+            _rebalancePaused = false;
+            _rebalancePauseReason = uint8(IOllaCore.RebalancePauseReason.RebalanceComplete);
+            _rebalanceRequiredBufferSnapshot = 0;
+            emit RebalancePauseUpdated(false, IOllaCore.RebalancePauseReason.RebalanceComplete);
+        }
+
         return (rewardsDelta, finalizedAmount, stakedAmount, resultingBuffer);
     }
 
@@ -529,33 +616,20 @@ contract OllaCore is
     // slither-disable-start pess-multiple-storage-read
     // solhint-disable function-max-lines
     /// @notice Updates accounting snapshots and publishes the latest exchange rate data.
-    function updateAccounting() external override onlyRole(OPERATOR_ROLE) nonReentrant {
-        ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
-        // slither-disable-start reentrancy-no-eth
-        // slither-disable-start reentrancy-benign
-        // slither-disable-start reentrancy-events
-        // SafetyModule is a trusted dependency; updateAccounting is nonReentrant and role-gated, so
-        // fail-fast checks before accounting updates are safe.
-        safetyModuleRef.checkAccountingLiveness();
-
-        (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
-        (
-            uint256 currentRewards,
-            uint256 rewardsDelta,
-            uint256 slashingDelta,
-            uint256 stakedPrincipal,
-            uint256 claimableRewards
-        ) = _getStakingManagerState();
-        _validateSlashingDelta(slashingDelta);
-
-        uint256 rewardsVaultBalance = _getRewardsVaultBalance();
-
-        _applyAccountingUpdates(stakedPrincipal, rewardsVaultBalance, claimableRewards, rewardsDelta, slashingDelta);
-
-        _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
-        // slither-disable-end reentrancy-events
-        // slither-disable-end reentrancy-benign
-        // slither-disable-end reentrancy-no-eth
+    function updateAccounting()
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+        nonReentrant
+    {
+        // Slither: explicit state check; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
+        if (_rebalanceProgress.step != IOllaCore.RebalanceStep.Done) {
+            revert OllaCore__RebalanceInProgress();
+        }
+        _updateAccountingInternal();
     }
 
     // solhint-enable function-max-lines
@@ -564,7 +638,14 @@ contract OllaCore is
 
     /// @notice Reconciles buffered assets with the actual asset balance.
     /// @return delta The amount added to buffered assets.
-    function reconcileBufferedAssets() external override onlyRole(OPERATOR_ROLE) returns (uint256 delta) {
+    function reconcileBufferedAssets()
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+        returns (uint256 delta)
+    {
         delta = _reconcileBufferedAssets(address(this));
         return delta;
     }
@@ -572,7 +653,13 @@ contract OllaCore is
     /// @notice Recovers stAztec sent directly to the core.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
     /// @param amount The amount of stAztec to recover.
-    function recoverStAztec(address recipient, uint256 amount) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function recoverStAztec(address recipient, uint256 amount)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
         if (amount == 0) {
             revert OllaCore__InvalidAmount();
         }
@@ -657,6 +744,18 @@ contract OllaCore is
         });
     }
 
+    /// @notice Returns whether rebalance pause is active.
+    /// @return paused Whether rebalance pause is active.
+    function isRebalancePaused() external view override returns (bool paused) {
+        return _rebalancePaused;
+    }
+
+    /// @notice Returns the rebalance pause reason code.
+    /// @return reason The pause reason code.
+    function rebalancePauseReason() external view override returns (uint8 reason) {
+        return _rebalancePauseReason;
+    }
+
     /// @notice Returns the flow counter snapshots.
     /// @return The flow counters struct.
     function flowCounters() external view override returns (IOllaCore.FlowCounters memory) {
@@ -715,6 +814,35 @@ contract OllaCore is
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    function _updateAccountingInternal() internal {
+        ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
+        // slither-disable-start reentrancy-no-eth
+        // slither-disable-start reentrancy-benign
+        // slither-disable-start reentrancy-events
+        // SafetyModule is a trusted dependency; updateAccounting is nonReentrant and role-gated, so
+        // fail-fast checks before accounting updates are safe.
+        safetyModuleRef.checkAccountingLiveness();
+
+        (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
+        (
+            uint256 currentRewards,
+            uint256 rewardsDelta,
+            uint256 slashingDelta,
+            uint256 stakedPrincipal,
+            uint256 claimableRewards
+        ) = _getStakingManagerState();
+        _validateSlashingDelta(slashingDelta);
+
+        uint256 rewardsVaultBalance = _getRewardsVaultBalance();
+
+        _applyAccountingUpdates(stakedPrincipal, rewardsVaultBalance, claimableRewards, rewardsDelta, slashingDelta);
+
+        _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
+        // slither-disable-end reentrancy-events
+        // slither-disable-end reentrancy-benign
+        // slither-disable-end reentrancy-no-eth
+    }
 
     function _deposit(address caller, uint256 assets, address recipient) internal returns (uint256 shares) {
         if (recipient == address(0)) {
@@ -1269,6 +1397,34 @@ contract OllaCore is
 
     function _hasGasForStep() internal view returns (bool) {
         return gasleft() > rebalanceGasThreshold;
+    }
+
+    function _rebalanceCompletionSatisfied(IOllaCore.RebalanceProgress memory progress) internal view returns (bool) {
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
+        if (progress.step != IOllaCore.RebalanceStep.Done) {
+            return false;
+        }
+        if (progress.stakeRemaining != 0 || progress.unstakeRemaining != 0) {
+            return false;
+        }
+
+        uint256 bufferedAssets = _accountingState.bufferedAssets;
+        uint256 pending = _modules.withdrawalQueue.totalPendingAssets();
+        // Slither: zero guard only; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
+        if (pending != 0 && bufferedAssets != 0) {
+            return false;
+        }
+
+        uint256 requiredBuffer = _rebalanceRequiredBufferSnapshot;
+        // Slither: zero guard only; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
+        if (bufferedAssets <= requiredBuffer) {
+            return true;
+        }
+
+        return _modules.stakingManager.getActivatedAttesterCount() == 0;
     }
 
     function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {

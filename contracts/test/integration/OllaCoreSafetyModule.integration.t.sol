@@ -275,7 +275,7 @@ contract OllaCoreSafetyModuleTest is Test {
         vault.deposit(10 * DECIMALS, alice);
     }
 
-    function test_RequestRedeem_AllowsWhenPaused() external {
+    function test_RevertWhen_RequestRedeemWhilePaused() external {
         uint256 shares = _performDeposit(alice, 12 * DECIMALS);
 
         vm.prank(governance);
@@ -284,21 +284,19 @@ contract OllaCoreSafetyModuleTest is Test {
         vm.prank(guardian);
         safetyModule.pause();
 
-        uint256 requestId = _performRequestRedeem(alice, shares / 2, alice);
-
-        assertEq(requestId, 1, "request should succeed while paused");
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        _performRequestRedeem(alice, shares / 2, alice);
     }
 
-    function test_ClaimWithdrawal_AllowsWhenPaused() external {
+    function test_RevertWhen_ClaimWhilePaused() external {
         uint256 shares = _performDeposit(alice, 10 * DECIMALS);
         uint256 requestId = _performRequestRedeem(alice, shares / 2, alice);
 
         vm.prank(governance);
         vault.pause();
 
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         vm.prank(alice);
-        uint256 claimed = vault.claimRequestById(requestId);
-
-        assertEq(claimed, 5 * DECIMALS, "claim should succeed while paused");
+        vault.claimRequestById(requestId);
     }
 }
