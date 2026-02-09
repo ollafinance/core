@@ -259,6 +259,7 @@ contract RebalanceIntegrationTest is Test {
         _mockZeroHarvest();
         _mockZeroUnstaked();
         stakingManager.setStakeReturnAmount(120 * DECIMALS);
+        stakingManager.setTotalStaked(120 * DECIMALS);
 
         uint256 snapshotId = vm.snapshotState();
         uint256 selectedGas;

@@ -959,19 +959,25 @@ contract OllaCoreTest is Test {
         stakingManager.setSlashingDelta(slashing);
 
         IOllaCore.AccountingState memory accountingAfterRebalance = vault.accountingState();
+        IOllaCore.LatestReport memory reportBefore = vault.latestReport();
+        IOllaCore.FlowCounters memory flowsBefore = vault.flowCounters();
         uint256 rewardsVaultBalance = rewardsVault.balance();
-        uint256 rewardsDelta = accountingAfterRebalance.cumulativeRewards + claimableRewards;
+        uint256 currentRewards = accountingAfterRebalance.cumulativeRewards + claimableRewards;
+        uint256 rewardsDelta =
+            currentRewards > reportBefore.rewardsSnapshot ? currentRewards - reportBefore.rewardsSnapshot : 0;
         uint256 expectedTotalAssets = accountingAfterRebalance.bufferedAssets + stakedPrincipal + rewardsVaultBalance
             + claimableRewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
-        uint256 expectedGrossRewards = expectedTotalAssets > depositAmount ? expectedTotalAssets - depositAmount : 0;
+        (int256 expectedNetFlows,,) = vault.exposedComputeNetFlows(flowsBefore);
+        uint256 expectedGrossRewards =
+            vault.exposedComputeGrossRewards(reportBefore.totalAssets, expectedTotalAssets, expectedNetFlows);
 
         uint256 expectedTimestamp = block.timestamp;
         vm.expectEmit(true, true, true, true, address(vault));
         emit AttestersStateRead(rewardsDelta, slashing, expectedTimestamp);
         vm.expectEmit(true, true, true, true, address(vault));
         emit AccountingUpdated(
-            expectedTotalAssets, expectedRate, expectedGrossRewards, int256(depositAmount), 0, 0, 0, expectedTimestamp
+            expectedTotalAssets, expectedRate, expectedGrossRewards, expectedNetFlows, 0, 0, 0, expectedTimestamp
         );
         vm.prank(operator);
         vault.updateAccounting();
@@ -980,7 +986,7 @@ contract OllaCoreTest is Test {
         IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
         assertEq(reportAfter.totalAssets, expectedTotalAssets, "lastTotalAssets updated");
         assertEq(reportAfter.exchangeRate, expectedRate, "stored exchange rate updated");
-        assertEq(reportAfter.rewardsSnapshot, rewardsDelta, "rewards snapshot updated");
+        assertEq(reportAfter.rewardsSnapshot, currentRewards, "rewards snapshot updated");
         assertEq(flowsAfter.latestReportCumulativeDeposits, depositAmount, "latestReportCumulativeDeposits updated");
         assertEq(flowsAfter.latestReportCumulativeWithdrawals, 0, "latestReportCumulativeWithdrawals updated");
     }
@@ -1005,7 +1011,11 @@ contract OllaCoreTest is Test {
         vault.rebalance();
         stakingManager.setClaimableRewards(9 * DECIMALS);
 
-        uint256 expectedDelta = 14 * DECIMALS - firstReport.rewardsSnapshot;
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        IOllaCore.LatestReport memory reportBefore = vault.latestReport();
+        uint256 currentRewards = accountingBefore.cumulativeRewards + 9 * DECIMALS;
+        uint256 expectedDelta =
+            currentRewards > reportBefore.rewardsSnapshot ? currentRewards - reportBefore.rewardsSnapshot : 0;
         uint256 expectedTimestamp = block.timestamp;
         vm.expectEmit(true, true, true, true, address(vault));
         emit AttestersStateRead(expectedDelta, 0, expectedTimestamp);
