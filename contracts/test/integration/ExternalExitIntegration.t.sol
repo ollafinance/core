@@ -364,41 +364,74 @@ contract ExternalExitIntegrationTest is Test {
         assertTrue(request.finalized, "Withdrawal should be finalized");
     }
 
-    /// @notice DOCUMENTATION: Potential partial finalization logic bug.
-    /// @dev This comment documents a potential logic flaw in the FinalizeWithdrawals step.
+    /// @notice Test demonstrating the unstake underflow bug.
+    /// @dev This test reproduces the arithmetic underflow that occurs when
+    ///      _initiateUnstake() returns more than requested (due to discrete attesters).
     ///
-    ///      Issue Location: OllaCore.sol lines 501-507
+    ///      Bug Location: OllaCore.sol line 524
     ///      ```solidity
-    ///      if (pending == 0 || _accountingState.bufferedAssets == 0) {
-    ///          (uint256 requiredBuffer,) = _computeRequiredBuffer();
-    ///          progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
-    ///          progress.step = IOllaCore.RebalanceStep.InitiateUnstake;
-    ///      } else {
-    ///          _rebalanceProgress = progress;
-    ///          return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
-    ///      }
+    ///      uint256 initiated = _initiateUnstake(progress.unstakeRemaining);
+    ///      progress.unstakeRemaining -= initiated;  // BUG: Underflows if initiated > requested!
     ///      ```
     ///
-    ///      Potential Bug Scenario:
-    ///      - Buffer = 150 ether, Pending = 200 ether (2 withdrawals: 100 + 100)
-    ///      - FinalizeWithdrawals finalizes 1 withdrawal (100 ether)
-    ///      - Buffer = 50 ether, Pending = 100 ether (1 withdrawal remaining)
-    ///      - Condition: pending != 0 && bufferedAssets > 0 (50 > 0)
-    ///      - Result: REBALANCE RETURNS EARLY without initiating more unstakes!
-    ///
-    ///      According to protocol requirements (from user Q&A):
-    ///      "The protocol should always initiate unstakes if there are not enough funds,
-    ///      or pending funds to cover all current withdrawals."
-    ///
-    ///      However, the current condition only initiates unstakes when:
-    ///      - pending == 0 (no withdrawals left), OR
-    ///      - bufferedAssets == 0 (buffer exhausted)
-    ///
-    ///      This means if partial finalization leaves some buffer remaining but insufficient
-    ///      to cover remaining withdrawals, no more unstakes will be initiated.
-    ///
-    ///      Note: Creating a test for this scenario hits a different bug in the unstake
-    ///      initiation where `initiated > requested` causes an arithmetic underflow
-    ///      (see rebalance trace). This suggests there may be multiple issues in the
-    ///      rebalance/unstake flow that need investigation.
+    ///      The Bug:
+    ///      - User requests withdrawal of 150 ether (need to unstake 1.5 attesters)
+    ///      - Rebalance calls _initiateUnstake(150 ether)
+    ///      - But attesters are discrete 100-ether units!
+    ///      - StakingManager unstakes 2 attesters = 200 ether
+    ///      - Returns initiated = 200 ether
+    ///      - progress.unstakeRemaining = 150 - 200 = UNDERFLOW! (panic: 0x11)
+    function test_UnstakeUnderflow_Bug_InitiatedExceedsRequested() external {
+        // Setup: Stake 2 attesters (200 ether total)
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        // 1. Alice deposits 200 ether
+        uint256 depositAmount = 200 ether;
+        aztec.mint(alice, depositAmount);
+        vm.startPrank(alice);
+        aztec.approve(address(vault), depositAmount);
+        vault.deposit(depositAmount, alice);
+        vm.stopPrank();
+
+        // 2. Rebalance to stake all funds
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Verify: 2 attesters staked
+        assertEq(stakingManager.totalStaked(), 200 ether, "Should have 200 ether staked");
+
+        // 3. Alice requests withdrawal of 150 ether
+        // This is the key: 150 ether requires unstaking 1.5 attesters
+        // But attesters are discrete 100-ether units!
+        uint256 aliceShares = stAztec.balanceOf(alice);
+        uint256 withdrawShares = (150 ether * aliceShares) / vault.totalAssets();
+        vm.prank(alice);
+        vault.requestRedeem(withdrawShares, alice);
+
+        uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
+        assertApproxEqAbs(pendingBefore, 150 ether, 1 ether, "Should have ~150 ether pending");
+
+        // 4. Trigger rebalance - this should hit the underflow bug
+        // The rebalance will try to initiate unstake for 150 ether
+        // But StakingManager will unstake 2 full attesters (200 ether)
+        // Then progress.unstakeRemaining -= 200 will underflow!
+
+        // This call should revert with arithmetic underflow
+        vm.prank(operator);
+        vault.rebalance();
+
+        // If we reach here without revert, the bug is fixed
+        // If it reverts with "panic: arithmetic underflow or overflow (0x11)", the bug exists
+
+        // Verify the withdrawal was processed correctly
+        // (This code won't be reached if the bug exists)
+        uint256 pendingAfter = withdrawalQueue.totalPendingAssets();
+
+        // Protocol should handle the case where initiated > requested gracefully
+        // Either by allowing it (initiating more unstake than strictly needed)
+        // Or by properly tracking the excess
+        assertLe(pendingAfter, pendingBefore, "Some or all of the withdrawal should be processed");
+    }
 }
