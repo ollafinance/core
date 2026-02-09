@@ -30,7 +30,6 @@
     "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia",
 
     "dev:local-start-mock-loop": "node scripts/local-mock-loop.js",
-    "dev:local-mock-tick": "node scripts/local-mock-loop.js --once",
 
     "dev:local-god-mint-user": "node scripts/local-cli.js god-mint-user",
     "dev:local-user-deposit": "node scripts/local-cli.js user-deposit",
