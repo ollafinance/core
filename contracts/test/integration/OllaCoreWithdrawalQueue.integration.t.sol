@@ -211,16 +211,15 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(queue.nextRequestId(), 3, "next request id increments");
     }
 
-    function test_RequestRedeem_AllowsWhenPaused() external {
+    function test_RevertWhen_RequestRedeemWhilePaused() external {
         _deposit(alice, 10 ether);
 
         vm.prank(governance);
         vault.pause();
 
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(4 ether, alice);
-
-        assertEq(requestId, 1, "request should succeed while paused");
+        vault.requestRedeem(4 ether, alice);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -284,19 +283,18 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(receiverBalanceAfter - receiverBalanceBefore, assetsExpected, "redeem claims full assetsExpected");
     }
 
-    function test_ClaimAllowedWhenPaused() external {
+    function test_RevertWhen_ClaimWhilePaused() external {
         _deposit(alice, 10 ether);
 
-        (uint256 requestId, uint256 assetsExpected) = _requestRedeem(alice, 5 ether, alice);
+        (uint256 requestId,) = _requestRedeem(alice, 5 ether, alice);
         vault.rebalance();
 
         vm.prank(governance);
         vault.pause();
 
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         vm.prank(alice);
-        uint256 claimed = vault.claimRequestById(requestId);
-
-        assertEq(claimed, assetsExpected, "claim should succeed while paused");
+        vault.claimRequestById(requestId);
     }
 
     /*//////////////////////////////////////////////////////////////

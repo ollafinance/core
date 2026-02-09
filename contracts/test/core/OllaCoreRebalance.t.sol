@@ -432,7 +432,7 @@ contract OllaCoreRebalanceTest is Test {
 
     function test_Rebalance_FinalizeWithdrawals_NoLiquidityNoEvent() external {
         uint256 depositAmount = 10 * DECIMALS;
-        uint256 targetBuffered = 1 * DECIMALS;
+        uint256 targetBuffered = 0;
 
         _performDeposit(alice, depositAmount);
 
@@ -441,6 +441,8 @@ contract OllaCoreRebalanceTest is Test {
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        stakingManager.setTotalStaked(depositAmount);
 
         vm.prank(operator);
         vault.rebalance();
