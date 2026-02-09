@@ -24,6 +24,13 @@ interface IOllaCore {
         Done
     }
 
+    enum RebalancePauseReason {
+        None,
+        RebalanceStart,
+        RebalanceComplete,
+        GovernanceOverride
+    }
+
     struct AccountingState {
         uint256 bufferedAssets;
         uint256 stakedPrincipal;
@@ -227,6 +234,11 @@ interface IOllaCore {
 
     /// @notice Emitted when the core is unpaused.
     event Unpaused();
+
+    /// @notice Emitted when the rebalance pause state is updated.
+    /// @param paused Whether rebalance pause is active.
+    /// @param reason The reason for the pause update.
+    event RebalancePauseUpdated(bool paused, RebalancePauseReason reason);
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
@@ -269,6 +281,15 @@ interface IOllaCore {
 
     /// @notice Thrown when the target buffer is invalid.
     error OllaCore__InvalidTargetBufferedAssets(uint256 newBuffer);
+
+    /// @notice Thrown when rebalance pause blocks an action.
+    error OllaCore__RebalancePaused();
+
+    /// @notice Thrown when a rebalance pause override is not allowed.
+    error OllaCore__RebalancePauseOverrideNotAllowed();
+
+    /// @notice Thrown when an action requires rebalance completion.
+    error OllaCore__RebalanceInProgress();
 
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
@@ -346,6 +367,9 @@ interface IOllaCore {
 
     /// @notice Unpauses deposits and withdrawals.
     function unpause() external;
+
+    /// @notice Forces rebalance pause to end once progress is done.
+    function forceRebalanceUnpause() external;
 
     /// @notice Operator-triggered rebalance hook.
     /// @return rewardsDelta The amount of rewards harvested.
@@ -449,6 +473,14 @@ interface IOllaCore {
     /// @notice Returns the current rebalance progress snapshot.
     /// @return The rebalance progress struct.
     function rebalanceProgress() external view returns (RebalanceProgress memory);
+
+    /// @notice Returns whether rebalance pause is active.
+    /// @return paused Whether rebalance pause is active.
+    function isRebalancePaused() external view returns (bool paused);
+
+    /// @notice Returns the rebalance pause reason code.
+    /// @return reason The pause reason code.
+    function rebalancePauseReason() external view returns (uint8 reason);
 
     /// @notice Returns the flow counter snapshots.
     /// @return The flow counters struct.
