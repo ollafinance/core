@@ -296,7 +296,7 @@ contract OllaCore is
     }
 
     /// @notice Forces rebalance pause to end once progress is done.
-    function forceRebalanceUnpause() external override onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+    function forceRebalanceUnpause() external override onlyRole(GUARDIAN_ROLE) whenNotPaused {
         if (!_rebalancePaused || _rebalanceProgress.step != IOllaCore.RebalanceStep.Done) {
             revert OllaCore__RebalancePauseOverrideNotAllowed();
         }
@@ -408,7 +408,7 @@ contract OllaCore is
     function setRebalanceGasThreshold(uint256 newThreshold)
         external
         override
-        onlyRole(DEFAULT_ADMIN_ROLE)
+        onlyRole(OPERATOR_ROLE)
         whenNotPaused
         whenNotRebalancePaused
     {

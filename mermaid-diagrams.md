@@ -64,9 +64,13 @@ core -->|"checkDepositAllowed / checkWithdrawalMinimum / checkQueueRatio / check
 
 %% Operator cycle (end-state orchestration)
 ollaOperatorWallet -->|"rebalance()"| core
+ollaOperatorWallet -->|"setRebalanceGasThreshold()"| core
 ollaOperatorWallet -->|"harvestRewards()"| core
 ollaOperatorWallet -->|"finalizeWithdrawals(available)"| core
 ollaOperatorWallet -->|"updateAccounting()"| core
+
+%% Guardian control
+guardianWallet -->|"forceRebalanceUnpause()"| core
 
 %% Staking principal (AZTEC token) movements
 core -->|"stake >Aztec< transferFrom(core, StakingManager, stakeAmount)"| stkMan

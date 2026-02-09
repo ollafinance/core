@@ -125,6 +125,7 @@ contract OllaCoreRebalancePauseTest is Test {
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
+    address internal guardian;
     address internal alice;
     address internal bob;
     address internal permitOwner;
@@ -147,6 +148,7 @@ contract OllaCoreRebalancePauseTest is Test {
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(vault));
         operator = makeAddr("operator");
+        guardian = makeAddr("guardian");
         withdrawalQueue = new MockWithdrawalQueue();
         withdrawalQueue.initialize(address(vault), governance);
 
@@ -171,8 +173,10 @@ contract OllaCoreRebalancePauseTest is Test {
         permitOwner = vm.addr(permitOwnerKey);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 guardianRole = vault.GUARDIAN_ROLE();
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
+        vault.grantRole(guardianRole, guardian);
         vm.stopPrank();
     }
 
@@ -409,9 +413,11 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vault.setTargetBufferedAssets(1);
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
-        vault.setRebalanceGasThreshold(1);
         vm.stopPrank();
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        vm.prank(operator);
+        vault.setRebalanceGasThreshold(1);
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(operator);
@@ -683,13 +689,13 @@ contract OllaCoreRebalancePauseTest is Test {
         vault.forceRebalanceUnpause();
     }
 
-    function test_ForceRebalanceUnpause_OnlyAdmin() external {
+    function test_ForceRebalanceUnpause_OnlyGuardian() external {
         _performDeposit(alice, 4 * DECIMALS);
         _enterPausedDoneState();
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.GUARDIAN_ROLE()
             )
         );
         vm.prank(alice);
@@ -701,7 +707,7 @@ contract OllaCoreRebalancePauseTest is Test {
         _enterPausedDoneState();
 
         vm.recordLogs();
-        vm.prank(governance);
+        vm.prank(guardian);
         vault.forceRebalanceUnpause();
         Vm.Log[] memory entries = vm.getRecordedLogs();
 
