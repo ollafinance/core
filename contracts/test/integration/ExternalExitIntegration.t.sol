@@ -323,6 +323,11 @@ contract ExternalExitIntegrationTest is Test {
         // Simulate external exit on the rollup
         rollup.setExternalExit(activatedAttester, ACTIVATION_THRESHOLD, block.timestamp);
 
+        // After this rebalance the vault will have surplus buffer (claimed exits minus withdrawal).
+        // Keep that surplus buffered so the test doesn't depend on having extra staking keys.
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(100 ether);
+
         // Verify: exit exists in rollup for the activated attester
         assertTrue(rollup.getExit(activatedAttester).exists, "Exit should exist in rollup");
 
@@ -338,26 +343,17 @@ contract ExternalExitIntegrationTest is Test {
         // So rebalance returns early at line 405-408
         // The 100 ether from the externally-exited attester is NEVER claimed!
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 bufferBefore = accountingBefore.bufferedAssets;
+        uint256 vaultBalanceBefore = aztec.balanceOf(address(vault));
 
         vm.prank(operator);
-        (,,, uint256 resultingBuffer) = vault.rebalance();
+        vault.rebalance();
 
-        // THE BUG: Only 100 ether was claimed (from pending), not 200 ether (both exits)
-        // The activated attester with external exit was not processed!
-
-        // Calculate expected vs actual
-        uint256 expectedClaimed = 200 ether; // Both exits should be claimed
-        uint256 actualClaimed = resultingBuffer - bufferBefore; // What actually got added to buffer
-
-        // This assertion demonstrates the bug - we only claimed 100, not 200
-        // The test should FAIL here, showing the bug exists
-        assertEq(
-            actualClaimed,
-            expectedClaimed,
-            "BUG: Should have claimed both exits (200 ether), but only claimed funds from pending list"
-        );
+        // Assert on the vault's asset balance delta rather than bufferedAssets.
+        // With the fix, rebalance proceeds to FinalizeWithdrawals in the same call,
+        // which can decrease bufferedAssets without affecting the vault's token balance.
+        uint256 expectedClaimed = 200 ether;
+        uint256 actualClaimed = aztec.balanceOf(address(vault)) - vaultBalanceBefore;
+        assertEq(actualClaimed, expectedClaimed, "Should have claimed both exits (200 ether)");
 
         // Also verify the withdrawal is finalized
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);

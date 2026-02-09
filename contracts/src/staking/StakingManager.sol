@@ -196,25 +196,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function cleanActivatedAttesters() external override onlyCore nonReentrant {
         // TODO: change onlyCore to be only OPERATOR_ROLE
         // TODO: research if we can assume moving with rollup is safe
-        address rollupAddress = rollupRegistry.getCanonicalRollup();
-        IAztecRollup rollup = IAztecRollup(rollupAddress);
-
-        uint256 i = 0;
-        while (i < _activatedAttesters.length) {
-            if (gasleft() < gasThreshold) {
-                break;
-            }
-            AttesterStake storage attesterStake = _activatedAttesters[i];
-            address attester = attesterStake.attester;
-            AttesterView memory view_ = rollup.getAttesterView(attester);
-            if (view_.exit.exists) {
-                uint256 stakedAmount = _removeActivatedAttester(attester);
-                _pendingUnstakeRequests.push(AttesterStake({ attester: attester, stakedAmount: stakedAmount }));
-                _isUnstakePending[attester] = true;
-            } else {
-                ++i;
-            }
-        }
+        (, IAztecRollup rollup) = _getRollup();
+        _syncExternallyExitedActivatedAttesters(rollup);
     }
 
     // slither-disable-end pess-multiple-storage-read,cache-array-length
@@ -396,11 +379,40 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function _claimUnstakedFunds() internal returns (uint256 claimed) {
         (, IAztecRollup rollup) = _getRollup();
 
+        // Ensure externally-exited activated attesters are tracked as pending,
+        // otherwise exits that were initiated outside this contract would never be finalized.
+        _syncExternallyExitedActivatedAttesters(rollup);
+
         uint256 balanceBefore = stakingAsset.balanceOf(address(this));
         uint256 sumOfExitAmounts = _finalizePendingUnstakes(rollup);
         claimed = _finalizeClaim(balanceBefore, sumOfExitAmounts);
         return claimed;
     }
+
+    // slither-disable-start calls-loop
+    // Array length cannot be cached because elements are removed during iteration
+    // slither-disable-start pess-multiple-storage-read,cache-array-length
+    function _syncExternallyExitedActivatedAttesters(IAztecRollup rollup) internal {
+        uint256 i = 0;
+        while (i < _activatedAttesters.length) {
+            if (gasleft() < gasThreshold) {
+                break;
+            }
+            AttesterStake storage attesterStake = _activatedAttesters[i];
+            address attester = attesterStake.attester;
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+            if (view_.exit.exists) {
+                uint256 stakedAmount = _removeActivatedAttester(attester);
+                _pendingUnstakeRequests.push(AttesterStake({ attester: attester, stakedAmount: stakedAmount }));
+                _isUnstakePending[attester] = true;
+            } else {
+                ++i;
+            }
+        }
+    }
+
+    // slither-disable-end pess-multiple-storage-read,cache-array-length
+    // slither-disable-end calls-loop
 
     // slither-disable-end reentrancy-no-eth
     // slither-disable-end reentrancy-benign

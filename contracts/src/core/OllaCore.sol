@@ -521,7 +521,11 @@ contract OllaCore is
                     return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
                 }
                 uint256 initiated = _initiateUnstake(progress.unstakeRemaining);
-                progress.unstakeRemaining -= initiated;
+                if (initiated >= progress.unstakeRemaining) {
+                    progress.unstakeRemaining = 0;
+                } else {
+                    progress.unstakeRemaining -= initiated;
+                }
                 // Slither: explicit nonzero check; no timestamp usage.
                 // slither-disable-next-line timestamp
                 if (progress.unstakeRemaining != 0) {
