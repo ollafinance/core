@@ -42,18 +42,17 @@ forge test
 
 ## Local development
 
-Start a local Anvil chain and run the mock loop:
+Start a local Anvil chain:
 
 ```bash
 # Terminal 1: Start chain
 yarn dev:chain
 
-# Terminal 2: Deploy and run mock loop
+# Terminal 2: Deploy contracts
 yarn deploy:local
-yarn dev:mock-loop
 ```
 
-The mock loop automates protocol operations via configurable scenarios. See `mock-loop/README.md` for details.
+For automated protocol testing with the TypeScript mock loop, see [`mock-loop/README.md`](mock-loop/README.md).
 
 Invariant-only suite:
 

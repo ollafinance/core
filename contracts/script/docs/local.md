@@ -37,56 +37,6 @@ forge script script/ops/Rebalance.s.sol --broadcast  # CORE defaults to OllaCore
 forge script script/ops/UpdateAccounting.s.sol --broadcast  # CORE defaults to OllaCoreProxy
 ```
 
-## Local dev (3 terminals)
-
-term-1:
-
-```bash
-yarn dev:chain
-```
-
-term-2:
-
-```bash
-yarn deploy:local && yarn dev:mock-loop
-```
-
-With the new TypeScript mock loop, all operations are automated via scenarios configured in `mock-loop/config.ts`. The default config runs:
-
-1. **Provider keys** - Maintains minimum keys in registry
-2. **Mock rewards** - Sets reward rate and ticks rewards each block
-3. **User deposit** - Mints and deposits 200k tokens at tick 1
-4. **Rebalance** - Runs operator rebalance every 10 ticks
-5. **Accounting** - Updates accounting every 10 ticks  
-6. **User withdraw** - Initiates withdrawal at tick 20
-7. **User claim** - Claims finalized withdrawals from tick 50
-
-### One-off tick
-
-Run a single tick and exit:
-
-```bash
-yarn dev:mock-loop:once
-```
-
-### Custom config
-
-```bash
-yarn dev:mock-loop --config ./my-config.ts
-```
-
-Defaults:
-
-- God/admin/operator: Anvil account-0.
-- User: Anvil account-1 (configured via private key in scenarios).
-- Output: `mock-loop/runs/<timestamp>/` with `init.json`, `tick-NNN.json`, and `log.jsonl`.
-
-Notes:
-
-- `deploy:local` seeds provider keys automatically, so staking can start immediately.
-- The mock loop only accrues rewards when there is rollup stake.
-- Scenario timing and amounts can be customized by editing `mock-loop/config.ts`.
-
 ## Provider keys
 
 ```bash
@@ -109,4 +59,30 @@ TARGET=0x0000000000000000000000000000000000000001 forge script script/ops/GrantO
 cd contracts
 
 THRESHOLD=10000000000000000000 forge script script/rollup/DemoFinalizeWithdraw.s.sol --broadcast  # ROLLUP defaults to MockAztecRollup; ATTESTER/RECIPIENT default to broadcaster
+```
+
+## Mint tokens
+
+```bash
+cd contracts
+
+AMOUNT=200000 forge script script/local/MintAztecTo.s.sol --broadcast  # TO defaults to Anvil account-1
+```
+
+## User operations
+
+```bash
+cd contracts
+
+# Deposit
+AMOUNT=100000 PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d \
+  forge script script/local/UserDeposit.s.sol --broadcast
+
+# Initiate withdrawal (full balance)
+PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d \
+  forge script script/local/UserInitiateWithdrawAll.s.sol --broadcast
+
+# Claim finalized withdrawals
+PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d \
+  forge script script/local/UserClaimWithdrawals.s.sol --broadcast
 ```
