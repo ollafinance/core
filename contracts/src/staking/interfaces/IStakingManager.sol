@@ -12,7 +12,7 @@ interface IStakingManager {
     /*//////////////////////////////////////////////////////////////
                                   STRUCTS
     //////////////////////////////////////////////////////////////*/
-    
+
     /// @notice Local registry state for attesters.
     enum LocalState {
         Inactive,
