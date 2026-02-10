@@ -263,7 +263,7 @@ async function main() {
     deltas: [],
   };
   output.writeTick(initialResult);
-  logger.logTick(initialResult);
+  logger.logTick(initialResult, config.scenarios);
 
   if (args.once) {
     console.log("\n--once flag set, exiting after initial snapshot");
@@ -304,7 +304,7 @@ async function main() {
 
       currentState = state;
       output.writeTick(result);
-      logger.logTick(result);
+      logger.logTick(result, config.scenarios);
 
       // Check if we should stop on error
       if (args.untilError) {

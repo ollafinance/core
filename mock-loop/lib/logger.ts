@@ -1,4 +1,4 @@
-import type { TickResult, ActionResult } from "./types.js";
+import type { TickResult, ActionResult, ScenarioConfig } from "./types.js";
 import { OutputWriter } from "./output.js";
 
 export class Logger {
@@ -23,10 +23,10 @@ export class Logger {
       const bigValue = BigInt(value);
       const ether = bigValue / BigInt(10 ** 18);
       const remainder = bigValue % BigInt(10 ** 18);
-      
+
       // Convert to number for easier formatting
       const etherNum = Number(ether);
-      
+
       // Format based on magnitude
       if (etherNum >= 1_000_000) {
         // Use M (millions)
@@ -69,29 +69,37 @@ export class Logger {
     this.output.logLine(`[${this.formatTime()}][tick0][startup] Run directory: ${runDir}`);
   }
 
-  logTick(result: TickResult): void {
+  logTick(result: TickResult, scenarios: ScenarioConfig[]): void {
     const actions = result.actions;
     const successCount = actions.filter((a) => a.success).length;
     const errorCount = actions.filter((a) => !a.success).length;
 
+    // Build scenario pattern: ✓=run, .=skipped, d=disabled, ⚠️=error
+    const pattern = scenarios.map((scenario) => {
+      if (!scenario.enabled) return "d";
+      const action = actions.find((a) => a.scenario === scenario.type);
+      if (!action) return ".";
+      return action.success ? "✓" : "⚠️";
+    }).join("");
+
     const status = errorCount > 0 ? `⚠️ ${errorCount} errors` : "✓";
     console.log(
       `Tick ${result.tick.toString().padStart(3, "0")} ` +
-        `| ${actions.length} actions (${successCount} ok${errorCount > 0 ? `, ${errorCount} fail` : ""}) ` +
+        `| actions: ${pattern} ` +
         `| ${result.durationMs}ms ` +
         `| ${status}`
     );
 
     // Log all accountingState values in compact format
     const accounting = result.stateAfter.ollaCore.accountingState;
-    console.log(`  bufferedAssets: ${this.formatValue(accounting.bufferedAssets).padStart(6)} stakedPrincipal: ${this.formatValue(accounting.stakedPrincipal).padStart(6)} rewardsVaultBalance: ${this.formatValue(accounting.rewardsVaultBalance).padStart(6)} claimableRewards: ${this.formatValue(accounting.claimableRewards).padStart(6)} rewardsDelta: ${this.formatValue(accounting.rewardsDelta).padStart(6)} slashingDelta: ${this.formatValue(accounting.slashingDelta).padStart(6)} cumulativeRewards: ${this.formatValue(accounting.cumulativeRewards).padStart(6)}`);
+    console.log(`  bufferedAssets: ${this.formatValue(accounting.bufferedAssets).padStart(6)} |stakedPrincipal: ${this.formatValue(accounting.stakedPrincipal).padStart(6)} |rewardsVaultBalance: ${this.formatValue(accounting.rewardsVaultBalance).padStart(6)} |claimableRewards: ${this.formatValue(accounting.claimableRewards).padStart(6)} |rewardsDelta: ${this.formatValue(accounting.rewardsDelta).padStart(6)} |slashingDelta: ${this.formatValue(accounting.slashingDelta).padStart(6)} |cumulativeRewards: ${this.formatValue(accounting.cumulativeRewards).padStart(6)}`);
 
     // Human-readable log to file
     const line = this.formatLogLine(
       result.tick,
       "tick_complete",
       undefined,
-      `${actions.length} actions (${successCount} ok, ${errorCount} fail) | ${result.durationMs}ms | bufferedAssets: ${accounting.bufferedAssets}, stakedPrincipal: ${accounting.stakedPrincipal}, rewardsVaultBalance: ${accounting.rewardsVaultBalance}, claimableRewards: ${accounting.claimableRewards}, rewardsDelta: ${accounting.rewardsDelta}, slashingDelta: ${accounting.slashingDelta}, cumulativeRewards: ${accounting.cumulativeRewards}`
+      `actions: ${pattern} | ${result.durationMs}ms | bufferedAssets: ${accounting.bufferedAssets}, stakedPrincipal: ${accounting.stakedPrincipal}, rewardsVaultBalance: ${accounting.rewardsVaultBalance}, claimableRewards: ${accounting.claimableRewards}, rewardsDelta: ${accounting.rewardsDelta}, slashingDelta: ${accounting.slashingDelta}, cumulativeRewards: ${accounting.cumulativeRewards}`
     );
     this.output.logLine(line);
   }
