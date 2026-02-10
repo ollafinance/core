@@ -574,8 +574,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         bool isInitiated = rollup.initiateWithdraw(attester, address(this));
         if (!isInitiated) {
             if (view_.exit.exists) {
-                IStakingManager.AttesterInfo storage attesterInfo = _attesters[index];
-                attesterInfo.stakedAmount = stakedAmount;
+                IStakingManager.AttesterInfo storage attesterInfoForExit = _attesters[index];
+                attesterInfoForExit.stakedAmount = stakedAmount;
                 _setState(index, IStakingManager.LocalState.Exiting);
                 return 0;
             }
