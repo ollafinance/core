@@ -560,12 +560,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @return exitAmount The unstake amount initiated for the attester.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
+    // slither-disable-next-line pess-multiple-storage-read -- _setState reads _attesters; caching here won't remove warning
     function _processUnstakeAttester(IAztecRollup rollup, uint256 index, address attester, uint256 stakedAmount)
         internal
         returns (uint256 exitAmount)
     {
         AttesterView memory view_ = rollup.getAttesterView(attester);
         exitAmount = view_.effectiveBalance;
+        IStakingManager.AttesterInfo storage attesterInfo = _attesters[index];
 
         // External call is safe:
         // - rollup is a trusted Aztec contract
@@ -574,15 +576,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         bool isInitiated = rollup.initiateWithdraw(attester, address(this));
         if (!isInitiated) {
             if (view_.exit.exists) {
-                IStakingManager.AttesterInfo storage attesterInfoForExit = _attesters[index];
-                attesterInfoForExit.stakedAmount = stakedAmount;
+                attesterInfo.stakedAmount = stakedAmount;
                 _setState(index, IStakingManager.LocalState.Exiting);
                 return 0;
             }
             revert StakingManager__UnstakeFailed(attester);
         }
-
-        IStakingManager.AttesterInfo storage attesterInfo = _attesters[index];
         attesterInfo.stakedAmount = stakedAmount;
         _setState(index, IStakingManager.LocalState.Exiting);
         emit UnstakeInitiated(attester, exitAmount);
@@ -631,7 +630,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 continue;
             }
             address attester = attesterInfo.attester;
-            // slither-disable-next-line calls-loop
+
+            // slither-disable-next-line calls-loop -- trusted rollup, bounded by attester set size
             AttesterView memory view_ = rollup.getAttesterView(attester);
             if (!view_.exit.exists) {
                 _setState(i, IStakingManager.LocalState.Inactive);
@@ -688,6 +688,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 ++i;
                 continue;
             }
+            // slither-disable-next-line calls-loop -- trusted rollup, bounded by gas/cursor
             AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
             if (view_.exit.exists) {
                 _setState(i, IStakingManager.LocalState.Exiting);
@@ -797,6 +798,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // Rollup is trusted and loop bounded by attester set size.
     // slither-disable-next-line calls-loop
+    // slither-disable-next-line pess-multiple-storage-read -- length read + indexed access unavoidable in loop
     function _accumulateAttestersDelta(IAztecRollup rollup, uint256 stakedTotal, uint256 slashingDelta)
         internal
         view
@@ -805,20 +807,22 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         uint256 length = _attesters.length;
         for (uint256 i; i < length; ++i) {
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (
-                attesterInfo.state != IStakingManager.LocalState.Active
-                    && attesterInfo.state != IStakingManager.LocalState.Exiting
-            ) {
+            IStakingManager.LocalState state = attesterInfo.state;
+            if (state != IStakingManager.LocalState.Active && state != IStakingManager.LocalState.Exiting) {
                 continue;
             }
-            AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
+            address attester = attesterInfo.attester;
+            uint256 stakedAmount = attesterInfo.stakedAmount;
+
+            // slither-disable-next-line calls-loop -- trusted rollup, bounded by attester set size
+            AttesterView memory view_ = rollup.getAttesterView(attester);
             (bool eligible, uint256 remaining) = _remainingStake(view_);
             if (!eligible) {
                 continue;
             }
-            stakedTotal += attesterInfo.stakedAmount;
-            if (attesterInfo.stakedAmount > remaining) {
-                slashingDelta += attesterInfo.stakedAmount - remaining;
+            stakedTotal += stakedAmount;
+            if (stakedAmount > remaining) {
+                slashingDelta += stakedAmount - remaining;
             }
         }
         return (stakedTotal, slashingDelta);
