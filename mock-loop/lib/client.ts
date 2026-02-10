@@ -10,7 +10,20 @@ import {
   getContract,
   type GetContractReturnType,
 } from "viem";
-import { localhost } from "viem/chains";
+// Anvil chain (chain id 31337)
+const anvilChain = {
+  id: 31337,
+  name: "Anvil",
+  nativeCurrency: {
+    decimals: 18,
+    name: "Ether",
+    symbol: "ETH",
+  },
+  rpcUrls: {
+    default: { http: ["http://127.0.0.1:8545"] },
+    public: { http: ["http://127.0.0.1:8545"] },
+  },
+};
 import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "fs";
 import { resolve } from "path";
@@ -98,12 +111,12 @@ export function createClients(rpcUrl: string): {
   const transport = http(rpcUrl);
 
   const publicClient = createPublicClient({
-    chain: localhost,
+    chain: anvilChain,
     transport,
   });
 
   const operatorWallet = createWalletClient({
-    chain: localhost,
+    chain: anvilChain,
     transport,
     account: ANVIL_ACCOUNTS[0],
   });
@@ -119,7 +132,7 @@ export function createUserWallet(
   const account = privateKeyToAccount(privateKey as `0x${string}`);
 
   return createWalletClient({
-    chain: localhost,
+    chain: anvilChain,
     transport,
     account,
   });
