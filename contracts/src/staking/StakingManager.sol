@@ -733,15 +733,16 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             if (attesterInfo.state == IStakingManager.LocalState.Inactive) {
                 continue;
             }
-            AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
 
+            AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
             if (attesterInfo.state == IStakingManager.LocalState.Active) {
                 if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
                     state.stakedAmount += view_.effectiveBalance;
                 }
+                continue;
             }
 
-            if (view_.exit.exists) {
+            if (attesterInfo.state == IStakingManager.LocalState.Exiting && view_.exit.exists) {
                 // Timestamp used only to gate exit readiness from the rollup state.
                 // slither-disable-next-line timestamp
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
@@ -785,7 +786,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         uint256 length = _attesters.length;
         for (uint256 i; i < length; ++i) {
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (attesterInfo.state == IStakingManager.LocalState.Inactive) {
+            if (
+                attesterInfo.state != IStakingManager.LocalState.Active
+                    && attesterInfo.state != IStakingManager.LocalState.Exiting
+            ) {
                 continue;
             }
             AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);

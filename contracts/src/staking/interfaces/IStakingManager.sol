@@ -163,8 +163,8 @@ interface IStakingManager {
     /// @return unstakedAmount The amount initiated for unstake in this call.
     function unstake(uint256 amount) external returns (uint256 unstakedAmount);
 
-    /// @notice Syncs the activated attesters with the rollup and moves them to pendingUnstake if needed.
-    /// @dev Since attesters can exit due to external reasons activatedAtesters is not guranteed to be in sync.
+    /// @notice Syncs active attesters with the rollup and moves them to exiting if needed.
+    /// @dev Since attesters can exit due to external reasons, local state is not guaranteed to be in sync.
     function cleanActivatedAttesters() external;
 
     /// @notice Claims matured unstaked funds back to core.
@@ -212,20 +212,20 @@ interface IStakingManager {
     function getProviderConfig() external view returns (ProviderConfig memory);
 
     /// @notice Returns the current unstake cursor.
-    /// @return cursor The current cursor into activated attesters.
+    /// @return cursor The current cursor into the attester registry.
     function getUnstakeCursor() external view returns (uint256 cursor);
 
-    /// @notice Returns the number of activated attesters.
-    /// @return The count of activated attesters.
+    /// @notice Returns the number of active attesters.
+    /// @return The count of active attesters.
     function getActivatedAttesterCount() external view returns (uint256);
 
-    /// @notice Returns the number of pending unstake requests.
-    /// @return The count of pending requests.
+    /// @notice Returns the number of exiting attesters.
+    /// @return The count of exiting attesters.
     function getPendingUnstakeCount() external view returns (uint256);
 
-    /// @notice Checks if an attester has a pending unstake.
+    /// @notice Checks if an attester is exiting.
     /// @param attester The attester address.
-    /// @return True if unstake is pending.
+    /// @return True if the attester is in the exiting state.
     function isUnstakePending(address attester) external view returns (bool);
 
     /// @notice Returns the core address.
