@@ -204,7 +204,7 @@ contract ExternalExitIntegrationTest is Test {
     ///         - BUT hasExitableUnstakes() returns true because activated attester has exit!
     ///         - Rebalance returns early, never claims the 100 ether from external exit
     ///      8. BUG: Only 100 ether claimed, 100 ether stuck forever in _activatedAttesters
-    function test_ExternalExit_Bug_FundsStuckInActivatedAttesters() external {
+    function test_ExternalExit_FundsStuckInActivatedAttesters() external {
         //
         // rebalance() steps:
         // 1. Harvest - harvest rewards
@@ -306,7 +306,6 @@ contract ExternalExitIntegrationTest is Test {
         uint256 requestId = vault.requestRedeem(withdrawShares, alice);
 
         // 5. Rebalance #1 - initiates unstake for 1 attester
-        // This will move 1 attester to _pendingUnstakeRequests
         vm.prank(operator);
         vault.rebalance();
 
@@ -314,31 +313,15 @@ contract ExternalExitIntegrationTest is Test {
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "Should have 1 activated attester");
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "Should have 1 pending unstake");
 
-        // 6. The remaining attester in _activatedAttesters exits externally!
-        // Get the attester address that's still activated
-        // From _createMockKeys, attesters are at addresses 1, 2, ...
-        // We staked to 2 attesters, one was unstaked (moved to pending), one remains
-        // The pending one would be address(1) (first one processed)
-        // The activated one would be address(2)
+        // 6. The remaining activated attester exits externally
         address activatedAttester = address(uint160(2));
 
-        // Simulate external exit on the rollup
         rollup.setExternalExit(activatedAttester, ACTIVATION_THRESHOLD, block.timestamp);
 
         // Verify: exit exists in rollup for the activated attester
         assertTrue(rollup.getExit(activatedAttester).exists, "Exit should exist in rollup");
 
-        // Verify: hasExitableUnstakes() returns true (this is the key check)
-        // It checks both _activatedAttesters and _pendingUnstakeRequests
         assertTrue(stakingManager.hasExitableUnstakes(), "hasExitableUnstakes should return true");
-
-        // 7. Rebalance #2 - This is where the bug manifests
-        // _pullUnstakedFunds() calls getUnstakedFunds()
-        // getUnstakedFunds() calls _finalizePendingUnstakes() which only processes _pendingUnstakeRequests
-        // It does NOT process the attester in _activatedAttesters that has an external exit!
-        // Then hasExitableUnstakes() returns true (because activated attester has exit)
-        // So rebalance returns early at line 405-408
-        // The 100 ether from the externally-exited attester is NEVER claimed!
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 bufferBefore = accountingBefore.bufferedAssets;
@@ -351,8 +334,6 @@ contract ExternalExitIntegrationTest is Test {
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(additionalKeys);
 
-        // Gross claimed exits are emitted as UnstakedFundsClaimed, while rebalance returns net effects
-        // after finalization and staking.
         uint256 expectedGrossClaimed = 200 ether; // Both exits should be claimed
 
         vm.recordLogs();
