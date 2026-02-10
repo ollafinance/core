@@ -33,7 +33,6 @@
     "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia",
     "dev:mock-loop": "tsx mock-loop/index.ts",
     "dev:mock-loop:once": "tsx mock-loop/index.ts --once",
-    "dev:mock-loop:until-error": "tsx mock-loop/index.ts --until-error",
-    "dev:mock-tick:until-error": "tsx mock-loop/index.ts --once --until-error"
+    "dev:mock-loop:until-error": "tsx mock-loop/index.ts --until-error"
   }
 }
