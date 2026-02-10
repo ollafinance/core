@@ -17,6 +17,20 @@ export class Logger {
     return `${hours}:${minutes}:${seconds}`;
   }
 
+  private formatInMillions(value: string): string {
+    try {
+      const bigValue = BigInt(value);
+      const million = BigInt(1_000_000);
+      const inMillions = bigValue / million;
+      const remainder = bigValue % million;
+      // Get first 2 decimal places from remainder
+      const decimalPart = (remainder * BigInt(100)) / million;
+      return `${inMillions}.${decimalPart.toString().padStart(2, "0")}M`;
+    } catch {
+      return value;
+    }
+  }
+
   private formatLogLine(
     tick: number,
     type: string,
@@ -41,13 +55,6 @@ export class Logger {
     const successCount = actions.filter((a) => a.success).length;
     const errorCount = actions.filter((a) => !a.success).length;
 
-    // Terse console output: tick number, actions run, duration, key metrics
-    const metrics = [
-      `assets: ${result.stateAfter.ollaCore.totalAssets}`,
-      `staked: ${result.stateAfter.stakingManager.stakedAmount}`,
-      `pending: ${result.stateAfter.withdrawalQueue.totalPendingAssets}`,
-    ].join(" | ");
-
     const status = errorCount > 0 ? `⚠️ ${errorCount} errors` : "✓";
     console.log(
       `Tick ${result.tick.toString().padStart(3, "0")} ` +
@@ -55,14 +62,24 @@ export class Logger {
         `| ${result.durationMs}ms ` +
         `| ${status}`
     );
-    console.log(`  ${metrics}`);
+
+    // Log all accountingState values in millions format
+    const accounting = result.stateAfter.ollaCore.accountingState;
+    console.log("  accountingState:");
+    console.log(`    bufferedAssets:       ${this.formatInMillions(accounting.bufferedAssets)}`);
+    console.log(`    stakedPrincipal:      ${this.formatInMillions(accounting.stakedPrincipal)}`);
+    console.log(`    rewardsVaultBalance:  ${this.formatInMillions(accounting.rewardsVaultBalance)}`);
+    console.log(`    claimableRewards:     ${this.formatInMillions(accounting.claimableRewards)}`);
+    console.log(`    rewardsDelta:         ${this.formatInMillions(accounting.rewardsDelta)}`);
+    console.log(`    slashingDelta:        ${this.formatInMillions(accounting.slashingDelta)}`);
+    console.log(`    cumulativeRewards:  ${this.formatInMillions(accounting.cumulativeRewards)}`);
 
     // Human-readable log to file
     const line = this.formatLogLine(
       result.tick,
       "tick_complete",
       undefined,
-      `${actions.length} actions (${successCount} ok, ${errorCount} fail) | ${result.durationMs}ms | assets: ${result.stateAfter.ollaCore.totalAssets}, staked: ${result.stateAfter.stakingManager.stakedAmount}, pending: ${result.stateAfter.withdrawalQueue.totalPendingAssets}`
+      `${actions.length} actions (${successCount} ok, ${errorCount} fail) | ${result.durationMs}ms | bufferedAssets: ${accounting.bufferedAssets}, stakedPrincipal: ${accounting.stakedPrincipal}, rewardsVaultBalance: ${accounting.rewardsVaultBalance}, claimableRewards: ${accounting.claimableRewards}, rewardsDelta: ${accounting.rewardsDelta}, slashingDelta: ${accounting.slashingDelta}, cumulativeRewards: ${accounting.cumulativeRewards}`
     );
     this.output.logLine(line);
   }
