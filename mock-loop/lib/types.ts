@@ -197,5 +197,6 @@ export interface DeploymentJson {
 // CLI arguments
 export interface CliArgs {
   once: boolean;
+  untilError: boolean;
   config?: string;
 }

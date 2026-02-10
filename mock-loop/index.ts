@@ -28,6 +28,7 @@ function parseCliArgs(): CliArgs {
     args: process.argv.slice(2),
     options: {
       once: { type: "boolean", short: "o", default: false },
+      "until-error": { type: "boolean", default: false },
       config: { type: "string", short: "c" },
     },
     strict: true,
@@ -36,6 +37,7 @@ function parseCliArgs(): CliArgs {
 
   return {
     once: values.once as boolean,
+    untilError: values["until-error"] as boolean,
     config: values.config as string | undefined,
   };
 }
@@ -303,8 +305,21 @@ async function main() {
       currentState = state;
       output.writeTick(result);
       logger.logTick(result);
+
+      // Check if we should stop on error
+      if (args.untilError) {
+        const hasError = result.actions.some((a) => !a.success);
+        if (hasError) {
+          console.log(`\n--until-error flag set, stopping due to error in tick ${tick}`);
+          running = false;
+        }
+      }
     } catch (error) {
       logger.logError("main_loop", error, tick);
+      if (args.untilError) {
+        console.log(`\n--until-error flag set, stopping due to error in tick ${tick}`);
+        running = false;
+      }
     }
 
     if (!running) break;
