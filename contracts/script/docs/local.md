@@ -48,34 +48,44 @@ yarn dev:chain
 term-2:
 
 ```bash
-yarn deploy:local && yarn dev:local-start-mock-loop
+yarn deploy:local && yarn dev:mock-loop
 ```
 
-term-3:
+With the new TypeScript mock loop, all operations are automated via scenarios configured in `mock-loop/config.ts`. The default config runs:
+
+1. **Provider keys** - Maintains minimum keys in registry
+2. **Mock rewards** - Sets reward rate and ticks rewards each block
+3. **User deposit** - Mints and deposits 200k tokens at tick 1
+4. **Rebalance** - Runs operator rebalance every 10 ticks
+5. **Accounting** - Updates accounting every 10 ticks  
+6. **User withdraw** - Initiates withdrawal at tick 20
+7. **User claim** - Claims finalized withdrawals from tick 50
+
+### One-off tick
+
+Run a single tick and exit:
 
 ```bash
-yarn dev:local-god-mint-user 200000
-yarn dev:local-user-deposit 200000
+yarn dev:mock-tick
+```
 
-# Later, as needed
-yarn dev:local-operator-rebalance
-yarn dev:local-operator-update-accounting
-yarn dev:local-user-initiate-withdraw-all
+### Custom config
 
-# After withdrawals are finalized by operator rebalances
-yarn dev:local-user-claim-withdrawals
+```bash
+yarn dev:mock-loop --config ./my-config.ts
 ```
 
 Defaults:
 
 - God/admin/operator: Anvil account-0.
-- User: Anvil account-1 (override with `USER_PRIVATE_KEY`/`USER_ADDRESS`).
-- CLI amounts like `200000` are interpreted as whole tokens (18 decimals).
+- User: Anvil account-1 (configured via private key in scenarios).
+- Output: `mock-loop/runs/<timestamp>/` with `init.json`, `tick-NNN.json`, and `log.jsonl`.
 
 Notes:
 
 - `deploy:local` seeds provider keys automatically, so staking can start immediately.
 - The mock loop only accrues rewards when there is rollup stake.
+- Scenario timing and amounts can be customized by editing `mock-loop/config.ts`.
 
 ## Provider keys
 
