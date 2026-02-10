@@ -429,24 +429,56 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function _removeActivatedAttester(address attester) internal returns (uint256 stakedAmount) {
         if (_isActivatedAttester[attester]) {
             uint256 index = _attesterIndex[attester];
-            uint256 lastIndex = _activatedAttesters.length - 1;
-            stakedAmount = _activatedAttesters[index].stakedAmount;
-
-            if (index != lastIndex) {
-                AttesterStake storage lastStake = _activatedAttesters[lastIndex];
-                _activatedAttesters[index] = lastStake;
-                _attesterIndex[lastStake.attester] = index;
-            }
-
-            _activatedAttesters.pop();
-            delete _attesterIndex[attester];
-            _isActivatedAttester[attester] = false;
+            (, stakedAmount) = _removeActivatedAttesterAtIndex(index);
         }
         return stakedAmount;
     }
 
     // slither-disable-end costly-loop
     // slither-disable-end pess-multiple-storage-read
+
+    // TODO: see if we can optimize this further
+    // slither-disable-start pess-multiple-storage-read,costly-loop
+    /// @notice Removes an activated attester by index.
+    /// @param index The index to remove.
+    /// @return attester The removed attester address.
+    /// @return stakedAmount The amount that was staked for this attester.
+    function _removeActivatedAttesterAtIndex(uint256 index) internal returns (address attester, uint256 stakedAmount) {
+        AttesterStake storage attesterStake = _activatedAttesters[index];
+        attester = attesterStake.attester;
+        stakedAmount = attesterStake.stakedAmount;
+
+        uint256 lastIndex = _activatedAttesters.length - 1;
+        if (index != lastIndex) {
+            AttesterStake storage lastStake = _activatedAttesters[lastIndex];
+            _activatedAttesters[index] = lastStake;
+            _attesterIndex[lastStake.attester] = index;
+        }
+
+        // slither-disable-next-line costly-loop
+        _activatedAttesters.pop();
+        // slither-disable-next-line costly-loop
+        delete _attesterIndex[attester];
+        _isActivatedAttester[attester] = false;
+
+        return (attester, stakedAmount);
+    }
+
+    // slither-disable-end pess-multiple-storage-read,costly-loop
+
+    /// @notice Finalizes an exit by emitting and calling the rollup.
+    /// @param rollup The rollup staking interface.
+    /// @param attester The attester address.
+    /// @param amount The finalized exit amount.
+    // slither-disable-start reentrancy-benign
+    // slither-disable-next-line reentrancy-no-eth
+    function _finalizeExit(IAztecRollup rollup, address attester, uint256 amount) internal {
+        emit UnstakeFinalized(attester, amount);
+        // slither-disable-next-line calls-loop
+        rollup.finalizeWithdraw(attester);
+    }
+
+    // slither-disable-end reentrancy-benign
 
     /// @notice Transfers assets from core and approves the rollup.
     /// @param rollupAddress The rollup address to approve.
@@ -523,7 +555,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
 
         // Do not cache array length: swap-pop removes elements during iteration.
-        // slither-disable-next-line cache-array-length
+        // Bounded by gasThreshold and cursor; external entrypoints are nonReentrant.
+        // slither-disable-next-line cache-array-length,calls-loop
         while (i < _activatedAttesters.length) {
             if (gasleft() < gasThreshold) {
                 break;
@@ -616,7 +649,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
     /// @param rollup The rollup staking interface.
     /// @return sumOfExitAmounts The total amount finalized.
-    // slither-disable-start calls-loop
+    // slither-disable-next-line calls-loop,costly-loop
     // slither-disable-start reentrancy-benign
     // Array length cannot be cached because elements are removed during iteration
     // slither-disable-start pess-multiple-storage-read,cache-array-length
@@ -630,12 +663,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (i > pendingLength - 1) {
             i = 0;
         }
+
+        // Bounded by gasThreshold and cursor; external entrypoints are nonReentrant.
         while (i < _pendingUnstakeRequests.length) {
             if (gasleft() < gasThreshold) {
                 break;
             }
             AttesterStake storage attesterStake = _pendingUnstakeRequests[i];
             address attester = attesterStake.attester;
+            // slither-disable-next-line calls-loop
             AttesterView memory view_ = rollup.getAttesterView(attester);
             if (!view_.exit.exists) {
                 _isUnstakePending[attester] = false;
@@ -643,22 +679,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 continue;
             }
 
-            // slither-disable-next-line timestamp
-            // Timestamp used only to gate exit readiness from the rollup state.
-            // slither-disable-next-line timestamp
-            if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+            if (!_isExitExitable(view_)) {
                 ++i;
                 continue;
             }
             sumOfExitAmounts += view_.exit.amount;
             _isUnstakePending[attester] = false;
             _removePendingUnstakeAtIndex(i);
-            emit UnstakeFinalized(attester, view_.exit.amount);
-            // External call is safe:
-            // - Caller has nonReentrant modifier
-            // - State fully updated before call (CEI pattern)
             // slither-disable-next-line reentrancy-no-eth
-            rollup.finalizeWithdraw(attester);
+            _finalizeExit(rollup, attester, view_.exit.amount);
         }
 
         uint256 currentLength = _pendingUnstakeRequests.length;
@@ -673,13 +702,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // slither-disable-end pess-multiple-storage-read,cache-array-length
     // slither-disable-end reentrancy-benign
-    // slither-disable-end calls-loop
 
     /// @notice Finalizes externally exited activated attesters that are exitable.
     /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
     /// @param rollup The rollup staking interface.
     /// @return sumOfExitAmounts The total amount finalized.
-    // slither-disable-start calls-loop
+    // slither-disable-next-line calls-loop,costly-loop
     // slither-disable-start reentrancy-benign
     // Array length cannot be cached because elements are removed during iteration
     // slither-disable-start pess-multiple-storage-read,cache-array-length
@@ -695,33 +723,30 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             i = 0;
         }
 
+        // Bounded by gasThreshold and cursor; external entrypoints are nonReentrant.
         while (i < _activatedAttesters.length) {
             if (gasleft() < gasThreshold) {
                 break;
             }
             AttesterStake storage attesterStake = _activatedAttesters[i];
             address attester = attesterStake.attester;
+
+            // slither-disable-next-line calls-loop
             AttesterView memory view_ = rollup.getAttesterView(attester);
             if (!view_.exit.exists) {
                 ++i;
                 continue;
             }
 
-            // Timestamp used only to gate exit readiness from the rollup state.
-            // slither-disable-next-line timestamp
-            if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+            if (!_isExitExitable(view_)) {
                 ++i;
                 continue;
             }
-
             sumOfExitAmounts += view_.exit.amount;
-            _removeActivatedAttester(attester);
-            emit UnstakeFinalized(attester, view_.exit.amount);
-            // External call is safe:
-            // - Caller has nonReentrant modifier
-            // - State fully updated before call (CEI pattern)
+            _removeActivatedAttesterAtIndex(i);
+
             // slither-disable-next-line reentrancy-no-eth
-            rollup.finalizeWithdraw(attester);
+            _finalizeExit(rollup, attester, view_.exit.amount);
         }
 
         uint256 currentLength = _activatedAttesters.length;
@@ -736,7 +761,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // slither-disable-end pess-multiple-storage-read,cache-array-length
     // slither-disable-end reentrancy-benign
-    // slither-disable-end calls-loop
 
     // TODO: see if we can optimize this further
     // slither-disable-start pess-multiple-storage-read
@@ -768,6 +792,18 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             emit UnstakedFundsClaimed(claimed);
         }
         return claimed;
+    }
+
+    /// @notice Returns true if an exit is present and exitable.
+    /// @param view_ The attester view data.
+    /// @return True if the exit is available to finalize.
+    function _isExitExitable(AttesterView memory view_) internal view returns (bool) {
+        if (!view_.exit.exists) {
+            return false;
+        }
+        // Timestamp used only to gate exit readiness from the rollup state.
+        // slither-disable-next-line timestamp
+        return Timestamp.unwrap(view_.exit.exitableAt) < block.timestamp + 1;
     }
 
     /// @notice Returns the canonical rollup address and interface.
