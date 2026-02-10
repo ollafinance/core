@@ -2,6 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { Test } from "@forge-std/Test.sol";
+import { Vm } from "@forge-std/Vm.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
@@ -68,10 +69,11 @@ contract ExternalExitIntegrationTest is Test {
     address internal alice;
 
     /*//////////////////////////////////////////////////////////////
-                                 EVENTS
+                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
     event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
+    event UnstakedFundsClaimed(uint256 amount);
 
     /*//////////////////////////////////////////////////////////////
                                   SETUP
@@ -341,26 +343,46 @@ contract ExternalExitIntegrationTest is Test {
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 bufferBefore = accountingBefore.bufferedAssets;
 
+        IStakingManager.KeyStore[] memory additionalKeys = _createMockKeys(1);
+        additionalKeys[0].attester = address(uint160(3));
+        additionalKeys[0].publicKeyG1 = G1Point({ x: 2, y: 3 });
+        additionalKeys[0].publicKeyG2 = G2Point({ x0: 2, x1: 3, y0: 4, y1: 5 });
+        additionalKeys[0].proofOfPossession = G1Point({ x: 12, y: 13 });
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(additionalKeys);
+
+        // Gross claimed exits are emitted as UnstakedFundsClaimed, while rebalance returns net effects
+        // after finalization and staking.
+        uint256 expectedGrossClaimed = 200 ether; // Both exits should be claimed
+
+        vm.recordLogs();
+
         vm.prank(operator);
-        (,,, uint256 resultingBuffer) = vault.rebalance();
+        (, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
 
-        // THE BUG: Only 100 ether was claimed (from pending), not 200 ether (both exits)
-        // The activated attester with external exit was not processed!
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bool foundEvent = false;
+        bytes32 expectedSelector = keccak256("UnstakedFundsClaimed(uint256)");
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].emitter == address(vault) && entries[i].topics[0] == expectedSelector) {
+                uint256 claimed = abi.decode(entries[i].data, (uint256));
+                assertEq(claimed, expectedGrossClaimed);
+                foundEvent = true;
+                break;
+            }
+        }
+        assertTrue(foundEvent, "UnstakedFundsClaimed event not found");
 
-        // Calculate expected vs actual
-        uint256 expectedClaimed = 200 ether; // Both exits should be claimed
-        uint256 actualClaimed = resultingBuffer - bufferBefore; // What actually got added to buffer
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        uint256 expectedFinalized = request.assetsExpected;
+        uint256 expectedStaked = ACTIVATION_THRESHOLD;
+        uint256 expectedResultingBuffer = bufferBefore + expectedGrossClaimed - expectedFinalized - expectedStaked;
 
-        // This assertion demonstrates the bug - we only claimed 100, not 200
-        // The test should FAIL here, showing the bug exists
-        assertEq(
-            actualClaimed,
-            expectedClaimed,
-            "BUG: Should have claimed both exits (200 ether), but only claimed funds from pending list"
-        );
+        assertEq(finalizedAmount, expectedFinalized, "Finalized amount should net withdrawal");
+        assertEq(stakedAmount, expectedStaked, "Staked amount should net surplus buffer");
+        assertEq(resultingBuffer, expectedResultingBuffer, "Resulting buffer should reflect net rebalance");
 
         // Also verify the withdrawal is finalized
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         assertTrue(request.finalized, "Withdrawal should be finalized");
     }
 
@@ -413,25 +435,28 @@ contract ExternalExitIntegrationTest is Test {
         uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
         assertApproxEqAbs(pendingBefore, 150 ether, 1 ether, "Should have ~150 ether pending");
 
-        // 4. Trigger rebalance - this should hit the underflow bug
+        // 4. Trigger rebalance - this should NOT underflow after clamp fix
         // The rebalance will try to initiate unstake for 150 ether
         // But StakingManager will unstake 2 full attesters (200 ether)
-        // Then progress.unstakeRemaining -= 200 will underflow!
+        // progress.unstakeRemaining should clamp to 0 instead of underflowing
 
-        // This call should revert with arithmetic underflow
         vm.prank(operator);
-        vault.rebalance();
+        (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
+            vault.rebalance();
 
-        // If we reach here without revert, the bug is fixed
-        // If it reverts with "panic: arithmetic underflow or overflow (0x11)", the bug exists
+        assertEq(rewardsDelta, 0, "Rewards delta should be zero in this flow");
+        assertEq(finalizedAmount, 0, "Finalize should not run before unstake finalizes");
+        assertEq(stakedAmount, 0, "No surplus should be staked during unstake initiation");
+        assertEq(resultingBuffer, 0, "Buffer should remain zero after initiate unstake");
 
-        // Verify the withdrawal was processed correctly
-        // (This code won't be reached if the bug exists)
+        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        assertEq(progress.unstakeRemaining, 0, "unstake remaining should clamp to zero");
+
         uint256 pendingAfter = withdrawalQueue.totalPendingAssets();
-
-        // Protocol should handle the case where initiated > requested gracefully
-        // Either by allowing it (initiating more unstake than strictly needed)
-        // Or by properly tracking the excess
-        assertLe(pendingAfter, pendingBefore, "Some or all of the withdrawal should be processed");
+        assertEq(pendingAfter, pendingBefore, "Pending withdrawals should remain queued");
+        assertEq(stakingManager.getPendingUnstakeCount(), 2, "Pending unstakes should include both attesters");
+        IStakingManager.KeyStore[] memory keysAfter = _createMockKeys(2);
+        assertTrue(stakingManager.isUnstakePending(keysAfter[0].attester), "Attester 0 should be pending");
+        assertTrue(stakingManager.isUnstakePending(keysAfter[1].attester), "Attester 1 should be pending");
     }
 }
