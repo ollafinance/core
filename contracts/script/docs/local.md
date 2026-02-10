@@ -66,7 +66,7 @@ With the new TypeScript mock loop, all operations are automated via scenarios co
 Run a single tick and exit:
 
 ```bash
-yarn dev:mock-tick
+yarn dev:mock-loop:once
 ```
 
 ### Custom config
