@@ -1,12 +1,15 @@
 {
   "name": "olla-core",
   "private": true,
+  "type": "module",
   "devDependencies": {
     "@types/node": "20.11.30",
     "husky": "8.0.3",
     "solhint": "6.0.2",
     "solhint-plugin-explicit-return": "portal:./solhint-rules",
-    "typescript": "5.4.5"
+    "tsx": "latest",
+    "typescript": "~5.9.3",
+    "viem": "^2.44.4"
   },
   "packageManager": "yarn@4.12.0",
   "scripts": {
@@ -28,13 +31,7 @@
     "dev:build": "cd contracts && FOUNDRY_PROFILE=dev forge build --force --threads 0",
     "deploy:local": "cd contracts && DEPLOY_ENV=local forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545",
     "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia",
-    "dev:local-start-mock-loop": "node scripts/local-mock-loop.js",
-    "dev:local-mock-tick": "node scripts/local-mock-loop.js --once",
-    "dev:local-god-mint-user": "node scripts/local-cli.js god-mint-user",
-    "dev:local-user-deposit": "node scripts/local-cli.js user-deposit",
-    "dev:local-operator-rebalance": "node scripts/local-cli.js operator-rebalance",
-    "dev:local-operator-update-accounting": "node scripts/local-cli.js operator-update-accounting",
-    "dev:local-user-initiate-withdraw-all": "node scripts/local-cli.js user-initiate-withdraw-all",
-    "dev:local-user-claim-withdrawals": "node scripts/local-cli.js user-claim-withdrawals"
+    "dev:mock-loop": "tsx mock-loop/index.ts",
+    "dev:mock-tick": "tsx mock-loop/index.ts --once"
   }
 }
