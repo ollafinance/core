@@ -14,7 +14,7 @@ interface IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Local registry state for attesters.
-    enum LocalState {
+    enum InternalAttesterState {
         Inactive,
         Active,
         Exiting
@@ -39,7 +39,7 @@ interface IStakingManager {
     struct AttesterInfo {
         address attester;
         uint256 stakedAmount;
-        LocalState state;
+        InternalAttesterState state;
     }
 
     /// @notice Configuration for the staking provider.
