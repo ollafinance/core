@@ -192,93 +192,9 @@ contract ExternalExitIntegrationTest is Test {
                               TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Test demonstrating the external exit bug.
-    /// @dev This test shows how funds get stuck when attesters exit externally:
-    ///      1. Stake 2 attesters (both in _activatedAttesters)
-    ///      2. Alice deposits 200 ether
-    ///      3. Rebalance stakes Alice's deposit (now 2 attesters activated)
-    ///      4. Alice requests withdrawal of 100 ether
-    ///      5. Rebalance #1 initiates unstake for 1 attester -> moves to _pendingUnstakeRequests
-    ///      6. The remaining attester in _activatedAttesters exits externally!
-    ///      7. Rebalance #2: _finalizePendingUnstakes processes pending attester (claims 100 ether)
-    ///         - BUT hasExitableUnstakes() returns true because activated attester has exit!
-    ///         - Rebalance returns early, never claims the 100 ether from external exit
-    ///      8. BUG: Only 100 ether claimed, 100 ether stuck forever in _activatedAttesters
-    function test_ExternalExit_FundsStuckInActivatedAttesters() external {
-        //
-        // rebalance() steps:
-        // 1. Harvest - harvest rewards
-        // 2. PullUnstaked - call _pullUnstakedFunds() which calls getUnstakedFunds()
-        //    - getUnstakedFunds() calls _claimUnstakedFunds() -> _finalizePendingUnstakes()
-        //    - _finalizePendingUnstakes() only processes _pendingUnstakeRequests
-        //    - If hasExitableUnstakes() returns true (exits exist), rebalance returns early
-        // 3. FinalizeWithdrawals - only runs if hasExitableUnstakes() returned false
-        //
-        // So the bug is:
-        // - Attesters exit externally while in _activatedAttesters
-        // - hasExitableUnstakes() returns true
-        // - rebalance returns early at PullUnstaked step
-        // - Never reaches FinalizeWithdrawals
-        // - Withdrawals stuck forever
-
-        // But how do attesters get into _activatedAttesters and then exit externally?
-        // Answer: They get staked, then exit via rollup directly (e.g., validator chooses to exit).
-        // The protocol doesn't know until cleanActivatedAttesters() is called or unstake() is attempted.
-
-        // Scenario:
-        // 1. Stake 2 attesters (both in _activatedAttesters)
-        // 2. Alice deposits 100 ether
-        // 3. Alice requests withdrawal of 50 ether
-        // 4. Rebalance #1:
-        //    - PullUnstaked: _finalizePendingUnstakes finds nothing (no pending unstakes)
-        //    - hasExitableUnstakes() returns false (no exits yet)
-        //    - Proceed to InitiateUnstake
-        //    - InitiateUnstake: unstake(50 ether) - unstakes 1 attester, moves to _pendingUnstakeRequests
-        //    - 1 attester remains in _activatedAttesters
-        // 5. The remaining attester exits externally (e.g., via rollup)
-        // 6. Rebalance #2:
-        //    - PullUnstaked: _finalizePendingUnstakes processes the 1 pending unstake (if exitable)
-        //    - But wait, the attester in _activatedAttesters also has an exit!
-        //    - hasExitableUnstakes() checks BOTH lists and returns true
-        //    - rebalance returns early!
-        // 7. Funds from the externally-exited attester are never claimed
-        // 8. But Alice's withdrawal might still be finalized if we got enough from the first attester
-
-        // Hmm, let me adjust the scenario to make it clearly a bug:
-        // 1. Stake 1 attester with 100 ether
-        // 2. Alice deposits 100 ether (buffer = 100)
-        // 3. Rebalance stakes Alice's deposit to a 2nd attester
-        //    - Now 2 attesters in _activatedAttesters (200 ether total staked)
-        // 4. Alice requests withdrawal of 100 ether
-        // 5. Rebalance #1:
-        //    - PullUnstaked: nothing to claim
-        //    - InitiateUnstake: unstake(100 ether) - unstakes 1 attester
-        //    - 1 attester moves to _pendingUnstakeRequests
-        //    - 1 attester remains in _activatedAttesters
-        // 6. The remaining attester exits externally (slashed or voluntary)
-        //    - Now: 1 in _pendingUnstakeRequests (exitable), 1 in _activatedAttesters (exitable)
-        // 7. Rebalance #2:
-        //    - PullUnstaked: _finalizePendingUnstakes processes 1 attester from pending
-        //    - BUT hasExitableUnstakes() returns true because the 1 in _activatedAttesters is exitable!
-        //    - rebalance returns early at line 405-408
-        //    - bufferedAssets += claimed amount from 1 attester (100 ether)
-        //    - But we have 200 ether worth of exits available!
-        //    - The 2nd attester's 100 ether is stuck
-        // 8. bufferedAssets = 100, but totalPending = 100, so _finalizeWithdrawals can run
-        //    - Alice gets her 100 ether
-        //    - But the vault loses 100 ether that should be in the buffer!
-
-        // Actually wait, let me re-read hasExitableUnstakes()...
-        // It checks both lists for withdrawableAmount != 0
-        // So if ANY attester in either list is exitable, it returns true
-        // This causes early return
-
-        // The problem is: getUnstakedFunds() should claim ALL exitable funds,
-        // not just from _pendingUnstakeRequests. But it only calls _finalizePendingUnstakes().
-
-        // OK let me write the test with this understanding:
-
-        // Setup: Need to stake 2 attesters with enough funds
+    /// @notice External exits can be reconciled during rebalance.
+    /// @dev Rebalance triggers StakingManager.cleanActivatedAttesters before claiming exits.
+    function test_ExternalExit_ReconciledDuringRebalance() external {
         // 1. Add 2 attester keys
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         vm.prank(providerAdmin);
@@ -309,19 +225,17 @@ contract ExternalExitIntegrationTest is Test {
         vm.prank(operator);
         vault.rebalance();
 
-        // Verify: 1 in _activatedAttesters, 1 in _pendingUnstakeRequests
+        // Verify: 1 active, 1 exiting
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "Should have 1 activated attester");
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "Should have 1 pending unstake");
 
         // 6. The remaining activated attester exits externally
         address activatedAttester = address(uint160(2));
-
         rollup.setExternalExit(activatedAttester, ACTIVATION_THRESHOLD, block.timestamp);
 
         // Verify: exit exists in rollup for the activated attester
         assertTrue(rollup.getExit(activatedAttester).exists, "Exit should exist in rollup");
-
-        assertTrue(stakingManager.hasExitableUnstakes(), "hasExitableUnstakes should return true");
+        assertTrue(stakingManager.hasExitableUnstakes(), "hasExitableUnstakes should be true for active exitable exits");
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 bufferBefore = accountingBefore.bufferedAssets;
@@ -365,6 +279,7 @@ contract ExternalExitIntegrationTest is Test {
 
         // Also verify the withdrawal is finalized
         assertTrue(request.finalized, "Withdrawal should be finalized");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "All unstakes should be finalized");
     }
 
     /// @notice Test demonstrating the unstake underflow bug.

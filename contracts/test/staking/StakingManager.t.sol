@@ -163,6 +163,18 @@ contract StakingManagerTest is Test {
         }
     }
 
+    function _getActiveSyncCursor() internal returns (uint256) {
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 activeSyncCursorSlot = bytes32(cursorSlot + 2);
+        return uint256(vm.load(address(stakingManager), activeSyncCursorSlot));
+    }
+
+    function _setActiveSyncCursor(uint256 value) internal {
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 activeSyncCursorSlot = bytes32(cursorSlot + 2);
+        vm.store(address(stakingManager), activeSyncCursorSlot, bytes32(value));
+    }
+
     /*//////////////////////////////////////////////////////////////
                         CONSTRUCTOR TESTS
     //////////////////////////////////////////////////////////////*/
@@ -988,7 +1000,7 @@ contract StakingManagerTest is Test {
         assertFalse(stakingManager.isUnstakePending(keys[0].attester));
     }
 
-    function test_GetUnstakedFunds_ClaimsActivatedExits() external {
+    function test_GetUnstakedFunds_ExternalExitReconciliation() external {
         _setupMultipleStakedAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
 
@@ -996,6 +1008,13 @@ contract StakingManagerTest is Test {
 
         uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
         uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore - 1, "active count should decrease");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should increase");
+        assertTrue(stakingManager.isUnstakePending(keys[0].attester), "attester should be marked exiting");
 
         vm.recordLogs();
 
@@ -1008,18 +1027,63 @@ contract StakingManagerTest is Test {
         for (uint256 i; i < entries.length; ++i) {
             if (entries[i].emitter == address(stakingManager) && entries[i].topics[0] == expectedSelector) {
                 uint256 amount = uint256(entries[i].topics[1]);
-                assertEq(amount, ACTIVATION_THRESHOLD, "Claimed amount should match exit");
+                assertEq(amount, ACTIVATION_THRESHOLD, "claimed amount should match exit");
                 foundEvent = true;
                 break;
             }
         }
         assertTrue(foundEvent, "UnstakedFundsClaimed event not found");
 
-        assertEq(claimed, ACTIVATION_THRESHOLD, "Claimed should equal exited stake");
-        assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed, "Core should receive claimed funds");
-        assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore - 1, "Activated count should decrease");
-        assertEq(stakingManager.getPendingUnstakeCount(), 0, "Pending should remain empty for activated exits");
-        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "Exited attester should not be pending");
+        assertEq(claimed, ACTIVATION_THRESHOLD, "claimed should equal exited stake");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed, "core should receive claimed funds");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after claim");
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "exited attester should be inactive");
+    }
+
+    function test_GetUnstakedFunds_RestakeAfterExit_ReusesEntry() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        stakingManager.getUnstakedFunds();
+        vm.stopPrank();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "attester should be inactive after exit");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after exit");
+
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+        vm.startPrank(core);
+        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should be active again");
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester should not be exiting");
+    }
+
+    function test_Unstake_CursorDoesNotSkipAfterStateChange() external {
+        _setupMultipleStakedAttesters(3);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "first unstake should mark one exiting");
+        assertEq(stakingManager.getActivatedAttesterCount(), 2, "two attesters should remain active");
+
+        vm.prank(core);
+        uint256 unstaked = stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
+
+        assertEq(unstaked, ACTIVATION_THRESHOLD * 2, "unstake should process remaining active attesters");
+        assertEq(stakingManager.getPendingUnstakeCount(), 3, "all attesters should be exiting");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "no active attesters should remain");
     }
 
     function test_GetUnstakedFunds_ActivatedExits_PartialFinalizeResetsCursor() external {
@@ -1035,6 +1099,12 @@ contract StakingManagerTest is Test {
 
         vm.prank(core);
         stakingManager.setGasThreshold(200_000);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "all exits should move to exiting");
+        assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "exiting count should match attesters");
 
         uint256 snapshotId = vm.snapshotState();
         uint256 selectedGas;
@@ -1060,7 +1130,7 @@ contract StakingManagerTest is Test {
         assertGt(selectedGas, 0, "should find gas stipend for partial finalize");
 
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 activatedCursorSlot = bytes32(cursorSlot + 2);
+        bytes32 finalizeCursorSlot = bytes32(cursorSlot + 1);
 
         vm.revertToState(snapshotId);
         uint256 coreBalanceBefore = aztec.balanceOf(core);
@@ -1071,22 +1141,24 @@ contract StakingManagerTest is Test {
         assertEq(claimedFirst, claimedObserved, "claimed amount should match probe");
         assertGt(claimedFirst, 0, "initial claim should return some funds");
         assertLt(claimedFirst, expectedTotal, "initial claim should be partial");
-        assertGt(stakingManager.getActivatedAttesterCount(), 0, "activated exits should remain after partial claim");
+        assertGt(stakingManager.getPendingUnstakeCount(), 0, "exiting attesters should remain after partial claim");
 
         uint256 totalClaimed = claimedFirst;
-        uint256 attempts;
-        while (stakingManager.getActivatedAttesterCount() > 0 && attempts < 10) {
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            if (stakingManager.getPendingUnstakeCount() == 0) {
+                break;
+            }
             vm.prank(core);
             totalClaimed += stakingManager.getUnstakedFunds{ gas: selectedGas }();
-            ++attempts;
         }
 
-        assertEq(stakingManager.getActivatedAttesterCount(), 0, "remaining exits should complete across calls");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "remaining exits should complete across calls");
         assertEq(totalClaimed, expectedTotal, "total claimed should match exits");
         assertEq(aztec.balanceOf(core), coreBalanceBefore + totalClaimed, "core should receive claimed funds");
 
-        uint256 activatedCursorAfter = uint256(vm.load(address(stakingManager), activatedCursorSlot));
-        assertEq(activatedCursorAfter, 0, "activated finalize cursor should reset after completion");
+        uint256 finalizeCursorAfter = uint256(vm.load(address(stakingManager), finalizeCursorSlot));
+        assertEq(finalizeCursorAfter, 0, "finalize cursor should reset after completion");
     }
 
     function test_GetUnstakedFunds_Bounded_LowGasCompletesAcrossCalls() external {
@@ -1233,6 +1305,26 @@ contract StakingManagerTest is Test {
         assertTrue(hasExitable, "hasExitableUnstakes should be true when exits are withdrawable");
     }
 
+    function test_HasExitableUnstakes_ReturnsTrueWhenActiveExitIsExitable() external {
+        _setupStakedAttester();
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        bool hasExitable = stakingManager.hasExitableUnstakes();
+        assertTrue(hasExitable, "hasExitableUnstakes should be true for active exitable exits");
+    }
+
+    function test_HasExitableUnstakes_ReturnsFalseWhenActiveExitNotExitable() external {
+        _setupStakedAttester();
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+
+        bool hasExitable = stakingManager.hasExitableUnstakes();
+        assertFalse(hasExitable, "hasExitableUnstakes should be false for active pending exits");
+    }
+
     /*//////////////////////////////////////////////////////////////
                            FUZZ TESTS
     //////////////////////////////////////////////////////////////*/
@@ -1343,6 +1435,91 @@ contract StakingManagerTest is Test {
 
         assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore);
         assertEq(stakingManager.getPendingUnstakeCount(), pendingBefore);
+    }
+
+    function test_CleanActivatedAttesters_ExitPresent_MarksExiting() external {
+        uint256 total = 2;
+        _setupMultipleStakedAttesters(total);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertTrue(stakingManager.isUnstakePending(keys[0].attester), "exited attester should be exiting");
+        assertFalse(stakingManager.isUnstakePending(keys[1].attester), "non-exited attester should remain active");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "pending count should match exited attesters");
+    }
+
+    function test_CleanActivatedAttesters_Bounded_ActiveSyncCursorResumes() external {
+        uint256 total = 12;
+        _setupStakedAttestersWithExits(total, total);
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(200_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 pendingObserved;
+        uint256[6] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000, 340_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.cleanActivatedAttesters, ())
+            );
+            if (!success) {
+                continue;
+            }
+            uint256 pendingCandidate = stakingManager.getPendingUnstakeCount();
+            if (pendingCandidate > 0 && pendingCandidate < total) {
+                selectedGas = gasOptions[i];
+                pendingObserved = pendingCandidate;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for partial sync");
+
+        vm.revertToState(snapshotId);
+
+        uint256 cursorBefore = _getActiveSyncCursor();
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+
+        uint256 cursorAfterFirst = _getActiveSyncCursor();
+        uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
+
+        assertEq(cursorBefore, 0, "cursor should start at 0");
+        assertEq(pendingAfterFirst, pendingObserved, "pending count should match probe");
+        assertGt(pendingAfterFirst, 0, "should move some attesters to exiting");
+        assertLt(pendingAfterFirst, total, "should not process all attesters under low gas");
+        assertGt(cursorAfterFirst, 0, "cursor should advance after partial sync");
+        assertLt(cursorAfterFirst, total, "cursor should remain within bounds");
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+
+        uint256 cursorAfterSecond = _getActiveSyncCursor();
+        uint256 pendingAfterSecond = stakingManager.getPendingUnstakeCount();
+
+        assertGt(pendingAfterSecond, pendingAfterFirst, "sync should resume across calls");
+        assertTrue(
+            cursorAfterSecond == 0 || cursorAfterSecond > cursorAfterFirst,
+            "cursor should advance or reset after completion"
+        );
+    }
+
+    function test_CleanActivatedAttesters_NoActive_ResetsActiveSyncCursor() external {
+        _setActiveSyncCursor(7);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(_getActiveSyncCursor(), 0, "cursor should reset when no active attesters");
     }
 
     function test_CleanActivatedAttesters_Bounded_LowGasCompletesAcrossCalls() external {
