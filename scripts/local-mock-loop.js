@@ -106,6 +106,9 @@ function callUintWithArg(rpcUrl, to, sig, arg) {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+  const once = args.includes('--once');
+
   const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545';
   const intervalMs = getEnvInt('INTERVAL_MS', 3000);
   const rate = process.env.RATE || '1000000000000000000';
@@ -327,11 +330,20 @@ async function main() {
       }
 
       process.stdout.write(parts.join(' ') + '\n');
+
+      if (once) {
+        process.stdout.write('[mock-loop] --once: exiting after single tick\n');
+        break;
+      }
     } catch (e) {
       // Keep looping; transient failures shouldn't kill local dev.
       process.stderr.write(String(e && e.message ? e.message : e) + '\n');
+      if (once) {
+        process.exit(1);
+      }
     }
 
+    if (once) break;
     await sleep(intervalMs);
   }
 }
