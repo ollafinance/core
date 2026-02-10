@@ -11,7 +11,7 @@
   "packageManager": "yarn@4.12.0",
   "scripts": {
     "forge:build": "cd contracts && forge build",
-    "forge:build-all": "cd contracts && forge build --force",
+    "forge:build-all": "cd contracts && forge build --force --threads 0",
     "forge:fmt": "cd contracts && forge fmt && forge fmt script/",
     "postinstall": "husky install",
     "solhint:build": "tsc -p solhint-rules/tsconfig.json",
@@ -25,13 +25,11 @@
     "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.t.sol\"",
     "test:interface-compat": "cd contracts && forge test --match-path \"test/integration/AztecInterfaceCompatibility.integration.t.sol\"",
     "dev:chain": "anvil",
-    "dev:build": "cd contracts && forge build",
+    "dev:build": "cd contracts && FOUNDRY_PROFILE=dev forge build --force --threads 0",
     "deploy:local": "cd contracts && DEPLOY_ENV=local forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545",
     "deploy:sepolia": "cd contracts && DEPLOY_ENV=testnet forge script script/Deploy.s.sol --broadcast --rpc-url sepolia",
-
     "dev:local-start-mock-loop": "node scripts/local-mock-loop.js",
     "dev:local-mock-tick": "node scripts/local-mock-loop.js --once",
-
     "dev:local-god-mint-user": "node scripts/local-cli.js god-mint-user",
     "dev:local-user-deposit": "node scripts/local-cli.js user-deposit",
     "dev:local-operator-rebalance": "node scripts/local-cli.js operator-rebalance",
