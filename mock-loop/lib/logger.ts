@@ -17,15 +17,34 @@ export class Logger {
     return `${hours}:${minutes}:${seconds}`;
   }
 
-  private formatInMillions(value: string): string {
+  private formatValue(value: string): string {
     try {
+      // First convert from wei to ether (divide by 10^18)
       const bigValue = BigInt(value);
-      const million = BigInt(1_000_000);
-      const inMillions = bigValue / million;
-      const remainder = bigValue % million;
-      // Get first 2 decimal places from remainder
-      const decimalPart = (remainder * BigInt(100)) / million;
-      return `${inMillions}.${decimalPart.toString().padStart(2, "0")}M`;
+      const ether = bigValue / BigInt(10 ** 18);
+      const remainder = bigValue % BigInt(10 ** 18);
+      
+      // Convert to number for easier formatting
+      const etherNum = Number(ether);
+      
+      // Format based on magnitude
+      if (etherNum >= 1_000_000) {
+        // Use M (millions)
+        const inM = etherNum / 1_000_000;
+        return inM >= 100 ? `${Math.round(inM)}M` : `${inM.toFixed(1).replace(/\.0$/, '')}M`;
+      } else if (etherNum >= 1_000) {
+        // Use k (thousands)
+        const inK = etherNum / 1_000;
+        return inK >= 100 ? `${Math.round(inK)}k` : `${inK.toFixed(1).replace(/\.0$/, '')}k`;
+      } else {
+        // Normal - show as integer if no remainder, otherwise first decimal
+        if (remainder === BigInt(0)) {
+          return etherNum.toString();
+        } else {
+          const decimal = Number(remainder) / 10 ** 18;
+          return decimal < 0.1 ? etherNum.toString() : `${etherNum}.${Math.round(decimal * 10)}`;
+        }
+      }
     } catch {
       return value;
     }
@@ -63,16 +82,9 @@ export class Logger {
         `| ${status}`
     );
 
-    // Log all accountingState values in millions format
+    // Log all accountingState values in compact format
     const accounting = result.stateAfter.ollaCore.accountingState;
-    console.log("  accountingState:");
-    console.log(`    bufferedAssets:       ${this.formatInMillions(accounting.bufferedAssets)}`);
-    console.log(`    stakedPrincipal:      ${this.formatInMillions(accounting.stakedPrincipal)}`);
-    console.log(`    rewardsVaultBalance:  ${this.formatInMillions(accounting.rewardsVaultBalance)}`);
-    console.log(`    claimableRewards:     ${this.formatInMillions(accounting.claimableRewards)}`);
-    console.log(`    rewardsDelta:         ${this.formatInMillions(accounting.rewardsDelta)}`);
-    console.log(`    slashingDelta:        ${this.formatInMillions(accounting.slashingDelta)}`);
-    console.log(`    cumulativeRewards:  ${this.formatInMillions(accounting.cumulativeRewards)}`);
+    console.log(`  bufferedAssets: ${this.formatValue(accounting.bufferedAssets).padStart(6)} stakedPrincipal: ${this.formatValue(accounting.stakedPrincipal).padStart(6)} rewardsVaultBalance: ${this.formatValue(accounting.rewardsVaultBalance).padStart(6)} claimableRewards: ${this.formatValue(accounting.claimableRewards).padStart(6)} rewardsDelta: ${this.formatValue(accounting.rewardsDelta).padStart(6)} slashingDelta: ${this.formatValue(accounting.slashingDelta).padStart(6)} cumulativeRewards: ${this.formatValue(accounting.cumulativeRewards).padStart(6)}`);
 
     // Human-readable log to file
     const line = this.formatLogLine(
