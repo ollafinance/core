@@ -68,8 +68,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cursor for bounded finalize of pending unstakes.
     uint256 private _finalizeCursor;
 
-    /// @dev Cursor for bounded finalize of activated exits.
-    uint256 private _activatedFinalizeCursor;
+    /// @dev Cursor for bounded active attester sync.
+    uint256 private _activeSyncCursor;
 
     /// @dev Gas threshold for bounded rebalance work.
     // solhint-disable-next-line private-vars-leading-underscore
@@ -665,26 +665,45 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Syncs active attesters with rollup exit state.
     /// @dev Updates local state when exits are detected on the rollup.
     /// @param rollup The rollup staking interface.
+    // slither-disable-next-line calls-loop,costly-loop
+    // slither-disable-start pess-multiple-storage-read,cache-array-length
     function _syncActiveAttesters(IAztecRollup rollup) internal {
         uint256 attesterLength = _attesters.length;
         if (attesterLength == 0 || _activeCount == 0) {
+            _activeSyncCursor = 0;
             return;
         }
 
-        for (uint256 i; i < attesterLength; ++i) {
+        uint256 i = _activeSyncCursor;
+        if (i > attesterLength - 1) {
+            i = 0;
+        }
+
+        for (; i < _attesters.length;) {
             if (gasleft() < gasThreshold) {
                 break;
             }
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
             if (attesterInfo.state != IStakingManager.LocalState.Active) {
+                ++i;
                 continue;
             }
             AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
             if (view_.exit.exists) {
                 _setState(i, IStakingManager.LocalState.Exiting);
             }
+            ++i;
+        }
+
+        uint256 currentLength = _attesters.length;
+        if (currentLength == 0 || i > currentLength - 1) {
+            _activeSyncCursor = 0;
+        } else {
+            _activeSyncCursor = i;
         }
     }
+
+    // slither-disable-end pess-multiple-storage-read,cache-array-length
 
     /// @notice Finalizes a claim by validating and transferring unstaked funds.
     /// @param balanceBefore The token balance before finalization.

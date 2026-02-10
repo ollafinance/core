@@ -163,6 +163,18 @@ contract StakingManagerTest is Test {
         }
     }
 
+    function _getActiveSyncCursor() internal returns (uint256) {
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 activeSyncCursorSlot = bytes32(cursorSlot + 2);
+        return uint256(vm.load(address(stakingManager), activeSyncCursorSlot));
+    }
+
+    function _setActiveSyncCursor(uint256 value) internal {
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 activeSyncCursorSlot = bytes32(cursorSlot + 2);
+        vm.store(address(stakingManager), activeSyncCursorSlot, bytes32(value));
+    }
+
     /*//////////////////////////////////////////////////////////////
                         CONSTRUCTOR TESTS
     //////////////////////////////////////////////////////////////*/
@@ -1403,6 +1415,91 @@ contract StakingManagerTest is Test {
 
         assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore);
         assertEq(stakingManager.getPendingUnstakeCount(), pendingBefore);
+    }
+
+    function test_CleanActivatedAttesters_ExitPresent_MarksExiting() external {
+        uint256 total = 2;
+        _setupMultipleStakedAttesters(total);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertTrue(stakingManager.isUnstakePending(keys[0].attester), "exited attester should be exiting");
+        assertFalse(stakingManager.isUnstakePending(keys[1].attester), "non-exited attester should remain active");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "pending count should match exited attesters");
+    }
+
+    function test_CleanActivatedAttesters_Bounded_ActiveSyncCursorResumes() external {
+        uint256 total = 12;
+        _setupStakedAttestersWithExits(total, total);
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(200_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 pendingObserved;
+        uint256[6] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000, 340_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.cleanActivatedAttesters, ())
+            );
+            if (!success) {
+                continue;
+            }
+            uint256 pendingCandidate = stakingManager.getPendingUnstakeCount();
+            if (pendingCandidate > 0 && pendingCandidate < total) {
+                selectedGas = gasOptions[i];
+                pendingObserved = pendingCandidate;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for partial sync");
+
+        vm.revertToState(snapshotId);
+
+        uint256 cursorBefore = _getActiveSyncCursor();
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+
+        uint256 cursorAfterFirst = _getActiveSyncCursor();
+        uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
+
+        assertEq(cursorBefore, 0, "cursor should start at 0");
+        assertEq(pendingAfterFirst, pendingObserved, "pending count should match probe");
+        assertGt(pendingAfterFirst, 0, "should move some attesters to exiting");
+        assertLt(pendingAfterFirst, total, "should not process all attesters under low gas");
+        assertGt(cursorAfterFirst, 0, "cursor should advance after partial sync");
+        assertLt(cursorAfterFirst, total, "cursor should remain within bounds");
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+
+        uint256 cursorAfterSecond = _getActiveSyncCursor();
+        uint256 pendingAfterSecond = stakingManager.getPendingUnstakeCount();
+
+        assertGt(pendingAfterSecond, pendingAfterFirst, "sync should resume across calls");
+        assertTrue(
+            cursorAfterSecond == 0 || cursorAfterSecond > cursorAfterFirst,
+            "cursor should advance or reset after completion"
+        );
+    }
+
+    function test_CleanActivatedAttesters_NoActive_ResetsActiveSyncCursor() external {
+        _setActiveSyncCursor(7);
+
+        vm.prank(core);
+        stakingManager.cleanActivatedAttesters();
+
+        assertEq(_getActiveSyncCursor(), 0, "cursor should reset when no active attesters");
     }
 
     function test_CleanActivatedAttesters_Bounded_LowGasCompletesAcrossCalls() external {
