@@ -185,7 +185,8 @@ export function getAsset(
   addresses: DeploymentAddresses,
   client: PublicClient | WalletClient
 ) {
-  return getContractInstance("ERC20", addresses.Asset as Address, client);
+  // Asset is MockAztec which has mint function
+  return getContractInstance("MockAztec", addresses.Asset as Address, client);
 }
 
 export function getStAztec(
