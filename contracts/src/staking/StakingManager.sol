@@ -27,8 +27,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                                     STATE
     //////////////////////////////////////////////////////////////*/
 
-    // Storage layout is not finalized; safe to change at this stage.
-
     /// @notice The staking asset (AZTEC token).
     IERC20 public stakingAsset;
 
