@@ -1,63 +1,45 @@
 import { defaultConfig } from "./config.js";
-import type { RunConfig, TickState, ScenarioConfig } from "./lib/types.js";
+import {
+  createClients,
+  loadDeployments,
+  getOllaCore,
+} from "./lib/client.js";
 
-console.log("Mock Loop v2 - Phase 2 Test");
+console.log("Mock Loop v2 - Phase 3 Test");
 console.log("============================");
 
-// Test config import
-const config: RunConfig = defaultConfig;
-console.log(`✓ Config loaded: ${config.scenarios.length} scenarios`);
-console.log(`  RPC: ${config.rpcUrl}`);
-console.log(`  Interval: ${config.intervalMs}ms`);
+const config = defaultConfig;
 
-// Test scenario iteration
-const enabledScenarios = config.scenarios.filter((s: ScenarioConfig) => s.enabled);
-console.log(`✓ Enabled scenarios: ${enabledScenarios.length}`);
+// Test client creation
+console.log("Creating viem clients...");
+const { publicClient, operatorWallet } = createClients(config.rpcUrl);
+console.log(`✓ Public client created`);
+console.log(`✓ Operator wallet: ${operatorWallet.account?.address}`);
 
-enabledScenarios.forEach((s: ScenarioConfig, i: number) => {
-  const schedule = s.every ? `every ${s.every} ticks` : s.at ? `at tick ${s.at}` : "manual";
-  console.log(`  ${i + 1}. ${s.type} (${schedule})`);
-});
+// Test deployment loading
+try {
+  const addresses = loadDeployments(config.deployEnv);
+  console.log(`✓ Loaded deployments for ${config.deployEnv}`);
+  console.log(`  OllaCore: ${addresses.OllaCoreProxy}`);
+  console.log(`  StakingManager: ${addresses.StakingManagerProxy}`);
+} catch (error) {
+  console.log(`⚠️  Deployment loading skipped (no local deployment found)`);
+  console.log(`   Run 'yarn deploy:local' first to test full client functionality`);
+}
 
-// Test type compilation with mock state
-const mockState: TickState = {
-  tick: 0,
-  timestamp: Date.now().toString(),
-  ollaCore: {
-    totalAssets: "0",
-    exchangeRate: "1000000000000000000",
-    accountingState: {
-      bufferedAssets: "0",
-      stakedPrincipal: "0",
-      rewardsVaultBalance: "0",
-      claimableRewards: "0",
-      rewardsDelta: "0",
-      slashingDelta: "0",
-      cumulativeRewards: "0",
-    },
-  },
-  stakingManager: {
-    stakedAmount: "0",
-    pendingUnstakeCount: "0",
-  },
-  withdrawalQueue: {
-    totalPendingAssets: "0",
-    nextRequestId: "1",
-  },
-  balances: {
-    core: "0",
-    stakingManager: "0",
-    rollup: "0",
-    rewardsVault: "0",
-  },
-  users: [],
-  providerRegistry: {
-    availableKeyCount: "0",
-  },
-};
+// Attempt to read totalAssets if chain is available
+console.log("\nAttempting to read OllaCore.totalAssets()...");
 
-console.log(`✓ TickState type compiles correctly`);
-console.log(`  Mock tick: ${mockState.tick}, timestamp: ${mockState.timestamp}`);
+try {
+  const addresses = loadDeployments(config.deployEnv);
+  const ollaCore = getOllaCore(addresses, publicClient);
+  const totalAssets = await ollaCore.read.totalAssets();
+  console.log(`✓ totalAssets(): ${totalAssets.toString()}`);
+  console.log("\n✅ Phase 3 complete - client can read contract state!");
+} catch (error) {
+  console.log(`⚠️  Could not read totalAssets (chain may not be running)`);
+  console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+  console.log("\n✅ Phase 3 client scaffolding ready (requires running chain)");
+}
 
-console.log("\n✅ Phase 2 types and config test passed!");
 process.exit(0);
