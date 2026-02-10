@@ -3,7 +3,7 @@ import type { RunConfig } from "./lib/types.js";
 export const defaultConfig: RunConfig = {
   rpcUrl: "http://127.0.0.1:8545",
   deployEnv: "local",
-  intervalMs: 5000,
+  intervalMs: 1_000,
   scenarios: [
     {
       type: "provider-keys",
