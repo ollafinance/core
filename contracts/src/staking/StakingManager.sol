@@ -757,6 +757,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
                     state.stakedAmount += view_.effectiveBalance;
                 }
+                // Active entries can have rollup exits before local state sync.
+                if (view_.exit.exists) {
+                    if (_isExitExitable(view_)) {
+                        state.withdrawableAmount += view_.exit.amount;
+                    } else {
+                        state.pendingUnstakeAmount += view_.exit.amount;
+                    }
+                }
                 continue;
             }
 

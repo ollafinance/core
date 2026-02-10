@@ -235,6 +235,7 @@ contract ExternalExitIntegrationTest is Test {
 
         // Verify: exit exists in rollup for the activated attester
         assertTrue(rollup.getExit(activatedAttester).exists, "Exit should exist in rollup");
+        assertTrue(stakingManager.hasExitableUnstakes(), "hasExitableUnstakes should be true for active exitable exits");
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 bufferBefore = accountingBefore.bufferedAssets;

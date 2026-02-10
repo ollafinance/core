@@ -1305,6 +1305,26 @@ contract StakingManagerTest is Test {
         assertTrue(hasExitable, "hasExitableUnstakes should be true when exits are withdrawable");
     }
 
+    function test_HasExitableUnstakes_ReturnsTrueWhenActiveExitIsExitable() external {
+        _setupStakedAttester();
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        bool hasExitable = stakingManager.hasExitableUnstakes();
+        assertTrue(hasExitable, "hasExitableUnstakes should be true for active exitable exits");
+    }
+
+    function test_HasExitableUnstakes_ReturnsFalseWhenActiveExitNotExitable() external {
+        _setupStakedAttester();
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+
+        bool hasExitable = stakingManager.hasExitableUnstakes();
+        assertFalse(hasExitable, "hasExitableUnstakes should be false for active pending exits");
+    }
+
     /*//////////////////////////////////////////////////////////////
                            FUZZ TESTS
     //////////////////////////////////////////////////////////////*/
