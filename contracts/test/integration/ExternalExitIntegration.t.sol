@@ -192,9 +192,9 @@ contract ExternalExitIntegrationTest is Test {
                               TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice External exits can be reconciled without local initiate.
-    /// @dev StakingManager.cleanActivatedAttesters moves exited active attesters to exiting.
-    function test_ExternalExit_ReconciledAfterClean() external {
+    /// @notice External exits can be reconciled during rebalance.
+    /// @dev Rebalance triggers StakingManager.cleanActivatedAttesters before claiming exits.
+    function test_ExternalExit_ReconciledDuringRebalance() external {
         // 1. Add 2 attester keys
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         vm.prank(providerAdmin);
@@ -235,13 +235,6 @@ contract ExternalExitIntegrationTest is Test {
 
         // Verify: exit exists in rollup for the activated attester
         assertTrue(rollup.getExit(activatedAttester).exists, "Exit should exist in rollup");
-
-        // 7. Reconcile external exit in staking manager
-        vm.prank(address(vault));
-        stakingManager.cleanActivatedAttesters();
-
-        assertEq(stakingManager.getActivatedAttesterCount(), 0, "All attesters should be exiting");
-        assertEq(stakingManager.getPendingUnstakeCount(), 2, "Both attesters should be pending");
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 bufferBefore = accountingBefore.bufferedAssets;
@@ -285,6 +278,7 @@ contract ExternalExitIntegrationTest is Test {
 
         // Also verify the withdrawal is finalized
         assertTrue(request.finalized, "Withdrawal should be finalized");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "All unstakes should be finalized");
     }
 
     /// @notice Test demonstrating the unstake underflow bug.
