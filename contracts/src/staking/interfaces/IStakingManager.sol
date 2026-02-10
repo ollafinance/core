@@ -12,6 +12,13 @@ interface IStakingManager {
     /*//////////////////////////////////////////////////////////////
                                   STRUCTS
     //////////////////////////////////////////////////////////////*/
+    
+    /// @notice Local registry state for attesters.
+    enum LocalState {
+        Inactive,
+        Active,
+        Exiting
+    }
 
     /// @notice Attester key information for staking.
     /// @param attester The address that will act as the attester.
@@ -25,12 +32,14 @@ interface IStakingManager {
         G1Point proofOfPossession;
     }
 
-    /// @notice Tracks an attester with their originally staked amount.
+    /// @notice Tracks an attester with their originally staked amount and state.
     /// @param attester The attester address.
     /// @param stakedAmount The amount originally staked (activation threshold at stake time).
-    struct AttesterStake {
+    /// @param state The local registry state.
+    struct AttesterInfo {
         address attester;
         uint256 stakedAmount;
+        LocalState state;
     }
 
     /// @notice Configuration for the staking provider.
