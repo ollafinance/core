@@ -377,7 +377,7 @@ contract ExternalExitIntegrationTest is Test {
     ///      - StakingManager unstakes 2 attesters = 200 ether
     ///      - Returns initiated = 200 ether
     ///      - progress.unstakeRemaining = 150 - 200 = UNDERFLOW! (panic: 0x11)
-    function test_UnstakeUnderflow_Bug_InitiatedExceedsRequested() external {
+    function test_UnstakeUnderflow_Regression_InitiatedExceedsRequested() external {
         // Setup: Stake 2 attesters (200 ether total)
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         vm.prank(providerAdmin);
