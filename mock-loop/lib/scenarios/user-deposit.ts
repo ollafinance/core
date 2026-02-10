@@ -22,12 +22,14 @@ export async function executeUserDeposit(
   }
 
   try {
-    const asset = getAsset(addresses, userWallet);
-    const ollaCore = getOllaCore(addresses, userWallet);
-
+    // Step 0: Mint tokens to user (using operator wallet)
+    const assetOperator = getAsset(addresses, clients.operatorWallet);
     const amount = BigInt(scenario.amount);
+    const mintTx = await assetOperator.write.mint([userAddress, amount]);
 
     // Step 1: Approve OllaCore to spend user's assets
+    const asset = getAsset(addresses, userWallet);
+    const ollaCore = getOllaCore(addresses, userWallet);
     const approveTx = await asset.write.approve([addresses.OllaCoreProxy, amount]);
 
     // Step 2: Deposit
@@ -39,6 +41,7 @@ export async function executeUserDeposit(
       data: {
         user: userAddress,
         amount: scenario.amount,
+        mintTx,
         approveTx,
         depositTx,
       },
