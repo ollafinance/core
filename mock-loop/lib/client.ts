@@ -11,6 +11,7 @@ import {
   type GetContractReturnType,
 } from "viem";
 import { localhost } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
@@ -115,11 +116,12 @@ export function createUserWallet(
   privateKey: string
 ): WalletClient {
   const transport = http(rpcUrl);
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
 
   return createWalletClient({
     chain: localhost,
     transport,
-    account: privateKey as Address,
+    account,
   });
 }
 

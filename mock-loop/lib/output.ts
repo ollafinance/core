@@ -9,7 +9,7 @@ export class OutputWriter {
   constructor() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     this.runDir = resolve(process.cwd(), "mock-loop", "runs", timestamp);
-    this.logPath = resolve(this.runDir, "log.jsonl");
+    this.logPath = resolve(this.runDir, "log.txt");
   }
 
   initRunDir(): void {
@@ -44,8 +44,7 @@ export class OutputWriter {
     writeFileSync(filepath, JSON.stringify(data, null, 2));
   }
 
-  logEvent(event: Record<string, unknown>): void {
-    const line = JSON.stringify(event) + "\n";
-    appendFileSync(this.logPath, line);
+  logLine(line: string): void {
+    appendFileSync(this.logPath, line + "\n");
   }
 }

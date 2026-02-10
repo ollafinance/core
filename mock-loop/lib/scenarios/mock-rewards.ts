@@ -19,8 +19,8 @@ export async function executeMockRewards(
 
     // First run: set reward rate
     if (!initialized) {
-      const rateTx = await rollup.write.setRewardRate([BigInt(scenario.rate)]);
-      actions.push(`setRewardRate: ${rateTx}`);
+      const rateTx = await rollup.write.setRewardRatePerSecond([BigInt(scenario.rate)]);
+      actions.push(`setRewardRatePerSecond: ${rateTx}`);
       initialized = true;
     }
 
