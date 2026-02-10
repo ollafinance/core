@@ -202,7 +202,7 @@ contract ExternalExitIntegrationTest is Test {
     ///         - BUT hasExitableUnstakes() returns true because activated attester has exit!
     ///         - Rebalance returns early, never claims the 100 ether from external exit
     ///      8. BUG: Only 100 ether claimed, 100 ether stuck forever in _activatedAttesters
-    function test_ExternalExit_Bug_FundsStuckInActivatedAttesters() external {
+    function test_ExternalExit_Regression_FundsStuckInActivatedAttesters() external {
         //
         // rebalance() steps:
         // 1. Harvest - harvest rewards
