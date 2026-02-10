@@ -1,45 +1,323 @@
+#!/usr/bin/env node
+import { parseArgs } from "util";
 import { defaultConfig } from "./config.js";
-import {
-  createClients,
-  loadDeployments,
-  getOllaCore,
-} from "./lib/client.js";
+import { createClients, loadDeployments } from "./lib/client.js";
+import { readFullState } from "./lib/state.js";
+import { OutputWriter } from "./lib/output.js";
+import { Logger } from "./lib/logger.js";
+import type {
+  CliArgs,
+  RunConfig,
+  ScenarioConfig,
+  TickResult,
+  ActionResult,
+  StateDelta,
+} from "./lib/types.js";
 
-console.log("Mock Loop v2 - Phase 3 Test");
-console.log("============================");
+// Import scenario executors
+import { executeProviderKeys } from "./lib/scenarios/provider-keys.js";
+import { executeMockRewards } from "./lib/scenarios/mock-rewards.js";
+import { executeUserDeposit } from "./lib/scenarios/user-deposit.js";
+import { executeRebalance } from "./lib/scenarios/rebalance.js";
+import { executeAccounting } from "./lib/scenarios/accounting.js";
+import { executeUserInitiateWithdraw } from "./lib/scenarios/user-initiate-withdraw.js";
+import { executeUserClaim } from "./lib/scenarios/user-claim.js";
 
-const config = defaultConfig;
+function parseCliArgs(): CliArgs {
+  const { values } = parseArgs({
+    args: process.argv.slice(2),
+    options: {
+      once: { type: "boolean", short: "o", default: false },
+      config: { type: "string", short: "c" },
+    },
+    strict: true,
+    allowPositionals: false,
+  });
 
-// Test client creation
-console.log("Creating viem clients...");
-const { publicClient, operatorWallet } = createClients(config.rpcUrl);
-console.log(`✓ Public client created`);
-console.log(`✓ Operator wallet: ${operatorWallet.account?.address}`);
-
-// Test deployment loading
-try {
-  const addresses = loadDeployments(config.deployEnv);
-  console.log(`✓ Loaded deployments for ${config.deployEnv}`);
-  console.log(`  OllaCore: ${addresses.OllaCoreProxy}`);
-  console.log(`  StakingManager: ${addresses.StakingManagerProxy}`);
-} catch (error) {
-  console.log(`⚠️  Deployment loading skipped (no local deployment found)`);
-  console.log(`   Run 'yarn deploy:local' first to test full client functionality`);
+  return {
+    once: values.once as boolean,
+    config: values.config as string | undefined,
+  };
 }
 
-// Attempt to read totalAssets if chain is available
-console.log("\nAttempting to read OllaCore.totalAssets()...");
+async function loadConfig(configPath?: string): Promise<RunConfig> {
+  if (!configPath) {
+    return defaultConfig;
+  }
 
-try {
-  const addresses = loadDeployments(config.deployEnv);
-  const ollaCore = getOllaCore(addresses, publicClient);
-  const totalAssets = await ollaCore.read.totalAssets();
-  console.log(`✓ totalAssets(): ${totalAssets.toString()}`);
-  console.log("\n✅ Phase 3 complete - client can read contract state!");
-} catch (error) {
-  console.log(`⚠️  Could not read totalAssets (chain may not be running)`);
-  console.log(`   Error: ${error instanceof Error ? error.message : String(error)}`);
-  console.log("\n✅ Phase 3 client scaffolding ready (requires running chain)");
+  // Dynamic import of custom config
+  const { default: customConfig } = await import(configPath);
+  return customConfig as RunConfig;
 }
 
-process.exit(0);
+function shouldRunScenario(scenario: ScenarioConfig, tick: number): boolean {
+  if (!scenario.enabled) return false;
+
+  // Check 'at' constraint - must be at or after this tick
+  if (scenario.at !== undefined && tick < scenario.at) return false;
+
+  // Check 'every' constraint
+  if (scenario.every !== undefined) {
+    // If both 'at' and 'every' are set, run every tick after 'at' that matches 'every'
+    if (scenario.at !== undefined) {
+      // Run at tick 'at' and every 'every' ticks after that
+      return (tick - scenario.at) % scenario.every === 0;
+    }
+    // Just 'every' - run on ticks divisible by 'every'
+    return tick % scenario.every === 0;
+  }
+
+  // Just 'at' - run only at that specific tick
+  if (scenario.at !== undefined) {
+    return tick === scenario.at;
+  }
+
+  // No scheduling constraints - don't run automatically
+  return false;
+}
+
+async function executeScenario(
+  scenario: ScenarioConfig,
+  tick: number,
+  clients: ReturnType<typeof createClients>,
+  addresses: ReturnType<typeof loadDeployments>
+): Promise<ActionResult> {
+  switch (scenario.type) {
+    case "provider-keys":
+      return executeProviderKeys(scenario, tick, clients, addresses);
+    case "mock-rewards":
+      return executeMockRewards(scenario, tick, clients, addresses);
+    case "user-deposit":
+      return executeUserDeposit(scenario, tick, clients, addresses);
+    case "rebalance":
+      return executeRebalance(scenario, tick, clients, addresses);
+    case "accounting":
+      return executeAccounting(scenario, tick, clients, addresses);
+    case "user-initiate-withdraw":
+      return executeUserInitiateWithdraw(scenario, tick, clients, addresses);
+    case "user-claim":
+      return executeUserClaim(scenario, tick, clients, addresses);
+    default:
+      return {
+        scenario: (scenario as ScenarioConfig).type,
+        success: false,
+        error: `Unknown scenario type`,
+      };
+  }
+}
+
+function computeDeltas(before: unknown, after: unknown, path = ""): StateDelta[] {
+  const deltas: StateDelta[] = [];
+
+  if (typeof before !== typeof after) {
+    return [
+      {
+        path,
+        before: String(before),
+        after: String(after),
+        delta: "type_mismatch",
+      },
+    ];
+  }
+
+  if (typeof before === "string" && typeof after === "string") {
+    // Try to compute numeric delta
+    try {
+      const beforeNum = BigInt(before);
+      const afterNum = BigInt(after);
+      const delta = (afterNum - beforeNum).toString();
+      if (delta !== "0") {
+        deltas.push({ path, before, after, delta });
+      }
+    } catch {
+      // Not numeric, skip
+    }
+    return deltas;
+  }
+
+  if (typeof before === "object" && before !== null && after !== null) {
+    const beforeObj = before as Record<string, unknown>;
+    const afterObj = after as Record<string, unknown>;
+    const allKeys = new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]);
+
+    for (const key of allKeys) {
+      const newPath = path ? `${path}.${key}` : key;
+      deltas.push(...computeDeltas(beforeObj[key], afterObj[key], newPath));
+    }
+  }
+
+  return deltas;
+}
+
+async function runTick(
+  tick: number,
+  config: RunConfig,
+  clients: ReturnType<typeof createClients>,
+  addresses: ReturnType<typeof loadDeployments>,
+  previousState: Awaited<ReturnType<typeof readFullState>> | null,
+  logger: Logger
+): Promise<{ result: TickResult; state: Awaited<ReturnType<typeof readFullState>> }> {
+  const startTime = Date.now();
+  const actions: ActionResult[] = [];
+
+  // Execute scenarios in order
+  for (const scenario of config.scenarios) {
+    if (shouldRunScenario(scenario, tick)) {
+      logger.logScenarioStart(scenario.type, tick);
+
+      try {
+        const result = await executeScenario(scenario, tick, clients, addresses);
+        actions.push(result);
+        logger.logScenarioComplete(result, tick);
+      } catch (error) {
+        const failedResult: ActionResult = {
+          scenario: scenario.type,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+        actions.push(failedResult);
+        logger.logScenarioComplete(failedResult, tick);
+        logger.logError(`scenario:${scenario.type}`, error, tick);
+      }
+    }
+  }
+
+  // Read state after execution
+  const stateAfter = await readFullState(
+    clients.publicClient,
+    addresses,
+    config.scenarios,
+    tick
+  );
+
+  // Compute deltas
+  const deltas = previousState ? computeDeltas(previousState, stateAfter) : [];
+
+  const durationMs = Date.now() - startTime;
+
+  const result: TickResult = {
+    tick,
+    timestamp: new Date().toISOString(),
+    durationMs,
+    actions,
+    stateBefore: previousState || stateAfter,
+    stateAfter,
+    deltas,
+  };
+
+  return { result, state: stateAfter };
+}
+
+async function main() {
+  const args = parseCliArgs();
+
+  console.log("Mock Loop v2");
+  console.log("============");
+
+  // Load config
+  const config = await loadConfig(args.config);
+  console.log(`Config loaded: ${config.scenarios.length} scenarios`);
+  console.log(`RPC: ${config.rpcUrl}`);
+  console.log(`Environment: ${config.deployEnv}`);
+
+  // Initialize clients
+  const clients = createClients(config.rpcUrl);
+  console.log(`Operator: ${clients.operatorWallet.account?.address}`);
+
+  // Load deployments
+  const addresses = loadDeployments(config.deployEnv);
+  console.log(`Deployments loaded for ${config.deployEnv}`);
+
+  // Initialize output
+  const output = new OutputWriter();
+  output.initRunDir();
+  const runDir = output.getRunDir();
+
+  const logger = new Logger(output);
+  logger.logStartup(runDir);
+
+  // Write init.json
+  output.writeInit(config, addresses, {
+    startTime: new Date().toISOString(),
+    cliArgs: args,
+  });
+
+  // Read initial state (tick 0)
+  let currentState = await readFullState(
+    clients.publicClient,
+    addresses,
+    config.scenarios,
+    0
+  );
+
+  // Write tick-000.json
+  const initialResult: TickResult = {
+    tick: 0,
+    timestamp: new Date().toISOString(),
+    durationMs: 0,
+    actions: [],
+    stateBefore: currentState,
+    stateAfter: currentState,
+    deltas: [],
+  };
+  output.writeTick(initialResult);
+  logger.logTick(initialResult);
+
+  if (args.once) {
+    console.log("\n--once flag set, exiting after initial snapshot");
+    logger.logShutdown();
+    process.exit(0);
+  }
+
+  // Main loop
+  let tick = 0;
+  let running = true;
+
+  // Handle graceful shutdown
+  process.on("SIGINT", () => {
+    console.log("\nReceived SIGINT, shutting down gracefully...");
+    running = false;
+  });
+
+  process.on("SIGTERM", () => {
+    console.log("\nReceived SIGTERM, shutting down gracefully...");
+    running = false;
+  });
+
+  console.log("\nStarting main loop...");
+  console.log("Press Ctrl+C to stop\n");
+
+  while (running) {
+    tick++;
+
+    try {
+      const { result, state } = await runTick(
+        tick,
+        config,
+        clients,
+        addresses,
+        currentState,
+        logger
+      );
+
+      currentState = state;
+      output.writeTick(result);
+      logger.logTick(result);
+    } catch (error) {
+      logger.logError("main_loop", error, tick);
+    }
+
+    if (!running) break;
+
+    // Sleep for interval
+    await new Promise((resolve) => setTimeout(resolve, config.intervalMs));
+  }
+
+  logger.logShutdown();
+  process.exit(0);
+}
+
+main().catch((error) => {
+  console.error("Fatal error:", error);
+  process.exit(1);
+});
