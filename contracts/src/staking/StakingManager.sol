@@ -74,6 +74,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cursor for bounded finalize of pending unstakes.
     uint256 private _finalizeCursor;
 
+    /// @dev Cursor for bounded finalize of activated exits.
+    uint256 private _activatedFinalizeCursor;
+
     /// @dev Gas threshold for bounded rebalance work.
     // solhint-disable-next-line private-vars-leading-underscore
     uint256 private gasThreshold;
@@ -397,7 +400,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         (, IAztecRollup rollup) = _getRollup();
 
         uint256 balanceBefore = stakingAsset.balanceOf(address(this));
-        uint256 sumOfExitAmounts = _finalizePendingUnstakes(rollup);
+        uint256 sumOfExitAmounts = _finalizeUnstakes(rollup);
         claimed = _finalizeClaim(balanceBefore, sumOfExitAmounts);
         return claimed;
     }
@@ -600,6 +603,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
     /// @param rollup The rollup staking interface.
     /// @return sumOfExitAmounts The total amount finalized.
+    function _finalizeUnstakes(IAztecRollup rollup) internal returns (uint256 sumOfExitAmounts) {
+        sumOfExitAmounts = _finalizePendingUnstakes(rollup);
+        if (gasleft() < gasThreshold) {
+            return sumOfExitAmounts;
+        }
+        sumOfExitAmounts += _finalizeActivatedExits(rollup);
+        return sumOfExitAmounts;
+    }
+
+    /// @notice Finalizes pending unstake requests that are exitable.
+    /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
+    /// @param rollup The rollup staking interface.
+    /// @return sumOfExitAmounts The total amount finalized.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
     // Array length cannot be cached because elements are removed during iteration
@@ -650,6 +666,69 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             _finalizeCursor = 0;
         } else {
             _finalizeCursor = i;
+        }
+
+        return sumOfExitAmounts;
+    }
+
+    // slither-disable-end pess-multiple-storage-read,cache-array-length
+    // slither-disable-end reentrancy-benign
+    // slither-disable-end calls-loop
+
+    /// @notice Finalizes externally exited activated attesters that are exitable.
+    /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
+    /// @param rollup The rollup staking interface.
+    /// @return sumOfExitAmounts The total amount finalized.
+    // slither-disable-start calls-loop
+    // slither-disable-start reentrancy-benign
+    // Array length cannot be cached because elements are removed during iteration
+    // slither-disable-start pess-multiple-storage-read,cache-array-length
+    function _finalizeActivatedExits(IAztecRollup rollup) internal returns (uint256 sumOfExitAmounts) {
+        uint256 activatedLength = _activatedAttesters.length;
+        if (activatedLength == 0) {
+            _activatedFinalizeCursor = 0;
+            return 0;
+        }
+
+        uint256 i = _activatedFinalizeCursor;
+        if (i > activatedLength - 1) {
+            i = 0;
+        }
+
+        while (i < _activatedAttesters.length) {
+            if (gasleft() < gasThreshold) {
+                break;
+            }
+            AttesterStake storage attesterStake = _activatedAttesters[i];
+            address attester = attesterStake.attester;
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+            if (!view_.exit.exists) {
+                ++i;
+                continue;
+            }
+
+            // Timestamp used only to gate exit readiness from the rollup state.
+            // slither-disable-next-line timestamp
+            if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+                ++i;
+                continue;
+            }
+
+            sumOfExitAmounts += view_.exit.amount;
+            _removeActivatedAttester(attester);
+            emit UnstakeFinalized(attester, view_.exit.amount);
+            // External call is safe:
+            // - Caller has nonReentrant modifier
+            // - State fully updated before call (CEI pattern)
+            // slither-disable-next-line reentrancy-no-eth
+            rollup.finalizeWithdraw(attester);
+        }
+
+        uint256 currentLength = _activatedAttesters.length;
+        if (currentLength == 0 || i > currentLength - 1) {
+            _activatedFinalizeCursor = 0;
+        } else {
+            _activatedFinalizeCursor = i;
         }
 
         return sumOfExitAmounts;

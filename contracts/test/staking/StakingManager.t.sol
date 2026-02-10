@@ -2,6 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { Test, Vm } from "@forge-std/Test.sol";
+import { StdStorage, stdStorage } from "@forge-std/StdStorage.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
@@ -17,6 +18,7 @@ import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 contract StakingManagerTest is Test {
+    using stdStorage for StdStorage;
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -984,6 +986,107 @@ contract StakingManagerTest is Test {
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
         assertFalse(stakingManager.isUnstakePending(keys[0].attester));
+    }
+
+    function test_GetUnstakedFunds_ClaimsActivatedExits() external {
+        _setupMultipleStakedAttesters(2);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.recordLogs();
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bool foundEvent = false;
+        bytes32 expectedSelector = keccak256("UnstakedFundsClaimed(uint256)");
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].emitter == address(stakingManager) && entries[i].topics[0] == expectedSelector) {
+                uint256 amount = uint256(entries[i].topics[1]);
+                assertEq(amount, ACTIVATION_THRESHOLD, "Claimed amount should match exit");
+                foundEvent = true;
+                break;
+            }
+        }
+        assertTrue(foundEvent, "UnstakedFundsClaimed event not found");
+
+        assertEq(claimed, ACTIVATION_THRESHOLD, "Claimed should equal exited stake");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed, "Core should receive claimed funds");
+        assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore - 1, "Activated count should decrease");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "Pending should remain empty for activated exits");
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "Exited attester should not be pending");
+    }
+
+    function test_GetUnstakedFunds_ActivatedExits_PartialFinalizeResetsCursor() external {
+        uint256 attesterCount = 6;
+        _setupMultipleStakedAttesters(attesterCount);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(attesterCount);
+
+        for (uint256 i; i < attesterCount; ++i) {
+            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
+        }
+
+        uint256 expectedTotal = ACTIVATION_THRESHOLD * attesterCount;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(200_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256 claimedObserved;
+        uint256[5] memory gasOptions = [uint256(220_000), 260_000, 300_000, 340_000, 380_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.getUnstakedFunds, ()));
+            if (!success) {
+                continue;
+            }
+            uint256 claimedCandidate = abi.decode(data, (uint256));
+            if (claimedCandidate > 0 && claimedCandidate < expectedTotal) {
+                selectedGas = gasOptions[i];
+                claimedObserved = claimedCandidate;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for partial finalize");
+
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 activatedCursorSlot = bytes32(cursorSlot + 2);
+
+        vm.revertToState(snapshotId);
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimedFirst = stakingManager.getUnstakedFunds{ gas: selectedGas }();
+
+        assertEq(claimedFirst, claimedObserved, "claimed amount should match probe");
+        assertGt(claimedFirst, 0, "initial claim should return some funds");
+        assertLt(claimedFirst, expectedTotal, "initial claim should be partial");
+        assertGt(stakingManager.getActivatedAttesterCount(), 0, "activated exits should remain after partial claim");
+
+        uint256 totalClaimed = claimedFirst;
+        uint256 attempts;
+        while (stakingManager.getActivatedAttesterCount() > 0 && attempts < 10) {
+            vm.prank(core);
+            totalClaimed += stakingManager.getUnstakedFunds{ gas: selectedGas }();
+            ++attempts;
+        }
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "remaining exits should complete across calls");
+        assertEq(totalClaimed, expectedTotal, "total claimed should match exits");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + totalClaimed, "core should receive claimed funds");
+
+        uint256 activatedCursorAfter = uint256(vm.load(address(stakingManager), activatedCursorSlot));
+        assertEq(activatedCursorAfter, 0, "activated finalize cursor should reset after completion");
     }
 
     function test_GetUnstakedFunds_Bounded_LowGasCompletesAcrossCalls() external {
