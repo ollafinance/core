@@ -16,7 +16,7 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { OllaCoreHarness } from "test/core/OllaCoreHarness.sol";
+import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 
 contract OllaCoreAccountingTest is Test {
     using Math for uint256;

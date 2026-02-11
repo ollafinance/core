@@ -19,7 +19,7 @@ import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { OllaCoreHarness } from "test/core/OllaCoreHarness.sol";
+import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 
 contract OllaCoreInitTest is Test {
     /*//////////////////////////////////////////////////////////////
