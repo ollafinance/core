@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import { Vm, Test } from "@forge-std/Test.sol";
 
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
@@ -1992,8 +1992,6 @@ contract OllaCoreProtocolFeesTest is Test {
         assertEq(contractResult, expectedResult, "convertToAssets matches spec");
     }
 }
-
-import { Vm } from "@forge-std/Test.sol";
 
 /// @title OllaCoreRebalanceInfiniteRestart
 /// @notice Tests that rebalance does not enter an infinite restart loop when there is an
