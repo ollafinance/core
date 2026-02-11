@@ -48,6 +48,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Unified attester registry.
     IStakingManager.AttesterInfo[] private _attesters;
 
+    /// @dev Stores index+1 so 0 can mean "not present" (index is value-1).
     /// @dev Mapping from attester to index plus one in _attesters.
     mapping(address attester => uint256 indexPlusOne) private _attesterIndex;
 
@@ -185,14 +186,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // slither-disable-start calls-loop
     // slither-disable-start pess-multiple-storage-read,cache-array-length
-    /// @notice Syncs active attesters with the rollup exit state.
-    /// @dev Marks exited attesters as exiting in the unified registry.
-    function cleanActivatedAttesters() external override onlyCore nonReentrant {
-        // TODO: change onlyCore to be only OPERATOR_ROLE
+    /// @notice Syncs attesters with the rollup exit state.
+    function syncAttesters() external override onlyCore nonReentrant {
         // TODO: research if we can assume moving with rollup is safe
         address rollupAddress = rollupRegistry.getCanonicalRollup();
         IAztecRollup rollup = IAztecRollup(rollupAddress);
-        _syncActiveAttesters(rollup);
+        _syncAttesters(rollup);
     }
 
     // slither-disable-end pess-multiple-storage-read,cache-array-length
@@ -379,9 +378,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
-    /// @notice Gets an attester index or creates a new entry.
+    /// @notice Gets an attester index, create a new attester if it doesn't exist yet.
     /// @param attester The attester address.
-    /// @return index The index in the unified registry.
+    /// @return index The index of the attester entry in in the attester list.
     function _getOrCreateAttester(address attester) internal returns (uint256 index) {
         uint256 indexPlusOne = _attesterIndex[attester];
         if (indexPlusOne == 0) {
@@ -665,7 +664,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param rollup The rollup staking interface.
     // slither-disable-next-line calls-loop,costly-loop
     // slither-disable-start pess-multiple-storage-read,cache-array-length
-    function _syncActiveAttesters(IAztecRollup rollup) internal {
+    function _syncAttesters(IAztecRollup rollup) internal {
         uint256 attesterLength = _attesters.length;
         if (attesterLength == 0 || _activeCount == 0) {
             _activeSyncCursor = 0;

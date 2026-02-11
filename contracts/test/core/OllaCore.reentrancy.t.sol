@@ -69,7 +69,7 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function cleanActivatedAttesters() external pure override {
+    function syncAttesters() external pure override {
         return;
     }
 

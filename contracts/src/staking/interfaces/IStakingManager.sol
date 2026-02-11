@@ -32,7 +32,7 @@ interface IStakingManager {
         G1Point proofOfPossession;
     }
 
-    /// @notice Tracks an attester with their originally staked amount and state.
+    /// @notice Tracks an attester with their originally staked amount and last seen state.
     /// @param attester The attester address.
     /// @param stakedAmount The amount originally staked (activation threshold at stake time).
     /// @param state The local registry state.
@@ -163,9 +163,9 @@ interface IStakingManager {
     /// @return unstakedAmount The amount initiated for unstake in this call.
     function unstake(uint256 amount) external returns (uint256 unstakedAmount);
 
-    /// @notice Syncs active attesters with the rollup and moves them to exiting if needed.
+    /// @notice Syncs attesters with the rollup and moves them to exiting or inactive if needed.
     /// @dev Since attesters can exit due to external reasons, local state is not guaranteed to be in sync.
-    function cleanActivatedAttesters() external;
+    function syncAttesters() external;
 
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.

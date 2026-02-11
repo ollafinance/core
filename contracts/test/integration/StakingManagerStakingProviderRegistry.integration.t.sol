@@ -327,7 +327,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
 
         // Clean activated attesters
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);

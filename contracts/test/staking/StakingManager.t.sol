@@ -1010,7 +1010,7 @@ contract StakingManagerTest is Test {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore - 1, "active count should decrease");
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should increase");
@@ -1101,7 +1101,7 @@ contract StakingManagerTest is Test {
         stakingManager.setGasThreshold(200_000);
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), 0, "all exits should move to exiting");
         assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "exiting count should match attesters");
@@ -1418,7 +1418,7 @@ contract StakingManagerTest is Test {
         _setupStakedAttestersWithExits(total, exited);
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), total - exited);
         assertEq(stakingManager.getPendingUnstakeCount(), exited);
@@ -1431,7 +1431,7 @@ contract StakingManagerTest is Test {
         uint256 pendingBefore = stakingManager.getPendingUnstakeCount();
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore);
         assertEq(stakingManager.getPendingUnstakeCount(), pendingBefore);
@@ -1445,7 +1445,7 @@ contract StakingManagerTest is Test {
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertTrue(stakingManager.isUnstakePending(keys[0].attester), "exited attester should be exiting");
         assertFalse(stakingManager.isUnstakePending(keys[1].attester), "non-exited attester should remain active");
@@ -1467,9 +1467,8 @@ contract StakingManagerTest is Test {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(core);
-            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.cleanActivatedAttesters, ())
-            );
+            (bool success,) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.syncAttesters, ()));
             if (!success) {
                 continue;
             }
@@ -1488,7 +1487,7 @@ contract StakingManagerTest is Test {
         uint256 cursorBefore = _getActiveSyncCursor();
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+        stakingManager.syncAttesters{ gas: selectedGas }();
 
         uint256 cursorAfterFirst = _getActiveSyncCursor();
         uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
@@ -1501,7 +1500,7 @@ contract StakingManagerTest is Test {
         assertLt(cursorAfterFirst, total, "cursor should remain within bounds");
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+        stakingManager.syncAttesters{ gas: selectedGas }();
 
         uint256 cursorAfterSecond = _getActiveSyncCursor();
         uint256 pendingAfterSecond = stakingManager.getPendingUnstakeCount();
@@ -1517,7 +1516,7 @@ contract StakingManagerTest is Test {
         _setActiveSyncCursor(7);
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(_getActiveSyncCursor(), 0, "cursor should reset when no active attesters");
     }
@@ -1538,9 +1537,8 @@ contract StakingManagerTest is Test {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(core);
-            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.cleanActivatedAttesters, ())
-            );
+            (bool success,) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.syncAttesters, ()));
             if (!success) {
                 continue;
             }
@@ -1560,7 +1558,7 @@ contract StakingManagerTest is Test {
         if (selectedGas == 0) {
             vm.revertToState(snapshotId);
             vm.prank(core);
-            stakingManager.cleanActivatedAttesters{ gas: 2_000_000 }();
+            stakingManager.syncAttesters{ gas: 2_000_000 }();
 
             assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
             assertEq(stakingManager.getActivatedAttesterCount(), total - exited, "remaining activated should stay");
@@ -1569,7 +1567,7 @@ contract StakingManagerTest is Test {
 
         vm.revertToState(snapshotId);
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+        stakingManager.syncAttesters{ gas: selectedGas }();
 
         uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
         assertEq(pendingAfterFirst, pendingObserved, "pending count should match probe");
@@ -1582,7 +1580,7 @@ contract StakingManagerTest is Test {
                 break;
             }
             vm.prank(core);
-            stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+            stakingManager.syncAttesters{ gas: selectedGas }();
         }
 
         assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
@@ -1608,7 +1606,7 @@ contract StakingManagerTest is Test {
         }
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), total - exited);
         assertEq(stakingManager.getPendingUnstakeCount(), exited);
@@ -1632,7 +1630,7 @@ contract StakingManagerTest is Test {
         _setupStakedAttestersWithExits(total, exited);
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), 0);
         assertEq(stakingManager.getPendingUnstakeCount(), exited);
@@ -1640,7 +1638,7 @@ contract StakingManagerTest is Test {
 
     function test_CleanActivatedAttesters_EmptyActivated() external {
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), 0);
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
@@ -1649,7 +1647,7 @@ contract StakingManagerTest is Test {
     function test_RevertWhen_CleanActivatedAttesters_Unauthorized() external {
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, alice));
         vm.prank(alice);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1821,9 +1819,8 @@ contract StakingManagerTest is Test {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(core);
-            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.cleanActivatedAttesters, ())
-            );
+            (bool success,) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.syncAttesters, ()));
             if (!success) {
                 continue;
             }
@@ -1838,7 +1835,7 @@ contract StakingManagerTest is Test {
         if (selectedGas == 0) {
             vm.revertToState(snapshotId);
             vm.prank(core);
-            stakingManager.cleanActivatedAttesters{ gas: 2_000_000 }();
+            stakingManager.syncAttesters{ gas: 2_000_000 }();
 
             assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
             assertEq(stakingManager.getActivatedAttesterCount(), total - exited, "remaining activated should stay");
@@ -1847,7 +1844,7 @@ contract StakingManagerTest is Test {
 
         vm.revertToState(snapshotId);
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+        stakingManager.syncAttesters{ gas: selectedGas }();
 
         uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
         assertEq(pendingAfterFirst, pendingObserved, "pending count should match probe");
@@ -1860,7 +1857,7 @@ contract StakingManagerTest is Test {
                 break;
             }
             vm.prank(core);
-            stakingManager.cleanActivatedAttesters{ gas: selectedGas }();
+            stakingManager.syncAttesters{ gas: selectedGas }();
         }
 
         assertEq(stakingManager.getPendingUnstakeCount(), exited, "all exited attesters should be pending");
@@ -1961,7 +1958,7 @@ contract StakingManagerTest is Test {
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
 
         vm.prank(core);
-        stakingManager.cleanActivatedAttesters();
+        stakingManager.syncAttesters();
 
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "clean should move exited attester in one call");
 

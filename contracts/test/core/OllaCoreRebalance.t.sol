@@ -1637,7 +1637,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function setGasThreshold(uint256) external pure override { }
 
-    function cleanActivatedAttesters() external pure override { }
+    function syncAttesters() external pure override { }
 
     function getUnstakedFunds() external pure override returns (uint256 received) {
         return 0;
