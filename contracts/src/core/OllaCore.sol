@@ -91,19 +91,13 @@ contract OllaCore is
 
     uint256 private _finalizedUnclaimedAssets;
 
-    /// @notice Snapshot of bufferedAssets at the end of an unproductive rebalance cycle.
-    ///         When nonzero and equal to the current bufferedAssets, rebalance skips starting
-    ///         a new cycle because the previous cycle proved there is no productive work.
-    ///         Reset to zero on any deposit, withdrawal request, or target-buffer change.
-    uint256 private _rebalanceIdleBuffer;
-
     mapping(uint256 requestId => address owner) private _requestOwners;
     mapping(address owner => uint256[] requestIds) private _ownerRequestIds;
     mapping(uint256 requestId => uint256 index) private _ownerRequestIndex;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[47] private __gap;
+    uint256[48] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -226,8 +220,6 @@ contract OllaCore is
         whenNotRebalancePaused
         returns (uint256 shares)
     {
-        // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
-        // slither-disable-next-line reentrancy-benign
         IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
         shares = _deposit(msg.sender, assets, recipient);
         return shares;
@@ -408,7 +400,6 @@ contract OllaCore is
     {
         uint256 oldBuffer = targetBufferedAssets;
         targetBufferedAssets = newBuffer;
-        _rebalanceIdleBuffer = 0;
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
     }
 
@@ -433,7 +424,6 @@ contract OllaCore is
     // Slither: rebalance is a linear state machine; complexity is intentional and reviewed.
     // slither-disable-start cyclomatic-complexity
     // slither-disable-start pess-multiple-storage-read
-    // slither-disable-start incorrect-equality
     // solhint-disable function-max-lines
     /// @notice Operator-triggered rebalance flow.
     /// @dev Executes: harvest (includes pulling rewards vault funds) -> pull unstaked ->
@@ -460,16 +450,6 @@ contract OllaCore is
         // Slither: enum state machine uses explicit equality checks; no timestamp usage.
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.Done) {
-            // Guard: skip starting a new cycle if the previous cycle was unproductive
-            // and no new work has become available.
-            // New work can appear via: rewards vault funds, unstaked funds, pending withdrawals,
-            // or config changes (which clear _rebalanceIdleBuffer).
-            if (
-                !_rebalancePaused && _rebalanceIdleBuffer != 0
-                    && _accountingState.bufferedAssets == _rebalanceIdleBuffer && !_hasRebalanceWorkAvailable()
-            ) {
-                return (0, 0, 0, _accountingState.bufferedAssets);
-            }
             if (!_rebalancePaused) {
                 _rebalancePaused = true;
                 _rebalancePauseReason = uint8(IOllaCore.RebalancePauseReason.RebalanceStart);
@@ -477,7 +457,6 @@ contract OllaCore is
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 _rebalanceRequiredBufferSnapshot = requiredBuffer;
             }
-            _rebalanceIdleBuffer = 0;
             _syncBufferedWithBalance();
             progress.step = IOllaCore.RebalanceStep.Harvest;
             progress.stakeRemaining = 0;
@@ -611,15 +590,6 @@ contract OllaCore is
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
-            // Record idle buffer when cycle completed with no productive staking/unstaking/finalization
-            // AND the pause can be cleared (completion satisfied). This prevents infinite restart loops
-            // when there is an unstakeable remainder, while still allowing the pause clearing logic to run.
-            // slither-disable-next-line incorrect-equality,timestamp
-            if (stakedAmount == 0 && finalizedAmount == 0 && _rebalanceCompletionSatisfied(progress)) {
-                _rebalanceIdleBuffer = _accountingState.bufferedAssets;
-            } else {
-                _rebalanceIdleBuffer = 0;
-            }
         }
 
         _rebalanceProgress = progress;
@@ -645,7 +615,6 @@ contract OllaCore is
 
     // slither-disable-end pess-multiple-storage-read
     // slither-disable-end cyclomatic-complexity
-    // slither-disable-end incorrect-equality
     // solhint-enable function-max-lines
 
     // Slither: accept multiple storage reads for readability in hot-path accounting.
@@ -1209,12 +1178,10 @@ contract OllaCore is
 
     function _increaseCumulativeDeposits(uint256 amount) internal {
         _flowCounters.cumulativeDeposits += amount;
-        _rebalanceIdleBuffer = 0;
     }
 
     function _increaseCumulativeWithdrawals(uint256 amount) internal {
         _flowCounters.cumulativeWithdrawals += amount;
-        _rebalanceIdleBuffer = 0;
     }
 
     // Slither: using storage refs is clearer for snapshot update.
@@ -1436,35 +1403,6 @@ contract OllaCore is
 
     function _hasGasForStep() internal view returns (bool) {
         return gasleft() > rebalanceGasThreshold;
-    }
-
-    /// @notice Checks if external state changes have created new rebalance work.
-    /// @dev Only checks for external state changes (rewards vault, unstaked funds,
-    ///      pending withdrawals). Does NOT check staking/unstaking calculations because
-    ///      if _rebalanceIdleBuffer is set, the previous cycle already attempted that
-    ///      work and couldn't make progress. We only retry when external conditions change.
-    /// @return True if new external work is available, false otherwise.
-    // Slither: timestamp warning is a false positive; these are zero-guards not timestamp comparisons.
-    // slither-disable-next-line timestamp
-    function _hasRebalanceWorkAvailable() internal view returns (bool) {
-        // Check for rewards vault funds to pull
-        uint256 rewardsVaultBalance = _getRewardsVaultBalance();
-        if (rewardsVaultBalance > 0) {
-            return true;
-        }
-
-        // Check for exitable unstakes that could be pulled
-        if (_modules.stakingManager.hasExitableUnstakes()) {
-            return true;
-        }
-
-        // Check for pending withdrawals that could be finalized
-        uint256 pendingWithdrawals = _modules.withdrawalQueue.totalPendingAssets();
-        if (pendingWithdrawals > 0 && _accountingState.bufferedAssets > 0) {
-            return true;
-        }
-
-        return false;
     }
 
     function _rebalanceCompletionSatisfied(IOllaCore.RebalanceProgress memory progress) internal view returns (bool) {
