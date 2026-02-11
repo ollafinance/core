@@ -767,7 +767,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
 
         // Bounded by gasThreshold and cursor.
-        for (; i < _attesters.length;) {
+        for (; i < length;) {
             if (gasleft() < gasThreshold) {
                 break;
             }
