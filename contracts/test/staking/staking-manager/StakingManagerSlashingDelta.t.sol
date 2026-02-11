@@ -62,11 +62,17 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
         vm.store(address(stakingManager), attestersLengthSlot, bytes32(length));
     }
 
+    function _computeSlashingDelta() internal returns (uint256 slashingDelta, bool completed) {
+        vm.prank(defaultAdmin);
+        return stakingManager.computeSlashingDelta();
+    }
+
     /*//////////////////////////////////////////////////////////////
                            SLASHING DELTA TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_GetSlashingDelta_ReturnsZeroWithNoAttesters() external {
+        _computeSlashingDelta();
         vm.prank(core);
         uint256 slashingDelta = stakingManager.getSlashingDelta();
 
@@ -78,6 +84,7 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 10 ether, block.timestamp);
 
+        _computeSlashingDelta();
         vm.prank(core);
         uint256 slashingDelta = stakingManager.getSlashingDelta();
 
@@ -96,6 +103,7 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 15 ether, block.timestamp);
 
+        _computeSlashingDelta();
         vm.prank(core);
         uint256 slashingDelta = stakingManager.getSlashingDelta();
 
@@ -118,12 +126,14 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 10 ether, block.timestamp);
 
+        _computeSlashingDelta();
         vm.prank(core);
         uint256 first = stakingManager.getSlashingDelta();
         assertEq(first, 10 ether, "initial slashing captured");
 
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
 
+        _computeSlashingDelta();
         vm.prank(core);
         uint256 second = stakingManager.getSlashingDelta();
         assertEq(second, first, "cumulative slashing does not decrease");
@@ -177,6 +187,7 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
         rollup.setExternalExit(keys1[0].attester, attester1Remaining, block.timestamp);
         rollup.setExternalExit(keys2[0].attester, attester2Remaining, block.timestamp);
 
+        _computeSlashingDelta();
         vm.prank(core);
         uint256 slashingDelta = stakingManager.getSlashingDelta();
 
@@ -204,15 +215,16 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
-            vm.prank(core);
-            (bool success, bytes memory data) =
-                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.getSlashingDelta, ()));
+            vm.prank(defaultAdmin);
+            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.computeSlashingDelta, ())
+            );
             if (!success) {
                 continue;
             }
-            uint256 deltaCandidate = abi.decode(data, (uint256));
+            (uint256 deltaCandidate, bool completed) = abi.decode(data, (uint256, bool));
             uint256 cursorAfter = _getSlashingDeltaCursor();
-            if (deltaCandidate == 0 && cursorAfter > 0) {
+            if (!completed && deltaCandidate == 0 && cursorAfter > 0) {
                 selectedGas = gasOptions[i];
                 break;
             }
@@ -220,23 +232,26 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         if (selectedGas == 0) {
             vm.revertToState(snapshotId);
-            vm.prank(core);
-            uint256 deltaFull = stakingManager.getSlashingDelta();
+            vm.prank(defaultAdmin);
+            (uint256 deltaFull, bool completed) = stakingManager.computeSlashingDelta();
+            assertTrue(completed, "slashing delta should complete in one call");
             assertEq(deltaFull, expectedDelta, "slashing delta should complete in one call");
             assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
             return;
         }
 
         vm.revertToState(snapshotId);
-        vm.prank(core);
-        uint256 first = stakingManager.getSlashingDelta{ gas: selectedGas }();
+        vm.prank(defaultAdmin);
+        (uint256 first, bool completedFirst) = stakingManager.computeSlashingDelta{ gas: selectedGas }();
         uint256 cursorAfterFirst = _getSlashingDeltaCursor();
 
         assertEq(first, 0, "partial pass should return prior cumulative");
+        assertFalse(completedFirst, "partial pass should not complete");
         assertGt(cursorAfterFirst, 0, "cursor should advance under partial pass");
 
-        vm.prank(core);
-        uint256 second = stakingManager.getSlashingDelta();
+        vm.prank(defaultAdmin);
+        (uint256 second, bool completedSecond) = stakingManager.computeSlashingDelta();
+        assertTrue(completedSecond, "slashing delta should complete");
 
         assertEq(second, expectedDelta, "cumulative should update after completion");
         assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
@@ -249,6 +264,7 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         _setSlashingDeltaCursor(10);
 
+        _computeSlashingDelta();
         vm.prank(core);
         uint256 slashingDelta = stakingManager.getSlashingDelta();
 
@@ -262,6 +278,7 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
         _setSlashingDeltaCursor(1);
         _setAttestersLength(0);
 
+        _computeSlashingDelta();
         vm.prank(core);
         uint256 slashingDelta = stakingManager.getSlashingDelta();
 
@@ -295,15 +312,16 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
-            vm.prank(core);
-            (bool success, bytes memory data) =
-                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.getSlashingDelta, ()));
+            vm.prank(defaultAdmin);
+            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.computeSlashingDelta, ())
+            );
             if (!success) {
                 continue;
             }
-            uint256 deltaCandidate = abi.decode(data, (uint256));
+            (uint256 deltaCandidate, bool completed) = abi.decode(data, (uint256, bool));
             uint256 cursorAfter = _getSlashingDeltaCursor();
-            if (deltaCandidate == 0 && cursorAfter > 0) {
+            if (!completed && deltaCandidate == 0 && cursorAfter > 0) {
                 selectedGas = gasOptions[i];
                 break;
             }
@@ -311,22 +329,25 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         if (selectedGas == 0) {
             vm.revertToState(snapshotId);
-            vm.prank(core);
-            uint256 deltaFull = stakingManager.getSlashingDelta();
+            vm.prank(defaultAdmin);
+            (uint256 deltaFull, bool completed) = stakingManager.computeSlashingDelta();
+            assertTrue(completed, "slashing delta should complete in one call");
             assertEq(deltaFull, expectedDelta, "slashing delta should skip inactive attester");
             return;
         }
 
         vm.revertToState(snapshotId);
-        vm.prank(core);
-        uint256 first = stakingManager.getSlashingDelta{ gas: selectedGas }();
+        vm.prank(defaultAdmin);
+        (uint256 first, bool completedFirst) = stakingManager.computeSlashingDelta{ gas: selectedGas }();
         uint256 cursorAfterFirst = _getSlashingDeltaCursor();
 
         assertEq(first, 0, "partial pass should return prior cumulative");
+        assertFalse(completedFirst, "partial pass should not complete");
         assertGt(cursorAfterFirst, 0, "cursor should advance after skipping inactive attester");
 
-        vm.prank(core);
-        uint256 second = stakingManager.getSlashingDelta();
+        vm.prank(defaultAdmin);
+        (uint256 second, bool completedSecond) = stakingManager.computeSlashingDelta();
+        assertTrue(completedSecond, "slashing delta should complete");
 
         assertEq(second, expectedDelta, "slashing delta should skip inactive attester");
     }
@@ -341,9 +362,13 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
 
         uint256 expectedDelta = attesterCount * 3 ether;
 
+        (uint256 computed, bool completed) = _computeSlashingDelta();
+        assertTrue(completed, "slashing delta should complete");
+
         vm.prank(core);
         uint256 first = stakingManager.getSlashingDelta();
 
+        assertEq(computed, expectedDelta, "slashing delta should match expected total");
         assertEq(first, expectedDelta, "slashing delta should match expected total");
         assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
         assertEq(_getSlashingDeltaAccumulated(), 0, "slashing delta accumulator should reset after completion");
