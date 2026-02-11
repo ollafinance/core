@@ -91,13 +91,19 @@ contract OllaCore is
 
     uint256 private _finalizedUnclaimedAssets;
 
+    /// @notice Snapshot of bufferedAssets at the end of an unproductive rebalance cycle.
+    ///         When nonzero and equal to the current bufferedAssets, rebalance skips starting
+    ///         a new cycle because the previous cycle proved there is no productive work.
+    ///         Reset to zero on any deposit, withdrawal request, or target-buffer change.
+    uint256 private _rebalanceIdleBuffer;
+
     mapping(uint256 requestId => address owner) private _requestOwners;
     mapping(address owner => uint256[] requestIds) private _ownerRequestIds;
     mapping(uint256 requestId => uint256 index) private _ownerRequestIndex;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[47] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -400,6 +406,7 @@ contract OllaCore is
     {
         uint256 oldBuffer = targetBufferedAssets;
         targetBufferedAssets = newBuffer;
+        _rebalanceIdleBuffer = 0;
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
     }
 
@@ -450,6 +457,15 @@ contract OllaCore is
         // Slither: enum state machine uses explicit equality checks; no timestamp usage.
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.Done) {
+            // Guard: skip starting a new cycle if the previous cycle was unproductive
+            // and the buffer hasn't changed (no new deposits, withdrawals, or config changes).
+            // slither-disable-next-line incorrect-equality,timestamp
+            if (
+                !_rebalancePaused && _rebalanceIdleBuffer != 0
+                    && _accountingState.bufferedAssets == _rebalanceIdleBuffer
+            ) {
+                return (0, 0, 0, _accountingState.bufferedAssets);
+            }
             if (!_rebalancePaused) {
                 _rebalancePaused = true;
                 _rebalancePauseReason = uint8(IOllaCore.RebalancePauseReason.RebalanceStart);
@@ -457,6 +473,7 @@ contract OllaCore is
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 _rebalanceRequiredBufferSnapshot = requiredBuffer;
             }
+            _rebalanceIdleBuffer = 0;
             _syncBufferedWithBalance();
             progress.step = IOllaCore.RebalanceStep.Harvest;
             progress.stakeRemaining = 0;
@@ -590,6 +607,13 @@ contract OllaCore is
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
+            // Record idle buffer when cycle completed with no productive staking/unstaking/finalization.
+            // slither-disable-next-line incorrect-equality,timestamp
+            if (stakedAmount == 0 && finalizedAmount == 0) {
+                _rebalanceIdleBuffer = _accountingState.bufferedAssets;
+            } else {
+                _rebalanceIdleBuffer = 0;
+            }
         }
 
         _rebalanceProgress = progress;
@@ -1178,10 +1202,12 @@ contract OllaCore is
 
     function _increaseCumulativeDeposits(uint256 amount) internal {
         _flowCounters.cumulativeDeposits += amount;
+        _rebalanceIdleBuffer = 0;
     }
 
     function _increaseCumulativeWithdrawals(uint256 amount) internal {
         _flowCounters.cumulativeWithdrawals += amount;
+        _rebalanceIdleBuffer = 0;
     }
 
     // Slither: using storage refs is clearer for snapshot update.
