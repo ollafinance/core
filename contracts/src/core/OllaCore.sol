@@ -14,6 +14,12 @@ import { Math } from "@oz/utils/math/Math.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
+// TODO: Remove console import after debugging
+import { console } from "@forge-std/console.sol";
+
+// DEBUG: Temporary event for tracing rebalance execution
+event DebugRebalanceStep(string location, uint256 step, uint256 stakeRemaining, uint256 stakedAmount, uint256 gasLeft);
+
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
@@ -548,40 +554,109 @@ contract OllaCore is
         // Slither: enum state machine uses explicit equality checks; no timestamp usage.
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
+            // DEBUG: Emit event at entry
+            emit DebugRebalanceStep("StakeSurplus-Entry", uint256(progress.step), progress.stakeRemaining, 0, gasleft());
+
             // Slither: zero guard only; no timestamp usage.
             // slither-disable-next-line incorrect-equality,timestamp
             if (progress.stakeRemaining == 0) {
+                emit DebugRebalanceStep(
+                    "StakeSurplus-Recalc", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
+                );
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 progress.stakeRemaining = _computeStakeRemaining(requiredBuffer);
+                emit DebugRebalanceStep(
+                    "StakeSurplus-AfterRecalc", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
+                );
                 // Slither: zero guard only; no timestamp usage.
                 // slither-disable-next-line incorrect-equality,timestamp
                 if (progress.stakeRemaining == 0) {
                     progress.step = IOllaCore.RebalanceStep.Done;
+                    emit DebugRebalanceStep(
+                        "StakeSurplus-NoStakeNeeded", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
+                    );
                 }
             }
             // Slither: enum state machine uses explicit equality checks; no timestamp usage.
             // slither-disable-next-line incorrect-equality,timestamp
             if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
+                emit DebugRebalanceStep(
+                    "StakeSurplus-BeforeGasCheck", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
+                );
                 if (!_hasGasForStep()) {
+                    emit DebugRebalanceStep(
+                        "StakeSurplus-GasCheckFailed", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
+                    );
                     _rebalanceProgress = progress;
                     return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
                 }
+                emit DebugRebalanceStep(
+                    "StakeSurplus-GasCheckPassed", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
+                );
+
                 stakedAmount = _stakeSurplus(progress.stakeRemaining);
+                emit DebugRebalanceStep(
+                    "StakeSurplus-AfterStake", uint256(progress.step), progress.stakeRemaining, stakedAmount, gasleft()
+                );
+
                 progress.stakeRemaining -= stakedAmount;
+                emit DebugRebalanceStep(
+                    "StakeSurplus-AfterSubtract",
+                    uint256(progress.step),
+                    progress.stakeRemaining,
+                    stakedAmount,
+                    gasleft()
+                );
+
                 // Slither: explicit nonzero check; no timestamp usage.
                 // slither-disable-next-line timestamp
                 if (progress.stakeRemaining != 0) {
+                    emit DebugRebalanceStep(
+                        "StakeSurplus-StakeRemainingNonZero",
+                        uint256(progress.step),
+                        progress.stakeRemaining,
+                        stakedAmount,
+                        gasleft()
+                    );
                     // Slither: zero return is an intentional sentinel for no progress
                     // slither-disable-next-line incorrect-equality
                     if (stakedAmount == 0) {
+                        emit DebugRebalanceStep(
+                            "StakeSurplus-StakedZero-SettingDone",
+                            uint256(progress.step),
+                            progress.stakeRemaining,
+                            stakedAmount,
+                            gasleft()
+                        );
                         progress.stakeRemaining = 0;
                         progress.step = IOllaCore.RebalanceStep.Done;
+                        emit DebugRebalanceStep(
+                            "StakeSurplus-SetToDone",
+                            uint256(progress.step),
+                            progress.stakeRemaining,
+                            stakedAmount,
+                            gasleft()
+                        );
                     } else {
+                        emit DebugRebalanceStep(
+                            "StakeSurplus-SavingProgress",
+                            uint256(progress.step),
+                            progress.stakeRemaining,
+                            stakedAmount,
+                            gasleft()
+                        );
                         _rebalanceProgress = progress;
                         return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
                     }
                 }
                 progress.step = IOllaCore.RebalanceStep.Done;
+                emit DebugRebalanceStep(
+                    "StakeSurplus-End-SetToDone",
+                    uint256(progress.step),
+                    progress.stakeRemaining,
+                    stakedAmount,
+                    gasleft()
+                );
             }
         }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import { Test, console } from "@forge-std/Test.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
@@ -89,69 +89,103 @@ contract OllaCoreRebalanceStuck is Test {
 
     /// @notice Reproduces the bug: rebalance gets stuck when staking manager
     /// can only stake part of the surplus, leaving remainder that can't be staked.
+    /// This matches the mock-loop scenario: target buffer = 0, 200k deposit.
     function test_Rebalance_StuckInStakeSurplus_WhenPartialStakeCapacity() external {
-        // Setup: Create a situation where we have more to stake than capacity allows
-        // Target buffer: 1 ETH (minimum to keep in vault)
-        uint256 targetBuffer = 1 * DECIMALS;
+        // Setup to match mock-loop scenario: target buffer = 0
+        uint256 targetBuffer = 0;
         vm.prank(governance);
         vault.setTargetBufferedAssets(targetBuffer);
 
-        // Deposit large amount: 10 ETH
-        // After rebalance: should stake 9 ETH (10 - 1 target buffer)
-        uint256 depositAmount = 10 * DECIMALS;
+        // Deposit 200k ETH (like mock-loop)
+        uint256 depositAmount = 200_000 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // Simulate staking manager with partial capacity:
-        // First stake call stakes 8 ETH (leaving 1 ETH surplus)
-        // Second stake call for remaining 1 ETH returns 0 (no capacity left)
-        uint256 firstStakeAmount = 8 * DECIMALS;
-        stakingManager.setStakeReturnAmount(firstStakeAmount);
+        console.log("=== INITIAL STATE ===");
+        console.log("Target buffer: 0 (all assets should be staked)");
+        console.log("Deposit amount: 200000000000000000000000 (200k ETH)");
+
+        // Simulate partial stake capacity: staking manager can only stake partial amounts
+        // First call: stake 199,998 ETH (leaving 2 ETH)
+        stakingManager.setStakeReturnAmount(199_998 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
-        // First rebalance: stakes 8 ETH, leaving 1 ETH surplus
+        console.log("\n=== FIRST REBALANCE ===");
+        console.log("Setting stake return to: 199998 ETH");
+
         vm.prank(operator);
-        vault.rebalance();
+        (,, uint256 staked1,) = vault.rebalance();
+        console.log("Staked:", staked1);
 
         IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
         IOllaCore.AccountingState memory accounting1 = vault.accountingState();
 
-        // Verify we're in StakeSurplus step with remaining amount
-        assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "should be in StakeSurplus");
-        // stakeRemaining should be ~1 ETH (10 deposit - 8 staked - 1 target buffer = 1 remaining)
-        assertEq(progress1.stakeRemaining, 1 * DECIMALS, "should have 1 ETH remaining to stake");
-        assertEq(accounting1.bufferedAssets, 2 * DECIMALS, "buffer should be deposit - staked = 2 ETH");
+        console.log("After first rebalance:");
+        console.log("  Step:", uint256(progress1.step), "(4=StakeSurplus, 5=Done)");
+        console.log("  stakeRemaining:", progress1.stakeRemaining);
+        console.log("  bufferedAssets:", accounting1.bufferedAssets);
+        console.log("  stakedPrincipal:", accounting1.stakedPrincipal);
 
-        // Now simulate: no more capacity (staking returns 0)
+        // Now set stake to return 0 (no more capacity)
+        stakingManager.setStakeReturnAmount(0);
+        console.log("\n=== SET STAKE RETURN TO 0 ===");
+
+        console.log("\n=== CALLING REBALANCE 5 TIMES ===");
+        for (uint256 i = 0; i < 5; i++) {
+            vm.prank(operator);
+            (,, uint256 staked,) = vault.rebalance();
+            IOllaCore.RebalanceProgress memory p = vault.rebalanceProgress();
+            console.log("Rebalance", i + 2, ":");
+            console.log("  Staked:", staked);
+            console.log("  Step:", uint256(p.step));
+            console.log("  stakeRemaining:", p.stakeRemaining);
+        }
+
+        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        console.log("\n=== FINAL CHECK ===");
+        console.log("Step:", uint256(progressFinal.step), "- Expected: 5 (Done)");
+        console.log("stakeRemaining:", progressFinal.stakeRemaining, "- Expected: 0");
+
+        // If bug exists: step will still be 4 (StakeSurplus) and stakeRemaining > 0
+        // If fixed: step should be 5 (Done) and stakeRemaining = 0
+        assertEq(
+            uint256(progressFinal.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "Rebalance should complete when stake() returns 0"
+        );
+        assertEq(progressFinal.stakeRemaining, 0, "stakeRemaining should be 0");
+    }
+
+    /// @notice Original test case with 1 ETH target buffer for comparison
+    function test_Rebalance_WithTargetBuffer_OneEther() external {
+        uint256 targetBuffer = 1 * DECIMALS;
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(targetBuffer);
+
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // First stake: 8 ETH (leaving 1 ETH to stake + 1 ETH buffer = 2 ETH in contract)
+        stakingManager.setStakeReturnAmount(8 * DECIMALS);
+        stakingManager.setAllowStakeReturnExceeds(true);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
+        assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "After first rebalance");
+        assertEq(progress1.stakeRemaining, 1 * DECIMALS, "1 ETH remaining");
+
+        // Set stake to return 0
         stakingManager.setStakeReturnAmount(0);
 
-        // Second rebalance: tries to stake remaining 1 ETH but gets 0
+        // Second rebalance
         vm.prank(operator);
         vault.rebalance();
 
         IOllaCore.RebalanceProgress memory progress2 = vault.rebalanceProgress();
-
-        // BUG: We're still in StakeSurplus step and stakeRemaining is still 1 ETH
-        // The rebalance should have advanced to Done since no more staking can occur
-        assertEq(
-            uint256(progress2.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "BUG: still stuck in StakeSurplus"
-        );
-        assertEq(progress2.stakeRemaining, 1 * DECIMALS, "BUG: stakeRemaining unchanged");
-
-        // Keep calling rebalance - it should eventually complete but doesn't
-        for (uint256 i = 0; i < 10; i++) {
-            vm.prank(operator);
-            vault.rebalance();
-        }
-
-        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
-
-        // BUG: After many iterations, we're still not Done
-        // This assertion will FAIL demonstrating the bug
-        assertEq(
-            uint256(progressFinal.step),
-            uint256(IOllaCore.RebalanceStep.Done),
-            "BUG: Rebalance never completes - stuck in infinite loop"
-        );
+        // With target buffer, it should complete correctly
+        assertEq(uint256(progress2.step), uint256(IOllaCore.RebalanceStep.Done), "Should complete");
+        assertEq(progress2.stakeRemaining, 0, "stakeRemaining should be 0");
     }
 
     /// @notice Verifies that when stake() returns 0 for the remainder, rebalance should complete.
@@ -181,13 +215,8 @@ contract OllaCoreRebalanceStuck is Test {
         // and advance to Done since no more progress can be made
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
 
-        // This documents the expected behavior (what should happen after fix)
-        // Currently this will fail - uncomment after contract is fixed
-        // assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "should complete when stake returns 0");
-
-        // For now, just verify the stuck state
-        assertEq(
-            uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "currently stuck in StakeSurplus"
-        );
+        // Verify that rebalance completes correctly when stake() returns 0
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "should complete when stake returns 0");
+        assertEq(progress.stakeRemaining, 0, "stakeRemaining should be 0");
     }
 }

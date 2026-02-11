@@ -1,76 +1,67 @@
-# Rebalance Bug Analysis - ACTUAL BUG CONFIRMED
+# Rebalance Bug - CONFIRMED AND PROVEN
 
 ## Summary
 
-**There IS a bug** in the rebalance flow. The mock-loop correctly shows the rebalance getting stuck in an infinite loop when the remaining amount to stake is less than the activation threshold.
+There is a bug in `OllaCore.rebalance()` that causes an **infinite restart loop** when there is an unstakeable remainder in the buffer (e.g., 2 ETH when the staking minimum is 32 ETH).
 
 ## Root Cause
 
-The bug involves two components:
+When `rebalance()` completes a cycle (reaches `step=Done`) and clears the pause flag, the **next** call to `rebalance()` starts a brand new cycle unconditionally. The new cycle recalculates `stakeRemaining = bufferedAssets - requiredBuffer`, rediscovers the same small remainder, tries to stake it, gets 0 back from the staking manager, sets `step=Done`, clears the pause -- and the pattern repeats forever.
 
-### 1. StakingManager._calculateAttestersToStake() 
-Location: `contracts/src/staking/StakingManager.sol:847`
+### Detailed Flow
 
-```solidity
-attestersToStakeTo = amount / activationThresholdValue;
+**Setup**: 200k ETH deposited, `targetBufferedAssets=0`, staking manager stakes 199,998 ETH leaving 2 ETH buffered.
+
+**Call 1** (`step=StakeSurplus, stakeRemaining=2 ETH` from previous save):
+1. Enters StakeSurplus block, calls `_stakeSurplus(2 ETH)` -> returns 0
+2. `stakedAmount == 0 && stakeRemaining != 0` -> sets `step=Done, stakeRemaining=0`
+3. `_rebalanceCompletionSatisfied()` returns true -> sets `_rebalancePaused = false`
+
+**Call 2** (`step=Done`):
+1. Enters `if (progress.step == Done)` at line 458
+2. `_rebalancePaused == false` -> sets `_rebalancePaused = true` (NEW CYCLE!)
+3. Sets `step=Harvest`, falls through ALL steps: Harvest -> PullUnstaked -> FinalizeWithdrawals -> InitiateUnstake -> StakeSurplus
+4. Recalculates `stakeRemaining = bufferedAssets - requiredBuffer = 2 ETH - 0 = 2 ETH`
+5. Calls `_stakeSurplus(2 ETH)` -> returns 0
+6. Sets `step=Done`, clears pause
+7. Returns -- but calling rebalance AGAIN repeats the exact same cycle
+
+**Every subsequent call repeats Call 2 exactly.**
+
+### Location
+
+`contracts/src/core/OllaCore.sol` lines 458-465 -- the `if (progress.step == Done)` block unconditionally starts a new cycle whenever it's called with `step=Done`.
+
+## Impact
+
+1. **Mock-loop infinite loop**: The off-chain operator loop calls `rebalance()` repeatedly. Each call does a full cycle (Done -> Harvest -> ... -> StakeSurplus -> Done), but from the loop's perspective, it reads `rebalanceProgress()` which shows the intermediate saved state before the final `Done` (or sees `Done` but calls again). The loop hits the 100-iteration safety limit.
+2. **Transient pause cycling**: Every call sets `_rebalancePaused=true` then back to `false`. Any concurrent operation protected by `whenNotRebalancePaused` (deposits, redemptions, `updateAccounting`, etc.) can be blocked during this window.
+3. **Wasted gas**: Each unnecessary cycle runs through all 6 rebalance steps for no productive work.
+
+## Proof
+
+Two failing Foundry tests in `contracts/test/core/OllaCoreRebalanceInfiniteRestart.t.sol`:
+
+### `test_RebalanceDoesNotInfinitelyRestart`
+After 3 calls complete the initial rebalance, a 4th call emits a `Rebalanced` event, proving a full unnecessary cycle ran. **Expected 0 events, got 1.**
+
+### `test_RebalanceRepeatedPauseCycling`
+Over 5 rebalance calls after the initial cycle completes, 10 `RebalancePauseUpdated` events are emitted (2 per call: pause=true at start, pause=false at end). **Expected 0 events, got 10.**
+
+### Run the tests
+
+```bash
+yarn test:rebalance-infinite-restart
 ```
 
-When the remaining amount (2 ETH) is less than the activation threshold (100 ETH), integer division returns 0 attesters to stake, causing `stake()` to return 0.
+Both tests FAIL, proving the bug exists.
 
-### 2. OllaCore StakeSurplus Logic
-Location: `contracts/src/core/OllaCore.sol:550-585`
+## Why Earlier Unit Tests Missed This
 
-The contract logic at lines 576-578 SHOULD handle when `stake()` returns 0:
-```solidity
-if (stakedAmount == 0) {
-    progress.stakeRemaining = 0;
-    progress.step = IOllaCore.RebalanceStep.Done;
-}
-```
+The earlier tests in `OllaCoreRebalanceStuck.t.sol` verified that a single rebalance call correctly transitions from StakeSurplus to Done when `stake()` returns 0. That logic IS correct. The bug is not in the StakeSurplus-to-Done transition -- it's that **calling rebalance again after Done unconditionally starts a new cycle**, creating the infinite loop.
 
-**However**, this code path is being bypassed or not working as expected. The rebalance stays at step=4 (StakeSurplus) with stakeRemaining=2 ETH for all 100 iterations.
+## Files
 
-## Evidence from Mock-Loop
-
-```
-Tick 002 | actions: ✓✓.⚠️✓.. | 587ms | ⚠️ 1 errors
-  bufferedAssets:      2 |stakedPrincipal:   200k
-```
-
-Step history shows:
-- Iteration 1: Stakes 199,998 ETH successfully (uses 1 provider key)
-- Iterations 2-100: step=4 (StakeSurplus), stakeRemaining=2 ETH, stakedAmount=0
-- Step never advances to Done (step=5)
-
-## Why Unit Tests Passed
-
-The unit tests used `MockAccountingStakingManager` which behaves differently:
-- Mock: Simply returns configured `stakeReturnAmount`
-- Real: Calculates attesters based on `amount / activationThreshold`
-
-The mock doesn't replicate the real staking logic that causes the bug.
-
-## The Actual Bug
-
-The issue appears to be that when `_stakeSurplus()` returns 0 due to insufficient amount for the activation threshold, the code at lines 576-578 should set `step = Done`, but the trace shows `step` remains at 4.
-
-**Possible causes:**
-1. Gas check at line 565 causing early return before Done is set
-2. State being reset after setting Done
-3. Logic flow not reaching lines 576-578 as expected
-
-## Next Steps
-
-1. Add console logging to OllaCore.rebalance() to trace exact execution path
-2. Verify if lines 576-578 are being executed
-3. If not, determine what's preventing the Done transition
-4. Implement fix to ensure rebalance completes when stake() returns 0 for threshold reasons
-
-## Files to Investigate
-
-- `contracts/src/core/OllaCore.sol` - Lines 550-595 (StakeSurplus logic)
-- `contracts/src/staking/StakingManager.sol` - Lines 316-336 (_stake function)
-
-## Test File Created
-
-`contracts/test/core/OllaCoreRebalanceStuck.t.sol` - Documents the expected behavior (currently passes because it uses mock, but should be updated to test real scenario).
+- **Bug test**: `contracts/test/core/OllaCoreRebalanceInfiniteRestart.t.sol`
+- **Bug location**: `contracts/src/core/OllaCore.sol:458-465`
+- **Fix proposals**: See `fixes-rebalance-bug.md`
