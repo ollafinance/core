@@ -191,9 +191,9 @@ contract StakingManagerHandler is Test {
     }
 
     /// @notice Clean activated attesters (only core can call)
-    function cleanActivatedAttesters() external {
+    function syncAttesters() external {
         vm.prank(core);
-        try stakingManager.cleanActivatedAttesters() {
+        try stakingManager.syncAttesters() {
         // Track state changes if needed
         }
             catch {

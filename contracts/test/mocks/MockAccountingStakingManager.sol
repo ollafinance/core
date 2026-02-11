@@ -170,7 +170,7 @@ contract MockAccountingStakingManager is IStakingManager {
         gasThreshold = threshold;
     }
 
-    function cleanActivatedAttesters() external pure override {
+    function syncAttesters() external pure override {
         return;
     }
 

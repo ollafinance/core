@@ -145,7 +145,7 @@ contract StakingManagerReentrancyTest is Test {
 
         aztec.mint(core, ACTIVATION_THRESHOLD);
 
-        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.cleanActivatedAttesters, ()));
+        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.syncAttesters, ()));
         rollup.setReenterOnDeposit(true);
 
         vm.prank(core);
