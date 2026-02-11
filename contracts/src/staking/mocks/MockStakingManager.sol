@@ -179,7 +179,7 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function cleanActivatedAttesters() external pure override {
+    function syncAttesters() external pure override {
         // No-op for mock
         return;
     }
