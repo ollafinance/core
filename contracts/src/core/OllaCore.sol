@@ -611,9 +611,11 @@ contract OllaCore is
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
-            // Record idle buffer when cycle completed with no productive staking/unstaking/finalization.
+            // Record idle buffer when cycle completed with no productive staking/unstaking/finalization
+            // AND the pause can be cleared (completion satisfied). This prevents infinite restart loops
+            // when there is an unstakeable remainder, while still allowing the pause clearing logic to run.
             // slither-disable-next-line incorrect-equality,timestamp
-            if (stakedAmount == 0 && finalizedAmount == 0) {
+            if (stakedAmount == 0 && finalizedAmount == 0 && _rebalanceCompletionSatisfied(progress)) {
                 _rebalanceIdleBuffer = _accountingState.bufferedAssets;
             } else {
                 _rebalanceIdleBuffer = 0;
