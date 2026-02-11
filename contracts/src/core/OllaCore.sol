@@ -232,6 +232,8 @@ contract OllaCore is
         whenNotRebalancePaused
         returns (uint256 shares)
     {
+        // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
+        // slither-disable-next-line reentrancy-benign
         IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
         shares = _deposit(msg.sender, assets, recipient);
         return shares;
@@ -437,6 +439,7 @@ contract OllaCore is
     // Slither: rebalance is a linear state machine; complexity is intentional and reviewed.
     // slither-disable-start cyclomatic-complexity
     // slither-disable-start pess-multiple-storage-read
+    // slither-disable-start incorrect-equality
     // solhint-disable function-max-lines
     /// @notice Operator-triggered rebalance flow.
     /// @dev Executes: harvest (includes pulling rewards vault funds) -> pull unstaked ->
@@ -464,11 +467,12 @@ contract OllaCore is
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             // Guard: skip starting a new cycle if the previous cycle was unproductive
-            // and the buffer hasn't changed (no new deposits, withdrawals, or config changes).
-            // slither-disable-next-line incorrect-equality,timestamp
+            // and no new work has become available.
+            // New work can appear via: rewards vault funds, unstaked funds, pending withdrawals,
+            // or config changes (which clear _rebalanceIdleBuffer).
             if (
                 !_rebalancePaused && _rebalanceIdleBuffer != 0
-                    && _accountingState.bufferedAssets == _rebalanceIdleBuffer
+                    && _accountingState.bufferedAssets == _rebalanceIdleBuffer && !_hasRebalanceWorkAvailable()
             ) {
                 return (0, 0, 0, _accountingState.bufferedAssets);
             }
@@ -714,6 +718,7 @@ contract OllaCore is
 
     // slither-disable-end pess-multiple-storage-read
     // slither-disable-end cyclomatic-complexity
+    // slither-disable-end incorrect-equality
     // solhint-enable function-max-lines
 
     // Slither: accept multiple storage reads for readability in hot-path accounting.
@@ -1504,6 +1509,35 @@ contract OllaCore is
 
     function _hasGasForStep() internal view returns (bool) {
         return gasleft() > rebalanceGasThreshold;
+    }
+
+    /// @notice Checks if external state changes have created new rebalance work.
+    /// @dev Only checks for external state changes (rewards vault, unstaked funds,
+    ///      pending withdrawals). Does NOT check staking/unstaking calculations because
+    ///      if _rebalanceIdleBuffer is set, the previous cycle already attempted that
+    ///      work and couldn't make progress. We only retry when external conditions change.
+    /// @return True if new external work is available, false otherwise.
+    // Slither: timestamp warning is a false positive; these are zero-guards not timestamp comparisons.
+    // slither-disable-next-line timestamp
+    function _hasRebalanceWorkAvailable() internal view returns (bool) {
+        // Check for rewards vault funds to pull
+        uint256 rewardsVaultBalance = _getRewardsVaultBalance();
+        if (rewardsVaultBalance > 0) {
+            return true;
+        }
+
+        // Check for exitable unstakes that could be pulled
+        if (_modules.stakingManager.hasExitableUnstakes()) {
+            return true;
+        }
+
+        // Check for pending withdrawals that could be finalized
+        uint256 pendingWithdrawals = _modules.withdrawalQueue.totalPendingAssets();
+        if (pendingWithdrawals > 0 && _accountingState.bufferedAssets > 0) {
+            return true;
+        }
+
+        return false;
     }
 
     function _rebalanceCompletionSatisfied(IOllaCore.RebalanceProgress memory progress) internal view returns (bool) {
