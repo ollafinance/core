@@ -30,7 +30,6 @@ export interface RebalanceScenario {
   enabled: boolean;
   every?: number;
   at?: number;
-  maxIterations?: number;
 }
 
 export interface AccountingScenario {

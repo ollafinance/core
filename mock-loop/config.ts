@@ -29,18 +29,19 @@ export const defaultConfig: RunConfig = {
     {
       type: "rebalance",
       enabled: true,
+      at: 2,
       every: 10,
-      maxIterations: 20,
     },
     {
       type: "accounting",
       enabled: true,
+      at: 2,
       every: 10,
     },
     {
       type: "user-initiate-withdraw",
       enabled: true,
-      at: 20,
+      at: 25,
       privateKey:
         "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
     },
