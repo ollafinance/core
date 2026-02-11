@@ -4,18 +4,15 @@ pragma solidity ^0.8.27;
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-
+import { RolesLib } from "src/shared/RolesLib.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
-import { RolesLib } from "src/shared/RolesLib.sol";
 
 // solhint-disable max-states-count
 /// @title StakingManager
@@ -28,7 +25,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Role identifier for operator access control.
     bytes32 public constant OPERATOR_ROLE = RolesLib.OPERATOR_ROLE;
+
+    /// @notice Default maximum age (in seconds) for slashing delta freshness.
     uint256 public constant DEFAULT_SLASHING_DELTA_MAX_AGE = 12 hours;
 
     /*//////////////////////////////////////////////////////////////
@@ -236,17 +236,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return harvested;
     }
 
-    /// @notice Returns the cached slashing delta.
-    /// @return slashingDelta The cached slashing delta.
-    function getSlashingDelta() external view override onlyCore returns (uint256 slashingDelta) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
-        }
-        return _cumulativeSlashingDelta;
-    }
-
     /*//////////////////////////////////////////////////////////////
-                         PROVIDER AND ADMIN FUNCTIONS
+                          PROVIDER AND ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
@@ -265,16 +256,18 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
 
         (uint256 currentSlashingDelta, bool computationCompleted) = _computeSlashed(rollup);
+        uint256 cachedDelta = _cumulativeSlashingDelta;
         if (computationCompleted) {
-            uint256 previousValue = _cumulativeSlashingDelta;
+            uint256 previousValue = cachedDelta;
             if (currentSlashingDelta > previousValue) {
                 _cumulativeSlashingDelta = currentSlashingDelta;
+                cachedDelta = currentSlashingDelta;
             }
             _lastSlashingDeltaTimestamp = block.timestamp;
-            emit SlashingDeltaUpdated(previousValue, _cumulativeSlashingDelta, block.timestamp);
+            emit SlashingDeltaUpdated(previousValue, cachedDelta, block.timestamp);
         }
 
-        slashingDelta = _cumulativeSlashingDelta;
+        slashingDelta = cachedDelta;
         completed = computationCompleted;
         return (slashingDelta, completed);
     }
@@ -284,12 +277,23 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (maxAge == 0) {
             revert StakingManager__ZeroAmount();
         }
+        uint256 oldMaxAge = _slashingDeltaMaxAge;
         _slashingDeltaMaxAge = maxAge;
+        emit SlashingDeltaMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
     /*//////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
+                             VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns the cached slashing delta.
+    /// @return slashingDelta The cached slashing delta.
+    function getSlashingDelta() external view override onlyCore returns (uint256 slashingDelta) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        }
+        return _cumulativeSlashingDelta;
+    }
 
     /// @notice Internal helper to get the claimable rewards.
     /// @dev Internal helper to get the claimable rewards.
@@ -636,7 +640,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @return exitAmount The unstake amount initiated for the attester.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
-    // slither-disable-next-line pess-multiple-storage-read -- _setState reads _attesters; caching here won't remove warning
+    // slither-disable-start pess-multiple-storage-read
+    // Slither: `_attesters` is a storage array requiring index-based access; caching the struct
+    // into memory would add complexity without meaningful gas savings since each access targets
+    // a different index/field.
     function _processUnstakeAttester(IAztecRollup rollup, uint256 index, address attester, uint256 stakedAmount)
         internal
         returns (uint256 exitAmount)
@@ -664,6 +671,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return exitAmount;
     }
 
+    // slither-disable-end pess-multiple-storage-read
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
@@ -851,30 +859,50 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 ++i;
                 continue;
             }
-            address attester = attesterInfo.attester;
-            uint256 stakedAmount = attesterInfo.stakedAmount;
 
-            // slither-disable-next-line calls-loop -- trusted rollup, bounded by gas/cursor
-            AttesterView memory view_ = rollup.getAttesterView(attester);
-            (bool eligible, uint256 remaining) = _remainingStake(view_);
-            if (!eligible) {
-                ++i;
-                continue;
-            }
-            stakedTotal += stakedAmount;
-            if (stakedAmount > remaining) {
-                slashingDelta += stakedAmount - remaining;
-            }
+            (stakedTotal, slashingDelta) = _accumulateAttesterDelta(rollup, attesterInfo, stakedTotal, slashingDelta);
             ++i;
         }
 
+        _updateSlashingDeltaCursor(i);
+        return (stakedTotal, slashingDelta);
+    }
+
+    /// @notice Updates the slashing delta cursor after iteration.
+    /// @param i The current iterator position.
+    function _updateSlashingDeltaCursor(uint256 i) internal {
         uint256 currentLength = _attesters.length;
         if (currentLength == 0 || i > currentLength - 1) {
             _slashingDeltaCursor = 0;
         } else {
             _slashingDeltaCursor = i;
         }
+    }
 
+    /// @notice Accumulates slashing delta for a single attester.
+    /// @param rollup The rollup staking interface.
+    /// @param attesterInfo The attester info storage reference.
+    /// @param stakedTotal Running total of staked amounts.
+    /// @param slashingDelta Running total of slashing delta.
+    /// @return updatedStakedTotal Updated staked total.
+    /// @return updatedSlashingDelta Updated slashing delta.
+    function _accumulateAttesterDelta(
+        IAztecRollup rollup,
+        IStakingManager.AttesterInfo storage attesterInfo,
+        uint256 stakedTotal,
+        uint256 slashingDelta
+    ) internal view returns (uint256 updatedStakedTotal, uint256 updatedSlashingDelta) {
+        // slither-disable-next-line calls-loop -- trusted rollup, bounded by gas/cursor
+        AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
+        (bool eligible, uint256 remaining) = _remainingStake(view_);
+        if (!eligible) {
+            return (stakedTotal, slashingDelta);
+        }
+        uint256 stakedAmount = attesterInfo.stakedAmount;
+        stakedTotal += stakedAmount;
+        if (stakedAmount > remaining) {
+            slashingDelta += stakedAmount - remaining;
+        }
         return (stakedTotal, slashingDelta);
     }
 
@@ -988,6 +1016,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return (stakedTotal, slashingDelta);
     }
 
+    // Slither: zero-sentinel check (`== 0`) guards uninitialized state; `_lastSlashingDeltaTimestamp`
+    // is only written to `block.timestamp` by `initialize()` and `computeSlashingDelta()`.
+    // Timestamp comparison is intentional for liveness enforcement with a 12-hour window;
+    // miner manipulation of a few seconds has no security impact.
+    // slither-disable-next-line incorrect-equality,timestamp
+    function _isSlashingDeltaStale() internal view returns (bool) {
+        uint256 lastUpdated = _lastSlashingDeltaTimestamp;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
+    }
+
     /// @notice Calculates the attester count to stake to, bounded by available keys.
     /// @param amount The stake amount requested.
     /// @param activationThresholdValue The stake amount per attester.
@@ -1013,13 +1054,5 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             return (true, view_.exit.amount);
         }
         return (false, 0);
-    }
-
-    function _isSlashingDeltaStale() internal view returns (bool) {
-        uint256 lastUpdated = _lastSlashingDeltaTimestamp;
-        if (lastUpdated == 0) {
-            return true;
-        }
-        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
     }
 }

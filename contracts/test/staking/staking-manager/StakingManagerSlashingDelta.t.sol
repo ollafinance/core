@@ -3,7 +3,10 @@ pragma solidity >=0.8.27 <0.9.0;
 
 import { StdStorage, stdStorage } from "@forge-std/StdStorage.sol";
 
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
+
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { StakingManager } from "src/staking/StakingManager.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
@@ -381,5 +384,103 @@ contract StakingManagerSlashingDeltaTest is StakingManagerBaseTest {
         assertEq(_getSlashingDeltaCursor(), 0, "cursor should remain reset after subsequent calls");
         assertEq(_getSlashingDeltaAccumulated(), 0, "slashing delta accumulator should remain reset");
         assertEq(_getStakedTotalAccumulated(), 0, "staked total accumulator should remain reset");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        STALENESS BOUNDARY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetSlashingDelta_FreshAtExactThreshold() external {
+        _computeSlashingDelta();
+
+        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getSlashingDeltaLiveness();
+        vm.warp(lastUpdated + maxAge);
+
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 0, "should return delta when exactly at max age boundary");
+    }
+
+    function test_RevertWhen_GetSlashingDelta_StaleJustPastThreshold() external {
+        _computeSlashingDelta();
+
+        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getSlashingDeltaLiveness();
+        vm.warp(lastUpdated + maxAge + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+        );
+        vm.prank(core);
+        stakingManager.getSlashingDelta();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ACCESS CONTROL TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_ComputeSlashingDelta_UnauthorizedCaller() external {
+        address unauthorized = makeAddr("unauthorized");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorized, stakingManager.OPERATOR_ROLE()
+            )
+        );
+        vm.prank(unauthorized);
+        stakingManager.computeSlashingDelta();
+    }
+
+    function test_RevertWhen_SetSlashingDeltaMaxAge_UnauthorizedCaller() external {
+        address unauthorized = makeAddr("unauthorized");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorized, stakingManager.OPERATOR_ROLE()
+            )
+        );
+        vm.prank(unauthorized);
+        stakingManager.setSlashingDeltaMaxAge(1 hours);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    SLASHING DELTA MAX AGE TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetSlashingDeltaMaxAge_UpdatesValue() external {
+        uint256 newMaxAge = 6 hours;
+        vm.prank(defaultAdmin);
+        stakingManager.setSlashingDeltaMaxAge(newMaxAge);
+
+        (uint256 lastUpdated, uint256 maxAge, bool isStale) = stakingManager.getSlashingDeltaLiveness();
+        assertEq(maxAge, newMaxAge, "maxAge should be updated to new value");
+        assertFalse(isStale, "should not be stale immediately after init");
+        assertGt(lastUpdated, 0, "lastUpdated should be non-zero after initialize");
+    }
+
+    function test_RevertWhen_SetSlashingDeltaMaxAge_Zero() external {
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAmount.selector));
+        vm.prank(defaultAdmin);
+        stakingManager.setSlashingDeltaMaxAge(0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    SLASHING DELTA LIVENESS TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetSlashingDeltaLiveness_ReturnsCorrectValues() external {
+        _computeSlashingDelta();
+
+        (uint256 lastUpdated, uint256 maxAge, bool isStale) = stakingManager.getSlashingDeltaLiveness();
+
+        assertEq(maxAge, stakingManager.DEFAULT_SLASHING_DELTA_MAX_AGE(), "maxAge should match default");
+        assertFalse(isStale, "should not be stale immediately after compute");
+        assertGt(lastUpdated, 0, "lastUpdated should be non-zero after compute");
+
+        vm.warp(lastUpdated + maxAge + 1);
+
+        (uint256 lastUpdated2, uint256 maxAge2, bool isStale2) = stakingManager.getSlashingDeltaLiveness();
+
+        assertEq(lastUpdated2, lastUpdated, "lastUpdated should remain unchanged after warp");
+        assertEq(maxAge2, maxAge, "maxAge should remain unchanged after warp");
+        assertTrue(isStale2, "should be stale after exceeding max age");
     }
 }

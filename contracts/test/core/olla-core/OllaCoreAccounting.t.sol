@@ -9,6 +9,7 @@ import { Math } from "@oz/utils/math/Math.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
@@ -576,5 +577,47 @@ contract OllaCoreAccountingTest is Test {
         uint256 expectedGross = expectedGrossSigned > 0 ? uint256(expectedGrossSigned) : 0;
 
         assertEq(grossRewards, expectedGross, "gross rewards fuzz");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    SLASHING DELTA STALENESS TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_UpdateAccounting_SlashingDeltaStale() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setSlashingDelta(1 * DECIMALS);
+        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+
+        uint256 maxAge = 1 hours;
+        stakingManager.setSlashingDeltaMaxAge(maxAge);
+
+        vm.warp(lastUpdated + maxAge + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+        );
+        vm.prank(operator);
+        vault.updateAccounting();
+    }
+
+    function test_UpdateAccounting_SucceedsAtExactStalenessThreshold() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setSlashingDelta(1 * DECIMALS);
+        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+
+        uint256 maxAge = 1 hours;
+        stakingManager.setSlashingDeltaMaxAge(maxAge);
+
+        vm.warp(lastUpdated + maxAge);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        assertGt(report.timestamp, 0, "accounting should have been updated");
     }
 }

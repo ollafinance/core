@@ -190,7 +190,9 @@ contract MockAccountingStakingManager is IStakingManager {
         if (maxAge == 0) {
             revert StakingManager__ZeroAmount();
         }
+        uint256 oldMaxAge = _slashingDeltaMaxAge;
         _slashingDeltaMaxAge = maxAge;
+        emit SlashingDeltaMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
     function syncAttesters() external pure override {

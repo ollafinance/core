@@ -124,7 +124,9 @@ contract MockStakingManager is IStakingManager {
         if (maxAge == 0) {
             revert StakingManager__ZeroAmount();
         }
+        uint256 oldMaxAge = _slashingDeltaMaxAge;
         _slashingDeltaMaxAge = maxAge;
+        emit SlashingDeltaMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -162,28 +164,8 @@ contract MockStakingManager is IStakingManager {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          EXTERNAL PURE FUNCTIONS
+                           EXTERNAL VIEW FUNCTIONS 2
     //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IStakingManager
-    function getUnstakeCursor() external pure override returns (uint256 cursor) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
-    function setGasThreshold(uint256 threshold) external pure override {
-        threshold;
-    }
-
-    /// @inheritdoc IStakingManager
-    function pendingUnstakes() external pure override returns (uint256) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
-    function hasExitableUnstakes() external pure override returns (bool) {
-        return false;
-    }
 
     /// @inheritdoc IStakingManager
     function getSlashingDelta() external view override returns (uint256 slashingDelta) {
@@ -204,6 +186,30 @@ contract MockStakingManager is IStakingManager {
         maxAge = _slashingDeltaMaxAge;
         isStale = _isSlashingDeltaStale();
         return (lastUpdated, maxAge, isStale);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL PURE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function getUnstakeCursor() external pure override returns (uint256 cursor) {
+        return 0;
+    }
+
+    /// @inheritdoc IStakingManager
+    function setGasThreshold(uint256 threshold) external pure override {
+        threshold;
+    }
+
+    /// @inheritdoc IStakingManager
+    function pendingUnstakes() external pure override returns (uint256) {
+        return 0;
+    }
+
+    /// @inheritdoc IStakingManager
+    function hasExitableUnstakes() external pure override returns (bool) {
+        return false;
     }
 
     /// @inheritdoc IStakingManager

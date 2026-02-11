@@ -101,12 +101,17 @@ interface IStakingManager {
     /// @param previousValue The previous cached slashing delta.
     /// @param newValue The new cached slashing delta.
     /// @param timestamp The timestamp when the cache was updated.
-    event SlashingDeltaUpdated(uint256 previousValue, uint256 newValue, uint256 timestamp);
+    event SlashingDeltaUpdated(uint256 indexed previousValue, uint256 indexed newValue, uint256 indexed timestamp);
 
     /// @notice Emitted when a slashing delta update detects stale state.
     /// @param lastUpdated The last slashing delta update timestamp.
     /// @param maxAge The configured maximum age for freshness.
-    event SlashingDeltaStale(uint256 lastUpdated, uint256 maxAge);
+    event SlashingDeltaStale(uint256 indexed lastUpdated, uint256 indexed maxAge);
+
+    /// @notice Emitted when the slashing delta max age is updated.
+    /// @param oldMaxAge The previous maximum age.
+    /// @param newMaxAge The new maximum age.
+    event SlashingDeltaMaxAgeUpdated(uint256 indexed oldMaxAge, uint256 indexed newMaxAge);
 
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
@@ -189,13 +194,8 @@ interface IStakingManager {
     /// @return harvested The amount of rewards harvested.
     function harvestRewards() external returns (uint256 harvested);
 
-    /// @notice Returns the cumulative slashing delta from the rollup.
-    /// @dev Only callable by the configured core address.
-    /// @return slashingDelta The cumulative slashing delta.
-    function getSlashingDelta() external view returns (uint256 slashingDelta);
-
     /*//////////////////////////////////////////////////////////////
-                         PROVIDER ADMIN FUNCTIONS
+                          PROVIDER ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Computes the slashing delta using bounded work.
@@ -208,8 +208,13 @@ interface IStakingManager {
     function setSlashingDeltaMaxAge(uint256 maxAge) external;
 
     /*//////////////////////////////////////////////////////////////
-                             VIEW FUNCTIONS
+                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns the cumulative slashing delta from the rollup.
+    /// @dev Only callable by the configured core address.
+    /// @return slashingDelta The cumulative slashing delta.
+    function getSlashingDelta() external view returns (uint256 slashingDelta);
 
     /// @notice Returns claimable rewards.
     /// @dev Only callable by the configured core address. Does not actually claim rewards.
