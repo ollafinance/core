@@ -30,6 +30,12 @@ contract MockStakingManager is IStakingManager {
     /// @notice Simulated staked amount for getStakingState.
     uint256 private _stakedAmount;
 
+    /// @notice Simulated active attester count.
+    uint256 public activatedAttesterCount;
+
+    /// @notice Simulated exiting attester count.
+    uint256 public pendingUnstakeCount;
+
     /// @notice Mock provider config.
     ProviderConfig private _providerConfig;
 
@@ -81,6 +87,10 @@ contract MockStakingManager is IStakingManager {
             unstakedAmount = _stakedAmount;
         }
         _stakedAmount -= unstakedAmount;
+        if (activatedAttesterCount > 0) {
+            --activatedAttesterCount;
+            ++pendingUnstakeCount;
+        }
         ++unstakeCalls;
         return unstakedAmount;
     }
@@ -110,13 +120,23 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function getUnstakeCursor() external pure override returns (uint256 cursor) {
-        return 0;
+    function getActivatedAttesterCount() external view override returns (uint256) {
+        return activatedAttesterCount;
+    }
+
+    /// @inheritdoc IStakingManager
+    function getPendingUnstakeCount() external view override returns (uint256) {
+        return pendingUnstakeCount;
     }
 
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function getUnstakeCursor() external pure override returns (uint256 cursor) {
+        return 0;
+    }
 
     /// @inheritdoc IStakingManager
     function setGasThreshold(uint256 threshold) external pure override {
@@ -150,16 +170,6 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function harvestRewards() external pure override returns (uint256 harvested) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
-    function getActivatedAttesterCount() external pure override returns (uint256) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
-    function getPendingUnstakeCount() external pure override returns (uint256) {
         return 0;
     }
 

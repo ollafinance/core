@@ -206,6 +206,7 @@ sequenceDiagram
 
     OP->>C: rebalance()
     Note over C: Step 2: Pull unstaked funds
+    C->>SM: cleanActivatedAttesters()
     C->>SM: getUnstakedFunds()
     SM-->>C: transfer matured unstakes
     C->>AZ: balanceOf(C) increases
@@ -301,6 +302,7 @@ sequenceDiagram
     RV-->>C: rewardsDelta
 
     Note over C: Step 2: Pull unstaked funds
+    C->>SM: cleanActivatedAttesters()
     C->>SM: getUnstakedFunds()
     SM-->>C: transfer matured unstakes
     C->>C: bufferedAssets += received
