@@ -13,6 +13,13 @@ interface IStakingManager {
                                   STRUCTS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Local registry state for attesters.
+    enum InternalAttesterState {
+        Inactive,
+        Active,
+        Exiting
+    }
+
     /// @notice Attester key information for staking.
     /// @param attester The address that will act as the attester.
     /// @param publicKeyG1 The G1 point of the BLS public key.
@@ -25,12 +32,14 @@ interface IStakingManager {
         G1Point proofOfPossession;
     }
 
-    /// @notice Tracks an attester with their originally staked amount.
+    /// @notice Tracks an attester with their originally staked amount and last seen state.
     /// @param attester The attester address.
     /// @param stakedAmount The amount originally staked (activation threshold at stake time).
-    struct AttesterStake {
+    /// @param state The local registry state.
+    struct AttesterInfo {
         address attester;
         uint256 stakedAmount;
+        InternalAttesterState state;
     }
 
     /// @notice Configuration for the staking provider.
@@ -154,9 +163,9 @@ interface IStakingManager {
     /// @return unstakedAmount The amount initiated for unstake in this call.
     function unstake(uint256 amount) external returns (uint256 unstakedAmount);
 
-    /// @notice Syncs the activated attesters with the rollup and moves them to pendingUnstake if needed.
-    /// @dev Since attesters can exit due to external reasons activatedAtesters is not guranteed to be in sync.
-    function cleanActivatedAttesters() external;
+    /// @notice Syncs attesters with the rollup and moves them to exiting or inactive if needed.
+    /// @dev Since attesters can exit due to external reasons, local state is not guaranteed to be in sync.
+    function syncAttesters() external;
 
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.
@@ -203,20 +212,20 @@ interface IStakingManager {
     function getProviderConfig() external view returns (ProviderConfig memory);
 
     /// @notice Returns the current unstake cursor.
-    /// @return cursor The current cursor into activated attesters.
+    /// @return cursor The current cursor into the attester registry.
     function getUnstakeCursor() external view returns (uint256 cursor);
 
-    /// @notice Returns the number of activated attesters.
-    /// @return The count of activated attesters.
+    /// @notice Returns the number of active attesters.
+    /// @return The count of active attesters.
     function getActivatedAttesterCount() external view returns (uint256);
 
-    /// @notice Returns the number of pending unstake requests.
-    /// @return The count of pending requests.
+    /// @notice Returns the number of exiting attesters.
+    /// @return The count of exiting attesters.
     function getPendingUnstakeCount() external view returns (uint256);
 
-    /// @notice Checks if an attester has a pending unstake.
+    /// @notice Checks if an attester is exiting.
     /// @param attester The attester address.
-    /// @return True if unstake is pending.
+    /// @return True if the attester is in the exiting state.
     function isUnstakePending(address attester) external view returns (bool);
 
     /// @notice Returns the core address.

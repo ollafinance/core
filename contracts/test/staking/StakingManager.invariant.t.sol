@@ -16,6 +16,7 @@ import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegist
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
+import { Status } from "src/staking/libraries/AztecTypes.sol";
 
 /// @title StakingManagerHandler
 /// @notice Handler contract for StakingManager invariant testing.
@@ -41,6 +42,7 @@ contract StakingManagerHandler is Test {
     uint256 public ghost_keysActivated;
     uint256 public ghost_totalHarvested;
     uint256 public ghost_totalRewardsSet;
+    address[] public ghost_attesters;
 
     constructor(
         StakingManager _stakingManager,
@@ -100,6 +102,9 @@ contract StakingManagerHandler is Test {
 
         try stakingProviderRegistry.addKeysToProvider(keyStores) {
             ghost_keysAdded += count;
+            for (uint256 i; i < count; ++i) {
+                ghost_attesters.push(keyStores[i].attester);
+            }
         } catch {
             // Expected if invalid inputs
         }
@@ -186,9 +191,9 @@ contract StakingManagerHandler is Test {
     }
 
     /// @notice Clean activated attesters (only core can call)
-    function cleanActivatedAttesters() external {
+    function syncAttesters() external {
         vm.prank(core);
-        try stakingManager.cleanActivatedAttesters() {
+        try stakingManager.syncAttesters() {
         // Track state changes if needed
         }
             catch {
@@ -226,6 +231,14 @@ contract StakingManagerHandler is Test {
         } catch {
             // Expected if not authorized or other errors
         }
+    }
+
+    function ghostAttestersLength() external view returns (uint256) {
+        return ghost_attesters.length;
+    }
+
+    function ghostAttesterAt(uint256 index) external view returns (address) {
+        return ghost_attesters[index];
     }
 }
 
@@ -411,6 +424,25 @@ contract StakingManagerInvariantTest is Test {
         );
     }
 
+    /// @notice Inactive entries are not counted as staked
+    function invariant_InactiveEntriesNotStaked() external view {
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        uint256 validatingCount = _countRollupValidating();
+        uint256 activationThreshold = rollup.getActivationThreshold();
+
+        assertEq(
+            state.stakedAmount, validatingCount * activationThreshold, "staked amount should match validating attesters"
+        );
+    }
+
+    /// @notice Exiting entries correspond to rollup exits or await reconciliation
+    function invariant_ExitingEntriesHaveRollupExit() external view {
+        uint256 exitCount = _countRollupExits();
+        uint256 pendingCount = stakingManager.getPendingUnstakeCount();
+
+        assertLe(pendingCount, exitCount, "exiting count should not exceed rollup exits");
+    }
+
     /// @notice No attester can be in multiple conflicting states simultaneously
     function invariant_AttesterStateExclusivity() external view {
         // This would require iterating through all attesters to check state exclusivity
@@ -459,5 +491,27 @@ contract StakingManagerInvariantTest is Test {
 
     function activatedCount() internal view returns (uint256) {
         return stakingManager.getActivatedAttesterCount();
+    }
+
+    function _countRollupValidating() internal view returns (uint256 validatingCount) {
+        uint256 length = handler.ghostAttestersLength();
+        for (uint256 i; i < length; ++i) {
+            address attester = handler.ghostAttesterAt(i);
+            if (rollup.getAttesterView(attester).status == Status.VALIDATING) {
+                ++validatingCount;
+            }
+        }
+        return validatingCount;
+    }
+
+    function _countRollupExits() internal view returns (uint256 exitCount) {
+        uint256 length = handler.ghostAttestersLength();
+        for (uint256 i; i < length; ++i) {
+            address attester = handler.ghostAttesterAt(i);
+            if (rollup.getAttesterView(attester).exit.exists) {
+                ++exitCount;
+            }
+        }
+        return exitCount;
     }
 }

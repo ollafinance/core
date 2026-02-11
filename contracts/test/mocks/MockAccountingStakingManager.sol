@@ -27,6 +27,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public pendingUnstakeAmount;
     uint256 public withdrawableUnstakeAmount;
     uint256 public activatedAttesterCount;
+    uint256 public pendingUnstakeCount;
     uint256 public lastUnstakeAmount;
     uint256 public unstakeReturnAmount;
     bool public useUnstakeReturnAmount;
@@ -88,6 +89,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setActivatedAttesterCount(uint256 value) external {
         activatedAttesterCount = value;
+    }
+
+    function setPendingUnstakeCount(uint256 value) external {
+        pendingUnstakeCount = value;
     }
 
     function setUnstakeReturnAmount(uint256 value) external {
@@ -165,7 +170,7 @@ contract MockAccountingStakingManager is IStakingManager {
         gasThreshold = threshold;
     }
 
-    function cleanActivatedAttesters() external pure override {
+    function syncAttesters() external pure override {
         return;
     }
 
@@ -259,8 +264,8 @@ contract MockAccountingStakingManager is IStakingManager {
         return activatedAttesterCount;
     }
 
-    function getPendingUnstakeCount() external pure override returns (uint256) {
-        return 0;
+    function getPendingUnstakeCount() external view override returns (uint256) {
+        return pendingUnstakeCount;
     }
 
     function isUnstakePending(address) external pure override returns (bool) {
