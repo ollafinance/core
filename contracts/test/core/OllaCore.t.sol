@@ -2138,6 +2138,55 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         );
     }
 
+    /// @notice Ensures the idle-buffer guard does not block starting a new cycle when
+    ///         new work becomes available via external state changes (e.g. RewardsVault
+    ///         receives funds).
+    ///
+    ///         This currently fails because _rebalanceIdleBuffer can be set based only
+    ///         on the final call's (stakedAmount, finalizedAmount), even if the cycle did
+    ///         productive work in prior calls (e.g. staking). Once set, rebalance() may
+    ///         incorrectly no-op and skip harvesting/pulling newly available funds.
+    function test_RebalanceIdleGuardDoesNotBlockPullingNewRewardsVaultFunds() external {
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        _performDeposit(alice, 200_002 * DECIMALS);
+
+        // Call 1: stake most assets; leaves 2 AZTEC buffered and progress at StakeSurplus.
+        stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
+        stakingManager.setAllowStakeReturnExceeds(true);
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Call 2: stake returns 0, completing the cycle and (currently) recording an idle buffer snapshot.
+        stakingManager.setStakeReturnAmount(0);
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
+        assertFalse(vault.isRebalancePaused(), "setup: pause cleared");
+
+        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        assertEq(accountingBefore.bufferedAssets, 2 * DECIMALS, "setup: 2 AZTEC buffered");
+
+        // Simulate out-of-band rewards arriving to the rewards vault.
+        uint256 newRewards = 1 * DECIMALS;
+        asset.mint(address(rewardsVault), newRewards);
+        assertEq(rewardsVault.balance(), newRewards, "rewards vault funded");
+
+        // Expected behavior: rebalance should start a new cycle and pull rewards vault funds into the buffer.
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(
+            accountingAfter.bufferedAssets,
+            accountingBefore.bufferedAssets + newRewards,
+            "rebalance should pull new rewards vault funds"
+        );
+        assertEq(rewardsVault.balance(), 0, "rewards vault should be emptied");
+    }
+
     /// @notice Tests that repeatedly calling rebalance does not cause pause/unpause cycling.
     ///         Each full cycle would normally set _rebalancePaused=true then back to false,
     ///         blocking any concurrent operations. The fix prevents this by skipping cycles
