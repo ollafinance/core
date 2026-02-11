@@ -1040,6 +1040,134 @@ contract StakingManagerTest is Test {
         assertFalse(stakingManager.isUnstakePending(keys[0].attester), "exited attester should be inactive");
     }
 
+    function test_GetUnstakedFunds_ExternalFinalizeBeforeManagerFinalize() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        vm.prank(alice);
+        rollup.finalizeWithdraw(keys[0].attester);
+
+        assertEq(
+            aztec.balanceOf(address(stakingManager)),
+            ACTIVATION_THRESHOLD,
+            "manager should receive externally finalized funds"
+        );
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, ACTIVATION_THRESHOLD, "claimed should include externally finalized exit");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core should receive funds");
+        assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should not retain funds");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after claim");
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester should be inactive");
+    }
+
+    function test_GetUnstakedFunds_ExternalFinalize_NoUnstakeFinalizedEvent() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        vm.prank(alice);
+        rollup.finalizeWithdraw(keys[0].attester);
+
+        vm.recordLogs();
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 unstakeFinalizedSelector = keccak256("UnstakeFinalized(address,uint256)");
+        bytes32 unstakedFundsClaimedSelector = keccak256("UnstakedFundsClaimed(uint256)");
+        bool foundUnstakeFinalized = false;
+        bool foundUnstakedFundsClaimed = false;
+
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].emitter != address(stakingManager)) {
+                continue;
+            }
+            if (entries[i].topics[0] == unstakeFinalizedSelector) {
+                foundUnstakeFinalized = true;
+            }
+            if (entries[i].topics[0] == unstakedFundsClaimedSelector) {
+                uint256 amount = uint256(entries[i].topics[1]);
+                assertEq(amount, ACTIVATION_THRESHOLD, "claim event amount should match exit");
+                foundUnstakedFundsClaimed = true;
+            }
+        }
+
+        assertFalse(foundUnstakeFinalized, "should not emit UnstakeFinalized when already finalized");
+        assertTrue(foundUnstakedFundsClaimed, "should emit UnstakedFundsClaimed");
+        assertEq(claimed, ACTIVATION_THRESHOLD, "claimed should include externally finalized exit");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after claim");
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester should be inactive");
+    }
+
+    function test_GetUnstakedFunds_SweepsPreExistingBalanceWhenNoPendingExits() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        vm.prank(alice);
+        rollup.finalizeWithdraw(keys[0].attester);
+
+        vm.prank(core);
+        uint256 claimedFirst = stakingManager.getUnstakedFunds();
+
+        assertEq(claimedFirst, ACTIVATION_THRESHOLD, "initial claim should sweep external finalize");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should be cleared");
+
+        vm.prank(core);
+        aztec.transfer(address(stakingManager), ACTIVATION_THRESHOLD);
+
+        assertEq(
+            aztec.balanceOf(address(stakingManager)), ACTIVATION_THRESHOLD, "manager should hold pre-existing balance"
+        );
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "no pending exits before sweep");
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        assertEq(claimed, ACTIVATION_THRESHOLD, "should sweep pre-existing balance");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core should receive sweep");
+        assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should clear balance");
+    }
+
+    function test_GetUnstakedFunds_MixedFinalizePaths_SweepsAllFunds() external {
+        _setupMultipleStakedAttesters(2);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
+
+        vm.prank(bob);
+        rollup.finalizeWithdraw(keys[0].attester);
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        uint256 claimed = stakingManager.getUnstakedFunds();
+
+        uint256 expected = ACTIVATION_THRESHOLD * 2;
+        assertEq(claimed, expected, "claimed should include external and internal finalizations");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + expected, "core should receive all funds");
+        assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should not retain funds");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after claim");
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "externally finalized attester inactive");
+        assertFalse(stakingManager.isUnstakePending(keys[1].attester), "internally finalized attester inactive");
+    }
+
     function test_GetUnstakedFunds_RestakeAfterExit_ReusesEntry() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
