@@ -42,6 +42,15 @@ contract MocksDeployer is BaseDeployer {
         return (address(mockAsset), address(mockRollup), address(registry));
     }
 
+    /// @notice Struct to avoid stack too deep in deployStakingStack
+    struct StakingStackParams {
+        DeployConfig config;
+        address core;
+        address rewardsVault;
+        address asset;
+        address rollupRegistry;
+    }
+
     /// @notice Deploy and initialize the real staking stack behind proxies.
     /// @dev Proxies are deployed uninitialized to break the circular dependency.
     function deployStakingStack(
@@ -59,13 +68,30 @@ contract MocksDeployer is BaseDeployer {
             address stakingProviderRegistryProxy
         )
     {
-        require(config.deployMocks, "MocksDeployer: mocks not enabled for this environment");
-        require(core != address(0), "MocksDeployer: core required");
-        require(rewardsVault != address(0), "MocksDeployer: rewardsVault required");
-        require(asset != address(0), "MocksDeployer: asset required");
-        require(rollupRegistry != address(0), "MocksDeployer: rollupRegistry required");
+        StakingStackParams memory params = StakingStackParams({
+            config: config, core: core, rewardsVault: rewardsVault, asset: asset, rollupRegistry: rollupRegistry
+        });
 
-        vm.startBroadcast(config.deployerPrivateKey);
+        return _deployStakingStackInternal(params);
+    }
+
+    /// @notice Internal implementation to avoid stack too deep
+    function _deployStakingStackInternal(StakingStackParams memory params)
+        internal
+        returns (
+            address stakingManagerImpl,
+            address stakingManagerProxy,
+            address stakingProviderRegistryImpl,
+            address stakingProviderRegistryProxy
+        )
+    {
+        require(params.config.deployMocks, "MocksDeployer: mocks not enabled for this environment");
+        require(params.core != address(0), "MocksDeployer: core required");
+        require(params.rewardsVault != address(0), "MocksDeployer: rewardsVault required");
+        require(params.asset != address(0), "MocksDeployer: asset required");
+        require(params.rollupRegistry != address(0), "MocksDeployer: rollupRegistry required");
+
+        vm.startBroadcast(params.config.deployerPrivateKey);
 
         // Deploy implementations
         StakingManager smImpl = new StakingManager();
@@ -81,16 +107,23 @@ contract MocksDeployer is BaseDeployer {
         ERC1967Proxy sprProxy = new ERC1967Proxy(address(sprImpl), "");
         _logDeployment("StakingProviderRegistry Proxy", address(sprProxy));
 
+        // Cache all values to minimize stack usage
+        address deployer = params.config.deployer;
+        address smProxyAddr = address(smProxy);
+        address sprProxyAddr = address(sprProxy);
+        IERC20 asset = IERC20(params.asset);
+        address rollupRegistry = params.rollupRegistry;
+        address rewardsVault = params.rewardsVault;
+        address core = params.core;
+
         // Initialize StakingProviderRegistry first (needs stakingManager address)
-        StakingProviderRegistry(address(sprProxy))
-            .initialize(address(smProxy), config.deployer, config.deployer, config.deployer);
+        StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, deployer, deployer, deployer);
 
         // Initialize StakingManager
-        StakingManager(address(smProxy))
-            .initialize(IERC20(asset), rollupRegistry, rewardsVault, core, address(sprProxy), config.deployer);
+        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsVault, core, sprProxyAddr, deployer);
 
         vm.stopBroadcast();
 
-        return (address(smImpl), address(smProxy), address(sprImpl), address(sprProxy));
+        return (address(smImpl), smProxyAddr, address(sprImpl), sprProxyAddr);
     }
 }
