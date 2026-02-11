@@ -297,7 +297,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (indexPlusOne == 0) {
             return false;
         }
-        return _attesters[indexPlusOne - 1].state == IStakingManager.LocalState.Exiting;
+        return _attesters[indexPlusOne - 1].state == IStakingManager.InternalAttesterState.Exiting;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -387,7 +387,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (indexPlusOne == 0) {
             _attesters.push(
                 IStakingManager.AttesterInfo({
-                    attester: attester, stakedAmount: 0, state: IStakingManager.LocalState.Inactive
+                    attester: attester, stakedAmount: 0, state: IStakingManager.InternalAttesterState.Inactive
                 })
             );
             index = _attesters.length - 1;
@@ -401,19 +401,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Sets an attester state and updates counters.
     /// @param index The index in the unified registry.
     /// @param newState The new local state.
-    function _setState(uint256 index, IStakingManager.LocalState newState) internal {
-        IStakingManager.LocalState previousState = _attesters[index].state;
+    function _setState(uint256 index, IStakingManager.InternalAttesterState newState) internal {
+        IStakingManager.InternalAttesterState previousState = _attesters[index].state;
         if (previousState == newState) {
             return;
         }
-        if (previousState == IStakingManager.LocalState.Active) {
+        if (previousState == IStakingManager.InternalAttesterState.Active) {
             --_activeCount;
-        } else if (previousState == IStakingManager.LocalState.Exiting) {
+        } else if (previousState == IStakingManager.InternalAttesterState.Exiting) {
             --_exitingCount;
         }
-        if (newState == IStakingManager.LocalState.Active) {
+        if (newState == IStakingManager.InternalAttesterState.Active) {
             ++_activeCount;
-        } else if (newState == IStakingManager.LocalState.Exiting) {
+        } else if (newState == IStakingManager.InternalAttesterState.Exiting) {
             ++_exitingCount;
         }
         _attesters[index].state = newState;
@@ -426,7 +426,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         uint256 index = _getOrCreateAttester(attester);
         IStakingManager.AttesterInfo storage attesterInfo = _attesters[index];
         attesterInfo.stakedAmount = stakedAmount;
-        _setState(index, IStakingManager.LocalState.Active);
+        _setState(index, IStakingManager.InternalAttesterState.Active);
     }
 
     /// @notice Finalizes an exit by emitting and calling the rollup.
@@ -523,7 +523,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 break;
             }
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (attesterInfo.state != IStakingManager.LocalState.Active) {
+            if (attesterInfo.state != IStakingManager.InternalAttesterState.Active) {
                 ++i;
                 continue;
             }
@@ -575,13 +575,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (!isInitiated) {
             if (view_.exit.exists) {
                 attesterInfo.stakedAmount = stakedAmount;
-                _setState(index, IStakingManager.LocalState.Exiting);
+                _setState(index, IStakingManager.InternalAttesterState.Exiting);
                 return 0;
             }
             revert StakingManager__UnstakeFailed(attester);
         }
         attesterInfo.stakedAmount = stakedAmount;
-        _setState(index, IStakingManager.LocalState.Exiting);
+        _setState(index, IStakingManager.InternalAttesterState.Exiting);
         emit UnstakeInitiated(attester, exitAmount);
         return exitAmount;
     }
@@ -623,7 +623,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 break;
             }
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (attesterInfo.state != IStakingManager.LocalState.Exiting) {
+            if (attesterInfo.state != IStakingManager.InternalAttesterState.Exiting) {
                 ++i;
                 continue;
             }
@@ -632,7 +632,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             // slither-disable-next-line calls-loop -- trusted rollup, bounded by attester set size
             AttesterView memory view_ = rollup.getAttesterView(attester);
             if (!view_.exit.exists) {
-                _setState(i, IStakingManager.LocalState.Inactive);
+                _setState(i, IStakingManager.InternalAttesterState.Inactive);
                 ++i;
                 continue;
             }
@@ -641,7 +641,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 continue;
             }
             sumOfExitAmounts += view_.exit.amount;
-            _setState(i, IStakingManager.LocalState.Inactive);
+            _setState(i, IStakingManager.InternalAttesterState.Inactive);
             // slither-disable-next-line reentrancy-no-eth
             _finalizeExit(rollup, attester, view_.exit.amount);
             ++i;
@@ -682,14 +682,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 break;
             }
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (attesterInfo.state != IStakingManager.LocalState.Active) {
+            if (attesterInfo.state != IStakingManager.InternalAttesterState.Active) {
                 ++i;
                 continue;
             }
             // slither-disable-next-line calls-loop -- trusted rollup, bounded by gas/cursor
             AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
             if (view_.exit.exists) {
-                _setState(i, IStakingManager.LocalState.Exiting);
+                _setState(i, IStakingManager.InternalAttesterState.Exiting);
             }
             ++i;
         }
@@ -748,12 +748,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         uint256 attesterLength = _attesters.length;
         for (uint256 i; i < attesterLength; ++i) {
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (attesterInfo.state == IStakingManager.LocalState.Inactive) {
+            if (attesterInfo.state == IStakingManager.InternalAttesterState.Inactive) {
                 continue;
             }
 
             AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
-            if (attesterInfo.state == IStakingManager.LocalState.Active) {
+            if (attesterInfo.state == IStakingManager.InternalAttesterState.Active) {
                 if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
                     state.stakedAmount += view_.effectiveBalance;
                 }
@@ -768,7 +768,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 continue;
             }
 
-            if (attesterInfo.state == IStakingManager.LocalState.Exiting && view_.exit.exists) {
+            if (attesterInfo.state == IStakingManager.InternalAttesterState.Exiting && view_.exit.exists) {
                 // Timestamp used only to gate exit readiness from the rollup state.
                 // slither-disable-next-line timestamp
                 if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
@@ -813,8 +813,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         uint256 length = _attesters.length;
         for (uint256 i; i < length; ++i) {
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            IStakingManager.LocalState state = attesterInfo.state;
-            if (state != IStakingManager.LocalState.Active && state != IStakingManager.LocalState.Exiting) {
+            IStakingManager.InternalAttesterState state = attesterInfo.state;
+            if (
+                state != IStakingManager.InternalAttesterState.Active
+                    && state != IStakingManager.InternalAttesterState.Exiting
+            ) {
                 continue;
             }
             address attester = attesterInfo.attester;
