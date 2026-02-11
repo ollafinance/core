@@ -2076,11 +2076,11 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);
 
-        // Deposit 200k AZTEC
-        _performDeposit(alice, 200_000 * DECIMALS);
+        // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
+        _performDeposit(alice, 200_002 * DECIMALS);
 
-        // --- Rebalance call 1: stakes 199,998 AZTEC, saves progress at StakeSurplus ---
-        stakingManager.setStakeReturnAmount(199_998 * DECIMALS);
+        // --- Rebalance call 1: stakes 200,000 AZTEC (max stakeable), saves progress at StakeSurplus ---
+        stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
         vm.prank(operator);
@@ -2146,20 +2146,21 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);
 
-        _performDeposit(alice, 200_000 * DECIMALS);
+        // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
+        _performDeposit(alice, 200_002 * DECIMALS);
 
-        // First rebalance: stake most, leave 2 AZTEC
-        stakingManager.setStakeReturnAmount(199_998 * DECIMALS);
+        // First rebalance: stake 200k AZTEC (max stakeable), leave 2 AZTEC unstakeable
+        stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
         vm.prank(operator);
         vault.rebalance();
 
-        // Second rebalance: complete the cycle
+        // Second rebalance: complete the cycle (stake returns 0, proving 2 AZTEC can't be staked)
         stakingManager.setStakeReturnAmount(0);
         vm.prank(operator);
         vault.rebalance();
 
-        // Now vault is at step=Done, pause=false, buffered=2 AZTEC
+        // Now vault is at step=Done, pause=false, buffered=2 AZTEC (the unstakeable remainder)
         assertFalse(vault.isRebalancePaused(), "setup: pause should be cleared");
 
         // Count how many RebalancePauseUpdated events are emitted over 5 more calls
