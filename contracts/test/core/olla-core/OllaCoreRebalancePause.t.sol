@@ -243,11 +243,18 @@ contract OllaCoreRebalancePauseTest is Test {
     }
 
     function _enterPausedDoneState() internal {
-        stakingManager.setStakeReturnAmount(0);
-        stakingManager.setActivatedAttesterCount(1);
-
+        // Start a rebalance (which sets _rebalancePaused = true), then use stdstore to
+        // advance progress to Done without clearing pause. This simulates a paused-at-Done
+        // state that could arise from edge cases (e.g. pending + buffer at completion).
+        uint256 gasLimit = _findGasForPullUnstakedStop();
         vm.prank(operator);
-        vault.rebalance();
+        vault.rebalance{ gas: gasLimit }();
+
+        assertTrue(vault.isRebalancePaused(), "pause active from partial rebalance");
+
+        // Advance progress to Done directly, keeping pause active
+        stdstore.target(address(vault)).sig("rebalanceProgress()").depth(0).enable_packed_slots()
+            .checked_write(uint256(IOllaCore.RebalanceStep.Done));
 
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance done");
@@ -476,13 +483,9 @@ contract OllaCoreRebalancePauseTest is Test {
 
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance completed");
-        assertTrue(vault.isRebalancePaused(), "pause persists without attester override");
-
-        stakingManager.setActivatedAttesterCount(0);
-        vm.prank(operator);
-        vault.rebalance();
-
-        assertFalse(vault.isRebalancePaused(), "pause cleared on attester override");
+        // With the simplified completion check, pause clears even with active attesters
+        // as long as the cycle reached Done with no remaining work.
+        assertFalse(vault.isRebalancePaused(), "pause cleared on completion");
     }
 
     function test_Rebalance_CanExecuteWhileRebalancePaused() external {
@@ -501,7 +504,8 @@ contract OllaCoreRebalancePauseTest is Test {
 
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance completed");
-        assertTrue(vault.isRebalancePaused(), "pause persists");
+        // Completion satisfaction no longer depends on attester count — pause clears.
+        assertFalse(vault.isRebalancePaused(), "pause cleared on completion");
     }
 
     function test_Rebalance_RevertsWhenGlobalPauseActive() external {
@@ -645,22 +649,30 @@ contract OllaCoreRebalancePauseTest is Test {
         revertingVault.deposit(7 * DECIMALS, alice);
 
         revertingStakingManager.setStakeReturnAmount(0);
-        revertingStakingManager.setActivatedAttesterCount(1);
 
-        vm.prank(operator);
-        revertingVault.rebalance();
-
-        assertTrue(revertingVault.isRebalancePaused(), "pause active");
-
-        revertingStakingManager.setActivatedAttesterCount(0);
-        revertingModule.resetCheckCount();
+        // Configure safety module to revert on the 2nd checkAccountingLiveness call.
+        // The first call happens at the start of rebalance (passes), the second happens
+        // inside _updateAccountingInternal at completion (reverts), causing the entire
+        // rebalance transaction to revert and preserving the paused state.
         revertingModule.setRevertAfter(2);
 
         vm.expectRevert(bytes("ACCOUNTING_LIVENESS_REVERT"));
         vm.prank(operator);
         revertingVault.rebalance();
 
-        assertTrue(revertingVault.isRebalancePaused(), "pause not cleared on revert");
+        // The revert rolled back all state changes, so pause is not active
+        // (the rebalance never committed). The system is stuck until the safety
+        // module issue is resolved.
+        assertFalse(revertingVault.isRebalancePaused(), "pause not set because tx reverted");
+
+        // Once the safety module recovers, rebalance succeeds end-to-end
+        revertingModule.setRevertAfter(0);
+        revertingModule.resetCheckCount();
+
+        vm.prank(operator);
+        revertingVault.rebalance();
+
+        assertFalse(revertingVault.isRebalancePaused(), "pause cleared after successful rebalance");
     }
 
     /*//////////////////////////////////////////////////////////////

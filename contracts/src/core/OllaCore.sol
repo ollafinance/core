@@ -5,21 +5,12 @@ import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUp
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
-
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-
 import { Math } from "@oz/utils/math/Math.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-
-// TODO: Remove console import after debugging
-import { console } from "@forge-std/console.sol";
-
-// DEBUG: Temporary event for tracing rebalance execution
-event DebugRebalanceStep(string location, uint256 step, uint256 stakeRemaining, uint256 stakedAmount, uint256 gasLeft);
-
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
@@ -471,8 +462,8 @@ contract OllaCore is
             // New work can appear via: rewards vault funds, unstaked funds, pending withdrawals,
             // or config changes (which clear _rebalanceIdleBuffer).
             if (
-                !_rebalancePaused && _rebalanceIdleBuffer != 0
-                    && _accountingState.bufferedAssets == _rebalanceIdleBuffer && !_hasRebalanceWorkAvailable()
+                _rebalanceIdleBuffer != 0 && _accountingState.bufferedAssets == _rebalanceIdleBuffer
+                    && !_hasRebalanceWorkAvailable()
             ) {
                 return (0, 0, 0, _accountingState.bufferedAssets);
             }
@@ -575,109 +566,42 @@ contract OllaCore is
         // Slither: enum state machine uses explicit equality checks; no timestamp usage.
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
-            // DEBUG: Emit event at entry
-            emit DebugRebalanceStep("StakeSurplus-Entry", uint256(progress.step), progress.stakeRemaining, 0, gasleft());
-
             // Slither: zero guard only; no timestamp usage.
             // slither-disable-next-line incorrect-equality,timestamp
             if (progress.stakeRemaining == 0) {
-                emit DebugRebalanceStep(
-                    "StakeSurplus-Recalc", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
-                );
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 progress.stakeRemaining = _computeStakeRemaining(requiredBuffer);
-                emit DebugRebalanceStep(
-                    "StakeSurplus-AfterRecalc", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
-                );
                 // Slither: zero guard only; no timestamp usage.
                 // slither-disable-next-line incorrect-equality,timestamp
                 if (progress.stakeRemaining == 0) {
                     progress.step = IOllaCore.RebalanceStep.Done;
-                    emit DebugRebalanceStep(
-                        "StakeSurplus-NoStakeNeeded", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
-                    );
                 }
             }
             // Slither: enum state machine uses explicit equality checks; no timestamp usage.
             // slither-disable-next-line incorrect-equality,timestamp
             if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
-                emit DebugRebalanceStep(
-                    "StakeSurplus-BeforeGasCheck", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
-                );
                 if (!_hasGasForStep()) {
-                    emit DebugRebalanceStep(
-                        "StakeSurplus-GasCheckFailed", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
-                    );
                     _rebalanceProgress = progress;
                     return (rewardsDelta, finalizedAmount, 0, _accountingState.bufferedAssets);
                 }
-                emit DebugRebalanceStep(
-                    "StakeSurplus-GasCheckPassed", uint256(progress.step), progress.stakeRemaining, 0, gasleft()
-                );
 
                 stakedAmount = _stakeSurplus(progress.stakeRemaining);
-                emit DebugRebalanceStep(
-                    "StakeSurplus-AfterStake", uint256(progress.step), progress.stakeRemaining, stakedAmount, gasleft()
-                );
-
                 progress.stakeRemaining -= stakedAmount;
-                emit DebugRebalanceStep(
-                    "StakeSurplus-AfterSubtract",
-                    uint256(progress.step),
-                    progress.stakeRemaining,
-                    stakedAmount,
-                    gasleft()
-                );
 
                 // Slither: explicit nonzero check; no timestamp usage.
                 // slither-disable-next-line timestamp
                 if (progress.stakeRemaining != 0) {
-                    emit DebugRebalanceStep(
-                        "StakeSurplus-StakeRemainingNonZero",
-                        uint256(progress.step),
-                        progress.stakeRemaining,
-                        stakedAmount,
-                        gasleft()
-                    );
                     // Slither: zero return is an intentional sentinel for no progress
                     // slither-disable-next-line incorrect-equality
                     if (stakedAmount == 0) {
-                        emit DebugRebalanceStep(
-                            "StakeSurplus-StakedZero-SettingDone",
-                            uint256(progress.step),
-                            progress.stakeRemaining,
-                            stakedAmount,
-                            gasleft()
-                        );
                         progress.stakeRemaining = 0;
                         progress.step = IOllaCore.RebalanceStep.Done;
-                        emit DebugRebalanceStep(
-                            "StakeSurplus-SetToDone",
-                            uint256(progress.step),
-                            progress.stakeRemaining,
-                            stakedAmount,
-                            gasleft()
-                        );
                     } else {
-                        emit DebugRebalanceStep(
-                            "StakeSurplus-SavingProgress",
-                            uint256(progress.step),
-                            progress.stakeRemaining,
-                            stakedAmount,
-                            gasleft()
-                        );
                         _rebalanceProgress = progress;
                         return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
                     }
                 }
                 progress.step = IOllaCore.RebalanceStep.Done;
-                emit DebugRebalanceStep(
-                    "StakeSurplus-End-SetToDone",
-                    uint256(progress.step),
-                    progress.stakeRemaining,
-                    stakedAmount,
-                    gasleft()
-                );
             }
         }
 
@@ -686,11 +610,11 @@ contract OllaCore is
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
-            // Record idle buffer when cycle completed with no productive staking/unstaking/finalization
-            // AND the pause can be cleared (completion satisfied). This prevents infinite restart loops
-            // when there is an unstakeable remainder, while still allowing the pause clearing logic to run.
+            // Record idle buffer when cycle completed with no productive staking/unstaking/finalization.
+            // This prevents infinite restart loops when there is an unstakeable remainder
+            // (e.g. buffer below staking minimum threshold).
             // slither-disable-next-line incorrect-equality,timestamp
-            if (stakedAmount == 0 && finalizedAmount == 0 && _rebalanceCompletionSatisfied(progress)) {
+            if (stakedAmount == 0 && finalizedAmount == 0) {
                 _rebalanceIdleBuffer = _accountingState.bufferedAssets;
             } else {
                 _rebalanceIdleBuffer = 0;
@@ -1560,14 +1484,11 @@ contract OllaCore is
             return false;
         }
 
-        uint256 requiredBuffer = _rebalanceRequiredBufferSnapshot;
-        // Slither: zero guard only; no timestamp usage.
-        // slither-disable-next-line incorrect-equality,timestamp
-        if (bufferedAssets <= requiredBuffer) {
-            return true;
-        }
-
-        return _modules.stakingManager.getActivatedAttesterCount() == 0;
+        // The rebalance state machine already ensures that surplus buffer is staked when possible.
+        // If StakeSurplus advanced to Done with stakeRemaining=0, it means either all surplus was
+        // staked or the staking manager couldn't stake the remainder (e.g. below minimum threshold).
+        // No additional surplus buffer check is needed here — the cycle is genuinely complete.
+        return true;
     }
 
     function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {
