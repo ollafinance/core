@@ -1983,6 +1983,7 @@ contract StakingManagerTest is Test {
 /// @notice Comprehensive tests for StakingManager.harvestRewards() functionality.
 /// @dev Uses MockRewardsVault to properly test reward harvesting flow.
 contract StakingManagerHarvestTest is Test {
+    using stdStorage for StdStorage;
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -2079,6 +2080,35 @@ contract StakingManagerHarvestTest is Test {
         vm.stopPrank();
 
         return keys;
+    }
+
+    function _getSlashingDeltaCursor() internal returns (uint256) {
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 slashingDeltaCursorSlot = bytes32(cursorSlot + 3);
+        return uint256(vm.load(address(stakingManager), slashingDeltaCursorSlot));
+    }
+
+    function _setSlashingDeltaCursor(uint256 value) internal {
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 slashingDeltaCursorSlot = bytes32(cursorSlot + 3);
+        vm.store(address(stakingManager), slashingDeltaCursorSlot, bytes32(value));
+    }
+
+    function _getSlashingDeltaAccumulated() internal returns (uint256) {
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 slashingDeltaAccumulatedSlot = bytes32(cursorSlot + 4);
+        return uint256(vm.load(address(stakingManager), slashingDeltaAccumulatedSlot));
+    }
+
+    function _getStakedTotalAccumulated() internal returns (uint256) {
+        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        bytes32 stakedTotalAccumulatedSlot = bytes32(cursorSlot + 5);
+        return uint256(vm.load(address(stakingManager), stakedTotalAccumulatedSlot));
+    }
+
+    function _setAttestersLength(uint256 length) internal {
+        bytes32 attestersLengthSlot = bytes32(uint256(6));
+        vm.store(address(stakingManager), attestersLengthSlot, bytes32(length));
     }
 
     function _setupAttestersWithRewards(uint256 count, uint256 rewardPerAttester)
@@ -2449,6 +2479,179 @@ contract StakingManagerHarvestTest is Test {
         // Slashing delta should be: (100 - 90) + (150 - 130) = 10 + 20 = 30
         // NOT: (150 - 90) + (150 - 130) = 60 + 20 = 80 (if using current threshold)
         assertEq(slashingDelta, 30 ether, "slashing delta should use original staked amounts");
+    }
+
+    function test_GetSlashingDelta_BoundedPartialUpdatesOnCompletion() external {
+        uint256 attesterCount = 6;
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(attesterCount);
+
+        for (uint256 i; i < attesterCount; ++i) {
+            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD - 1 ether, block.timestamp);
+        }
+
+        uint256 expectedDelta = attesterCount * 1 ether;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(180_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256[6] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000, 320_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.getSlashingDelta, ()));
+            if (!success) {
+                continue;
+            }
+            uint256 deltaCandidate = abi.decode(data, (uint256));
+            uint256 cursorAfter = _getSlashingDeltaCursor();
+            if (deltaCandidate == 0 && cursorAfter > 0) {
+                selectedGas = gasOptions[i];
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            uint256 deltaFull = stakingManager.getSlashingDelta();
+            assertEq(deltaFull, expectedDelta, "slashing delta should complete in one call");
+            assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        uint256 first = stakingManager.getSlashingDelta{ gas: selectedGas }();
+        uint256 cursorAfterFirst = _getSlashingDeltaCursor();
+
+        assertEq(first, 0, "partial pass should return prior cumulative");
+        assertGt(cursorAfterFirst, 0, "cursor should advance under partial pass");
+
+        vm.prank(core);
+        uint256 second = stakingManager.getSlashingDelta();
+
+        assertEq(second, expectedDelta, "cumulative should update after completion");
+        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
+    }
+
+    function test_GetSlashingDelta_CursorResetsWhenOutOfRange() external {
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(2);
+
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 5 ether, block.timestamp);
+
+        _setSlashingDeltaCursor(10);
+
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 5 ether, "slashing delta should compute from start when cursor is out of range");
+        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset when out of range");
+    }
+
+    function test_GetSlashingDelta_CursorResetsWhenNoAttesters() external {
+        _setupStakedAttesters(2);
+
+        _setSlashingDeltaCursor(1);
+        _setAttestersLength(0);
+
+        vm.prank(core);
+        uint256 slashingDelta = stakingManager.getSlashingDelta();
+
+        assertEq(slashingDelta, 0, "slashing delta should be zero when no attesters remain");
+        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset when length is zero");
+    }
+
+    function test_GetSlashingDelta_SkipsInactiveAttestersAndAdvancesCursor() external {
+        uint256 attesterCount = 4;
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(attesterCount);
+
+        vm.startPrank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        stakingManager.getUnstakedFunds();
+        vm.stopPrank();
+
+        for (uint256 i = 1; i < attesterCount; ++i) {
+            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD - 2 ether, block.timestamp);
+        }
+
+        uint256 expectedDelta = (attesterCount - 1) * 2 ether;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(180_000);
+
+        _setSlashingDeltaCursor(0);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256[6] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000, 320_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            (bool success, bytes memory data) =
+                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.getSlashingDelta, ()));
+            if (!success) {
+                continue;
+            }
+            uint256 deltaCandidate = abi.decode(data, (uint256));
+            uint256 cursorAfter = _getSlashingDeltaCursor();
+            if (deltaCandidate == 0 && cursorAfter > 0) {
+                selectedGas = gasOptions[i];
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            vm.prank(core);
+            uint256 deltaFull = stakingManager.getSlashingDelta();
+            assertEq(deltaFull, expectedDelta, "slashing delta should skip inactive attester");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+        vm.prank(core);
+        uint256 first = stakingManager.getSlashingDelta{ gas: selectedGas }();
+        uint256 cursorAfterFirst = _getSlashingDeltaCursor();
+
+        assertEq(first, 0, "partial pass should return prior cumulative");
+        assertGt(cursorAfterFirst, 0, "cursor should advance after skipping inactive attester");
+
+        vm.prank(core);
+        uint256 second = stakingManager.getSlashingDelta();
+
+        assertEq(second, expectedDelta, "slashing delta should skip inactive attester");
+    }
+
+    function test_GetSlashingDelta_AccumulatorResetsAfterCompletion() external {
+        uint256 attesterCount = 3;
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(attesterCount);
+
+        for (uint256 i; i < attesterCount; ++i) {
+            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD - 3 ether, block.timestamp);
+        }
+
+        uint256 expectedDelta = attesterCount * 3 ether;
+
+        vm.prank(core);
+        uint256 first = stakingManager.getSlashingDelta();
+
+        assertEq(first, expectedDelta, "slashing delta should match expected total");
+        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
+        assertEq(_getSlashingDeltaAccumulated(), 0, "slashing delta accumulator should reset after completion");
+        assertEq(_getStakedTotalAccumulated(), 0, "staked total accumulator should reset after completion");
+
+        vm.prank(core);
+        uint256 second = stakingManager.getSlashingDelta();
+
+        assertEq(second, first, "second full pass should not carry over accumulation");
+        assertEq(_getSlashingDeltaCursor(), 0, "cursor should remain reset after subsequent calls");
+        assertEq(_getSlashingDeltaAccumulated(), 0, "slashing delta accumulator should remain reset");
+        assertEq(_getStakedTotalAccumulated(), 0, "staked total accumulator should remain reset");
     }
 
     /*//////////////////////////////////////////////////////////////

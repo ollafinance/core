@@ -70,13 +70,22 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cursor for bounded active attester sync.
     uint256 private _activeSyncCursor;
 
+    /// @dev Cursor for bounded slashing delta accumulation.
+    uint256 private _slashingDeltaCursor;
+
+    /// @dev Accumulator for bounded slashing delta computation.
+    uint256 private _slashingDeltaAccumulated;
+
+    /// @dev Accumulator for bounded staked total computation.
+    uint256 private _stakedTotalAccumulated;
+
     /// @dev Gas threshold for bounded rebalance work.
     // solhint-disable-next-line private-vars-leading-underscore
     uint256 private gasThreshold;
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[45] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -214,8 +223,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @return slashingDelta The cumulative slashing delta.
     function getSlashingDelta() external override onlyCore returns (uint256 slashingDelta) {
         (, IAztecRollup rollup) = _getRollup();
-        uint256 currentSlashingDelta = _computeSlashed(rollup);
-        if (currentSlashingDelta > _cumulativeSlashingDelta) {
+        (uint256 currentSlashingDelta, bool completed) = _computeSlashed(rollup);
+        if (completed && currentSlashingDelta > _cumulativeSlashingDelta) {
             _cumulativeSlashingDelta = currentSlashingDelta;
         }
         return _cumulativeSlashingDelta;
@@ -721,6 +730,83 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return claimed;
     }
 
+    function _computeSlashed(IAztecRollup rollup) internal returns (uint256 slashingDelta, bool completed) {
+        if (_slashingDeltaCursor == 0) {
+            _stakedTotalAccumulated = 0;
+            _slashingDeltaAccumulated = 0;
+        }
+
+        (_stakedTotalAccumulated, _slashingDeltaAccumulated) =
+            _accumulateAttestersDelta(rollup, _stakedTotalAccumulated, _slashingDeltaAccumulated);
+
+        if (_slashingDeltaCursor == 0) {
+            slashingDelta = _slashingDeltaAccumulated;
+            completed = true;
+            _stakedTotalAccumulated = 0;
+            _slashingDeltaAccumulated = 0;
+        }
+        return (slashingDelta, completed);
+    }
+
+    // Rollup is trusted and loop bounded by attester set size.
+    // slither-disable-next-line calls-loop
+    // slither-disable-next-line pess-multiple-storage-read -- length read + indexed access unavoidable in loop
+    function _accumulateAttestersDelta(IAztecRollup rollup, uint256 stakedTotal, uint256 slashingDelta)
+        internal
+        returns (uint256 updatedTotalStaked, uint256 updatedSlashingDelta)
+    {
+        uint256 length = _attesters.length;
+        if (length == 0) {
+            _slashingDeltaCursor = 0;
+            return (stakedTotal, slashingDelta);
+        }
+
+        uint256 i = _slashingDeltaCursor;
+        if (i > length - 1) {
+            i = 0;
+        }
+
+        // Bounded by gasThreshold and cursor.
+        for (; i < _attesters.length;) {
+            if (gasleft() < gasThreshold) {
+                break;
+            }
+            IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
+            IStakingManager.InternalAttesterState state = attesterInfo.state;
+            if (
+                state != IStakingManager.InternalAttesterState.Active
+                    && state != IStakingManager.InternalAttesterState.Exiting
+            ) {
+                ++i;
+                continue;
+            }
+            address attester = attesterInfo.attester;
+            uint256 stakedAmount = attesterInfo.stakedAmount;
+
+            // slither-disable-next-line calls-loop -- trusted rollup, bounded by gas/cursor
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+            (bool eligible, uint256 remaining) = _remainingStake(view_);
+            if (!eligible) {
+                ++i;
+                continue;
+            }
+            stakedTotal += stakedAmount;
+            if (stakedAmount > remaining) {
+                slashingDelta += stakedAmount - remaining;
+            }
+            ++i;
+        }
+
+        uint256 currentLength = _attesters.length;
+        if (currentLength == 0 || i > currentLength - 1) {
+            _slashingDeltaCursor = 0;
+        } else {
+            _slashingDeltaCursor = i;
+        }
+
+        return (stakedTotal, slashingDelta);
+    }
+
     /// @notice Returns true if an exit is present and exitable.
     /// @param view_ The attester view data.
     /// @return True if the exit is available to finalize.
@@ -783,13 +869,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end calls-loop,timestamp,pess-multiple-storage-read
 
     function _computeStaked(IAztecRollup rollup) internal view returns (uint256 stakedTotal) {
-        (stakedTotal,) = _accumulateAttestersDelta(rollup, 0, 0);
+        (stakedTotal,) = _accumulateAttestersDeltaView(rollup, 0, 0);
         return stakedTotal;
-    }
-
-    function _computeSlashed(IAztecRollup rollup) internal view returns (uint256 slashingDelta) {
-        (, slashingDelta) = _accumulateAttestersDelta(rollup, 0, 0);
-        return slashingDelta;
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -804,7 +885,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // Rollup is trusted and loop bounded by attester set size.
     // slither-disable-next-line calls-loop
     // slither-disable-next-line pess-multiple-storage-read -- length read + indexed access unavoidable in loop
-    function _accumulateAttestersDelta(IAztecRollup rollup, uint256 stakedTotal, uint256 slashingDelta)
+    function _accumulateAttestersDeltaView(IAztecRollup rollup, uint256 stakedTotal, uint256 slashingDelta)
         internal
         view
         returns (uint256 updatedTotalStaked, uint256 updatedSlashingDelta)
