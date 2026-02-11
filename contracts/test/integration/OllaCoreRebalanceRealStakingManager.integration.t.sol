@@ -9,6 +9,7 @@ import { StAztec } from "src/core/StAztec.sol";
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { RewardsVault } from "src/core/RewardsVault.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
@@ -16,6 +17,7 @@ import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegist
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title OllaCoreRebalanceRealStakingManager
 /// @notice Tests rebalance with the real StakingManager (not mocks) to reproduce mock loop issue.
@@ -51,36 +53,44 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault));
+        withdrawalQueue.initialize(address(vault), governance);
 
         // Deploy RewardsVault
         RewardsVault rewardsImplementation = new RewardsVault();
         ERC1967Proxy rewardsProxy = new ERC1967Proxy(address(rewardsImplementation), "");
         rewardsVault = RewardsVault(address(rewardsProxy));
-        rewardsVault.initialize(IERC20(asset), address(vault));
+        rewardsVault.initialize(IERC20(asset), address(vault), governance);
 
-        // Deploy StakingProviderRegistry
+        // Deploy Mock Rollup and Registry
+        mockRollup = new MockAztecRollup(IERC20(asset), 0);
+        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup));
+
+        // Deploy StakingProviderRegistry (before StakingManager)
         StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
         ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
         stakingProviderRegistry = StakingProviderRegistry(address(registryProxy));
-        stakingProviderRegistry.initialize(governance);
-
-        // Deploy Mock Rollup and Registry
-        mockRollup = new MockAztecRollup();
-        mockRollupRegistry = new MockAztecRollupRegistry();
-        mockRollupRegistry.setCanonicalRollup(address(mockRollup));
 
         // Deploy StakingManager
         StakingManager smImplementation = new StakingManager();
         ERC1967Proxy smProxy = new ERC1967Proxy(address(smImplementation), "");
         stakingManager = StakingManager(address(smProxy));
+
+        // Initialize StakingProviderRegistry with StakingManager address
+        stakingProviderRegistry.initialize(
+            address(stakingManager),
+            governance,
+            governance, // rewardsRecipient same as admin for simplicity
+            governance
+        );
+
+        // Initialize StakingManager
         stakingManager.initialize(
             IERC20(asset),
-            mockRollupRegistry,
+            address(mockRollupRegistry),
             address(rewardsVault),
             address(vault),
-            governance,
-            stakingProviderRegistry
+            address(stakingProviderRegistry),
+            governance
         );
 
         // Deploy SafetyModule
@@ -107,11 +117,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
-        stakingProviderRegistry.grantRole(stakingProviderRegistry.STAKING_PROVIDER_ROLE(), address(stakingManager));
         vm.stopPrank();
-
-        // Setup rewards vault in staking manager
-        stakingManager.setRewardsVault(address(rewardsVault));
     }
 
     function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
@@ -120,6 +126,29 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         asset.approve(address(vault), assets);
         vm.prank(owner);
         shares = vault.deposit(assets, owner);
+    }
+
+    uint256 internal _keyOffset;
+
+    function _createMockKeys(uint256 count) internal returns (IStakingManager.KeyStore[] memory) {
+        IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](count);
+        for (uint256 i; i < count; ++i) {
+            uint256 keyId = _keyOffset + i + 1;
+            keys[i] = IStakingManager.KeyStore({
+                attester: address(uint160(keyId)),
+                publicKeyG1: G1Point({ x: keyId, y: keyId + 1 }),
+                publicKeyG2: G2Point({ x0: keyId, x1: keyId + 1, y0: keyId + 2, y1: keyId + 3 }),
+                proofOfPossession: G1Point({ x: keyId + 10, y: keyId + 11 })
+            });
+        }
+        _keyOffset += count;
+        return keys;
+    }
+
+    function _addKeys(uint256 count) internal {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
+        vm.prank(governance);
+        stakingProviderRegistry.addKeysToProvider(keys);
     }
 
     /// @notice Test that reproduces the mock loop scenario:
@@ -137,9 +166,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         // Add provider keys to registry
-        vm.startPrank(governance);
-        stakingProviderRegistry.addKeys(5);
-        vm.stopPrank();
+        _addKeys(5);
 
         // Deposit 200,006 ETH (6 ETH above the 200k threshold)
         uint256 depositAmount = 200_006 * DECIMALS;
