@@ -14,6 +14,15 @@ import { DeployConfig } from "./../config/Config.s.sol";
 /// @title MocksDeployer
 /// @notice Deploys mock contracts for local development
 contract MocksDeployer is BaseDeployer {
+    /// @notice Struct to avoid stack too deep in deployStakingStack
+    struct StakingStackParams {
+        DeployConfig config;
+        address core;
+        address rewardsVault;
+        address asset;
+        address rollupRegistry;
+    }
+
     /// @notice Deploy the local staking asset and Aztec-side mocks.
     /// @dev Returns rollup + registry so local deploy can wire the real staking stack.
     function deployAssetAndRollup(DeployConfig memory config)
@@ -40,15 +49,6 @@ contract MocksDeployer is BaseDeployer {
         vm.stopBroadcast();
 
         return (address(mockAsset), address(mockRollup), address(registry));
-    }
-
-    /// @notice Struct to avoid stack too deep in deployStakingStack
-    struct StakingStackParams {
-        DeployConfig config;
-        address core;
-        address rewardsVault;
-        address asset;
-        address rollupRegistry;
     }
 
     /// @notice Deploy and initialize the real staking stack behind proxies.
