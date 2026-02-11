@@ -788,11 +788,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @return claimed The amount claimed and transferred.
     function _finalizeClaim(uint256 balanceBefore, uint256 sumOfExitAmounts) internal returns (uint256 claimed) {
         uint256 balanceAfter = stakingAsset.balanceOf(address(this));
-        claimed = balanceAfter - balanceBefore;
-        if (sumOfExitAmounts != claimed) {
+        uint256 newlyFinalized = balanceAfter - balanceBefore;
+        if (sumOfExitAmounts != newlyFinalized) {
             revert StakingManager__ClaimAmountMismatch();
         }
 
+        claimed = balanceAfter;
         if (claimed > 0) {
             stakingAsset.safeTransfer(core, claimed);
             emit UnstakedFundsClaimed(claimed);

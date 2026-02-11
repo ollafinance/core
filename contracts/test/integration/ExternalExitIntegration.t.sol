@@ -289,6 +289,51 @@ contract ExternalExitIntegrationTest is Test {
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "All unstakes should be finalized");
     }
 
+    function test_Rebalance_ClaimsExternallyFinalizedExit() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        uint256 depositAmount = ACTIVATION_THRESHOLD;
+        aztec.mint(alice, depositAmount);
+        vm.startPrank(alice);
+        aztec.approve(address(vault), depositAmount);
+        vault.deposit(depositAmount, alice);
+        vm.stopPrank();
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(depositAmount);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "pending unstake should be created");
+
+        address attester = keys[0].attester;
+        vm.prank(makeAddr("external"));
+        rollup.finalizeWithdraw(attester);
+
+        uint256 managerBalance = aztec.balanceOf(address(stakingManager));
+        assertEq(managerBalance, depositAmount, "manager should hold externally finalized exit");
+
+        uint256 coreBalanceBefore = aztec.balanceOf(address(vault));
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        uint256 coreBalanceAfter = aztec.balanceOf(address(vault));
+        assertEq(
+            coreBalanceAfter,
+            coreBalanceBefore + managerBalance,
+            "core balance should increase by externally finalized amount"
+        );
+        assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager balance should clear after pull");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending unstake count should clear");
+    }
+
     /// @notice Test demonstrating the unstake underflow bug.
     /// @dev This test reproduces the arithmetic underflow that occurs when
     ///      _initiateUnstake() returns more than requested (due to discrete attesters).
