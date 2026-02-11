@@ -97,6 +97,17 @@ interface IStakingManager {
     /// @param reason The failure reason.
     event RewardClaimFailed(address indexed attester, string reason);
 
+    /// @notice Emitted when the cached slashing delta is updated.
+    /// @param previousValue The previous cached slashing delta.
+    /// @param newValue The new cached slashing delta.
+    /// @param timestamp The timestamp when the cache was updated.
+    event SlashingDeltaUpdated(uint256 previousValue, uint256 newValue, uint256 timestamp);
+
+    /// @notice Emitted when a slashing delta update detects stale state.
+    /// @param lastUpdated The last slashing delta update timestamp.
+    /// @param maxAge The configured maximum age for freshness.
+    event SlashingDeltaStale(uint256 lastUpdated, uint256 maxAge);
+
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -124,6 +135,9 @@ interface IStakingManager {
 
     /// @notice Thrown when caller is not authorized core.
     error StakingManager__UnauthorizedCore(address caller);
+
+    /// @notice Thrown when the cached slashing delta is stale.
+    error StakingManager__SlashingDeltaStale(uint256 lastUpdated, uint256 maxAge);
 
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
@@ -178,7 +192,20 @@ interface IStakingManager {
     /// @notice Returns the cumulative slashing delta from the rollup.
     /// @dev Only callable by the configured core address.
     /// @return slashingDelta The cumulative slashing delta.
-    function getSlashingDelta() external returns (uint256 slashingDelta);
+    function getSlashingDelta() external view returns (uint256 slashingDelta);
+
+    /*//////////////////////////////////////////////////////////////
+                         PROVIDER ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Computes the slashing delta using bounded work.
+    /// @return slashingDelta The cached slashing delta after this call.
+    /// @return completed True if the computation completed in this call.
+    function computeSlashingDelta() external returns (uint256 slashingDelta, bool completed);
+
+    /// @notice Sets the maximum allowed age for the cached slashing delta.
+    /// @param maxAge The maximum age in seconds.
+    function setSlashingDeltaMaxAge(uint256 maxAge) external;
 
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
@@ -188,6 +215,12 @@ interface IStakingManager {
     /// @dev Only callable by the configured core address. Does not actually claim rewards.
     /// @return claimableRewards The total rewards claimalbe to rewards recipient.
     function getClaimableRewards() external view returns (uint256 claimableRewards);
+
+    /// @notice Returns slashing delta liveness data.
+    /// @return lastUpdated The last timestamp when slashing delta was updated.
+    /// @return maxAge The maximum age allowed for freshness.
+    /// @return isStale True if the cached slashing delta is stale.
+    function getSlashingDeltaLiveness() external view returns (uint256 lastUpdated, uint256 maxAge, bool isStale);
 
     /// @notice Returns the total staked principal across validator states.
     /// @return stakedTotal The total staked principal.

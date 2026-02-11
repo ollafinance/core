@@ -183,9 +183,10 @@ contract ExternalExitIntegrationTest is Test {
         uint256 stakeAmount = ACTIVATION_THRESHOLD * count;
         aztec.mint(address(vault), stakeAmount);
 
-        vm.startPrank(operator);
+        vm.prank(defaultAdmin);
+        stakingManager.computeSlashingDelta();
+        vm.prank(operator);
         vault.rebalance();
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -209,6 +210,8 @@ contract ExternalExitIntegrationTest is Test {
         vm.stopPrank();
 
         // 3. Rebalance to stake all funds (will stake to both attesters)
+        vm.prank(defaultAdmin);
+        stakingManager.computeSlashingDelta();
         vm.prank(operator);
         vault.rebalance();
 
@@ -222,6 +225,8 @@ contract ExternalExitIntegrationTest is Test {
         uint256 requestId = vault.requestRedeem(withdrawShares, alice);
 
         // 5. Rebalance #1 - initiates unstake for 1 attester
+        vm.prank(defaultAdmin);
+        stakingManager.computeSlashingDelta();
         vm.prank(operator);
         vault.rebalance();
 
@@ -252,6 +257,8 @@ contract ExternalExitIntegrationTest is Test {
 
         vm.recordLogs();
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeSlashingDelta();
         vm.prank(operator);
         (, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
 
@@ -314,6 +321,8 @@ contract ExternalExitIntegrationTest is Test {
         vm.stopPrank();
 
         // 2. Rebalance to stake all funds
+        vm.prank(defaultAdmin);
+        stakingManager.computeSlashingDelta();
         vm.prank(operator);
         vault.rebalance();
 
@@ -336,6 +345,8 @@ contract ExternalExitIntegrationTest is Test {
         // But StakingManager will unstake 2 full attesters (200 ether)
         // progress.unstakeRemaining should clamp to 0 instead of underflowing
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeSlashingDelta();
         vm.prank(operator);
         (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
             vault.rebalance();

@@ -1588,6 +1588,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     uint256 public claimable;
     uint256 public slashing;
     address public rewardsRecipient;
+    uint256 private _slashingDeltaLastUpdated = 1;
+    uint256 private _slashingDeltaMaxAge = type(uint256).max;
 
     ProviderConfig internal _providerConfig;
 
@@ -1601,6 +1603,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function setSlashingDelta(uint256 value) external {
         slashing = value;
+        _slashingDeltaLastUpdated = block.timestamp;
     }
 
     function setPendingUnstakes(uint256 value) external {
@@ -1653,11 +1656,46 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function getSlashingDelta() external view override returns (uint256 slashingDelta) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
         return slashing;
+    }
+
+    function computeSlashingDelta() external override returns (uint256 slashingDelta, bool completed) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        bool wasStale = _isSlashingDeltaStale();
+
+        _slashingDeltaLastUpdated = block.timestamp;
+        emit SlashingDeltaUpdated(slashing, slashing, block.timestamp);
+        if (wasStale) {
+            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+        }
+
+        return (slashing, true);
+    }
+
+    function setSlashingDeltaMaxAge(uint256 maxAge) external override {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        _slashingDeltaMaxAge = maxAge;
     }
 
     function getClaimableRewards() external view override returns (uint256 claimableRewards) {
         return claimable;
+    }
+
+    function getSlashingDeltaLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _slashingDeltaLastUpdated;
+        maxAge = _slashingDeltaMaxAge;
+        isStale = _isSlashingDeltaStale();
+        return (lastUpdated, maxAge, isStale);
     }
 
     function totalStaked() external view override returns (uint256 stakedTotal) {
@@ -1694,6 +1732,14 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
+    }
+
+    function _isSlashingDeltaStale() internal view returns (bool) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
     }
 
     function core() external pure override returns (address) {

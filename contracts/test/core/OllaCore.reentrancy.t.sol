@@ -25,6 +25,8 @@ contract MockHarvestStakingManager is IStakingManager {
     IERC20 public rewardsToken;
     address public rewardsVault;
     uint256 public harvestedRewards;
+    uint256 private _slashingDeltaLastUpdated = 1;
+    uint256 private _slashingDeltaMaxAge = type(uint256).max;
 
     function setRewardsToken(IERC20 token) external {
         rewardsToken = token;
@@ -81,8 +83,31 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function getSlashingDelta() external pure override returns (uint256) {
+    function getSlashingDelta() external view override returns (uint256) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
         return 0;
+    }
+
+    function computeSlashingDelta() external override returns (uint256 slashingDelta, bool completed) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        bool wasStale = _isSlashingDeltaStale();
+
+        _slashingDeltaLastUpdated = block.timestamp;
+        emit SlashingDeltaUpdated(0, 0, block.timestamp);
+        if (wasStale) {
+            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+        }
+
+        return (0, true);
+    }
+
+    function setSlashingDeltaMaxAge(uint256 maxAge) external override {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        _slashingDeltaMaxAge = maxAge;
     }
 
     function totalStaked() external pure override returns (uint256) {
@@ -105,6 +130,18 @@ contract MockHarvestStakingManager is IStakingManager {
         return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
     }
 
+    function getSlashingDeltaLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _slashingDeltaLastUpdated;
+        maxAge = _slashingDeltaMaxAge;
+        isStale = _isSlashingDeltaStale();
+        return (lastUpdated, maxAge, isStale);
+    }
+
     function getActivatedAttesterCount() external pure override returns (uint256) {
         return 0;
     }
@@ -122,6 +159,14 @@ contract MockHarvestStakingManager is IStakingManager {
     }
 
     function initialize(IERC20, address, address, address, address, address) external pure override { }
+
+    function _isSlashingDeltaStale() internal view returns (bool) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
+    }
 }
 
 contract OllaCoreReentrancyTest is Test {

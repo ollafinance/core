@@ -331,6 +331,8 @@ contract RealisticStakingManager is IStakingManager {
     uint256 public totalStakedAmount;
     uint256 public pendingUnstakeAmount;
     uint256 public withdrawableAmount;
+    uint256 private _slashingDeltaLastUpdated = 1;
+    uint256 private _slashingDeltaMaxAge = type(uint256).max;
 
     function initialize(IERC20 stakingAsset_, address, address, address, address, address) external override {
         stakingAsset = stakingAsset_;
@@ -386,12 +388,47 @@ contract RealisticStakingManager is IStakingManager {
         });
     }
 
-    function getSlashingDelta() external pure override returns (uint256) {
+    function getSlashingDelta() external view override returns (uint256) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
         return 0;
+    }
+
+    function computeSlashingDelta() external override returns (uint256 slashingDelta, bool completed) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        bool wasStale = _isSlashingDeltaStale();
+
+        _slashingDeltaLastUpdated = block.timestamp;
+        emit SlashingDeltaUpdated(0, 0, block.timestamp);
+        if (wasStale) {
+            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+        }
+
+        return (0, true);
+    }
+
+    function setSlashingDeltaMaxAge(uint256 maxAge) external override {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        _slashingDeltaMaxAge = maxAge;
     }
 
     function getClaimableRewards() external pure override returns (uint256) {
         return 0;
+    }
+
+    function getSlashingDeltaLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _slashingDeltaLastUpdated;
+        maxAge = _slashingDeltaMaxAge;
+        isStale = _isSlashingDeltaStale();
+        return (lastUpdated, maxAge, isStale);
     }
 
     function harvestRewards() external pure override returns (uint256) {
@@ -426,6 +463,14 @@ contract RealisticStakingManager is IStakingManager {
 
     function getProviderConfig() external pure override returns (ProviderConfig memory) {
         return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+    }
+
+    function _isSlashingDeltaStale() internal view returns (bool) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
     }
 }
 

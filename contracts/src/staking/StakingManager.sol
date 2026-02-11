@@ -15,6 +15,7 @@ import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistr
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import { RolesLib } from "src/shared/RolesLib.sol";
 
 // solhint-disable max-states-count
 /// @title StakingManager
@@ -22,6 +23,13 @@ import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecType
 /// @author Olla Core contributors
 contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuard, IStakingManager {
     using SafeERC20 for IERC20;
+
+    /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    bytes32 public constant OPERATOR_ROLE = RolesLib.OPERATOR_ROLE;
+    uint256 public constant DEFAULT_SLASHING_DELTA_MAX_AGE = 12 hours;
 
     /*//////////////////////////////////////////////////////////////
                                     STATE
@@ -61,6 +69,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cumulative slashing delta tracked across rollup snapshots.
     uint256 private _cumulativeSlashingDelta;
 
+    /// @dev Timestamp of the last completed slashing delta update.
+    uint256 private _lastSlashingDeltaTimestamp;
+
+    /// @dev Maximum allowed age for the cached slashing delta.
+    uint256 private _slashingDeltaMaxAge;
+
     /// @dev Cursor for bounded unstake initiation.
     uint256 private _unstakeCursor;
 
@@ -85,7 +99,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
-    uint256[45] private __gap;
+    uint256[48] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -163,8 +177,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         governance = defaultAdmin_;
         stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
         gasThreshold = 50_000;
+        _slashingDeltaMaxAge = DEFAULT_SLASHING_DELTA_MAX_AGE;
+        _lastSlashingDeltaTimestamp = block.timestamp;
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
+        _grantRole(OPERATOR_ROLE, defaultAdmin_);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -219,15 +236,55 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return harvested;
     }
 
-    /// @notice Returns the cumulative slashing delta from the rollup.
-    /// @return slashingDelta The cumulative slashing delta.
-    function getSlashingDelta() external override onlyCore returns (uint256 slashingDelta) {
-        (, IAztecRollup rollup) = _getRollup();
-        (uint256 currentSlashingDelta, bool completed) = _computeSlashed(rollup);
-        if (completed && currentSlashingDelta > _cumulativeSlashingDelta) {
-            _cumulativeSlashingDelta = currentSlashingDelta;
+    /// @notice Returns the cached slashing delta.
+    /// @return slashingDelta The cached slashing delta.
+    function getSlashingDelta() external view override onlyCore returns (uint256 slashingDelta) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
         }
         return _cumulativeSlashingDelta;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         PROVIDER AND ADMIN FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function computeSlashingDelta()
+        external
+        override
+        onlyRole(OPERATOR_ROLE)
+        returns (uint256 slashingDelta, bool completed)
+    {
+        (, IAztecRollup rollup) = _getRollup();
+        uint256 lastUpdated = _lastSlashingDeltaTimestamp;
+        bool wasStale = _isSlashingDeltaStale();
+
+        if (wasStale) {
+            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+        }
+
+        (uint256 currentSlashingDelta, bool computationCompleted) = _computeSlashed(rollup);
+        if (computationCompleted) {
+            uint256 previousValue = _cumulativeSlashingDelta;
+            if (currentSlashingDelta > previousValue) {
+                _cumulativeSlashingDelta = currentSlashingDelta;
+            }
+            _lastSlashingDeltaTimestamp = block.timestamp;
+            emit SlashingDeltaUpdated(previousValue, _cumulativeSlashingDelta, block.timestamp);
+        }
+
+        slashingDelta = _cumulativeSlashingDelta;
+        completed = computationCompleted;
+        return (slashingDelta, completed);
+    }
+
+    /// @inheritdoc IStakingManager
+    function setSlashingDeltaMaxAge(uint256 maxAge) external override onlyRole(OPERATOR_ROLE) {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        _slashingDeltaMaxAge = maxAge;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -287,6 +344,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @inheritdoc IStakingManager
     function getUnstakeCursor() external view override returns (uint256 cursor) {
         return _unstakeCursor;
+    }
+
+    /// @inheritdoc IStakingManager
+    function getSlashingDeltaLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _lastSlashingDeltaTimestamp;
+        maxAge = _slashingDeltaMaxAge;
+        isStale = _isSlashingDeltaStale();
+        return (lastUpdated, maxAge, isStale);
     }
 
     /// @inheritdoc IStakingManager
@@ -942,5 +1012,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             return (true, view_.exit.amount);
         }
         return (false, 0);
+    }
+
+    function _isSlashingDeltaStale() internal view returns (bool) {
+        uint256 lastUpdated = _lastSlashingDeltaTimestamp;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
     }
 }

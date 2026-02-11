@@ -39,6 +39,15 @@ contract MockStakingManager is IStakingManager {
     /// @notice Mock provider config.
     ProviderConfig private _providerConfig;
 
+    /// @notice Cached slashing delta.
+    uint256 private _slashingDelta;
+
+    /// @notice Timestamp when slashing delta was last updated.
+    uint256 private _slashingDeltaLastUpdated = 1;
+
+    /// @notice Maximum allowed age for slashing delta freshness.
+    uint256 private _slashingDeltaMaxAge = type(uint256).max;
+
     /*//////////////////////////////////////////////////////////////
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -93,6 +102,29 @@ contract MockStakingManager is IStakingManager {
         }
         ++unstakeCalls;
         return unstakedAmount;
+    }
+
+    /// @inheritdoc IStakingManager
+    function computeSlashingDelta() external override returns (uint256 slashingDelta, bool completed) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        bool wasStale = _isSlashingDeltaStale();
+        uint256 previousValue = _slashingDelta;
+
+        _slashingDeltaLastUpdated = block.timestamp;
+        emit SlashingDeltaUpdated(previousValue, _slashingDelta, block.timestamp);
+        if (wasStale) {
+            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+        }
+
+        return (_slashingDelta, true);
+    }
+
+    /// @inheritdoc IStakingManager
+    function setSlashingDeltaMaxAge(uint256 maxAge) external override {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        _slashingDeltaMaxAge = maxAge;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -154,8 +186,24 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function getSlashingDelta() external pure override returns (uint256 slashingDelta) {
-        return 0;
+    function getSlashingDelta() external view override returns (uint256 slashingDelta) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
+        return _slashingDelta;
+    }
+
+    /// @inheritdoc IStakingManager
+    function getSlashingDeltaLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _slashingDeltaLastUpdated;
+        maxAge = _slashingDeltaMaxAge;
+        isStale = _isSlashingDeltaStale();
+        return (lastUpdated, maxAge, isStale);
     }
 
     /// @inheritdoc IStakingManager
@@ -182,5 +230,13 @@ contract MockStakingManager is IStakingManager {
     function syncAttesters() external pure override {
         // No-op for mock
         return;
+    }
+
+    function _isSlashingDeltaStale() internal view returns (bool) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
     }
 }

@@ -38,6 +38,8 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public stakeReturnAmount;
     bool public useStakeReturnAmount;
     bool public allowStakeReturnExceeds;
+    uint256 private _slashingDeltaLastUpdated = 1;
+    uint256 private _slashingDeltaMaxAge = type(uint256).max;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -57,6 +59,7 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setSlashingDelta(uint256 value) external {
         slashingDelta = value;
+        _slashingDeltaLastUpdated = block.timestamp;
     }
 
     function setTotalStaked(uint256 value) external {
@@ -170,6 +173,26 @@ contract MockAccountingStakingManager is IStakingManager {
         gasThreshold = threshold;
     }
 
+    function computeSlashingDelta() external override returns (uint256 slashingDeltaValue, bool completed) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        bool wasStale = _isSlashingDeltaStale();
+
+        _slashingDeltaLastUpdated = block.timestamp;
+        emit SlashingDeltaUpdated(slashingDelta, slashingDelta, block.timestamp);
+        if (wasStale) {
+            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+        }
+
+        return (slashingDelta, true);
+    }
+
+    function setSlashingDeltaMaxAge(uint256 maxAge) external override {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        _slashingDeltaMaxAge = maxAge;
+    }
+
     function syncAttesters() external pure override {
         return;
     }
@@ -213,6 +236,9 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function getSlashingDelta() external view override returns (uint256) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
         return slashingDelta;
     }
 
@@ -222,6 +248,18 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function getClaimableRewards() external view override returns (uint256) {
         return claimableRewards;
+    }
+
+    function getSlashingDeltaLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _slashingDeltaLastUpdated;
+        maxAge = _slashingDeltaMaxAge;
+        isStale = _isSlashingDeltaStale();
+        return (lastUpdated, maxAge, isStale);
     }
 
     function totalStaked() external view override returns (uint256) {
@@ -270,6 +308,14 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
+    }
+
+    function _isSlashingDeltaStale() internal view returns (bool) {
+        uint256 lastUpdated = _slashingDeltaLastUpdated;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
     }
 
     /*//////////////////////////////////////////////////////////////
