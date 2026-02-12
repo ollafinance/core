@@ -1444,7 +1444,7 @@ contract OllaCore is
     ///      work and couldn't make progress. We only retry when external conditions change.
     /// @return True if new external work is available, false otherwise.
     // Slither: timestamp warning is a false positive; these are zero-guards not timestamp comparisons.
-    // slither-disable-next-line timestamp
+    // slither-disable-next-line timestamp,pess-multiple-storage-read
     function _hasRebalanceWorkAvailable() internal view returns (bool) {
         // Check for rewards vault funds to pull
         uint256 rewardsVaultBalance = _getRewardsVaultBalance();
