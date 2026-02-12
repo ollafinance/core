@@ -72,12 +72,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Maximum allowed age for the cached attester state.
     uint256 private _attesterStateMaxAge;
 
-    /// @dev Timestamp of the last completed attester state update.
-    uint256 private _lastAttesterStateTimestamp;
-
-    /// @dev Maximum allowed age for the cached attester state.
-    uint256 private _attesterStateMaxAge;
-
     /// @dev Cursor for bounded unstake initiation.
     uint256 private _unstakeCursor;
 
@@ -92,21 +86,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @dev Cached attester state from last completed computation pass.
     StakingState private _cachedState;
-
-    /// @dev Cached total staked principal from last completed attester state computation.
-    uint256 private _cachedTotalStaked;
-
-    /// @dev Cached pending unstake amount from last completed attester state computation.
-    uint256 private _cachedPendingUnstakeAmount;
-
-    /// @dev Cached withdrawable amount from last completed attester state computation.
-    uint256 private _cachedWithdrawableAmount;
-
-    /// @dev Accumulator for bounded pending unstake computation.
-    uint256 private _pendingUnstakeAccumulated;
-
-    /// @dev Accumulator for bounded withdrawable amount computation.
-    uint256 private _withdrawableAccumulated;
 
     /// @dev Gas threshold for bounded rebalance work.
     // solhint-disable-next-line private-vars-leading-underscore
