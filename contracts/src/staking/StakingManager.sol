@@ -244,14 +244,16 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             }
             // Persist cached values from accumulators; reset deferred to next pass start
             // (_computeAttesterStateInternal resets at cursor==0).
-            _cachedState = _accumulator;
-            _cachedState.slashingDelta = cachedDelta;
+            // slither-disable-next-line pess-multiple-storage-read
+            StakingState memory newState = _accumulator;
+            newState.slashingDelta = cachedDelta;
+            _cachedState = newState;
             _lastAttesterStateTimestamp = block.timestamp;
             emit AttesterStateUpdated(
                 cachedDelta,
-                _cachedState.stakedAmount,
-                _cachedState.pendingUnstakeAmount,
-                _cachedState.withdrawableAmount,
+                newState.stakedAmount,
+                newState.pendingUnstakeAmount,
+                newState.withdrawableAmount,
                 block.timestamp
             );
         }
