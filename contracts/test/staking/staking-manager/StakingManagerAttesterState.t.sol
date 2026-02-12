@@ -38,25 +38,25 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
 
     function _getSlashingDeltaCursor() internal returns (uint256) {
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 slashingDeltaCursorSlot = bytes32(cursorSlot + 3);
+        bytes32 slashingDeltaCursorSlot = bytes32(cursorSlot + 2);
         return uint256(vm.load(address(stakingManager), slashingDeltaCursorSlot));
     }
 
     function _setSlashingDeltaCursor(uint256 value) internal {
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 slashingDeltaCursorSlot = bytes32(cursorSlot + 3);
+        bytes32 slashingDeltaCursorSlot = bytes32(cursorSlot + 2);
         vm.store(address(stakingManager), slashingDeltaCursorSlot, bytes32(value));
     }
 
     function _getSlashingDeltaAccumulated() internal returns (uint256) {
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 slashingDeltaAccumulatedSlot = bytes32(cursorSlot + 4);
+        bytes32 slashingDeltaAccumulatedSlot = bytes32(cursorSlot + 3);
         return uint256(vm.load(address(stakingManager), slashingDeltaAccumulatedSlot));
     }
 
     function _getStakedTotalAccumulated() internal returns (uint256) {
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 stakedTotalAccumulatedSlot = bytes32(cursorSlot + 5);
+        bytes32 stakedTotalAccumulatedSlot = bytes32(cursorSlot + 4);
         return uint256(vm.load(address(stakingManager), stakedTotalAccumulatedSlot));
     }
 
@@ -633,9 +633,8 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
 
         // Attester 1: exiting externally, NOT yet exitable (future exitableAt)
         // -> pendingUnstake += ACTIVATION_THRESHOLD
+        // computeAttesterState() will sync this attester from Active to Exiting automatically.
         rollup.setExternalExit(keys[1].attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
-        vm.prank(core);
-        stakingManager.syncAttesters();
 
         // Attester 2: active, slashed by 5 ether, exit NOT yet exitable (future exitableAt)
         // -> slashingDelta += 5 ether (stakedAmount 100e18 > remaining 95e18)
@@ -717,9 +716,9 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         // the staleness guard triggers or return stale values)
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
 
-        uint256 cachedTotalStakedRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 6)));
-        uint256 cachedPendingRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 7)));
-        uint256 cachedWithdrawableRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 8)));
+        uint256 cachedTotalStakedRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 5)));
+        uint256 cachedPendingRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 6)));
+        uint256 cachedWithdrawableRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 7)));
 
         assertEq(cachedTotalStakedRaw, 0, "cached totalStaked must not update on partial pass");
         assertEq(cachedPendingRaw, 0, "cached pending must not update on partial pass");
@@ -751,8 +750,8 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         assertEq(_getSlashingDeltaAccumulated(), 0, "slashing delta accumulator should reset");
         assertEq(_getStakedTotalAccumulated(), 0, "staked total accumulator should reset");
 
-        uint256 pendingAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 9)));
-        uint256 withdrawableAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 10)));
+        uint256 pendingAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 8)));
+        uint256 withdrawableAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 9)));
         assertEq(pendingAccumRaw, 0, "pending unstake accumulator should reset");
         assertEq(withdrawableAccumRaw, 0, "withdrawable accumulator should reset");
     }

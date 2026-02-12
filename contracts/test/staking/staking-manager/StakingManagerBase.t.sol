@@ -161,16 +161,4 @@ abstract contract StakingManagerBaseTest is Test {
             rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
         }
     }
-
-    function _getActiveSyncCursor() internal returns (uint256) {
-        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 activeSyncCursorSlot = bytes32(cursorSlot + 2);
-        return uint256(vm.load(address(stakingManager), activeSyncCursorSlot));
-    }
-
-    function _setActiveSyncCursor(uint256 value) internal {
-        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 activeSyncCursorSlot = bytes32(cursorSlot + 2);
-        vm.store(address(stakingManager), activeSyncCursorSlot, bytes32(value));
-    }
 }

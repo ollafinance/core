@@ -193,17 +193,6 @@ contract StakingManagerHandler is Test {
         vm.stopPrank();
     }
 
-    /// @notice Clean activated attesters (only core can call)
-    function syncAttesters() external {
-        vm.prank(core);
-        try stakingManager.syncAttesters() {
-        // Track state changes if needed
-        }
-            catch {
-            // Expected if not authorized
-        }
-    }
-
     /// @notice Claim unstaked funds (only core can call)
     function getUnstakedFunds() external {
         vm.prank(core);

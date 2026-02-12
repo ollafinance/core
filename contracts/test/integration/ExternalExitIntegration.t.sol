@@ -194,7 +194,7 @@ contract ExternalExitIntegrationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice External exits can be reconciled during rebalance.
-    /// @dev Rebalance triggers StakingManager.syncAttesters before claiming exits.
+    /// @dev computeAttesterState() syncs Active→Exiting before rebalance claims exits.
     function test_ExternalExit_ReconciledDuringRebalance() external {
         // 1. Add 2 attester keys
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);

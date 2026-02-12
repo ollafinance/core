@@ -435,8 +435,6 @@ contract RealisticStakingManager is IStakingManager {
         return 0;
     }
 
-    function syncAttesters() external pure override { }
-
     function getActivatedAttesterCount() external pure override returns (uint256) {
         return 0;
     }

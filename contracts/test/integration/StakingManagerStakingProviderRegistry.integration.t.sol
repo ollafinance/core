@@ -329,9 +329,9 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
             rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
         }
 
-        // Clean activated attesters
-        vm.prank(core);
-        stakingManager.syncAttesters();
+        // computeAttesterState() syncs Active→Exiting for externally exited attesters
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
 
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
