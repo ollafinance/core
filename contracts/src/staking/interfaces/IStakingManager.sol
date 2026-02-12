@@ -197,10 +197,6 @@ interface IStakingManager {
     /// @return unstakedAmount The amount initiated for unstake in this call.
     function unstake(uint256 amount) external returns (uint256 unstakedAmount);
 
-    /// @notice Syncs attesters with the rollup and moves them to exiting or inactive if needed.
-    /// @dev Since attesters can exit due to external reasons, local state is not guaranteed to be in sync.
-    function syncAttesters() external;
-
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.
     function getUnstakedFunds() external returns (uint256 received);
