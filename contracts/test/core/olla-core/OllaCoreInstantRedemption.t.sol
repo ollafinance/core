@@ -955,4 +955,58 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 totalAssetsAfter = vault.totalAssets();
         assertEq(totalAssetsAfter, totalAssetsBefore - grossAssets, "totalAssets decreased by grossAssets");
     }
+
+    /*//////////////////////////////////////////////////////////////
+      39. REDEEM MATCHES convertToAssets (NO DOUBLE-MULDIV ROUNDING)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Ensures _redeem computes grossAssets identically to the public
+    ///         convertToAssets view, proving there is no double-mulDiv rounding
+    ///         discrepancy between the two paths.  Uses a non-trivial exchange
+    ///         rate that would surface a 1-wei divergence under the old
+    ///         two-step _exchangeRate() → mulDiv(rate, scale) approach.
+    function test_Redeem_GrossAssetsMatchesConvertToAssets() external {
+        // Deposit an amount that produces a non-trivial rate when rewards arrive.
+        // 3 is chosen because totalAssets / supply won't divide evenly.
+        uint256 depositAmount = 3;
+        _performDeposit(alice, depositAmount);
+
+        // Simulate rewards that create an awkward rate: totalAssets = 1e18 + 1, supply = 3
+        uint256 rewards = 1 ether - 3 + 1; // after sync: totalAssets = 1e18 + 1 - 3 + 3 = 1e18+1
+        asset.mint(address(vault), rewards);
+
+        // Snapshot convertToAssets BEFORE redeem (sync hasn't happened yet,
+        // so we trigger a sync-aware read by calling redeem).
+        // Instead, we compute what convertToAssets WILL return after sync:
+        // totalAssets after sync = balance - 0 (no finalized) = depositAmount + rewards = 1e18+1
+        // supply = 3
+        uint256 sharesToRedeem = 2;
+
+        // Read preview from convertToAssets — this is a view that doesn't sync,
+        // but after sync totalAssets = actual balance = depositAmount + rewards.
+        // We can't call convertToAssets post-sync without actually syncing, so we
+        // compute it manually with the single-step formula.
+        uint256 expectedTotalAssets = depositAmount + rewards;
+        uint256 supply = stAztec.totalSupply();
+        uint256 expectedGross = sharesToRedeem.mulDiv(expectedTotalAssets, supply, Math.Rounding.Floor);
+
+        // Perform the redeem — triggers _syncBufferedWithBalance() then _convertToAssets()
+        _setInstantRedemptionFee(0); // zero fee so netAssets == grossAssets
+        vm.prank(alice);
+        uint256 netAssets = vault.redeem(sharesToRedeem, bob);
+
+        // The critical assertion: redeem output must EXACTLY match the single-step
+        // mulDiv computation. The old double-mulDiv would be off by 1 wei here.
+        assertEq(netAssets, expectedGross, "redeem grossAssets matches single-step convertToAssets formula");
+
+        // Also verify convertToAssets (post-redeem state) is consistent for remaining shares
+        uint256 remainingShares = stAztec.balanceOf(alice);
+        if (remainingShares > 0) {
+            uint256 viewAssets = vault.convertToAssets(remainingShares);
+            uint256 postTotal = vault.totalAssets();
+            uint256 postSupply = stAztec.totalSupply();
+            uint256 expectedRemaining = remainingShares.mulDiv(postTotal, postSupply, Math.Rounding.Floor);
+            assertEq(viewAssets, expectedRemaining, "convertToAssets consistent post-redeem");
+        }
+    }
 }

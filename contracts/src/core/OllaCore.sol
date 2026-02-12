@@ -883,13 +883,7 @@ contract OllaCore is
     /// @return assets The assets that would be returned.
     /// Formula: shares * totalAssets / totalSupply (floor), shares if supply == 0.
     function convertToAssets(uint256 shares) external view override returns (uint256 assets) {
-        IStAztec stAztecToken = _modules.stAztec;
-        uint256 supply = stAztecToken.totalSupply();
-        if (supply == 0) {
-            return shares;
-        }
-        assets = shares.mulDiv(totalAssets(), supply, Math.Rounding.Floor);
-        return assets;
+        return _convertToAssets(shares);
     }
 
     /// @notice Returns the shares previewed for a deposit.
@@ -1190,7 +1184,7 @@ contract OllaCore is
         Modules memory modules = _modules;
 
         uint256 rate = _exchangeRate();
-        uint256 assetsExpected = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        uint256 assetsExpected = _convertToAssets(shares);
         ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
         uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
 
@@ -1237,7 +1231,7 @@ contract OllaCore is
 
         // Compute exchange rate and asset amounts
         uint256 rate = _exchangeRate();
-        uint256 grossAssets = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        uint256 grossAssets = _convertToAssets(shares);
         uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
         netAssets = grossAssets - fee;
 
@@ -1718,6 +1712,15 @@ contract OllaCore is
 
     function _convertToSharesForDeposit(uint256 assets) internal view returns (uint256) {
         return _convertToShares(assets, Math.Rounding.Floor);
+    }
+
+    function _convertToAssets(uint256 shares) internal view returns (uint256) {
+        IStAztec stAztecToken = _modules.stAztec;
+        uint256 supply = stAztecToken.totalSupply();
+        if (supply == 0) {
+            return shares;
+        }
+        return shares.mulDiv(totalAssets(), supply, Math.Rounding.Floor);
     }
 
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
