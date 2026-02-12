@@ -13,8 +13,8 @@ interface IStakingManager {
                                   STRUCTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Local registry state for attesters.
-    enum InternalAttesterState {
+    /// @notice Local registry status for attesters.
+    enum InternalAttesterStatus {
         Inactive,
         Active,
         Exiting
@@ -32,14 +32,14 @@ interface IStakingManager {
         G1Point proofOfPossession;
     }
 
-    /// @notice Tracks an attester with their originally staked amount and last seen state.
+    /// @notice Tracks an attester with their originally staked amount and last seen status.
     /// @param attester The attester address.
     /// @param stakedAmount The amount originally staked (activation threshold at stake time).
-    /// @param state The local registry state.
+    /// @param status The local registry status.
     struct AttesterInfo {
         address attester;
         uint256 stakedAmount;
-        InternalAttesterState state;
+        InternalAttesterStatus status;
     }
 
     /// @notice Configuration for the staking provider.
@@ -51,10 +51,12 @@ interface IStakingManager {
     }
 
     /// @notice Aggregated staking state from on-chain queries.
+    /// @param slashingDelta Cumulative slashing delta across rollup snapshots.
     /// @param stakedAmount Total amount in VALIDATING status with effectiveBalance > 0.
     /// @param pendingUnstakeAmount Total amount in exit state, not yet exitable.
     /// @param withdrawableAmount Total amount in exit state, now exitable.
     struct StakingState {
+        uint256 slashingDelta;
         uint256 stakedAmount;
         uint256 pendingUnstakeAmount;
         uint256 withdrawableAmount;
@@ -272,7 +274,7 @@ interface IStakingManager {
 
     /// @notice Checks if an attester is exiting.
     /// @param attester The attester address.
-    /// @return True if the attester is in the exiting state.
+    /// @return True if the attester is in the exiting status.
     function isUnstakePending(address attester) external view returns (bool);
 
     /// @notice Returns the core address.

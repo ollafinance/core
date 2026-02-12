@@ -1725,7 +1725,12 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function getStakingState() external view override returns (StakingState memory state) {
-        return StakingState({ stakedAmount: staked, pendingUnstakeAmount: pending, withdrawableAmount: withdrawable });
+        return StakingState({
+            slashingDelta: slashing,
+            stakedAmount: staked,
+            pendingUnstakeAmount: pending,
+            withdrawableAmount: withdrawable
+        });
     }
 
     function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {

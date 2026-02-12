@@ -50,12 +50,14 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
 
     function _getSlashingDeltaAccumulated() internal returns (uint256) {
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        // _accumulator.slashingDelta is at cursorSlot + 3 (first field of the accumulator struct)
         bytes32 slashingDeltaAccumulatedSlot = bytes32(cursorSlot + 3);
         return uint256(vm.load(address(stakingManager), slashingDeltaAccumulatedSlot));
     }
 
     function _getStakedTotalAccumulated() internal returns (uint256) {
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
+        // _accumulator.stakedTotal is at cursorSlot + 4 (second field of the accumulator struct)
         bytes32 stakedTotalAccumulatedSlot = bytes32(cursorSlot + 4);
         return uint256(vm.load(address(stakingManager), stakedTotalAccumulatedSlot));
     }
@@ -727,11 +729,13 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         // Verify cached values are NOT updated during intermediate call
         // Reading the raw storage for cached values (since view functions revert when
         // the staleness guard triggers or return stale values)
+        // _cachedState struct starts at cursorSlot + 7:
+        //   +7 = slashingDelta, +8 = stakedAmount, +9 = pendingUnstakeAmount, +10 = withdrawableAmount
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
 
-        uint256 cachedTotalStakedRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 5)));
-        uint256 cachedPendingRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 6)));
-        uint256 cachedWithdrawableRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 7)));
+        uint256 cachedTotalStakedRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 8)));
+        uint256 cachedPendingRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 9)));
+        uint256 cachedWithdrawableRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 10)));
 
         assertEq(cachedTotalStakedRaw, 0, "cached totalStaked must not update on partial pass");
         assertEq(cachedPendingRaw, 0, "cached pending must not update on partial pass");
@@ -771,8 +775,10 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
             "staked total accumulator should retain value until next pass"
         );
 
-        uint256 pendingAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 8)));
-        uint256 withdrawableAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 9)));
+        // _accumulator struct starts at cursorSlot + 3:
+        //   +3 = slashingDelta, +4 = stakedTotal, +5 = pendingUnstake, +6 = withdrawable
+        uint256 pendingAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 5)));
+        uint256 withdrawableAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 6)));
         assertEq(pendingAccumRaw, expectedPending, "pending unstake accumulator should retain value until next pass");
         assertEq(
             withdrawableAccumRaw, expectedWithdrawable, "withdrawable accumulator should retain value until next pass"

@@ -66,8 +66,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Count of exiting attesters in the registry.
     uint256 private _exitingCount;
 
-    /// @dev Cumulative slashing delta tracked across rollup snapshots.
-    uint256 private _cumulativeSlashingDelta;
+    /// @dev Timestamp of the last completed attester state update.
+    uint256 private _lastAttesterStateTimestamp;
+
+    /// @dev Maximum allowed age for the cached attester state.
+    uint256 private _attesterStateMaxAge;
 
     /// @dev Timestamp of the last completed attester state update.
     uint256 private _lastAttesterStateTimestamp;
@@ -84,11 +87,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cursor for bounded attester state accumulation.
     uint256 private _attesterStateCursor;
 
-    /// @dev Accumulator for bounded slashing delta computation.
-    uint256 private _slashingDeltaAccumulated;
+    /// @dev Transient accumulator for bounded multi-pass attester state computation.
+    StakingState private _accumulator;
 
-    /// @dev Accumulator for bounded staked total computation.
-    uint256 private _stakedTotalAccumulated;
+    /// @dev Cached attester state from last completed computation pass.
+    StakingState private _cachedState;
 
     /// @dev Cached total staked principal from last completed attester state computation.
     uint256 private _cachedTotalStaked;
@@ -236,7 +239,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /*//////////////////////////////////////////////////////////////
-                          PROVIDER AND ADMIN FUNCTIONS
+                          OPERATOR FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
@@ -255,21 +258,24 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
 
         (uint256 currentSlashingDelta, bool computationCompleted) = _computeAttesterStateInternal(rollup);
-        uint256 cachedDelta = _cumulativeSlashingDelta;
+        uint256 cachedDelta = _cachedState.slashingDelta;
         if (computationCompleted) {
-            uint256 previousValue = cachedDelta;
-            if (currentSlashingDelta > previousValue) {
-                _cumulativeSlashingDelta = currentSlashingDelta;
+            if (currentSlashingDelta > cachedDelta) {
                 cachedDelta = currentSlashingDelta;
             }
             // Persist cached values from accumulators; reset deferred to next pass start
             // (_computeAttesterStateInternal resets at cursor==0).
-            _cachedTotalStaked = _stakedTotalAccumulated;
-            _cachedPendingUnstakeAmount = _pendingUnstakeAccumulated;
-            _cachedWithdrawableAmount = _withdrawableAccumulated;
+            // slither-disable-next-line pess-multiple-storage-read
+            StakingState memory newState = _accumulator;
+            newState.slashingDelta = cachedDelta;
+            _cachedState = newState;
             _lastAttesterStateTimestamp = block.timestamp;
             emit AttesterStateUpdated(
-                cachedDelta, _cachedTotalStaked, _cachedPendingUnstakeAmount, _cachedWithdrawableAmount, block.timestamp
+                cachedDelta,
+                newState.stakedAmount,
+                newState.pendingUnstakeAmount,
+                newState.withdrawableAmount,
+                block.timestamp
             );
         }
 
@@ -298,7 +304,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        return _cumulativeSlashingDelta;
+        return _cachedState.slashingDelta;
     }
 
     /// @notice Internal helper to get the claimable rewards.
@@ -314,10 +320,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        state.stakedAmount = _cachedTotalStaked;
-        state.pendingUnstakeAmount = _cachedPendingUnstakeAmount;
-        state.withdrawableAmount = _cachedWithdrawableAmount;
-        return state;
+        return _cachedState;
     }
 
     /// @inheritdoc IStakingManager
@@ -325,7 +328,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        return _cachedPendingUnstakeAmount;
+        return _cachedState.pendingUnstakeAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -333,7 +336,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        return _cachedWithdrawableAmount != 0;
+        return _cachedState.withdrawableAmount != 0;
     }
 
     /// @inheritdoc IStakingManager
@@ -341,7 +344,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        return _cachedTotalStaked;
+        return _cachedState.stakedAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -383,7 +386,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (indexPlusOne == 0) {
             return false;
         }
-        return _attesters[indexPlusOne - 1].state == IStakingManager.InternalAttesterState.Exiting;
+        return _attesters[indexPlusOne - 1].status == IStakingManager.InternalAttesterStatus.Exiting;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -473,7 +476,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (indexPlusOne == 0) {
             _attesters.push(
                 IStakingManager.AttesterInfo({
-                    attester: attester, stakedAmount: 0, state: IStakingManager.InternalAttesterState.Inactive
+                    attester: attester, stakedAmount: 0, status: IStakingManager.InternalAttesterStatus.Inactive
                 })
             );
             index = _attesters.length - 1;
@@ -484,25 +487,25 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return index;
     }
 
-    /// @notice Sets an attester state and updates counters.
+    /// @notice Sets an attester status and updates counters.
     /// @param index The index in the unified registry.
-    /// @param newState The new local state.
-    function _setState(uint256 index, IStakingManager.InternalAttesterState newState) internal {
-        IStakingManager.InternalAttesterState previousState = _attesters[index].state;
-        if (previousState == newState) {
+    /// @param newStatus The new local status.
+    function _setStatus(uint256 index, IStakingManager.InternalAttesterStatus newStatus) internal {
+        IStakingManager.InternalAttesterStatus previousStatus = _attesters[index].status;
+        if (previousStatus == newStatus) {
             return;
         }
-        if (previousState == IStakingManager.InternalAttesterState.Active) {
+        if (previousStatus == IStakingManager.InternalAttesterStatus.Active) {
             --_activeCount;
-        } else if (previousState == IStakingManager.InternalAttesterState.Exiting) {
+        } else if (previousStatus == IStakingManager.InternalAttesterStatus.Exiting) {
             --_exitingCount;
         }
-        if (newState == IStakingManager.InternalAttesterState.Active) {
+        if (newStatus == IStakingManager.InternalAttesterStatus.Active) {
             ++_activeCount;
-        } else if (newState == IStakingManager.InternalAttesterState.Exiting) {
+        } else if (newStatus == IStakingManager.InternalAttesterStatus.Exiting) {
             ++_exitingCount;
         }
-        _attesters[index].state = newState;
+        _attesters[index].status = newStatus;
     }
 
     /// @notice Marks an attester as active in the registry.
@@ -512,7 +515,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         uint256 index = _getOrCreateAttester(attester);
         IStakingManager.AttesterInfo storage attesterInfo = _attesters[index];
         attesterInfo.stakedAmount = stakedAmount;
-        _setState(index, IStakingManager.InternalAttesterState.Active);
+        _setStatus(index, IStakingManager.InternalAttesterStatus.Active);
     }
 
     /// @notice Finalizes an exit by emitting and calling the rollup.
@@ -609,7 +612,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 break;
             }
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (attesterInfo.state != IStakingManager.InternalAttesterState.Active) {
+            if (attesterInfo.status != IStakingManager.InternalAttesterStatus.Active) {
                 ++i;
                 continue;
             }
@@ -664,13 +667,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (!isInitiated) {
             if (view_.exit.exists) {
                 attesterInfo.stakedAmount = stakedAmount;
-                _setState(index, IStakingManager.InternalAttesterState.Exiting);
+                _setStatus(index, IStakingManager.InternalAttesterStatus.Exiting);
                 return 0;
             }
             revert StakingManager__UnstakeFailed(attester);
         }
         attesterInfo.stakedAmount = stakedAmount;
-        _setState(index, IStakingManager.InternalAttesterState.Exiting);
+        _setStatus(index, IStakingManager.InternalAttesterStatus.Exiting);
         emit UnstakeInitiated(attester, exitAmount);
         return exitAmount;
     }
@@ -713,7 +716,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 break;
             }
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (attesterInfo.state != IStakingManager.InternalAttesterState.Exiting) {
+            if (attesterInfo.status != IStakingManager.InternalAttesterStatus.Exiting) {
                 ++i;
                 continue;
             }
@@ -722,7 +725,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             // slither-disable-next-line calls-loop -- trusted rollup, bounded by attester set size
             AttesterView memory view_ = rollup.getAttesterView(attester);
             if (!view_.exit.exists) {
-                _setState(i, IStakingManager.InternalAttesterState.Inactive);
+                _setStatus(i, IStakingManager.InternalAttesterStatus.Inactive);
                 ++i;
                 continue;
             }
@@ -731,7 +734,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 continue;
             }
             sumOfExitAmounts += view_.exit.amount;
-            _setState(i, IStakingManager.InternalAttesterState.Inactive);
+            _setStatus(i, IStakingManager.InternalAttesterStatus.Inactive);
             // slither-disable-next-line reentrancy-no-eth
             _finalizeExit(rollup, attester, view_.exit.amount);
             ++i;
@@ -773,24 +776,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         internal
         returns (uint256 slashingDelta, bool completed)
     {
+        StakingState memory acc;
         if (_attesterStateCursor == 0) {
-            _stakedTotalAccumulated = 0;
-            _slashingDeltaAccumulated = 0;
-            _pendingUnstakeAccumulated = 0;
-            _withdrawableAccumulated = 0;
+            // Reset accumulator at the start of a new pass
+            acc = StakingState({ slashingDelta: 0, stakedAmount: 0, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
+        } else {
+            acc = _accumulator;
         }
 
-        (_stakedTotalAccumulated, _slashingDeltaAccumulated, _pendingUnstakeAccumulated, _withdrawableAccumulated) =
-            _accumulateAttesterState(
-                rollup,
-                _stakedTotalAccumulated,
-                _slashingDeltaAccumulated,
-                _pendingUnstakeAccumulated,
-                _withdrawableAccumulated
-            );
+        acc = _accumulateAttesterState(rollup, acc);
+        _accumulator = acc;
 
         if (_attesterStateCursor == 0) {
-            slashingDelta = _slashingDeltaAccumulated;
+            slashingDelta = acc.slashingDelta;
             completed = true;
         }
         return (slashingDelta, completed);
@@ -799,25 +797,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // Rollup is trusted and loop bounded by attester set size.
     // slither-disable-next-line calls-loop
     // slither-disable-next-line pess-multiple-storage-read -- length read + indexed access unavoidable in loop
-    function _accumulateAttesterState(
-        IAztecRollup rollup,
-        uint256 stakedTotal,
-        uint256 slashingDelta,
-        uint256 pendingUnstake,
-        uint256 withdrawable
-    )
+    function _accumulateAttesterState(IAztecRollup rollup, StakingState memory acc)
         internal
-        returns (
-            uint256 updatedTotalStaked,
-            uint256 updatedSlashingDelta,
-            uint256 updatedPendingUnstake,
-            uint256 updatedWithdrawable
-        )
+        returns (StakingState memory)
     {
         uint256 length = _attesters.length;
         if (length == 0) {
             _attesterStateCursor = 0;
-            return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+            return acc;
         }
 
         uint256 i = _attesterStateCursor;
@@ -832,12 +819,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 break;
             }
             IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            IStakingManager.InternalAttesterState state = attesterInfo.state;
+            IStakingManager.InternalAttesterStatus status = attesterInfo.status;
 
             // Skip inactive attesters early (before any external call).
             if (
-                state != IStakingManager.InternalAttesterState.Active
-                    && state != IStakingManager.InternalAttesterState.Exiting
+                status != IStakingManager.InternalAttesterStatus.Active
+                    && status != IStakingManager.InternalAttesterStatus.Exiting
             ) {
                 ++i;
                 continue;
@@ -847,20 +834,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             // slither-disable-next-line calls-loop -- trusted rollup, bounded by gas/cursor
             AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
 
-            // Sync local state with rollup for Active attesters.
-            (state, skip) = _syncAttesterWithRollup(i, state, view_);
+            // Sync local status with rollup for Active attesters.
+            (status, skip) = _syncAttesterWithRollup(i, status, view_);
             if (skip) {
                 ++i;
                 continue;
             }
 
-            (stakedTotal, slashingDelta, pendingUnstake, withdrawable) =
-                _computeAttesterState(view_, attesterInfo, stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+            acc = _computeAttesterState(view_, attesterInfo, acc);
             ++i;
         }
 
         _updateAttesterStateCursor(i);
-        return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+        return acc;
     }
 
     /// @notice Updates the attester state cursor after iteration.
@@ -874,83 +860,65 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
     }
 
-    /// @notice Syncs local attester state with the rollup for Active attesters.
+    /// @notice Syncs local attester status with the rollup for Active attesters.
     /// @dev Transitions Active → Exiting when exit.exists, or Active → Inactive when externally finalized.
     /// @param index The attester index in the unified registry.
-    /// @param state The current local attester state.
+    /// @param status The current local attester status.
     /// @param view_ The pre-fetched rollup AttesterView.
-    /// @return updatedState The (possibly updated) attester state.
+    /// @return updatedStatus The (possibly updated) attester status.
     /// @return skip True if the attester should be skipped for accumulation (transitioned to Inactive).
     function _syncAttesterWithRollup(
         uint256 index,
-        IStakingManager.InternalAttesterState state,
+        IStakingManager.InternalAttesterStatus status,
         AttesterView memory view_
-    ) internal returns (IStakingManager.InternalAttesterState updatedState, bool skip) {
-        if (state != IStakingManager.InternalAttesterState.Active) {
-            return (state, false);
+    ) internal returns (IStakingManager.InternalAttesterStatus updatedStatus, bool skip) {
+        if (status != IStakingManager.InternalAttesterStatus.Active) {
+            return (status, false);
         }
         // exit.exists → transition to Exiting (exit initiated but not yet finalized)
         if (view_.exit.exists) {
-            _setState(index, IStakingManager.InternalAttesterState.Exiting);
-            return (IStakingManager.InternalAttesterState.Exiting, false);
+            _setStatus(index, IStakingManager.InternalAttesterStatus.Exiting);
+            return (IStakingManager.InternalAttesterStatus.Exiting, false);
         }
         // no balance & no exit → transition to Inactive (exit was finalized externally;
         // funds were returned to StakingManager by the rollup so no slashing delta)
         if (view_.effectiveBalance == 0) {
-            _setState(index, IStakingManager.InternalAttesterState.Inactive);
-            return (state, true);
+            _setStatus(index, IStakingManager.InternalAttesterStatus.Inactive);
+            return (status, true);
         }
-        return (state, false);
+        return (status, false);
     }
 
     /// @notice Accumulates attester state for a single attester.
     /// @param view_ The pre-fetched rollup AttesterView for this attester.
     /// @param attesterInfo The attester info storage reference.
-    /// @param stakedTotal Running total of staked amounts.
-    /// @param slashingDelta Running total of slashing delta.
-    /// @param pendingUnstake Running total of pending unstake amounts.
-    /// @param withdrawable Running total of withdrawable amounts.
-    /// @return updatedStakedTotal Updated staked total.
-    /// @return updatedSlashingDelta Updated slashing delta.
-    /// @return updatedPendingUnstake Updated pending unstake total.
-    /// @return updatedWithdrawable Updated withdrawable total.
+    /// @param acc The current accumulator state.
+    /// @return The updated accumulator state.
     function _computeAttesterState(
         AttesterView memory view_,
         IStakingManager.AttesterInfo storage attesterInfo,
-        uint256 stakedTotal,
-        uint256 slashingDelta,
-        uint256 pendingUnstake,
-        uint256 withdrawable
-    )
-        internal
-        view
-        returns (
-            uint256 updatedStakedTotal,
-            uint256 updatedSlashingDelta,
-            uint256 updatedPendingUnstake,
-            uint256 updatedWithdrawable
-        )
-    {
+        StakingState memory acc
+    ) internal view returns (StakingState memory) {
         (bool eligible, uint256 remaining) = _remainingStake(view_);
         if (!eligible) {
-            return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+            return acc;
         }
         uint256 stakedAmount = attesterInfo.stakedAmount;
-        stakedTotal += stakedAmount;
+        acc.stakedAmount += stakedAmount;
         if (stakedAmount > remaining) {
-            slashingDelta += stakedAmount - remaining;
+            acc.slashingDelta += stakedAmount - remaining;
         }
 
         // Accumulate exit state
         if (view_.exit.exists) {
             if (_isExitExitable(view_)) {
-                withdrawable += view_.exit.amount;
+                acc.withdrawableAmount += view_.exit.amount;
             } else {
-                pendingUnstake += view_.exit.amount;
+                acc.pendingUnstakeAmount += view_.exit.amount;
             }
         }
 
-        return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+        return acc;
     }
 
     /// @notice Returns true if an exit is present and exitable.

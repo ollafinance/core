@@ -40,17 +40,8 @@ contract MockStakingManager is IStakingManager {
     /// @notice Mock provider config.
     ProviderConfig private _providerConfig;
 
-    /// @notice Cached slashing delta.
-    uint256 private _slashingDelta;
-
-    /// @notice Cached total staked principal.
-    uint256 private _cachedTotalStaked;
-
-    /// @notice Cached pending unstake amount.
-    uint256 private _cachedPendingUnstakeAmount;
-
-    /// @notice Cached withdrawable amount.
-    uint256 private _cachedWithdrawableAmount;
+    /// @notice Cached attester state.
+    StakingState private _cachedState;
 
     /// @notice Timestamp when attester state was last updated.
     uint256 private _attesterStateLastUpdated = 1;
@@ -119,16 +110,20 @@ contract MockStakingManager is IStakingManager {
         uint256 lastUpdated = _attesterStateLastUpdated;
         bool wasStale = _isAttesterStateStale();
 
-        _cachedTotalStaked = _stakedAmount;
+        _cachedState.stakedAmount = _stakedAmount;
         _attesterStateLastUpdated = block.timestamp;
         emit AttesterStateUpdated(
-            _slashingDelta, _cachedTotalStaked, _cachedPendingUnstakeAmount, _cachedWithdrawableAmount, block.timestamp
+            _cachedState.slashingDelta,
+            _cachedState.stakedAmount,
+            _cachedState.pendingUnstakeAmount,
+            _cachedState.withdrawableAmount,
+            block.timestamp
         );
         if (wasStale) {
             emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
         }
 
-        return (_slashingDelta, true);
+        return (_cachedState.slashingDelta, true);
     }
 
     /// @inheritdoc IStakingManager
@@ -155,11 +150,7 @@ contract MockStakingManager is IStakingManager {
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
-        return StakingState({
-            stakedAmount: _cachedTotalStaked,
-            pendingUnstakeAmount: _cachedPendingUnstakeAmount,
-            withdrawableAmount: _cachedWithdrawableAmount
-        });
+        return _cachedState;
     }
 
     /// @inheritdoc IStakingManager
@@ -167,7 +158,7 @@ contract MockStakingManager is IStakingManager {
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
-        return _cachedTotalStaked;
+        return _cachedState.stakedAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -194,7 +185,7 @@ contract MockStakingManager is IStakingManager {
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
-        return _slashingDelta;
+        return _cachedState.slashingDelta;
     }
 
     /// @inheritdoc IStakingManager
@@ -215,7 +206,7 @@ contract MockStakingManager is IStakingManager {
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
-        return _cachedPendingUnstakeAmount;
+        return _cachedState.pendingUnstakeAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -223,7 +214,7 @@ contract MockStakingManager is IStakingManager {
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
-        return _cachedWithdrawableAmount != 0;
+        return _cachedState.withdrawableAmount != 0;
     }
 
     /*//////////////////////////////////////////////////////////////

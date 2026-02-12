@@ -382,6 +382,7 @@ contract RealisticStakingManager is IStakingManager {
 
     function getStakingState() external view override returns (StakingState memory) {
         return StakingState({
+            slashingDelta: 0,
             stakedAmount: totalStakedAmount,
             pendingUnstakeAmount: pendingUnstakeAmount,
             withdrawableAmount: withdrawableAmount
