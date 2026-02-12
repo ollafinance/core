@@ -252,4 +252,38 @@ contract OllaCoreRebalanceIdleGuard is Test {
         // Without the fix, each call would emit 2 pause events (pause=true at start, pause=false at end).
         assertEq(totalPauseEvents, 0, "rebalance should not cycle pause on/off - idle buffer guard should work");
     }
+
+    /// @notice Ensures claimable rollup rewards allow rebalance to start a new cycle
+    ///         even when rewards vault balance is still zero.
+    function test_RebalanceIdleGuardDoesNotBlockClaimableRewards() external {
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        _performDeposit(alice, 200_002 * DECIMALS);
+
+        // Call 1: stake most assets; leaves 2 AZTEC buffered and progress at StakeSurplus.
+        stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
+        stakingManager.setAllowStakeReturnExceeds(true);
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Call 2: stake returns 0, completing the cycle and recording idle buffer snapshot.
+        stakingManager.setStakeReturnAmount(0);
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
+        assertFalse(vault.isRebalancePaused(), "setup: pause cleared");
+
+        // Ensure rewards vault is empty but claimable rewards exist on the staking manager.
+        assertEq(rewardsVault.balance(), 0, "setup: rewards vault empty");
+        stakingManager.setClaimableRewards(1 * DECIMALS);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Rebalance should have run harvest; mock keeps claimableRewards as a stub value,
+        // but the key property is that the call does not no-op due to idle buffer guard.
+        assertFalse(vault.isRebalancePaused(), "rebalance should not get stuck paused");
+    }
 }

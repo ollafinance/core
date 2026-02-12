@@ -1438,8 +1438,8 @@ contract OllaCore is
     }
 
     /// @notice Checks if external state changes have created new rebalance work.
-    /// @dev Only checks for external state changes (rewards vault, unstaked funds,
-    ///      pending withdrawals). Does NOT check staking/unstaking calculations because
+    /// @dev Only checks for external state changes (rewards vault, claimable rewards,
+    ///      unstaked funds, pending withdrawals). Does NOT check staking/unstaking calculations because
     ///      if _rebalanceIdleBuffer is set, the previous cycle already attempted that
     ///      work and couldn't make progress. We only retry when external conditions change.
     /// @return True if new external work is available, false otherwise.
@@ -1449,6 +1449,11 @@ contract OllaCore is
         // Check for rewards vault funds to pull
         uint256 rewardsVaultBalance = _getRewardsVaultBalance();
         if (rewardsVaultBalance > 0) {
+            return true;
+        }
+
+        // Check for claimable rollup rewards not yet in the rewards vault
+        if (_modules.stakingManager.getClaimableRewards() > 0) {
             return true;
         }
 
