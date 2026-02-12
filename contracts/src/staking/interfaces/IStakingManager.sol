@@ -97,14 +97,22 @@ interface IStakingManager {
     /// @param reason The failure reason.
     event RewardClaimFailed(address indexed attester, string reason);
 
-    /// @notice Emitted when the cached slashing delta is updated.
-    /// @param previousValue The previous cached slashing delta.
-    /// @param newValue The new cached slashing delta.
+    /// @notice Emitted when the cached attester state is updated.
+    /// @param slashingDelta The updated slashing delta.
+    /// @param totalStaked The updated total staked.
+    /// @param pendingUnstakeAmount The updated pending unstake amount.
+    /// @param withdrawableAmount The updated withdrawable amount.
     /// @param timestamp The timestamp when the cache was updated.
-    event SlashingDeltaUpdated(uint256 indexed previousValue, uint256 indexed newValue, uint256 indexed timestamp);
+    event AttesterStateUpdated(
+        uint256 indexed slashingDelta,
+        uint256 indexed totalStaked,
+        uint256 pendingUnstakeAmount,
+        uint256 withdrawableAmount,
+        uint256 indexed timestamp
+    );
 
-    /// @notice Emitted when a slashing delta update detects stale state.
-    /// @param lastUpdated The last slashing delta update timestamp.
+    /// @notice Emitted when an attester state update detects stale state.
+    /// @param lastUpdated The last attester state update timestamp.
     /// @param maxAge The configured maximum age for freshness.
     event SlashingDeltaStale(uint256 indexed lastUpdated, uint256 indexed maxAge);
 
@@ -112,6 +120,13 @@ interface IStakingManager {
     /// @param oldMaxAge The previous maximum age.
     /// @param newMaxAge The new maximum age.
     event SlashingDeltaMaxAgeUpdated(uint256 indexed oldMaxAge, uint256 indexed newMaxAge);
+
+    /// @notice Emitted when the cached slashing delta is updated.
+    /// @dev Deprecated: use AttesterStateUpdated instead.
+    /// @param previousValue The previous cached slashing delta.
+    /// @param newValue The new cached slashing delta.
+    /// @param timestamp The timestamp when the cache was updated.
+    event SlashingDeltaUpdated(uint256 indexed previousValue, uint256 indexed newValue, uint256 indexed timestamp);
 
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
@@ -198,10 +213,11 @@ interface IStakingManager {
                           PROVIDER ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Computes the slashing delta using bounded work.
+    /// @notice Computes all attester-derived state (slashing delta, total staked, pending unstakes, withdrawable)
+    ///         using bounded work and caches the results on completion.
     /// @return slashingDelta The cached slashing delta after this call.
     /// @return completed True if the computation completed in this call.
-    function computeSlashingDelta() external returns (uint256 slashingDelta, bool completed);
+    function computeAttesterState() external returns (uint256 slashingDelta, bool completed);
 
     /// @notice Sets the maximum allowed age for the cached slashing delta.
     /// @param maxAge The maximum age in seconds.
@@ -221,26 +237,30 @@ interface IStakingManager {
     /// @return claimableRewards The total rewards claimalbe to rewards recipient.
     function getClaimableRewards() external view returns (uint256 claimableRewards);
 
-    /// @notice Returns slashing delta liveness data.
-    /// @return lastUpdated The last timestamp when slashing delta was updated.
+    /// @notice Returns attester state liveness data.
+    /// @dev Covers all cached attester-derived state (slashing delta, total staked, pending unstakes, withdrawable).
+    /// @return lastUpdated The last timestamp when attester state was updated.
     /// @return maxAge The maximum age allowed for freshness.
-    /// @return isStale True if the cached slashing delta is stale.
+    /// @return isStale True if the cached attester state is stale.
     function getSlashingDeltaLiveness() external view returns (uint256 lastUpdated, uint256 maxAge, bool isStale);
 
-    /// @notice Returns the total staked principal across validator states.
+    /// @notice Returns the cached total staked principal.
+    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return stakedTotal The total staked principal.
     function totalStaked() external view returns (uint256 stakedTotal);
 
-    /// @notice Returns the current staking state by querying the rollup.
-    /// @dev Iterates through all attesters and queries getAttesterView for each.
+    /// @notice Returns the cached aggregated staking state.
+    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return state The aggregated staking state.
     function getStakingState() external view returns (StakingState memory state);
 
-    /// @notice Returns the total amount pending unstake across the rollup.
+    /// @notice Returns the cached total amount pending unstake.
+    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return pendingUnstakeAmount The total pending unstake amount.
     function pendingUnstakes() external view returns (uint256 pendingUnstakeAmount);
 
-    /// @notice Returns true if any exitable unstake exists.
+    /// @notice Returns true if any exitable unstake exists from cached state.
+    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return True if there are unstake exits ready to be finalized.
     function hasExitableUnstakes() external view returns (bool);
 

@@ -12,7 +12,7 @@ import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
-import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import { AttesterView, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 
 // solhint-disable max-states-count
 /// @title StakingManager
@@ -84,8 +84,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cursor for bounded active attester sync.
     uint256 private _activeSyncCursor;
 
-    /// @dev Cursor for bounded slashing delta accumulation.
-    uint256 private _slashingDeltaCursor;
+    /// @dev Cursor for bounded attester state accumulation.
+    uint256 private _attesterStateCursor;
 
     /// @dev Accumulator for bounded slashing delta computation.
     uint256 private _slashingDeltaAccumulated;
@@ -93,13 +93,28 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Accumulator for bounded staked total computation.
     uint256 private _stakedTotalAccumulated;
 
+    /// @dev Cached total staked principal from last completed attester state computation.
+    uint256 private _cachedTotalStaked;
+
+    /// @dev Cached pending unstake amount from last completed attester state computation.
+    uint256 private _cachedPendingUnstakeAmount;
+
+    /// @dev Cached withdrawable amount from last completed attester state computation.
+    uint256 private _cachedWithdrawableAmount;
+
+    /// @dev Accumulator for bounded pending unstake computation.
+    uint256 private _pendingUnstakeAccumulated;
+
+    /// @dev Accumulator for bounded withdrawable amount computation.
+    uint256 private _withdrawableAccumulated;
+
     /// @dev Gas threshold for bounded rebalance work.
     // solhint-disable-next-line private-vars-leading-underscore
     uint256 private gasThreshold;
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[43] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -241,7 +256,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
-    function computeSlashingDelta()
+    function computeAttesterState()
         external
         override
         onlyRole(OPERATOR_ROLE)
@@ -255,7 +270,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
         }
 
-        (uint256 currentSlashingDelta, bool computationCompleted) = _computeSlashed(rollup);
+        (uint256 currentSlashingDelta, bool computationCompleted) = _computeAttesterStateInternal(rollup);
         uint256 cachedDelta = _cumulativeSlashingDelta;
         if (computationCompleted) {
             uint256 previousValue = cachedDelta;
@@ -263,8 +278,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 _cumulativeSlashingDelta = currentSlashingDelta;
                 cachedDelta = currentSlashingDelta;
             }
+            // Persist cached values from accumulators before reset
+            _cachedTotalStaked = _stakedTotalAccumulated;
+            _cachedPendingUnstakeAmount = _pendingUnstakeAccumulated;
+            _cachedWithdrawableAmount = _withdrawableAccumulated;
             _lastSlashingDeltaTimestamp = block.timestamp;
-            emit SlashingDeltaUpdated(previousValue, cachedDelta, block.timestamp);
+            // Reset accumulators
+            _stakedTotalAccumulated = 0;
+            _slashingDeltaAccumulated = 0;
+            _pendingUnstakeAccumulated = 0;
+            _withdrawableAccumulated = 0;
+            emit AttesterStateUpdated(
+                cachedDelta, _cachedTotalStaked, _cachedPendingUnstakeAmount, _cachedWithdrawableAmount, block.timestamp
+            );
         }
 
         slashingDelta = cachedDelta;
@@ -303,41 +329,39 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return rollup.getSequencerRewards(address(rewardsVault));
     }
 
-    // slither-disable-start calls-loop,timestamp
-    /// @notice Returns aggregated staking state from the rollup.
-    /// @return state The aggregated staking state.
+    /// @inheritdoc IStakingManager
     function getStakingState() external view override returns (StakingState memory state) {
-        // TODO: research if we can assume moving with rollup is safe
-        (, IAztecRollup rollup) = _getRollup();
-        return _getAttestersStakingState(rollup);
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        }
+        state.stakedAmount = _cachedTotalStaked;
+        state.pendingUnstakeAmount = _cachedPendingUnstakeAmount;
+        state.withdrawableAmount = _cachedWithdrawableAmount;
+        return state;
     }
-
-    // slither-disable-end calls-loop,timestamp
 
     /// @inheritdoc IStakingManager
     function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
-        (, IAztecRollup rollup) = _getRollup();
-        StakingState memory state = _getAttestersStakingState(rollup);
-        pendingUnstakeAmount = state.pendingUnstakeAmount;
-        return pendingUnstakeAmount;
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        }
+        return _cachedPendingUnstakeAmount;
     }
 
     /// @inheritdoc IStakingManager
     function hasExitableUnstakes() external view override returns (bool) {
-        (, IAztecRollup rollup) = _getRollup();
-        StakingState memory state = _getAttestersStakingState(rollup);
-        if (state.withdrawableAmount != 0) {
-            return true;
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
         }
-        return false;
+        return _cachedWithdrawableAmount != 0;
     }
 
     /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
-        // TODO: research if we can assume moving with rollup is safe
-        (, IAztecRollup rollup) = _getRollup();
-        stakedTotal = _computeStaked(rollup);
-        return stakedTotal;
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        }
+        return _cachedTotalStaked;
     }
 
     /// @inheritdoc IStakingManager
@@ -746,7 +770,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end pess-multiple-storage-read,cache-array-length
     // slither-disable-end reentrancy-benign
 
-    /// @notice Syncs active attesters with rollup exit state.
+    /// @notice Syncs attesters internal state with rollup state.
     /// @dev Updates local state when exits are detected on the rollup.
     /// @param rollup The rollup staking interface.
     // slither-disable-next-line calls-loop,costly-loop
@@ -809,20 +833,29 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return claimed;
     }
 
-    function _computeSlashed(IAztecRollup rollup) internal returns (uint256 slashingDelta, bool completed) {
-        if (_slashingDeltaCursor == 0) {
+    function _computeAttesterStateInternal(IAztecRollup rollup)
+        internal
+        returns (uint256 slashingDelta, bool completed)
+    {
+        if (_attesterStateCursor == 0) {
             _stakedTotalAccumulated = 0;
             _slashingDeltaAccumulated = 0;
+            _pendingUnstakeAccumulated = 0;
+            _withdrawableAccumulated = 0;
         }
 
-        (_stakedTotalAccumulated, _slashingDeltaAccumulated) =
-            _accumulateAttestersDelta(rollup, _stakedTotalAccumulated, _slashingDeltaAccumulated);
+        (_stakedTotalAccumulated, _slashingDeltaAccumulated, _pendingUnstakeAccumulated, _withdrawableAccumulated) =
+            _accumulateAttesterState(
+                rollup,
+                _stakedTotalAccumulated,
+                _slashingDeltaAccumulated,
+                _pendingUnstakeAccumulated,
+                _withdrawableAccumulated
+            );
 
-        if (_slashingDeltaCursor == 0) {
+        if (_attesterStateCursor == 0) {
             slashingDelta = _slashingDeltaAccumulated;
             completed = true;
-            _stakedTotalAccumulated = 0;
-            _slashingDeltaAccumulated = 0;
         }
         return (slashingDelta, completed);
     }
@@ -830,17 +863,28 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // Rollup is trusted and loop bounded by attester set size.
     // slither-disable-next-line calls-loop
     // slither-disable-next-line pess-multiple-storage-read -- length read + indexed access unavoidable in loop
-    function _accumulateAttestersDelta(IAztecRollup rollup, uint256 stakedTotal, uint256 slashingDelta)
+    function _accumulateAttesterState(
+        IAztecRollup rollup,
+        uint256 stakedTotal,
+        uint256 slashingDelta,
+        uint256 pendingUnstake,
+        uint256 withdrawable
+    )
         internal
-        returns (uint256 updatedTotalStaked, uint256 updatedSlashingDelta)
+        returns (
+            uint256 updatedTotalStaked,
+            uint256 updatedSlashingDelta,
+            uint256 updatedPendingUnstake,
+            uint256 updatedWithdrawable
+        )
     {
         uint256 length = _attesters.length;
         if (length == 0) {
-            _slashingDeltaCursor = 0;
-            return (stakedTotal, slashingDelta);
+            _attesterStateCursor = 0;
+            return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
         }
 
-        uint256 i = _slashingDeltaCursor;
+        uint256 i = _attesterStateCursor;
         if (i > length - 1) {
             i = 0;
         }
@@ -860,50 +904,76 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 continue;
             }
 
-            (stakedTotal, slashingDelta) = _accumulateAttesterDelta(rollup, attesterInfo, stakedTotal, slashingDelta);
+            (stakedTotal, slashingDelta, pendingUnstake, withdrawable) =
+                _computeAttesterState(rollup, attesterInfo, stakedTotal, slashingDelta, pendingUnstake, withdrawable);
             ++i;
         }
 
-        _updateSlashingDeltaCursor(i);
-        return (stakedTotal, slashingDelta);
+        _updateAttesterStateCursor(i);
+        return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
     }
 
-    /// @notice Updates the slashing delta cursor after iteration.
+    /// @notice Updates the attester state cursor after iteration.
     /// @param i The current iterator position.
-    function _updateSlashingDeltaCursor(uint256 i) internal {
+    function _updateAttesterStateCursor(uint256 i) internal {
         uint256 currentLength = _attesters.length;
         if (currentLength == 0 || i > currentLength - 1) {
-            _slashingDeltaCursor = 0;
+            _attesterStateCursor = 0;
         } else {
-            _slashingDeltaCursor = i;
+            _attesterStateCursor = i;
         }
     }
 
-    /// @notice Accumulates slashing delta for a single attester.
+    /// @notice Accumulates attester state for a single attester.
     /// @param rollup The rollup staking interface.
     /// @param attesterInfo The attester info storage reference.
     /// @param stakedTotal Running total of staked amounts.
     /// @param slashingDelta Running total of slashing delta.
+    /// @param pendingUnstake Running total of pending unstake amounts.
+    /// @param withdrawable Running total of withdrawable amounts.
     /// @return updatedStakedTotal Updated staked total.
     /// @return updatedSlashingDelta Updated slashing delta.
-    function _accumulateAttesterDelta(
+    /// @return updatedPendingUnstake Updated pending unstake total.
+    /// @return updatedWithdrawable Updated withdrawable total.
+    function _computeAttesterState(
         IAztecRollup rollup,
         IStakingManager.AttesterInfo storage attesterInfo,
         uint256 stakedTotal,
-        uint256 slashingDelta
-    ) internal view returns (uint256 updatedStakedTotal, uint256 updatedSlashingDelta) {
+        uint256 slashingDelta,
+        uint256 pendingUnstake,
+        uint256 withdrawable
+    )
+        internal
+        view
+        returns (
+            uint256 updatedStakedTotal,
+            uint256 updatedSlashingDelta,
+            uint256 updatedPendingUnstake,
+            uint256 updatedWithdrawable
+        )
+    {
         // slither-disable-next-line calls-loop -- trusted rollup, bounded by gas/cursor
         AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
         (bool eligible, uint256 remaining) = _remainingStake(view_);
         if (!eligible) {
-            return (stakedTotal, slashingDelta);
+            return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
         }
         uint256 stakedAmount = attesterInfo.stakedAmount;
         stakedTotal += stakedAmount;
         if (stakedAmount > remaining) {
             slashingDelta += stakedAmount - remaining;
         }
-        return (stakedTotal, slashingDelta);
+
+        // Accumulate exit state
+        if (view_.exit.exists) {
+            if (_isExitExitable(view_)) {
+                withdrawable += view_.exit.amount;
+            } else {
+                pendingUnstake += view_.exit.amount;
+            }
+        }
+
+        return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
     }
 
     /// @notice Returns true if an exit is present and exitable.
@@ -927,51 +997,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return (rollupAddress, rollup);
     }
 
-    // slither-disable-start calls-loop,timestamp,pess-multiple-storage-read
-    function _getAttestersStakingState(IAztecRollup rollup) internal view returns (StakingState memory state) {
-        uint256 attesterLength = _attesters.length;
-        for (uint256 i; i < attesterLength; ++i) {
-            IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            if (attesterInfo.state == IStakingManager.InternalAttesterState.Inactive) {
-                continue;
-            }
-
-            AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
-            if (attesterInfo.state == IStakingManager.InternalAttesterState.Active) {
-                if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
-                    state.stakedAmount += view_.effectiveBalance;
-                }
-                // Active entries can have rollup exits before local state sync.
-                if (view_.exit.exists) {
-                    if (_isExitExitable(view_)) {
-                        state.withdrawableAmount += view_.exit.amount;
-                    } else {
-                        state.pendingUnstakeAmount += view_.exit.amount;
-                    }
-                }
-                continue;
-            }
-
-            if (attesterInfo.state == IStakingManager.InternalAttesterState.Exiting && view_.exit.exists) {
-                // Timestamp used only to gate exit readiness from the rollup state.
-                // slither-disable-next-line timestamp
-                if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
-                    state.pendingUnstakeAmount += view_.exit.amount;
-                } else {
-                    state.withdrawableAmount += view_.exit.amount;
-                }
-            }
-        }
-        return state;
-    }
-
-    // slither-disable-end calls-loop,timestamp,pess-multiple-storage-read
-
-    function _computeStaked(IAztecRollup rollup) internal view returns (uint256 stakedTotal) {
-        (stakedTotal,) = _accumulateAttestersDeltaView(rollup, 0, 0);
-        return stakedTotal;
-    }
-
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (msg.sender != governance) {
             revert StakingManager__UnauthorizedGovernance(msg.sender);
@@ -981,43 +1006,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
     }
 
-    // Rollup is trusted and loop bounded by attester set size.
-    // slither-disable-next-line calls-loop
-    // slither-disable-next-line pess-multiple-storage-read -- length read + indexed access unavoidable in loop
-    function _accumulateAttestersDeltaView(IAztecRollup rollup, uint256 stakedTotal, uint256 slashingDelta)
-        internal
-        view
-        returns (uint256 updatedTotalStaked, uint256 updatedSlashingDelta)
-    {
-        uint256 length = _attesters.length;
-        for (uint256 i; i < length; ++i) {
-            IStakingManager.AttesterInfo storage attesterInfo = _attesters[i];
-            IStakingManager.InternalAttesterState state = attesterInfo.state;
-            if (
-                state != IStakingManager.InternalAttesterState.Active
-                    && state != IStakingManager.InternalAttesterState.Exiting
-            ) {
-                continue;
-            }
-            address attester = attesterInfo.attester;
-            uint256 stakedAmount = attesterInfo.stakedAmount;
-
-            // slither-disable-next-line calls-loop -- trusted rollup, bounded by attester set size
-            AttesterView memory view_ = rollup.getAttesterView(attester);
-            (bool eligible, uint256 remaining) = _remainingStake(view_);
-            if (!eligible) {
-                continue;
-            }
-            stakedTotal += stakedAmount;
-            if (stakedAmount > remaining) {
-                slashingDelta += stakedAmount - remaining;
-            }
-        }
-        return (stakedTotal, slashingDelta);
-    }
-
     // Slither: zero-sentinel check (`== 0`) guards uninitialized state; `_lastSlashingDeltaTimestamp`
-    // is only written to `block.timestamp` by `initialize()` and `computeSlashingDelta()`.
+    // is only written to `block.timestamp` by `initialize()` and `computeAttesterState()`.
     // Timestamp comparison is intentional for liveness enforcement with a 12-hour window;
     // miner manipulation of a few seconds has no security impact.
     // slither-disable-next-line incorrect-equality,timestamp
