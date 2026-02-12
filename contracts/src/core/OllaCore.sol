@@ -614,7 +614,7 @@ contract OllaCore is
             // This prevents infinite restart loops when there is an unstakeable remainder
             // (e.g. buffer below staking minimum threshold).
             // slither-disable-next-line incorrect-equality,timestamp
-            if (stakedAmount == 0 && finalizedAmount == 0) {
+            if (stakedAmount == 0 && finalizedAmount == 0 && rewardsDelta == 0) {
                 _rebalanceIdleBuffer = _accountingState.bufferedAssets;
             } else {
                 _rebalanceIdleBuffer = 0;
