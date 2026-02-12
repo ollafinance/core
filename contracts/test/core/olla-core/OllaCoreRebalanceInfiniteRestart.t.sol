@@ -91,39 +91,25 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         shares = vault.deposit(assets, owner);
     }
 
-    /// @notice Ensures the fix works with the real WithdrawalQueue wiring.
-    ///
-    ///         After a large deposit with targetBuffer=0, the first rebalance stakes
-    ///         most assets but leaves a small remainder (2 ETH). The second rebalance
-    ///         call advances StakeSurplus to Done (stake returns 0), clears pause.
-    ///
-    ///         BUG: The third rebalance call should be a no-op (nothing to do), but
-    ///         instead it starts a BRAND NEW rebalance cycle, re-pauses the vault,
-    ///         recalculates stakeRemaining=2 ETH, fails to stake, sets Done, unpauses.
-    ///         This repeats forever — each call triggers a full unnecessary cycle.
-    ///
-    ///         This test asserts that after 3 rebalance calls, calling rebalance a 4th
-    ///         time should NOT cause the vault to be paused again. If the bug exists,
-    ///         the 4th call will set _rebalancePaused=true (starting a new cycle).
     function test_RebalanceDoesNotInfinitelyRestart_WithWithdrawalQueue() external {
         // Target buffer = 0, so all buffered assets are "surplus" to stake
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);
 
-        // Deposit 200k ETH
-        _performDeposit(alice, 200_000 * DECIMALS);
+        // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
+        _performDeposit(alice, 200_002 * DECIMALS);
 
-        // --- Rebalance call 1: stakes 199,998 ETH, saves progress at StakeSurplus ---
-        stakingManager.setStakeReturnAmount(199_998 * DECIMALS);
+        // --- Rebalance call 1: stakes 200,000 AZTEC, saves progress at StakeSurplus ---
+        stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
         vm.prank(operator);
         vault.rebalance();
 
         IOllaCore.RebalanceProgress memory p1 = vault.rebalanceProgress();
-        // After call 1: stuck at StakeSurplus with 2 ETH remaining
+        // After call 1: stuck at StakeSurplus with 2 AZTEC remaining
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "call 1: should be StakeSurplus");
-        assertEq(p1.stakeRemaining, 2 * DECIMALS, "call 1: 2 ETH remaining");
+        assertEq(p1.stakeRemaining, 2 * DECIMALS, "call 1: 2 AZTEC remaining");
         assertTrue(vault.isRebalancePaused(), "call 1: pause should be active");
 
         // --- Rebalance call 2: stake returns 0, advances StakeSurplus -> Done ---
@@ -137,36 +123,19 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         assertEq(p2.stakeRemaining, 0, "call 2: stakeRemaining should be 0");
         assertFalse(vault.isRebalancePaused(), "call 2: pause should be cleared");
 
-        // --- Rebalance call 3: BUG DETECTION ---
-        // If bug exists: this call sees step=Done, starts a new cycle, re-pauses,
-        // goes through Harvest->PullUnstaked->FinalizeWithdrawals->InitiateUnstake->StakeSurplus,
-        // recalculates stakeRemaining=2 ETH, stake returns 0, sets Done, clears pause.
-        // Net effect: a full unnecessary rebalance cycle was run.
-        //
-        // Expected (correct behavior): rebalance should be a no-op or at least NOT
-        // leave the vault in a state where calling it again would restart the cycle.
         vm.prank(operator);
         vault.rebalance();
 
         IOllaCore.RebalanceProgress memory p3 = vault.rebalanceProgress();
 
-        // The bug manifests as: each rebalance call triggers a full new cycle.
-        // If the step is Done and pause is false, the system is "stable".
-        // But calling rebalance AGAIN will restart the cycle.
-        // Let's prove it by checking if a 4th call causes a pause.
-
-        // First verify call 3 ended at Done
         assertEq(uint256(p3.step), uint256(IOllaCore.RebalanceStep.Done), "call 3: should be Done");
         assertFalse(vault.isRebalancePaused(), "call 3: pause should be cleared");
 
-        // --- Call 4: proves the infinite restart ---
-        // Record the Rebalanced event count. If a full cycle ran, there will be a new event.
         vm.recordLogs();
 
         vm.prank(operator);
         vault.rebalance();
 
-        // Check if a new Rebalanced event was emitted — this means a full cycle ran unnecessarily
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 rebalancedSig = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
         uint256 rebalancedCount = 0;
@@ -175,13 +144,6 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
                 rebalancedCount++;
             }
         }
-
-        // BUG: A full rebalance cycle was triggered even though there was nothing productive to do.
-        // The vault was paused and unpaused within a single call, running through all 6 steps
-        // just to discover (again) that the 2 ETH remainder can't be staked.
-        //
-        // This test FAILS if the bug exists — a Rebalanced event should NOT be emitted
-        // when there is nothing meaningful to rebalance.
         assertEq(
             rebalancedCount,
             0,
