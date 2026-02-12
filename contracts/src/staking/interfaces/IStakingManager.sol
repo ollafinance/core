@@ -114,19 +114,12 @@ interface IStakingManager {
     /// @notice Emitted when an attester state update detects stale state.
     /// @param lastUpdated The last attester state update timestamp.
     /// @param maxAge The configured maximum age for freshness.
-    event SlashingDeltaStale(uint256 indexed lastUpdated, uint256 indexed maxAge);
+    event AttesterStateStale(uint256 indexed lastUpdated, uint256 indexed maxAge);
 
-    /// @notice Emitted when the slashing delta max age is updated.
+    /// @notice Emitted when the attester state max age is updated.
     /// @param oldMaxAge The previous maximum age.
     /// @param newMaxAge The new maximum age.
-    event SlashingDeltaMaxAgeUpdated(uint256 indexed oldMaxAge, uint256 indexed newMaxAge);
-
-    /// @notice Emitted when the cached slashing delta is updated.
-    /// @dev Deprecated: use AttesterStateUpdated instead.
-    /// @param previousValue The previous cached slashing delta.
-    /// @param newValue The new cached slashing delta.
-    /// @param timestamp The timestamp when the cache was updated.
-    event SlashingDeltaUpdated(uint256 indexed previousValue, uint256 indexed newValue, uint256 indexed timestamp);
+    event AttesterStateMaxAgeUpdated(uint256 indexed oldMaxAge, uint256 indexed newMaxAge);
 
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
@@ -156,8 +149,8 @@ interface IStakingManager {
     /// @notice Thrown when caller is not authorized core.
     error StakingManager__UnauthorizedCore(address caller);
 
-    /// @notice Thrown when the cached slashing delta is stale.
-    error StakingManager__SlashingDeltaStale(uint256 lastUpdated, uint256 maxAge);
+    /// @notice Thrown when the cached attester state is stale.
+    error StakingManager__AttesterStateStale(uint256 lastUpdated, uint256 maxAge);
 
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
@@ -215,9 +208,9 @@ interface IStakingManager {
     /// @return completed True if the computation completed in this call.
     function computeAttesterState() external returns (uint256 slashingDelta, bool completed);
 
-    /// @notice Sets the maximum allowed age for the cached slashing delta.
+    /// @notice Sets the maximum allowed age for the cached attester state.
     /// @param maxAge The maximum age in seconds.
-    function setSlashingDeltaMaxAge(uint256 maxAge) external;
+    function setAttesterStateMaxAge(uint256 maxAge) external;
 
     /*//////////////////////////////////////////////////////////////
                               VIEW FUNCTIONS
@@ -238,7 +231,7 @@ interface IStakingManager {
     /// @return lastUpdated The last timestamp when attester state was updated.
     /// @return maxAge The maximum age allowed for freshness.
     /// @return isStale True if the cached attester state is stale.
-    function getSlashingDeltaLiveness() external view returns (uint256 lastUpdated, uint256 maxAge, bool isStale);
+    function getAttesterStateLiveness() external view returns (uint256 lastUpdated, uint256 maxAge, bool isStale);
 
     /// @notice Returns the cached total staked principal.
     /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.

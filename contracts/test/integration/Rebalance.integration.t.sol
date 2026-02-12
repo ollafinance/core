@@ -395,15 +395,15 @@ contract RebalanceIntegrationTest is Test {
 
         // 4. Set a short max age and warp past it to make state stale
         uint256 shortMaxAge = 30;
-        stakingManager.setSlashingDeltaMaxAge(shortMaxAge);
-        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+        stakingManager.setAttesterStateMaxAge(shortMaxAge);
+        (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
 
         vm.warp(lastUpdated + shortMaxAge + 1);
 
         // 5. Verify updateAccounting() reverts with stale data
         vm.expectRevert(
             abi.encodeWithSelector(
-                IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, shortMaxAge
+                IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, shortMaxAge
             )
         );
         vm.prank(operator);
@@ -412,7 +412,7 @@ contract RebalanceIntegrationTest is Test {
         // 6. Verify rebalance() also reverts with stale data
         vm.expectRevert(
             abi.encodeWithSelector(
-                IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, shortMaxAge
+                IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, shortMaxAge
             )
         );
         vm.prank(operator);

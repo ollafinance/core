@@ -331,8 +331,8 @@ contract RealisticStakingManager is IStakingManager {
     uint256 public totalStakedAmount;
     uint256 public pendingUnstakeAmount;
     uint256 public withdrawableAmount;
-    uint256 private _slashingDeltaLastUpdated = 1;
-    uint256 private _slashingDeltaMaxAge = type(uint256).max;
+    uint256 private _attesterStateLastUpdated = 1;
+    uint256 private _attesterStateMaxAge = type(uint256).max;
 
     function initialize(IERC20 stakingAsset_, address, address, address, address, address) external override {
         stakingAsset = stakingAsset_;
@@ -389,45 +389,45 @@ contract RealisticStakingManager is IStakingManager {
     }
 
     function getSlashingDelta() external view override returns (uint256) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
         return 0;
     }
 
     function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
-        uint256 lastUpdated = _slashingDeltaLastUpdated;
-        bool wasStale = _isSlashingDeltaStale();
+        uint256 lastUpdated = _attesterStateLastUpdated;
+        bool wasStale = _isAttesterStateStale();
 
-        _slashingDeltaLastUpdated = block.timestamp;
-        emit SlashingDeltaUpdated(0, 0, block.timestamp);
+        _attesterStateLastUpdated = block.timestamp;
+        emit AttesterStateUpdated(0, 0, 0, 0, block.timestamp);
         if (wasStale) {
-            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+            emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
         }
 
         return (0, true);
     }
 
-    function setSlashingDeltaMaxAge(uint256 maxAge) external override {
+    function setAttesterStateMaxAge(uint256 maxAge) external override {
         if (maxAge == 0) {
             revert StakingManager__ZeroAmount();
         }
-        _slashingDeltaMaxAge = maxAge;
+        _attesterStateMaxAge = maxAge;
     }
 
     function getClaimableRewards() external pure override returns (uint256) {
         return 0;
     }
 
-    function getSlashingDeltaLiveness()
+    function getAttesterStateLiveness()
         external
         view
         override
         returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
     {
-        lastUpdated = _slashingDeltaLastUpdated;
-        maxAge = _slashingDeltaMaxAge;
-        isStale = _isSlashingDeltaStale();
+        lastUpdated = _attesterStateLastUpdated;
+        maxAge = _attesterStateMaxAge;
+        isStale = _isAttesterStateStale();
         return (lastUpdated, maxAge, isStale);
     }
 
@@ -463,12 +463,12 @@ contract RealisticStakingManager is IStakingManager {
         return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
     }
 
-    function _isSlashingDeltaStale() internal view returns (bool) {
-        uint256 lastUpdated = _slashingDeltaLastUpdated;
+    function _isAttesterStateStale() internal view returns (bool) {
+        uint256 lastUpdated = _attesterStateLastUpdated;
         if (lastUpdated == 0) {
             return true;
         }
-        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
+        return block.timestamp - lastUpdated > _attesterStateMaxAge;
     }
 }
 

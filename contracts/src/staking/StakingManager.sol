@@ -28,8 +28,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Role identifier for operator access control.
     bytes32 public constant OPERATOR_ROLE = RolesLib.OPERATOR_ROLE;
 
-    /// @notice Default maximum age (in seconds) for slashing delta freshness.
-    uint256 public constant DEFAULT_SLASHING_DELTA_MAX_AGE = 12 hours;
+    /// @notice Default maximum age (in seconds) for attester state freshness.
+    uint256 public constant DEFAULT_ATTESTER_STATE_MAX_AGE = 12 hours;
 
     /*//////////////////////////////////////////////////////////////
                                     STATE
@@ -69,11 +69,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cumulative slashing delta tracked across rollup snapshots.
     uint256 private _cumulativeSlashingDelta;
 
-    /// @dev Timestamp of the last completed slashing delta update.
-    uint256 private _lastSlashingDeltaTimestamp;
+    /// @dev Timestamp of the last completed attester state update.
+    uint256 private _lastAttesterStateTimestamp;
 
-    /// @dev Maximum allowed age for the cached slashing delta.
-    uint256 private _slashingDeltaMaxAge;
+    /// @dev Maximum allowed age for the cached attester state.
+    uint256 private _attesterStateMaxAge;
 
     /// @dev Cursor for bounded unstake initiation.
     uint256 private _unstakeCursor;
@@ -189,8 +189,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         governance = defaultAdmin_;
         stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
         gasThreshold = 50_000;
-        _slashingDeltaMaxAge = DEFAULT_SLASHING_DELTA_MAX_AGE;
-        _lastSlashingDeltaTimestamp = block.timestamp;
+        _attesterStateMaxAge = DEFAULT_ATTESTER_STATE_MAX_AGE;
+        _lastAttesterStateTimestamp = block.timestamp;
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
         _grantRole(OPERATOR_ROLE, defaultAdmin_);
@@ -247,11 +247,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         returns (uint256 slashingDelta, bool completed)
     {
         (, IAztecRollup rollup) = _getRollup();
-        uint256 lastUpdated = _lastSlashingDeltaTimestamp;
-        bool wasStale = _isSlashingDeltaStale();
+        uint256 lastUpdated = _lastAttesterStateTimestamp;
+        bool wasStale = _isAttesterStateStale();
 
         if (wasStale) {
-            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+            emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
         }
 
         (uint256 currentSlashingDelta, bool computationCompleted) = _computeAttesterStateInternal(rollup);
@@ -262,16 +262,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 _cumulativeSlashingDelta = currentSlashingDelta;
                 cachedDelta = currentSlashingDelta;
             }
-            // Persist cached values from accumulators before reset
+            // Persist cached values from accumulators; reset deferred to next pass start
+            // (_computeAttesterStateInternal resets at cursor==0).
             _cachedTotalStaked = _stakedTotalAccumulated;
             _cachedPendingUnstakeAmount = _pendingUnstakeAccumulated;
             _cachedWithdrawableAmount = _withdrawableAccumulated;
-            _lastSlashingDeltaTimestamp = block.timestamp;
-            // Reset accumulators
-            _stakedTotalAccumulated = 0;
-            _slashingDeltaAccumulated = 0;
-            _pendingUnstakeAccumulated = 0;
-            _withdrawableAccumulated = 0;
+            _lastAttesterStateTimestamp = block.timestamp;
             emit AttesterStateUpdated(
                 cachedDelta, _cachedTotalStaked, _cachedPendingUnstakeAmount, _cachedWithdrawableAmount, block.timestamp
             );
@@ -283,13 +279,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
-    function setSlashingDeltaMaxAge(uint256 maxAge) external override onlyRole(OPERATOR_ROLE) {
+    function setAttesterStateMaxAge(uint256 maxAge) external override onlyRole(OPERATOR_ROLE) {
         if (maxAge == 0) {
             revert StakingManager__ZeroAmount();
         }
-        uint256 oldMaxAge = _slashingDeltaMaxAge;
-        _slashingDeltaMaxAge = maxAge;
-        emit SlashingDeltaMaxAgeUpdated(oldMaxAge, maxAge);
+        uint256 oldMaxAge = _attesterStateMaxAge;
+        _attesterStateMaxAge = maxAge;
+        emit AttesterStateMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -299,8 +295,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Returns the cached slashing delta.
     /// @return slashingDelta The cached slashing delta.
     function getSlashingDelta() external view override onlyCore returns (uint256 slashingDelta) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
         return _cumulativeSlashingDelta;
     }
@@ -315,8 +311,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function getStakingState() external view override returns (StakingState memory state) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
         state.stakedAmount = _cachedTotalStaked;
         state.pendingUnstakeAmount = _cachedPendingUnstakeAmount;
@@ -326,24 +322,24 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
         return _cachedPendingUnstakeAmount;
     }
 
     /// @inheritdoc IStakingManager
     function hasExitableUnstakes() external view override returns (bool) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
         return _cachedWithdrawableAmount != 0;
     }
 
     /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_lastSlashingDeltaTimestamp, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
         return _cachedTotalStaked;
     }
@@ -359,15 +355,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
-    function getSlashingDeltaLiveness()
+    function getAttesterStateLiveness()
         external
         view
         override
         returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
     {
-        lastUpdated = _lastSlashingDeltaTimestamp;
-        maxAge = _slashingDeltaMaxAge;
-        isStale = _isSlashingDeltaStale();
+        lastUpdated = _lastAttesterStateTimestamp;
+        maxAge = _attesterStateMaxAge;
+        isStale = _isAttesterStateStale();
         return (lastUpdated, maxAge, isStale);
     }
 
@@ -830,6 +826,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
 
         // Bounded by gasThreshold and cursor.
+        bool skip;
         for (; i < length;) {
             if (gasleft() < gasThreshold) {
                 break;
@@ -850,19 +847,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             // slither-disable-next-line calls-loop -- trusted rollup, bounded by gas/cursor
             AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
 
-            // Sync local state with rollup for Active attesters:
-            // - exit.exists  → transition to Exiting (exit initiated but not yet finalized)
-            // - no balance & no exit → transition to Inactive (exit was finalized externally;
-            //   funds were returned to StakingManager by the rollup so no slashing delta)
-            if (state == IStakingManager.InternalAttesterState.Active) {
-                if (view_.exit.exists) {
-                    _setState(i, IStakingManager.InternalAttesterState.Exiting);
-                    state = IStakingManager.InternalAttesterState.Exiting;
-                } else if (view_.effectiveBalance == 0) {
-                    _setState(i, IStakingManager.InternalAttesterState.Inactive);
-                    ++i;
-                    continue;
-                }
+            // Sync local state with rollup for Active attesters.
+            (state, skip) = _syncAttesterWithRollup(i, state, view_);
+            if (skip) {
+                ++i;
+                continue;
             }
 
             (stakedTotal, slashingDelta, pendingUnstake, withdrawable) =
@@ -883,6 +872,35 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         } else {
             _attesterStateCursor = i;
         }
+    }
+
+    /// @notice Syncs local attester state with the rollup for Active attesters.
+    /// @dev Transitions Active → Exiting when exit.exists, or Active → Inactive when externally finalized.
+    /// @param index The attester index in the unified registry.
+    /// @param state The current local attester state.
+    /// @param view_ The pre-fetched rollup AttesterView.
+    /// @return updatedState The (possibly updated) attester state.
+    /// @return skip True if the attester should be skipped for accumulation (transitioned to Inactive).
+    function _syncAttesterWithRollup(
+        uint256 index,
+        IStakingManager.InternalAttesterState state,
+        AttesterView memory view_
+    ) internal returns (IStakingManager.InternalAttesterState updatedState, bool skip) {
+        if (state != IStakingManager.InternalAttesterState.Active) {
+            return (state, false);
+        }
+        // exit.exists → transition to Exiting (exit initiated but not yet finalized)
+        if (view_.exit.exists) {
+            _setState(index, IStakingManager.InternalAttesterState.Exiting);
+            return (IStakingManager.InternalAttesterState.Exiting, false);
+        }
+        // no balance & no exit → transition to Inactive (exit was finalized externally;
+        // funds were returned to StakingManager by the rollup so no slashing delta)
+        if (view_.effectiveBalance == 0) {
+            _setState(index, IStakingManager.InternalAttesterState.Inactive);
+            return (state, true);
+        }
+        return (state, false);
     }
 
     /// @notice Accumulates attester state for a single attester.
@@ -965,17 +983,17 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
     }
 
-    // Slither: zero-sentinel check (`== 0`) guards uninitialized state; `_lastSlashingDeltaTimestamp`
+    // Slither: zero-sentinel check (`== 0`) guards uninitialized state; `_lastAttesterStateTimestamp`
     // is only written to `block.timestamp` by `initialize()` and `computeAttesterState()`.
     // Timestamp comparison is intentional for liveness enforcement with a 12-hour window;
     // miner manipulation of a few seconds has no security impact.
     // slither-disable-next-line incorrect-equality,timestamp
-    function _isSlashingDeltaStale() internal view returns (bool) {
-        uint256 lastUpdated = _lastSlashingDeltaTimestamp;
+    function _isAttesterStateStale() internal view returns (bool) {
+        uint256 lastUpdated = _lastAttesterStateTimestamp;
         if (lastUpdated == 0) {
             return true;
         }
-        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
+        return block.timestamp - lastUpdated > _attesterStateMaxAge;
     }
 
     /// @notice Calculates the attester count to stake to, bounded by available keys.

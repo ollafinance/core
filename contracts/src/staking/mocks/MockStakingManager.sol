@@ -52,11 +52,11 @@ contract MockStakingManager is IStakingManager {
     /// @notice Cached withdrawable amount.
     uint256 private _cachedWithdrawableAmount;
 
-    /// @notice Timestamp when slashing delta was last updated.
-    uint256 private _slashingDeltaLastUpdated = 1;
+    /// @notice Timestamp when attester state was last updated.
+    uint256 private _attesterStateLastUpdated = 1;
 
-    /// @notice Maximum allowed age for slashing delta freshness.
-    uint256 private _slashingDeltaMaxAge = type(uint256).max;
+    /// @notice Maximum allowed age for attester state freshness.
+    uint256 private _attesterStateMaxAge = type(uint256).max;
 
     /*//////////////////////////////////////////////////////////////
                             EXTERNAL FUNCTIONS
@@ -116,29 +116,29 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
-        uint256 lastUpdated = _slashingDeltaLastUpdated;
-        bool wasStale = _isSlashingDeltaStale();
+        uint256 lastUpdated = _attesterStateLastUpdated;
+        bool wasStale = _isAttesterStateStale();
 
         _cachedTotalStaked = _stakedAmount;
-        _slashingDeltaLastUpdated = block.timestamp;
+        _attesterStateLastUpdated = block.timestamp;
         emit AttesterStateUpdated(
             _slashingDelta, _cachedTotalStaked, _cachedPendingUnstakeAmount, _cachedWithdrawableAmount, block.timestamp
         );
         if (wasStale) {
-            emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
+            emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
         }
 
         return (_slashingDelta, true);
     }
 
     /// @inheritdoc IStakingManager
-    function setSlashingDeltaMaxAge(uint256 maxAge) external override {
+    function setAttesterStateMaxAge(uint256 maxAge) external override {
         if (maxAge == 0) {
             revert StakingManager__ZeroAmount();
         }
-        uint256 oldMaxAge = _slashingDeltaMaxAge;
-        _slashingDeltaMaxAge = maxAge;
-        emit SlashingDeltaMaxAgeUpdated(oldMaxAge, maxAge);
+        uint256 oldMaxAge = _attesterStateMaxAge;
+        _attesterStateMaxAge = maxAge;
+        emit AttesterStateMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -152,8 +152,8 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function getStakingState() external view override returns (StakingState memory) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
         return StakingState({
             stakedAmount: _cachedTotalStaked,
@@ -164,8 +164,8 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
         return _cachedTotalStaked;
     }
@@ -191,37 +191,37 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function getSlashingDelta() external view override returns (uint256 slashingDelta) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
         return _slashingDelta;
     }
 
     /// @inheritdoc IStakingManager
-    function getSlashingDeltaLiveness()
+    function getAttesterStateLiveness()
         external
         view
         override
         returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
     {
-        lastUpdated = _slashingDeltaLastUpdated;
-        maxAge = _slashingDeltaMaxAge;
-        isStale = _isSlashingDeltaStale();
+        lastUpdated = _attesterStateLastUpdated;
+        maxAge = _attesterStateMaxAge;
+        isStale = _isAttesterStateStale();
         return (lastUpdated, maxAge, isStale);
     }
 
     /// @inheritdoc IStakingManager
     function pendingUnstakes() external view override returns (uint256) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
         return _cachedPendingUnstakeAmount;
     }
 
     /// @inheritdoc IStakingManager
     function hasExitableUnstakes() external view override returns (bool) {
-        if (_isSlashingDeltaStale()) {
-            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
         return _cachedWithdrawableAmount != 0;
     }
@@ -260,11 +260,11 @@ contract MockStakingManager is IStakingManager {
         return false;
     }
 
-    function _isSlashingDeltaStale() internal view returns (bool) {
-        uint256 lastUpdated = _slashingDeltaLastUpdated;
+    function _isAttesterStateStale() internal view returns (bool) {
+        uint256 lastUpdated = _attesterStateLastUpdated;
         if (lastUpdated == 0) {
             return true;
         }
-        return block.timestamp - lastUpdated > _slashingDeltaMaxAge;
+        return block.timestamp - lastUpdated > _attesterStateMaxAge;
     }
 }

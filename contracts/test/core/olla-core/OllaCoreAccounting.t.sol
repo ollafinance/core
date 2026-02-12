@@ -580,23 +580,23 @@ contract OllaCoreAccountingTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    SLASHING DELTA STALENESS TESTS
+                    ATTESTER STATE STALENESS TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevertWhen_UpdateAccounting_SlashingDeltaStale() external {
+    function test_RevertWhen_UpdateAccounting_AttesterStateStale() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
         stakingManager.setSlashingDelta(1 * DECIMALS);
-        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
 
         uint256 maxAge = 1 hours;
-        stakingManager.setSlashingDeltaMaxAge(maxAge);
+        stakingManager.setAttesterStateMaxAge(maxAge);
 
         vm.warp(lastUpdated + maxAge + 1);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
         );
         vm.prank(operator);
         vault.updateAccounting();
@@ -607,10 +607,10 @@ contract OllaCoreAccountingTest is Test {
         _performDeposit(alice, depositAmount);
 
         stakingManager.setSlashingDelta(1 * DECIMALS);
-        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
 
         uint256 maxAge = 1 hours;
-        stakingManager.setSlashingDeltaMaxAge(maxAge);
+        stakingManager.setAttesterStateMaxAge(maxAge);
 
         vm.warp(lastUpdated + maxAge);
 
@@ -626,15 +626,15 @@ contract OllaCoreAccountingTest is Test {
         _performDeposit(alice, depositAmount);
 
         stakingManager.setTotalStaked(5 * DECIMALS);
-        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
 
         uint256 maxAge = 1 hours;
-        stakingManager.setSlashingDeltaMaxAge(maxAge);
+        stakingManager.setAttesterStateMaxAge(maxAge);
 
         vm.warp(lastUpdated + maxAge + 1);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
         );
         vm.prank(operator);
         vault.updateAccounting();

@@ -11,7 +11,7 @@ import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
-/// @title StakingManagerSlashingDeltaTest
+/// @title StakingManagerAttesterStateTest
 /// @notice Comprehensive tests for StakingManager cached attester state (slashing delta, totalStaked, pending/withdrawable).
 contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     using stdStorage for StdStorage;
@@ -36,16 +36,16 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         return keys;
     }
 
-    function _getSlashingDeltaCursor() internal returns (uint256) {
+    function _getAttesterStateCursor() internal returns (uint256) {
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 slashingDeltaCursorSlot = bytes32(cursorSlot + 2);
-        return uint256(vm.load(address(stakingManager), slashingDeltaCursorSlot));
+        bytes32 attesterStateCursorSlot = bytes32(cursorSlot + 2);
+        return uint256(vm.load(address(stakingManager), attesterStateCursorSlot));
     }
 
-    function _setSlashingDeltaCursor(uint256 value) internal {
+    function _setAttesterStateCursor(uint256 value) internal {
         uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 slashingDeltaCursorSlot = bytes32(cursorSlot + 2);
-        vm.store(address(stakingManager), slashingDeltaCursorSlot, bytes32(value));
+        bytes32 attesterStateCursorSlot = bytes32(cursorSlot + 2);
+        vm.store(address(stakingManager), attesterStateCursorSlot, bytes32(value));
     }
 
     function _getSlashingDeltaAccumulated() internal returns (uint256) {
@@ -227,7 +227,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
                 continue;
             }
             (uint256 deltaCandidate, bool completed) = abi.decode(data, (uint256, bool));
-            uint256 cursorAfter = _getSlashingDeltaCursor();
+            uint256 cursorAfter = _getAttesterStateCursor();
             if (!completed && deltaCandidate == 0 && cursorAfter > 0) {
                 selectedGas = gasOptions[i];
                 break;
@@ -240,14 +240,14 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
             (uint256 deltaFull, bool completed) = stakingManager.computeAttesterState();
             assertTrue(completed, "slashing delta should complete in one call");
             assertEq(deltaFull, expectedDelta, "slashing delta should complete in one call");
-            assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
+            assertEq(_getAttesterStateCursor(), 0, "cursor should reset after completion");
             return;
         }
 
         vm.revertToState(snapshotId);
         vm.prank(defaultAdmin);
         (uint256 first, bool completedFirst) = stakingManager.computeAttesterState{ gas: selectedGas }();
-        uint256 cursorAfterFirst = _getSlashingDeltaCursor();
+        uint256 cursorAfterFirst = _getAttesterStateCursor();
 
         assertEq(first, 0, "partial pass should return prior cumulative");
         assertFalse(completedFirst, "partial pass should not complete");
@@ -258,7 +258,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         assertTrue(completedSecond, "slashing delta should complete");
 
         assertEq(second, expectedDelta, "cumulative should update after completion");
-        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
+        assertEq(_getAttesterStateCursor(), 0, "cursor should reset after completion");
     }
 
     function test_GetSlashingDelta_CursorResetsWhenOutOfRange() external {
@@ -266,20 +266,20 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
 
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 5 ether, block.timestamp);
 
-        _setSlashingDeltaCursor(10);
+        _setAttesterStateCursor(10);
 
         _computeAttesterState();
         vm.prank(core);
         uint256 slashingDelta = stakingManager.getSlashingDelta();
 
         assertEq(slashingDelta, 5 ether, "slashing delta should compute from start when cursor is out of range");
-        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset when out of range");
+        assertEq(_getAttesterStateCursor(), 0, "cursor should reset when out of range");
     }
 
     function test_GetSlashingDelta_CursorResetsWhenNoAttesters() external {
         _setupStakedAttesters(2);
 
-        _setSlashingDeltaCursor(1);
+        _setAttesterStateCursor(1);
         _setAttestersLength(0);
 
         _computeAttesterState();
@@ -287,7 +287,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         uint256 slashingDelta = stakingManager.getSlashingDelta();
 
         assertEq(slashingDelta, 0, "slashing delta should be zero when no attesters remain");
-        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset when length is zero");
+        assertEq(_getAttesterStateCursor(), 0, "cursor should reset when length is zero");
     }
 
     function test_GetSlashingDelta_SkipsInactiveAttestersAndAdvancesCursor() external {
@@ -308,7 +308,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         vm.prank(core);
         stakingManager.setGasThreshold(180_000);
 
-        _setSlashingDeltaCursor(0);
+        _setAttesterStateCursor(0);
 
         uint256 snapshotId = vm.snapshotState();
         uint256 selectedGas;
@@ -324,7 +324,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
                 continue;
             }
             (uint256 deltaCandidate, bool completed) = abi.decode(data, (uint256, bool));
-            uint256 cursorAfter = _getSlashingDeltaCursor();
+            uint256 cursorAfter = _getAttesterStateCursor();
             if (!completed && deltaCandidate == 0 && cursorAfter > 0) {
                 selectedGas = gasOptions[i];
                 break;
@@ -343,7 +343,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         vm.revertToState(snapshotId);
         vm.prank(defaultAdmin);
         (uint256 first, bool completedFirst) = stakingManager.computeAttesterState{ gas: selectedGas }();
-        uint256 cursorAfterFirst = _getSlashingDeltaCursor();
+        uint256 cursorAfterFirst = _getAttesterStateCursor();
 
         assertEq(first, 0, "partial pass should return prior cumulative");
         assertFalse(completedFirst, "partial pass should not complete");
@@ -374,17 +374,30 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
 
         assertEq(computed, expectedDelta, "slashing delta should match expected total");
         assertEq(first, expectedDelta, "slashing delta should match expected total");
-        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
-        assertEq(_getSlashingDeltaAccumulated(), 0, "slashing delta accumulator should reset after completion");
-        assertEq(_getStakedTotalAccumulated(), 0, "staked total accumulator should reset after completion");
+        assertEq(_getAttesterStateCursor(), 0, "cursor should reset after completion");
+        // Accumulators retain values after completion; deferred reset occurs at next pass start
+        assertEq(
+            _getSlashingDeltaAccumulated(),
+            expectedDelta,
+            "slashing delta accumulator should retain value until next pass"
+        );
+        uint256 expectedTotalStaked = attesterCount * ACTIVATION_THRESHOLD;
+        assertEq(
+            _getStakedTotalAccumulated(),
+            expectedTotalStaked,
+            "staked total accumulator should retain value until next pass"
+        );
+
+        // A new full pass should still produce correct results (accumulators reset at cursor==0)
+        (uint256 recomputed, bool reCompleted) = _computeAttesterState();
+        assertTrue(reCompleted, "recomputed should complete");
+        assertEq(recomputed, expectedDelta, "recomputed delta should match original");
 
         vm.prank(core);
         uint256 second = stakingManager.getSlashingDelta();
 
         assertEq(second, first, "second full pass should not carry over accumulation");
-        assertEq(_getSlashingDeltaCursor(), 0, "cursor should remain reset after subsequent calls");
-        assertEq(_getSlashingDeltaAccumulated(), 0, "slashing delta accumulator should remain reset");
-        assertEq(_getStakedTotalAccumulated(), 0, "staked total accumulator should remain reset");
+        assertEq(_getAttesterStateCursor(), 0, "cursor should remain reset after subsequent calls");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -394,7 +407,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     function test_GetSlashingDelta_FreshAtExactThreshold() external {
         _computeAttesterState();
 
-        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getAttesterStateLiveness();
         vm.warp(lastUpdated + maxAge);
 
         vm.prank(core);
@@ -406,11 +419,11 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     function test_RevertWhen_GetSlashingDelta_StaleJustPastThreshold() external {
         _computeAttesterState();
 
-        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getAttesterStateLiveness();
         vm.warp(lastUpdated + maxAge + 1);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
         );
         vm.prank(core);
         stakingManager.getSlashingDelta();
@@ -439,19 +452,19 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
             )
         );
         vm.prank(unauthorized);
-        stakingManager.setSlashingDeltaMaxAge(1 hours);
+        stakingManager.setAttesterStateMaxAge(1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
-                    SLASHING DELTA MAX AGE TESTS
+                    ATTESTER STATE MAX AGE TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_SetSlashingDeltaMaxAge_UpdatesValue() external {
         uint256 newMaxAge = 6 hours;
         vm.prank(defaultAdmin);
-        stakingManager.setSlashingDeltaMaxAge(newMaxAge);
+        stakingManager.setAttesterStateMaxAge(newMaxAge);
 
-        (uint256 lastUpdated, uint256 maxAge, bool isStale) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated, uint256 maxAge, bool isStale) = stakingManager.getAttesterStateLiveness();
         assertEq(maxAge, newMaxAge, "maxAge should be updated to new value");
         assertFalse(isStale, "should not be stale immediately after init");
         assertGt(lastUpdated, 0, "lastUpdated should be non-zero after initialize");
@@ -460,25 +473,25 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     function test_RevertWhen_SetSlashingDeltaMaxAge_Zero() external {
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAmount.selector));
         vm.prank(defaultAdmin);
-        stakingManager.setSlashingDeltaMaxAge(0);
+        stakingManager.setAttesterStateMaxAge(0);
     }
 
     /*//////////////////////////////////////////////////////////////
-                    SLASHING DELTA LIVENESS TESTS
+                    ATTESTER STATE LIVENESS TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_GetSlashingDeltaLiveness_ReturnsCorrectValues() external {
         _computeAttesterState();
 
-        (uint256 lastUpdated, uint256 maxAge, bool isStale) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated, uint256 maxAge, bool isStale) = stakingManager.getAttesterStateLiveness();
 
-        assertEq(maxAge, stakingManager.DEFAULT_SLASHING_DELTA_MAX_AGE(), "maxAge should match default");
+        assertEq(maxAge, stakingManager.DEFAULT_ATTESTER_STATE_MAX_AGE(), "maxAge should match default");
         assertFalse(isStale, "should not be stale immediately after compute");
         assertGt(lastUpdated, 0, "lastUpdated should be non-zero after compute");
 
         vm.warp(lastUpdated + maxAge + 1);
 
-        (uint256 lastUpdated2, uint256 maxAge2, bool isStale2) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated2, uint256 maxAge2, bool isStale2) = stakingManager.getAttesterStateLiveness();
 
         assertEq(lastUpdated2, lastUpdated, "lastUpdated should remain unchanged after warp");
         assertEq(maxAge2, maxAge, "maxAge should remain unchanged after warp");
@@ -567,11 +580,11 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     function test_RevertWhen_TotalStaked_Stale() external {
         _computeAttesterState();
 
-        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getAttesterStateLiveness();
         vm.warp(lastUpdated + maxAge + 1);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
         );
         stakingManager.totalStaked();
     }
@@ -579,11 +592,11 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     function test_RevertWhen_PendingUnstakes_Stale() external {
         _computeAttesterState();
 
-        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getAttesterStateLiveness();
         vm.warp(lastUpdated + maxAge + 1);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
         );
         stakingManager.pendingUnstakes();
     }
@@ -591,11 +604,11 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     function test_RevertWhen_HasExitableUnstakes_Stale() external {
         _computeAttesterState();
 
-        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getAttesterStateLiveness();
         vm.warp(lastUpdated + maxAge + 1);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
         );
         stakingManager.hasExitableUnstakes();
     }
@@ -603,11 +616,11 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     function test_RevertWhen_GetStakingState_Stale() external {
         _computeAttesterState();
 
-        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getSlashingDeltaLiveness();
+        (uint256 lastUpdated, uint256 maxAge,) = stakingManager.getAttesterStateLiveness();
         vm.warp(lastUpdated + maxAge + 1);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
         );
         stakingManager.getStakingState();
     }
@@ -675,7 +688,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
                 continue;
             }
             (, bool completed) = abi.decode(data, (uint256, bool));
-            uint256 cursorAfter = _getSlashingDeltaCursor();
+            uint256 cursorAfter = _getAttesterStateCursor();
             if (!completed && cursorAfter > 0) {
                 selectedGas = gasOptions[i];
                 break;
@@ -708,7 +721,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
 
         assertFalse(firstCompleted, "first call should be partial");
         assertEq(firstDelta, 0, "partial pass returns prior cumulative delta (0)");
-        uint256 cursorAfterFirst = _getSlashingDeltaCursor();
+        uint256 cursorAfterFirst = _getAttesterStateCursor();
         assertGt(cursorAfterFirst, 0, "cursor should advance after partial pass");
 
         // Verify cached values are NOT updated during intermediate call
@@ -745,14 +758,24 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         assertEq(finalState.pendingUnstakeAmount, expectedPending, "staking state pendingUnstakeAmount should match");
         assertEq(finalState.withdrawableAmount, expectedWithdrawable, "staking state withdrawableAmount should match");
 
-        // Verify accumulators are reset after completion
-        assertEq(_getSlashingDeltaCursor(), 0, "cursor should reset after completion");
-        assertEq(_getSlashingDeltaAccumulated(), 0, "slashing delta accumulator should reset");
-        assertEq(_getStakedTotalAccumulated(), 0, "staked total accumulator should reset");
+        // Verify cursor resets after completion; accumulators retain values (deferred reset at next pass start)
+        assertEq(_getAttesterStateCursor(), 0, "cursor should reset after completion");
+        assertEq(
+            _getSlashingDeltaAccumulated(),
+            expectedSlashingDelta,
+            "slashing delta accumulator should retain value until next pass"
+        );
+        assertEq(
+            _getStakedTotalAccumulated(),
+            expectedTotalStaked,
+            "staked total accumulator should retain value until next pass"
+        );
 
         uint256 pendingAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 8)));
         uint256 withdrawableAccumRaw = uint256(vm.load(address(stakingManager), bytes32(cursorSlot + 9)));
-        assertEq(pendingAccumRaw, 0, "pending unstake accumulator should reset");
-        assertEq(withdrawableAccumRaw, 0, "withdrawable accumulator should reset");
+        assertEq(pendingAccumRaw, expectedPending, "pending unstake accumulator should retain value until next pass");
+        assertEq(
+            withdrawableAccumRaw, expectedWithdrawable, "withdrawable accumulator should retain value until next pass"
+        );
     }
 }
