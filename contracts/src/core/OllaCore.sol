@@ -1095,6 +1095,7 @@ contract OllaCore is
             totalStaked = actualStaked;
         } catch {
             revert OllaCore__StakeFailed(stakeable);
+            // TODO: is there a better way to show if this is due to out of gas?
         }
 
         // Slither: explicit nonzero check; no timestamp usage.
