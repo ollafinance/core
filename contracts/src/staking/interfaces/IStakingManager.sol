@@ -199,7 +199,7 @@ interface IStakingManager {
     function harvestRewards() external returns (uint256 harvested);
 
     /*//////////////////////////////////////////////////////////////
-                          PROVIDER ADMIN FUNCTIONS
+                           OPERATOR FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Computes all attester-derived state (slashing delta, total staked, pending unstakes, withdrawable)
