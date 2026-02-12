@@ -5,6 +5,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 
+// solhint-disable max-states-count
 /// @title MockStakingManager
 /// @notice Minimal staking manager mock for message routing tests.
 /// @author Olla Core contributors
@@ -41,6 +42,15 @@ contract MockStakingManager is IStakingManager {
 
     /// @notice Cached slashing delta.
     uint256 private _slashingDelta;
+
+    /// @notice Cached total staked principal.
+    uint256 private _cachedTotalStaked;
+
+    /// @notice Cached pending unstake amount.
+    uint256 private _cachedPendingUnstakeAmount;
+
+    /// @notice Cached withdrawable amount.
+    uint256 private _cachedWithdrawableAmount;
 
     /// @notice Timestamp when slashing delta was last updated.
     uint256 private _slashingDeltaLastUpdated = 1;
@@ -105,13 +115,15 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function computeSlashingDelta() external override returns (uint256 slashingDelta, bool completed) {
+    function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
         uint256 lastUpdated = _slashingDeltaLastUpdated;
         bool wasStale = _isSlashingDeltaStale();
-        uint256 previousValue = _slashingDelta;
 
+        _cachedTotalStaked = _stakedAmount;
         _slashingDeltaLastUpdated = block.timestamp;
-        emit SlashingDeltaUpdated(previousValue, _slashingDelta, block.timestamp);
+        emit AttesterStateUpdated(
+            _slashingDelta, _cachedTotalStaked, _cachedPendingUnstakeAmount, _cachedWithdrawableAmount, block.timestamp
+        );
         if (wasStale) {
             emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
         }
@@ -140,12 +152,22 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function getStakingState() external view override returns (StakingState memory) {
-        return StakingState({ stakedAmount: _stakedAmount, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
+        return StakingState({
+            stakedAmount: _cachedTotalStaked,
+            pendingUnstakeAmount: _cachedPendingUnstakeAmount,
+            withdrawableAmount: _cachedWithdrawableAmount
+        });
     }
 
     /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
-        return _stakedAmount;
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
+        return _cachedTotalStaked;
     }
 
     /// @inheritdoc IStakingManager
@@ -188,6 +210,22 @@ contract MockStakingManager is IStakingManager {
         return (lastUpdated, maxAge, isStale);
     }
 
+    /// @inheritdoc IStakingManager
+    function pendingUnstakes() external view override returns (uint256) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
+        return _cachedPendingUnstakeAmount;
+    }
+
+    /// @inheritdoc IStakingManager
+    function hasExitableUnstakes() external view override returns (bool) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
+        return _cachedWithdrawableAmount != 0;
+    }
+
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -200,16 +238,6 @@ contract MockStakingManager is IStakingManager {
     /// @inheritdoc IStakingManager
     function setGasThreshold(uint256 threshold) external pure override {
         threshold;
-    }
-
-    /// @inheritdoc IStakingManager
-    function pendingUnstakes() external pure override returns (uint256) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
-    function hasExitableUnstakes() external pure override returns (bool) {
-        return false;
     }
 
     /// @inheritdoc IStakingManager

@@ -90,7 +90,7 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function computeSlashingDelta() external override returns (uint256 slashingDelta, bool completed) {
+    function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
         uint256 lastUpdated = _slashingDeltaLastUpdated;
         bool wasStale = _isSlashingDeltaStale();
 

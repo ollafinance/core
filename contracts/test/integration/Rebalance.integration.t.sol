@@ -11,6 +11,7 @@ import { StAztec } from "src/core/StAztec.sol";
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -346,5 +347,90 @@ contract RebalanceIntegrationTest is Test {
         assertTrue(found, "Rebalanced event should be emitted");
         assertEq(eventStaked, 26 * DECIMALS, "staked amount mismatch");
         assertEq(eventBuffer, 10 * DECIMALS, "buffer mismatch");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+             END-TO-END OPERATOR CACHE → ACCOUNTING → REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Tests the full flow: fresh mock state → accounting succeeds → rebalance succeeds →
+    ///         stale state → both revert → refresh → accounting succeeds again.
+    function test_EndToEnd_OperatorCacheToAccountingToRebalance() external {
+        uint256 depositAmount = 50 * DECIMALS;
+        _performDeposit(user, depositAmount);
+
+        // 1. Set mock cached state with realistic values
+        //    withdrawableUnstakes = 0 so rebalance PullUnstaked step advances (hasExitableUnstakes = false)
+        uint256 stakedPrincipal = 20 * DECIMALS;
+        uint256 slashing = 2 * DECIMALS;
+        uint256 pending = 5 * DECIMALS;
+        uint256 claimable = 4 * DECIMALS;
+        uint256 rewards = 6 * DECIMALS;
+
+        stakingManager.setTotalStaked(stakedPrincipal);
+        stakingManager.setSlashingDelta(slashing);
+        stakingManager.setPendingUnstakes(pending);
+        stakingManager.setWithdrawableUnstakes(0);
+        stakingManager.setClaimableRewards(claimable);
+        stakingManager.setHarvestedRewards(rewards);
+
+        // 2. updateAccounting() should succeed with fresh state
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfterAccounting = vault.latestReport();
+        assertGt(reportAfterAccounting.timestamp, 0, "accounting should update timestamp");
+
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        assertEq(accounting.slashingDelta, slashing, "slashing delta persisted in accounting");
+        assertEq(accounting.claimableRewards, claimable, "claimable rewards persisted");
+
+        // 3. Rebalance should succeed — harvest step pulls rewards into buffer
+        vm.prank(operator);
+        (uint256 rewardsDelta,,,) = vault.rebalance();
+        assertEq(rewardsDelta, rewards, "rebalance should harvest rewards");
+
+        IOllaCore.AccountingState memory accountingAfterRebalance = vault.accountingState();
+        assertEq(accountingAfterRebalance.cumulativeRewards, rewards, "cumulative rewards updated after rebalance");
+
+        // 4. Set a short max age and warp past it to make state stale
+        uint256 shortMaxAge = 30;
+        stakingManager.setSlashingDeltaMaxAge(shortMaxAge);
+        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+
+        vm.warp(lastUpdated + shortMaxAge + 1);
+
+        // 5. Verify updateAccounting() reverts with stale data
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, shortMaxAge
+            )
+        );
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        // 6. Verify rebalance() also reverts with stale data
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, shortMaxAge
+            )
+        );
+        vm.prank(operator);
+        vault.rebalance();
+
+        // 7. Refresh the state (simulating operator calling computeAttesterState)
+        //    Mock's setSlashingDelta auto-refreshes the liveness timestamp
+        stakingManager.setSlashingDelta(slashing);
+
+        // 8. After refresh, updateAccounting() should succeed again
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfterRefresh = vault.latestReport();
+        assertGt(
+            reportAfterRefresh.timestamp,
+            reportAfterAccounting.timestamp,
+            "accounting timestamp should advance after refresh"
+        );
     }
 }

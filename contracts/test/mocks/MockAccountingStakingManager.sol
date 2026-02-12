@@ -64,6 +64,7 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setTotalStaked(uint256 value) external {
         totalStakedAmount = value;
+        _slashingDeltaLastUpdated = block.timestamp;
     }
 
     function setHarvestedRewards(uint256 value) external {
@@ -84,10 +85,12 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setPendingUnstakes(uint256 value) external {
         pendingUnstakeAmount = value;
+        _slashingDeltaLastUpdated = block.timestamp;
     }
 
     function setWithdrawableUnstakes(uint256 value) external {
         withdrawableUnstakeAmount = value;
+        _slashingDeltaLastUpdated = block.timestamp;
     }
 
     function setActivatedAttesterCount(uint256 value) external {
@@ -173,12 +176,14 @@ contract MockAccountingStakingManager is IStakingManager {
         gasThreshold = threshold;
     }
 
-    function computeSlashingDelta() external override returns (uint256 slashingDeltaValue, bool completed) {
+    function computeAttesterState() external override returns (uint256 slashingDeltaValue, bool completed) {
         uint256 lastUpdated = _slashingDeltaLastUpdated;
         bool wasStale = _isSlashingDeltaStale();
 
         _slashingDeltaLastUpdated = block.timestamp;
-        emit SlashingDeltaUpdated(slashingDelta, slashingDelta, block.timestamp);
+        emit AttesterStateUpdated(
+            slashingDelta, totalStakedAmount, pendingUnstakeAmount, withdrawableUnstakeAmount, block.timestamp
+        );
         if (wasStale) {
             emit SlashingDeltaStale(lastUpdated, _slashingDeltaMaxAge);
         }
@@ -265,10 +270,16 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function totalStaked() external view override returns (uint256) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
         return totalStakedAmount;
     }
 
     function getStakingState() external view override returns (StakingState memory) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
         return StakingState({
             stakedAmount: totalStakedAmount,
             pendingUnstakeAmount: pendingUnstakeAmount,
@@ -277,10 +288,16 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function pendingUnstakes() external view override returns (uint256) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
         return pendingUnstakeAmount;
     }
 
     function hasExitableUnstakes() external view override returns (bool) {
+        if (_isSlashingDeltaStale()) {
+            revert StakingManager__SlashingDeltaStale(_slashingDeltaLastUpdated, _slashingDeltaMaxAge);
+        }
         return withdrawableUnstakeAmount != 0;
     }
 

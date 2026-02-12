@@ -620,4 +620,23 @@ contract OllaCoreAccountingTest is Test {
         IOllaCore.LatestReport memory report = vault.latestReport();
         assertGt(report.timestamp, 0, "accounting should have been updated");
     }
+
+    function test_RevertWhen_UpdateAccounting_TotalStakedStale() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setTotalStaked(5 * DECIMALS);
+        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+
+        uint256 maxAge = 1 hours;
+        stakingManager.setSlashingDeltaMaxAge(maxAge);
+
+        vm.warp(lastUpdated + maxAge + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+        );
+        vm.prank(operator);
+        vault.updateAccounting();
+    }
 }

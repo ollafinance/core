@@ -15,6 +15,7 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MaliciousReentrantStakingManager } from "test/mocks/MaliciousReentrantStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
@@ -1076,6 +1077,29 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                     ATTESTER STATE STALENESS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_RevertsWhen_AttesterStateStale() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setTotalStaked(5 * DECIMALS);
+        (uint256 lastUpdated,,) = stakingManager.getSlashingDeltaLiveness();
+
+        uint256 maxAge = 1 hours;
+        stakingManager.setSlashingDeltaMaxAge(maxAge);
+
+        vm.warp(lastUpdated + maxAge + 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__SlashingDeltaStale.selector, lastUpdated, maxAge)
+        );
+        vm.prank(operator);
+        vault.rebalance();
+    }
+
+    /*//////////////////////////////////////////////////////////////
                              STAKE SURPLUS
     //////////////////////////////////////////////////////////////*/
 
@@ -1662,7 +1686,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
         return slashing;
     }
 
-    function computeSlashingDelta() external override returns (uint256 slashingDelta, bool completed) {
+    function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
         uint256 lastUpdated = _slashingDeltaLastUpdated;
         bool wasStale = _isSlashingDeltaStale();
 

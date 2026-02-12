@@ -184,7 +184,7 @@ contract ExternalExitIntegrationTest is Test {
         aztec.mint(address(vault), stakeAmount);
 
         vm.prank(defaultAdmin);
-        stakingManager.computeSlashingDelta();
+        stakingManager.computeAttesterState();
         vm.prank(operator);
         vault.rebalance();
     }
@@ -211,9 +211,15 @@ contract ExternalExitIntegrationTest is Test {
 
         // 3. Rebalance to stake all funds (will stake to both attesters)
         vm.prank(defaultAdmin);
-        stakingManager.computeSlashingDelta();
+        stakingManager.computeAttesterState();
         vm.prank(operator);
         vault.rebalance();
+
+        // Refresh cached state after staking and update accounting to get correct exchange rate
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+        vm.prank(operator);
+        vault.updateAccounting();
 
         // Verify: 2 activated attesters, 200 ether staked
         assertEq(stakingManager.getActivatedAttesterCount(), 2, "Should have 2 activated attesters");
@@ -226,7 +232,7 @@ contract ExternalExitIntegrationTest is Test {
 
         // 5. Rebalance #1 - initiates unstake for 1 attester
         vm.prank(defaultAdmin);
-        stakingManager.computeSlashingDelta();
+        stakingManager.computeAttesterState();
         vm.prank(operator);
         vault.rebalance();
 
@@ -237,6 +243,10 @@ contract ExternalExitIntegrationTest is Test {
         // 6. The remaining activated attester exits externally
         address activatedAttester = address(uint160(2));
         rollup.setExternalExit(activatedAttester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        // Refresh cached state to reflect external exit
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
 
         // Verify: exit exists in rollup for the activated attester
         assertTrue(rollup.getExit(activatedAttester).exists, "Exit should exist in rollup");
@@ -257,10 +267,12 @@ contract ExternalExitIntegrationTest is Test {
 
         vm.recordLogs();
 
+        // First rebalance call: claims exits but returns early because
+        // hasExitableUnstakes() reads from stale cache (exits were just claimed)
         vm.prank(defaultAdmin);
-        stakingManager.computeSlashingDelta();
+        stakingManager.computeAttesterState();
         vm.prank(operator);
-        (, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+        vault.rebalance();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bool foundEvent = false;
@@ -274,6 +286,12 @@ contract ExternalExitIntegrationTest is Test {
             }
         }
         assertTrue(foundEvent, "UnstakedFundsClaimed event not found");
+
+        // Refresh cache after exits are claimed, then continue the rebalance
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+        vm.prank(operator);
+        (, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
 
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         uint256 expectedFinalized = request.assetsExpected;
@@ -301,14 +319,26 @@ contract ExternalExitIntegrationTest is Test {
         vault.deposit(depositAmount, alice);
         vm.stopPrank();
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         vm.prank(operator);
         vault.rebalance();
+
+        // Refresh cached state after staking
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
 
         vm.prank(governance);
         vault.setTargetBufferedAssets(depositAmount);
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         vm.prank(operator);
         vault.rebalance();
+
+        // Refresh cached state after unstake
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
 
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "pending unstake should be created");
 
@@ -321,6 +351,8 @@ contract ExternalExitIntegrationTest is Test {
 
         uint256 coreBalanceBefore = aztec.balanceOf(address(vault));
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         vm.prank(operator);
         vault.rebalance();
 
@@ -367,9 +399,15 @@ contract ExternalExitIntegrationTest is Test {
 
         // 2. Rebalance to stake all funds
         vm.prank(defaultAdmin);
-        stakingManager.computeSlashingDelta();
+        stakingManager.computeAttesterState();
         vm.prank(operator);
         vault.rebalance();
+
+        // Refresh cached state after staking and update accounting so totalAssets reflects staked principal
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+        vm.prank(operator);
+        vault.updateAccounting();
 
         // Verify: 2 attesters staked
         assertEq(stakingManager.totalStaked(), 200 ether, "Should have 200 ether staked");
@@ -391,7 +429,7 @@ contract ExternalExitIntegrationTest is Test {
         // progress.unstakeRemaining should clamp to 0 instead of underflowing
 
         vm.prank(defaultAdmin);
-        stakingManager.computeSlashingDelta();
+        stakingManager.computeAttesterState();
         vm.prank(operator);
         (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
             vault.rebalance();
