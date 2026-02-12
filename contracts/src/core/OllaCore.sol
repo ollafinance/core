@@ -103,7 +103,7 @@ contract OllaCore is
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[46] private __gap;
+    uint256[47] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
