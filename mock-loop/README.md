@@ -13,8 +13,7 @@ The mock loop simulates protocol operations by running configurable scenarios at
 yarn dev:chain
 
 # Deploy contracts and run mock loop
-yarn deploy:local
-yarn dev:mock-loop
+yarn deploy:local --quiet && yarn dev:mock-loop:until-error
 ```
 
 ## Commands
@@ -37,6 +36,7 @@ Edit `config.ts` to customize scenarios:
 - **user-claim**: Claims finalized withdrawals
 
 Each scenario supports:
+
 - `enabled: boolean` - Enable/disable
 - `every?: number` - Run every N ticks
 - `at?: number` - Run at specific tick
@@ -58,6 +58,7 @@ Tick 001 | actions: ✓✓✓.... | 64ms | ✓
 ```
 
 Actions pattern:
+
 - `✓` = executed successfully
 - `.` = skipped (schedule didn't match)
 - `d` = disabled
