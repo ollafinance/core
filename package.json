@@ -7,7 +7,7 @@
     "husky": "8.0.3",
     "solhint": "6.0.2",
     "solhint-plugin-explicit-return": "portal:./solhint-rules",
-    "tsx": "latest",
+    "tsx": "^4.21.0",
     "typescript": "~5.9.3",
     "viem": "^2.44.4"
   },

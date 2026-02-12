@@ -1,4 +1,5 @@
 import type { PublicClient } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import type {
   DeploymentAddresses,
   TickState,
@@ -38,19 +39,31 @@ export async function readFullState(
     ollaCore.read.totalAssets(),
     ollaCore.read.exchangeRate(),
     ollaCore.read.accountingState(),
-  ]);
+  ] as const) as [
+    bigint,
+    bigint,
+    {
+      bufferedAssets: bigint;
+      stakedPrincipal: bigint;
+      rewardsVaultBalance: bigint;
+      claimableRewards: bigint;
+      rewardsDelta: bigint;
+      slashingDelta: bigint;
+      cumulativeRewards: bigint;
+    },
+  ];
 
   // Read StakingManager state
   const [stakedAmount, pendingUnstakeCount] = await Promise.all([
     stakingManager.read.totalStaked(),
     stakingManager.read.getPendingUnstakeCount(),
-  ]);
+  ] as const) as [bigint, bigint];
 
   // Read WithdrawalQueue state
   const [totalPendingAssets, nextRequestId] = await Promise.all([
     withdrawalQueue.read.totalPendingAssets(),
     withdrawalQueue.read.nextRequestId(),
-  ]);
+  ] as const) as [bigint, bigint];
 
   // Read token balances
   const [coreBalance, stakingManagerBalance, rewardsVaultBalance] =
@@ -58,10 +71,10 @@ export async function readFullState(
       asset.read.balanceOf([addresses.OllaCoreProxy]),
       asset.read.balanceOf([addresses.StakingManagerProxy]),
       asset.read.balanceOf([addresses.RewardsVaultProxy]),
-    ]);
+    ] as const) as [bigint, bigint, bigint];
 
   // Read provider registry state
-  const availableKeyCount = await providerRegistry.read.getQueueLength();
+  const availableKeyCount = await providerRegistry.read.getQueueLength() as bigint;
 
   // Read user states (from user scenarios)
   const userStates: UserState[] = [];
@@ -72,7 +85,6 @@ export async function readFullState(
 
   for (const scenario of userScenarios) {
     // Derive address from private key by creating a wallet client
-    const { privateKeyToAccount } = await import("viem/accounts");
     const account = privateKeyToAccount(scenario.privateKey as `0x${string}`);
     const userAddress = account.address;
 
@@ -81,7 +93,7 @@ export async function readFullState(
         asset.read.balanceOf([userAddress]),
         stAztec.read.balanceOf([userAddress]),
         ollaCore.read.activeRequestIds([userAddress]),
-      ]);
+      ] as const) as [bigint, bigint, bigint[]];
 
     userStates.push({
       address: userAddress,

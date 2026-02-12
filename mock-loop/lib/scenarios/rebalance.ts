@@ -2,7 +2,8 @@ import type { WalletClient, PublicClient } from "viem";
 import type { RebalanceScenario, DeploymentAddresses, ActionResult } from "../types.js";
 import { getOllaCore, getStakingManager } from "../client.js";
 
-const REBALANCE_STEP_DONE = 5; // RebalanceStep.Done = 5
+const REBALANCE_STEP_DONE = 5; // RebalanceStep.Done
+const STAKE_FAILED_SELECTOR = "0xd101596a"; // Stake failed error selector
 const REBALANCE_STEP_NAMES = ["Harvest", "PullUnstaked", "FinalizeWithdrawals", "InitiateUnstake", "StakeSurplus", "Done"];
 
 export async function executeRebalance(
@@ -47,7 +48,7 @@ export async function executeRebalance(
           throw new Error(`rebalance reverted in tx ${txHash}`);
         }
       } catch (waitError) {
-        if (waitError instanceof Error && waitError.message.includes("0xd101596a")) {
+        if (waitError instanceof Error && waitError.message.includes(STAKE_FAILED_SELECTOR)) {
           return {
             scenario: "rebalance",
             success: true,

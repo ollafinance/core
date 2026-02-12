@@ -35,16 +35,26 @@ export class OutputWriter {
   }
 
   writeTick(tickResult: TickResult): void {
-    const filename = `tick-${tickResult.tick.toString().padStart(3, "0")}.json`;
+    const filename = `tick-${tickResult.tick.toString().padStart(6, "0")}.json`;
     this.writeJson(filename, tickResult);
   }
 
   private writeJson(filename: string, data: unknown): void {
     const filepath = resolve(this.runDir, filename);
-    writeFileSync(filepath, JSON.stringify(data, null, 2));
+    try {
+      writeFileSync(filepath, JSON.stringify(data, null, 2));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to write ${filename}: ${errorMessage}`);
+    }
   }
 
   logLine(line: string): void {
-    appendFileSync(this.logPath, line + "\n");
+    try {
+      appendFileSync(this.logPath, line + "\n");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to append log line: ${errorMessage}`);
+    }
   }
 }

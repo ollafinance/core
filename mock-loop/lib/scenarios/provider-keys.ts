@@ -30,24 +30,27 @@ export async function executeProviderKeys(
     const keysToAdd = scenario.seedCount;
     const keyStores = [];
 
+    const seedBase =
+      (BigInt(Date.now()) << 32n) |
+      BigInt(Math.floor(Math.random() * 0x100000000));
     for (let i = 0; i < keysToAdd; i++) {
       // Generate deterministic dummy attester addresses and keys
-      const seed = Date.now() + i;
+      const seed = seedBase + BigInt(i);
       keyStores.push({
         attester: `0x${seed.toString(16).padStart(40, "0")}` as `0x${string}`,
         publicKeyG1: {
-          x: BigInt(seed),
-          y: BigInt(seed + 1),
+          x: seed,
+          y: seed + 1n,
         },
         publicKeyG2: {
-          x0: BigInt(seed + 2),
-          x1: BigInt(seed + 3),
-          y0: BigInt(seed + 4),
-          y1: BigInt(seed + 5),
+          x0: seed + 2n,
+          x1: seed + 3n,
+          y0: seed + 4n,
+          y1: seed + 5n,
         },
         proofOfPossession: {
-          x: BigInt(seed + 6),
-          y: BigInt(seed + 7),
+          x: seed + 6n,
+          y: seed + 7n,
         },
       });
     }

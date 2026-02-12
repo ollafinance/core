@@ -1,7 +1,6 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { UserDepositScenario, DeploymentAddresses, ActionResult } from "../types.js";
 import { createUserWallet, getAsset, getOllaCore } from "../client.js";
-import { parseEther } from "viem";
 
 export async function executeUserDeposit(
   scenario: UserDepositScenario,

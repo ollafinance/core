@@ -18,7 +18,7 @@ yarn deploy:local --quiet && yarn dev:mock-loop:until-error
 
 ## Commands
 
-- `yarn dev:mock-loop` - Run continuous loop (5s intervals)
+- `yarn dev:mock-loop` - Run continuous loop (1s intervals)
 - `yarn dev:mock-loop:once` - Run single tick and exit
 - `yarn dev:mock-loop:until-error` - Run until any scenario fails
 - `yarn dev:mock-loop -- --once --until-error` - Combine flags

@@ -12,8 +12,6 @@ export async function executeMockRewards(
   addresses: DeploymentAddresses
 ): Promise<ActionResult> {
   const rollup = getMockAztecRollup(addresses, clients.operatorWallet);
-  const rewardsVault = getRewardsVault(addresses, clients.publicClient);
-
   try {
     const actions: string[] = [];
 

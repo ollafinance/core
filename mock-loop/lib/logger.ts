@@ -71,7 +71,6 @@ export class Logger {
 
   logTick(result: TickResult, scenarios: ScenarioConfig[]): void {
     const actions = result.actions;
-    const successCount = actions.filter((a) => a.success).length;
     const errorCount = actions.filter((a) => !a.success).length;
 
     // Build scenario pattern: ✓=run, .=skipped, d=disabled, ⚠️=error
@@ -92,7 +91,15 @@ export class Logger {
 
     // Log all accountingState values in compact format
     const accounting = result.stateAfter.ollaCore.accountingState;
-    console.log(`  bufferedAssets: ${this.formatValue(accounting.bufferedAssets).padStart(6)} |stakedPrincipal: ${this.formatValue(accounting.stakedPrincipal).padStart(6)} |rewardsVaultBalance: ${this.formatValue(accounting.rewardsVaultBalance).padStart(6)} |claimableRewards: ${this.formatValue(accounting.claimableRewards).padStart(6)} |rewardsDelta: ${this.formatValue(accounting.rewardsDelta).padStart(6)} |slashingDelta: ${this.formatValue(accounting.slashingDelta).padStart(6)} |cumulativeRewards: ${this.formatValue(accounting.cumulativeRewards).padStart(6)}`);
+    console.log(
+      `  bufferedAssets: ${this.formatValue(accounting.bufferedAssets).padStart(6)} ` +
+        `|stakedPrincipal: ${this.formatValue(accounting.stakedPrincipal).padStart(6)} ` +
+        `|rewardsVaultBalance: ${this.formatValue(accounting.rewardsVaultBalance).padStart(6)} ` +
+        `|claimableRewards: ${this.formatValue(accounting.claimableRewards).padStart(6)} ` +
+        `|rewardsDelta: ${this.formatValue(accounting.rewardsDelta).padStart(6)} ` +
+        `|slashingDelta: ${this.formatValue(accounting.slashingDelta).padStart(6)} ` +
+        `|cumulativeRewards: ${this.formatValue(accounting.cumulativeRewards).padStart(6)}`
+    );
 
     // Human-readable log to file
     const line = this.formatLogLine(

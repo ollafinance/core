@@ -16,6 +16,7 @@ The examples below assume `FOUNDRY_PROFILE=local` is set.
 - `DEPLOY_ENV` defaults to `local`.
 - Addresses default to `deployments/<DEPLOY_ENV>.json` when possible.
 - Scripts default to Anvil account-0 for signing when `chainid == 31337`.
+- The Anvil account-1 private key shown below is a default test account and only for local development.
 
 ## Inspect
 
