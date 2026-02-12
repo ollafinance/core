@@ -66,9 +66,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Count of exiting attesters in the registry.
     uint256 private _exitingCount;
 
-    /// @dev Cumulative slashing delta tracked across rollup snapshots.
-    uint256 private _cumulativeSlashingDelta;
-
     /// @dev Timestamp of the last completed attester state update.
     uint256 private _lastAttesterStateTimestamp;
 
@@ -84,26 +81,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cursor for bounded attester state accumulation.
     uint256 private _attesterStateCursor;
 
-    /// @dev Accumulator for bounded slashing delta computation.
-    uint256 private _slashingDeltaAccumulated;
+    /// @dev Transient accumulator for bounded multi-pass attester state computation.
+    StakingState private _accumulator;
 
-    /// @dev Accumulator for bounded staked total computation.
-    uint256 private _stakedTotalAccumulated;
-
-    /// @dev Cached total staked principal from last completed attester state computation.
-    uint256 private _cachedTotalStaked;
-
-    /// @dev Cached pending unstake amount from last completed attester state computation.
-    uint256 private _cachedPendingUnstakeAmount;
-
-    /// @dev Cached withdrawable amount from last completed attester state computation.
-    uint256 private _cachedWithdrawableAmount;
-
-    /// @dev Accumulator for bounded pending unstake computation.
-    uint256 private _pendingUnstakeAccumulated;
-
-    /// @dev Accumulator for bounded withdrawable amount computation.
-    uint256 private _withdrawableAccumulated;
+    /// @dev Cached attester state from last completed computation pass.
+    StakingState private _cachedState;
 
     /// @dev Gas threshold for bounded rebalance work.
     // solhint-disable-next-line private-vars-leading-underscore
@@ -236,7 +218,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /*//////////////////////////////////////////////////////////////
-                          PROVIDER AND ADMIN FUNCTIONS
+                          OPERATOR FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
@@ -255,21 +237,22 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
 
         (uint256 currentSlashingDelta, bool computationCompleted) = _computeAttesterStateInternal(rollup);
-        uint256 cachedDelta = _cumulativeSlashingDelta;
+        uint256 cachedDelta = _cachedState.slashingDelta;
         if (computationCompleted) {
-            uint256 previousValue = cachedDelta;
-            if (currentSlashingDelta > previousValue) {
-                _cumulativeSlashingDelta = currentSlashingDelta;
+            if (currentSlashingDelta > cachedDelta) {
                 cachedDelta = currentSlashingDelta;
             }
             // Persist cached values from accumulators; reset deferred to next pass start
             // (_computeAttesterStateInternal resets at cursor==0).
-            _cachedTotalStaked = _stakedTotalAccumulated;
-            _cachedPendingUnstakeAmount = _pendingUnstakeAccumulated;
-            _cachedWithdrawableAmount = _withdrawableAccumulated;
+            _cachedState = _accumulator;
+            _cachedState.slashingDelta = cachedDelta;
             _lastAttesterStateTimestamp = block.timestamp;
             emit AttesterStateUpdated(
-                cachedDelta, _cachedTotalStaked, _cachedPendingUnstakeAmount, _cachedWithdrawableAmount, block.timestamp
+                cachedDelta,
+                _cachedState.stakedAmount,
+                _cachedState.pendingUnstakeAmount,
+                _cachedState.withdrawableAmount,
+                block.timestamp
             );
         }
 
@@ -298,7 +281,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        return _cumulativeSlashingDelta;
+        return _cachedState.slashingDelta;
     }
 
     /// @notice Internal helper to get the claimable rewards.
@@ -314,10 +297,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        state.stakedAmount = _cachedTotalStaked;
-        state.pendingUnstakeAmount = _cachedPendingUnstakeAmount;
-        state.withdrawableAmount = _cachedWithdrawableAmount;
-        return state;
+        return _cachedState;
     }
 
     /// @inheritdoc IStakingManager
@@ -325,7 +305,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        return _cachedPendingUnstakeAmount;
+        return _cachedState.pendingUnstakeAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -333,7 +313,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        return _cachedWithdrawableAmount != 0;
+        return _cachedState.withdrawableAmount != 0;
     }
 
     /// @inheritdoc IStakingManager
@@ -341,7 +321,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (_isAttesterStateStale()) {
             revert StakingManager__AttesterStateStale(_lastAttesterStateTimestamp, _attesterStateMaxAge);
         }
-        return _cachedTotalStaked;
+        return _cachedState.stakedAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -773,24 +753,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         internal
         returns (uint256 slashingDelta, bool completed)
     {
+        StakingState memory acc;
         if (_attesterStateCursor == 0) {
-            _stakedTotalAccumulated = 0;
-            _slashingDeltaAccumulated = 0;
-            _pendingUnstakeAccumulated = 0;
-            _withdrawableAccumulated = 0;
+            // Reset accumulator at the start of a new pass
+            acc = StakingState({ slashingDelta: 0, stakedAmount: 0, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
+        } else {
+            acc = _accumulator;
         }
 
-        (_stakedTotalAccumulated, _slashingDeltaAccumulated, _pendingUnstakeAccumulated, _withdrawableAccumulated) =
-            _accumulateAttesterState(
-                rollup,
-                _stakedTotalAccumulated,
-                _slashingDeltaAccumulated,
-                _pendingUnstakeAccumulated,
-                _withdrawableAccumulated
-            );
+        acc = _accumulateAttesterState(rollup, acc);
+        _accumulator = acc;
 
         if (_attesterStateCursor == 0) {
-            slashingDelta = _slashingDeltaAccumulated;
+            slashingDelta = acc.slashingDelta;
             completed = true;
         }
         return (slashingDelta, completed);
@@ -799,25 +774,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // Rollup is trusted and loop bounded by attester set size.
     // slither-disable-next-line calls-loop
     // slither-disable-next-line pess-multiple-storage-read -- length read + indexed access unavoidable in loop
-    function _accumulateAttesterState(
-        IAztecRollup rollup,
-        uint256 stakedTotal,
-        uint256 slashingDelta,
-        uint256 pendingUnstake,
-        uint256 withdrawable
-    )
+    function _accumulateAttesterState(IAztecRollup rollup, StakingState memory acc)
         internal
-        returns (
-            uint256 updatedTotalStaked,
-            uint256 updatedSlashingDelta,
-            uint256 updatedPendingUnstake,
-            uint256 updatedWithdrawable
-        )
+        returns (StakingState memory)
     {
         uint256 length = _attesters.length;
         if (length == 0) {
             _attesterStateCursor = 0;
-            return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+            return acc;
         }
 
         uint256 i = _attesterStateCursor;
@@ -854,13 +818,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 continue;
             }
 
-            (stakedTotal, slashingDelta, pendingUnstake, withdrawable) =
-                _computeAttesterState(view_, attesterInfo, stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+            acc = _computeAttesterState(view_, attesterInfo, acc);
             ++i;
         }
 
         _updateAttesterStateCursor(i);
-        return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+        return acc;
     }
 
     /// @notice Updates the attester state cursor after iteration.
@@ -906,51 +869,33 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Accumulates attester state for a single attester.
     /// @param view_ The pre-fetched rollup AttesterView for this attester.
     /// @param attesterInfo The attester info storage reference.
-    /// @param stakedTotal Running total of staked amounts.
-    /// @param slashingDelta Running total of slashing delta.
-    /// @param pendingUnstake Running total of pending unstake amounts.
-    /// @param withdrawable Running total of withdrawable amounts.
-    /// @return updatedStakedTotal Updated staked total.
-    /// @return updatedSlashingDelta Updated slashing delta.
-    /// @return updatedPendingUnstake Updated pending unstake total.
-    /// @return updatedWithdrawable Updated withdrawable total.
+    /// @param acc The current accumulator state.
+    /// @return The updated accumulator state.
     function _computeAttesterState(
         AttesterView memory view_,
         IStakingManager.AttesterInfo storage attesterInfo,
-        uint256 stakedTotal,
-        uint256 slashingDelta,
-        uint256 pendingUnstake,
-        uint256 withdrawable
-    )
-        internal
-        view
-        returns (
-            uint256 updatedStakedTotal,
-            uint256 updatedSlashingDelta,
-            uint256 updatedPendingUnstake,
-            uint256 updatedWithdrawable
-        )
-    {
+        StakingState memory acc
+    ) internal view returns (StakingState memory) {
         (bool eligible, uint256 remaining) = _remainingStake(view_);
         if (!eligible) {
-            return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+            return acc;
         }
         uint256 stakedAmount = attesterInfo.stakedAmount;
-        stakedTotal += stakedAmount;
+        acc.stakedAmount += stakedAmount;
         if (stakedAmount > remaining) {
-            slashingDelta += stakedAmount - remaining;
+            acc.slashingDelta += stakedAmount - remaining;
         }
 
         // Accumulate exit state
         if (view_.exit.exists) {
             if (_isExitExitable(view_)) {
-                withdrawable += view_.exit.amount;
+                acc.withdrawableAmount += view_.exit.amount;
             } else {
-                pendingUnstake += view_.exit.amount;
+                acc.pendingUnstakeAmount += view_.exit.amount;
             }
         }
 
-        return (stakedTotal, slashingDelta, pendingUnstake, withdrawable);
+        return acc;
     }
 
     /// @notice Returns true if an exit is present and exitable.

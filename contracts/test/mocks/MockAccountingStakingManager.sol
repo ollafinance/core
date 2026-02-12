@@ -277,6 +277,7 @@ contract MockAccountingStakingManager is IStakingManager {
             revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
         }
         return StakingState({
+            slashingDelta: slashingDelta,
             stakedAmount: totalStakedAmount,
             pendingUnstakeAmount: pendingUnstakeAmount,
             withdrawableAmount: withdrawableUnstakeAmount
