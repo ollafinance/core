@@ -5,6 +5,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 
+// solhint-disable max-states-count
 /// @title MockStakingManager
 /// @notice Minimal staking manager mock for message routing tests.
 /// @author Olla Core contributors
@@ -38,6 +39,24 @@ contract MockStakingManager is IStakingManager {
 
     /// @notice Mock provider config.
     ProviderConfig private _providerConfig;
+
+    /// @notice Cached slashing delta.
+    uint256 private _slashingDelta;
+
+    /// @notice Cached total staked principal.
+    uint256 private _cachedTotalStaked;
+
+    /// @notice Cached pending unstake amount.
+    uint256 private _cachedPendingUnstakeAmount;
+
+    /// @notice Cached withdrawable amount.
+    uint256 private _cachedWithdrawableAmount;
+
+    /// @notice Timestamp when attester state was last updated.
+    uint256 private _attesterStateLastUpdated = 1;
+
+    /// @notice Maximum allowed age for attester state freshness.
+    uint256 private _attesterStateMaxAge = type(uint256).max;
 
     /*//////////////////////////////////////////////////////////////
                             EXTERNAL FUNCTIONS
@@ -95,6 +114,33 @@ contract MockStakingManager is IStakingManager {
         return unstakedAmount;
     }
 
+    /// @inheritdoc IStakingManager
+    function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
+        uint256 lastUpdated = _attesterStateLastUpdated;
+        bool wasStale = _isAttesterStateStale();
+
+        _cachedTotalStaked = _stakedAmount;
+        _attesterStateLastUpdated = block.timestamp;
+        emit AttesterStateUpdated(
+            _slashingDelta, _cachedTotalStaked, _cachedPendingUnstakeAmount, _cachedWithdrawableAmount, block.timestamp
+        );
+        if (wasStale) {
+            emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
+        }
+
+        return (_slashingDelta, true);
+    }
+
+    /// @inheritdoc IStakingManager
+    function setAttesterStateMaxAge(uint256 maxAge) external override {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        uint256 oldMaxAge = _attesterStateMaxAge;
+        _attesterStateMaxAge = maxAge;
+        emit AttesterStateMaxAgeUpdated(oldMaxAge, maxAge);
+    }
+
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -106,12 +152,22 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function getStakingState() external view override returns (StakingState memory) {
-        return StakingState({ stakedAmount: _stakedAmount, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
+        return StakingState({
+            stakedAmount: _cachedTotalStaked,
+            pendingUnstakeAmount: _cachedPendingUnstakeAmount,
+            withdrawableAmount: _cachedWithdrawableAmount
+        });
     }
 
     /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
-        return _stakedAmount;
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
+        return _cachedTotalStaked;
     }
 
     /// @inheritdoc IStakingManager
@@ -130,7 +186,48 @@ contract MockStakingManager is IStakingManager {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          EXTERNAL PURE FUNCTIONS
+                           EXTERNAL VIEW FUNCTIONS 2
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function getSlashingDelta() external view override returns (uint256 slashingDelta) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
+        return _slashingDelta;
+    }
+
+    /// @inheritdoc IStakingManager
+    function getAttesterStateLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _attesterStateLastUpdated;
+        maxAge = _attesterStateMaxAge;
+        isStale = _isAttesterStateStale();
+        return (lastUpdated, maxAge, isStale);
+    }
+
+    /// @inheritdoc IStakingManager
+    function pendingUnstakes() external view override returns (uint256) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
+        return _cachedPendingUnstakeAmount;
+    }
+
+    /// @inheritdoc IStakingManager
+    function hasExitableUnstakes() external view override returns (bool) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
+        return _cachedWithdrawableAmount != 0;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
@@ -141,21 +238,6 @@ contract MockStakingManager is IStakingManager {
     /// @inheritdoc IStakingManager
     function setGasThreshold(uint256 threshold) external pure override {
         threshold;
-    }
-
-    /// @inheritdoc IStakingManager
-    function pendingUnstakes() external pure override returns (uint256) {
-        return 0;
-    }
-
-    /// @inheritdoc IStakingManager
-    function hasExitableUnstakes() external pure override returns (bool) {
-        return false;
-    }
-
-    /// @inheritdoc IStakingManager
-    function getSlashingDelta() external pure override returns (uint256 slashingDelta) {
-        return 0;
     }
 
     /// @inheritdoc IStakingManager
@@ -178,9 +260,11 @@ contract MockStakingManager is IStakingManager {
         return false;
     }
 
-    /// @inheritdoc IStakingManager
-    function syncAttesters() external pure override {
-        // No-op for mock
-        return;
+    function _isAttesterStateStale() internal view returns (bool) {
+        uint256 lastUpdated = _attesterStateLastUpdated;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _attesterStateMaxAge;
     }
 }

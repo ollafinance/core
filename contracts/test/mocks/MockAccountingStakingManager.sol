@@ -38,6 +38,8 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public stakeReturnAmount;
     bool public useStakeReturnAmount;
     bool public allowStakeReturnExceeds;
+    uint256 private _attesterStateLastUpdated = 1;
+    uint256 private _attesterStateMaxAge = type(uint256).max;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -57,10 +59,12 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setSlashingDelta(uint256 value) external {
         slashingDelta = value;
+        _attesterStateLastUpdated = block.timestamp;
     }
 
     function setTotalStaked(uint256 value) external {
         totalStakedAmount = value;
+        _attesterStateLastUpdated = block.timestamp;
     }
 
     function setHarvestedRewards(uint256 value) external {
@@ -81,10 +85,12 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setPendingUnstakes(uint256 value) external {
         pendingUnstakeAmount = value;
+        _attesterStateLastUpdated = block.timestamp;
     }
 
     function setWithdrawableUnstakes(uint256 value) external {
         withdrawableUnstakeAmount = value;
+        _attesterStateLastUpdated = block.timestamp;
     }
 
     function setActivatedAttesterCount(uint256 value) external {
@@ -170,8 +176,28 @@ contract MockAccountingStakingManager is IStakingManager {
         gasThreshold = threshold;
     }
 
-    function syncAttesters() external pure override {
-        return;
+    function computeAttesterState() external override returns (uint256 slashingDeltaValue, bool completed) {
+        uint256 lastUpdated = _attesterStateLastUpdated;
+        bool wasStale = _isAttesterStateStale();
+
+        _attesterStateLastUpdated = block.timestamp;
+        emit AttesterStateUpdated(
+            slashingDelta, totalStakedAmount, pendingUnstakeAmount, withdrawableUnstakeAmount, block.timestamp
+        );
+        if (wasStale) {
+            emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
+        }
+
+        return (slashingDelta, true);
+    }
+
+    function setAttesterStateMaxAge(uint256 maxAge) external override {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        uint256 oldMaxAge = _attesterStateMaxAge;
+        _attesterStateMaxAge = maxAge;
+        emit AttesterStateMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
     function getUnstakedFunds() public virtual override returns (uint256 received) {
@@ -213,6 +239,9 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function getSlashingDelta() external view override returns (uint256) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
         return slashingDelta;
     }
 
@@ -224,11 +253,29 @@ contract MockAccountingStakingManager is IStakingManager {
         return claimableRewards;
     }
 
+    function getAttesterStateLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _attesterStateLastUpdated;
+        maxAge = _attesterStateMaxAge;
+        isStale = _isAttesterStateStale();
+        return (lastUpdated, maxAge, isStale);
+    }
+
     function totalStaked() external view override returns (uint256) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
         return totalStakedAmount;
     }
 
     function getStakingState() external view override returns (StakingState memory) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
         return StakingState({
             stakedAmount: totalStakedAmount,
             pendingUnstakeAmount: pendingUnstakeAmount,
@@ -237,10 +284,16 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function pendingUnstakes() external view override returns (uint256) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
         return pendingUnstakeAmount;
     }
 
     function hasExitableUnstakes() external view override returns (bool) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
         return withdrawableUnstakeAmount != 0;
     }
 
@@ -270,6 +323,14 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
+    }
+
+    function _isAttesterStateStale() internal view returns (bool) {
+        uint256 lastUpdated = _attesterStateLastUpdated;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _attesterStateMaxAge;
     }
 
     /*//////////////////////////////////////////////////////////////

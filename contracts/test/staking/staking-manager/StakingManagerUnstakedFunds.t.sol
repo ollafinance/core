@@ -121,8 +121,9 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        vm.prank(core);
-        stakingManager.syncAttesters();
+        // computeAttesterState() syncs Active→Exiting for externally exited attesters
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
 
         assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore - 1, "active count should decrease");
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should increase");
@@ -323,8 +324,9 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         vm.prank(core);
         stakingManager.setGasThreshold(200_000);
 
-        vm.prank(core);
-        stakingManager.syncAttesters();
+        // computeAttesterState() syncs Active→Exiting for externally exited attesters
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
 
         assertEq(stakingManager.getActivatedAttesterCount(), 0, "all exits should move to exiting");
         assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "exiting count should match attesters");

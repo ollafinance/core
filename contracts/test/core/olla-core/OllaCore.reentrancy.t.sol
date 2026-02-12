@@ -25,6 +25,8 @@ contract MockHarvestStakingManager is IStakingManager {
     IERC20 public rewardsToken;
     address public rewardsVault;
     uint256 public harvestedRewards;
+    uint256 private _attesterStateLastUpdated = 1;
+    uint256 private _attesterStateMaxAge = type(uint256).max;
 
     function setRewardsToken(IERC20 token) external {
         rewardsToken = token;
@@ -69,10 +71,6 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function syncAttesters() external pure override {
-        return;
-    }
-
     function getUnstakedFunds() external pure override returns (uint256) {
         return 0;
     }
@@ -81,8 +79,31 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function getSlashingDelta() external pure override returns (uint256) {
+    function getSlashingDelta() external view override returns (uint256) {
+        if (_isAttesterStateStale()) {
+            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
+        }
         return 0;
+    }
+
+    function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
+        uint256 lastUpdated = _attesterStateLastUpdated;
+        bool wasStale = _isAttesterStateStale();
+
+        _attesterStateLastUpdated = block.timestamp;
+        emit AttesterStateUpdated(0, 0, 0, 0, block.timestamp);
+        if (wasStale) {
+            emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
+        }
+
+        return (0, true);
+    }
+
+    function setAttesterStateMaxAge(uint256 maxAge) external override {
+        if (maxAge == 0) {
+            revert StakingManager__ZeroAmount();
+        }
+        _attesterStateMaxAge = maxAge;
     }
 
     function totalStaked() external pure override returns (uint256) {
@@ -105,6 +126,18 @@ contract MockHarvestStakingManager is IStakingManager {
         return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
     }
 
+    function getAttesterStateLiveness()
+        external
+        view
+        override
+        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
+    {
+        lastUpdated = _attesterStateLastUpdated;
+        maxAge = _attesterStateMaxAge;
+        isStale = _isAttesterStateStale();
+        return (lastUpdated, maxAge, isStale);
+    }
+
     function getActivatedAttesterCount() external pure override returns (uint256) {
         return 0;
     }
@@ -122,6 +155,14 @@ contract MockHarvestStakingManager is IStakingManager {
     }
 
     function initialize(IERC20, address, address, address, address, address) external pure override { }
+
+    function _isAttesterStateStale() internal view returns (bool) {
+        uint256 lastUpdated = _attesterStateLastUpdated;
+        if (lastUpdated == 0) {
+            return true;
+        }
+        return block.timestamp - lastUpdated > _attesterStateMaxAge;
+    }
 }
 
 contract OllaCoreReentrancyTest is Test {

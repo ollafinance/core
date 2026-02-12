@@ -23,6 +23,9 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         stakingManager.stake(stakeAmount);
         vm.stopPrank();
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, stakeAmount);
         assertEq(stakingProviderRegistry.getQueueLength(), 0);
@@ -47,6 +50,9 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         vm.stopPrank();
 
         // Only 1 attester should be staked
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
@@ -72,6 +78,9 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         vm.stopPrank();
 
         uint256 expectedStaked = 96 ether;
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(stakedAmount, expectedStaked, "stake returns rounded amount");
         assertEq(state.stakedAmount, expectedStaked, "state uses rounded amount");
@@ -96,6 +105,9 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         vm.stopPrank();
 
         uint256 expectedStaked = 64 ether;
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(stakedAmount, expectedStaked, "stake returns amount limited by keys");
         assertEq(state.stakedAmount, expectedStaked, "state uses key-limited amount");
@@ -312,6 +324,9 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         aztec.approve(address(stakingManager), stakeAmount);
         stakingManager.stake(stakeAmount);
         vm.stopPrank();
+
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, stakeAmount);
