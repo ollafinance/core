@@ -1430,7 +1430,7 @@ __metadata:
     husky: "npm:8.0.3"
     solhint: "npm:6.0.2"
     solhint-plugin-explicit-return: "portal:./solhint-rules"
-    tsx: "npm:latest"
+    tsx: "npm:^4.21.0"
     typescript: "npm:~5.9.3"
     viem: "npm:^2.44.4"
   languageName: unknown
@@ -1865,7 +1865,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tsx@npm:latest":
+"tsx@npm:^4.21.0":
   version: 4.21.0
   resolution: "tsx@npm:4.21.0"
   dependencies:
