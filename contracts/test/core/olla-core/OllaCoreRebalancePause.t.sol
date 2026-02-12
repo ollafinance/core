@@ -256,6 +256,13 @@ contract OllaCoreRebalancePauseTest is Test {
         stdstore.target(address(vault)).sig("rebalanceProgress()").depth(0).enable_packed_slots()
             .checked_write(uint256(IOllaCore.RebalanceStep.Done));
 
+        // Ensure storage layout still matches expected slot/packing
+        assertEq(
+            uint256(vault.rebalanceProgress().step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance step write mismatch"
+        );
+
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance done");
         assertTrue(vault.isRebalancePaused(), "rebalance paused");
