@@ -98,9 +98,12 @@ contract OllaCore is
     mapping(address owner => uint256[] requestIds) private _ownerRequestIds;
     mapping(uint256 requestId => uint256 index) private _ownerRequestIndex;
 
+    /// @notice The instant redemption fee in basis points (0-10000).
+    uint256 public instantRedemptionFeeBP;
+
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[47] private __gap;
+    uint256[46] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -185,6 +188,8 @@ contract OllaCore is
         // Timestamp is used only for reporting/accounting liveness.
         // slither-disable-next-line timestamp
         _latestReport.timestamp = block.timestamp;
+
+        instantRedemptionFeeBP = 500; // 5% default instant redemption fee
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governance_);
         _grantRole(GUARDIAN_ROLE, governance_);
@@ -282,6 +287,45 @@ contract OllaCore is
         // Trust: withdrawal queue is authoritative for request state and asset amounts.
         assets = _claimWithdrawal(requestId);
         return assets;
+    }
+
+    /// @notice Instantly redeems stAztec shares for AZTEC assets, charging an instant redemption fee.
+    /// @param shares The number of shares to redeem.
+    /// @param recipient The recipient of the net assets.
+    /// @return assetsAfterFee The net assets transferred to the recipient.
+    function redeem(uint256 shares, address recipient)
+        external
+        override
+        nonReentrant
+        whenNotPaused
+        whenNotRebalancePaused
+        returns (uint256 assetsAfterFee)
+    {
+        assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        return assetsAfterFee;
+    }
+
+    /// @notice Instantly redeems stAztec shares for AZTEC assets with a permit signature.
+    /// @param shares The number of shares to redeem.
+    /// @param recipient The recipient of the net assets.
+    /// @param deadline The permit deadline timestamp.
+    /// @param v The permit signature v.
+    /// @param r The permit signature r.
+    /// @param s The permit signature s.
+    /// @return assetsAfterFee The net assets transferred to the recipient.
+    function redeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        override
+        nonReentrant
+        whenNotPaused
+        whenNotRebalancePaused
+        returns (uint256 assetsAfterFee)
+    {
+        // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
+        // slither-disable-next-line reentrancy-benign
+        _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
+        assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        return assetsAfterFee;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -425,6 +469,23 @@ contract OllaCore is
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
         _modules.stakingManager.setGasThreshold(newThreshold);
+    }
+
+    /// @notice Sets the instant redemption fee in basis points.
+    /// @param newFeeBP The new fee (0-10000).
+    function setInstantRedemptionFeeBP(uint256 newFeeBP)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
+        if (newFeeBP > BP_DIVISOR) {
+            revert OllaCore__InvalidFeeBP(newFeeBP);
+        }
+        uint256 oldFeeBP = instantRedemptionFeeBP;
+        instantRedemptionFeeBP = newFeeBP;
+        emit InstantRedemptionFeeUpdated(oldFeeBP, newFeeBP);
     }
 
     // Slither: rebalance is a linear state machine; complexity is intentional and reviewed.
@@ -838,6 +899,19 @@ contract OllaCore is
         return _convertToSharesForDeposit(assets);
     }
 
+    /// @notice Returns the maximum assets currently available for instant redemptions.
+    /// @return available The available assets (bufferedAssets minus finalized unclaimed).
+    // Slither: timestamp warning is a false positive; this is an accounting comparison, not a timestamp check.
+    // slither-disable-next-line timestamp
+    function availableForInstantRedemption() public view override returns (uint256 available) {
+        uint256 buffered = _accountingState.bufferedAssets;
+        uint256 encumbered = _finalizedUnclaimedAssets;
+        if (buffered <= encumbered) {
+            return 0;
+        }
+        return buffered - encumbered;
+    }
+
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
@@ -1133,6 +1207,71 @@ contract OllaCore is
 
         emit WithdrawalRequested(requestId, owner, recipient, shares, assetsExpected, rate);
         return requestId;
+    }
+
+    /// @notice Internal instant redemption logic.
+    /// @param owner The share owner being redeemed from.
+    /// @param shares The number of shares to redeem.
+    /// @param recipient The recipient of the net assets after fee.
+    /// @return netAssets The net assets transferred to the recipient.
+    function _redeem(address owner, uint256 shares, address recipient) internal returns (uint256 netAssets) {
+        if (recipient == address(0)) {
+            revert OllaCore__ZeroAddress("recipient");
+        }
+        if (shares == 0) {
+            revert OllaCore__InvalidAmount();
+        }
+
+        Modules memory modules = _modules;
+
+        // Safety module pause check — instant redemptions directly impact protocol liquidity
+        if (ISafetyModule(modules.safetyModule).isPaused()) {
+            revert OllaCore__SafetyModulePaused();
+        }
+
+        // Reconcile buffer with actual balance before computing availability
+        _syncBufferedWithBalance();
+
+        // SafetyModule withdrawal minimum check
+        ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
+
+        // Compute exchange rate and asset amounts
+        uint256 rate = _exchangeRate();
+        uint256 grossAssets = shares.mulDiv(rate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+        uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
+        netAssets = grossAssets - fee;
+
+        // Check liquidity (uses simple formula: bufferedAssets - _finalizedUnclaimedAssets)
+        uint256 available = availableForInstantRedemption();
+        // Slither: timestamp warning is a false positive; this is a liquidity guard, not a timestamp check.
+        // slither-disable-next-line timestamp
+        if (grossAssets > available) {
+            revert OllaCore__InsufficientLiquidity(grossAssets, available);
+        }
+
+        // Burn shares from owner
+        // Slither: stAztec is a trusted protocol-owned contract with no callback hooks;
+        // external entry points (redeem, redeemWithPermit) are nonReentrant.
+        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
+        modules.stAztec.burn(owner, shares);
+
+        // Decrease buffered assets by grossAssets (fee + net)
+        _decreaseBuffered(grossAssets);
+
+        // Transfer net assets to recipient
+        modules.asset.safeTransfer(recipient, netAssets);
+
+        // Transfer fee to treasury (governance)
+        // slither-disable-next-line incorrect-equality
+        if (fee != 0) {
+            modules.asset.safeTransfer(modules.governance, fee);
+        }
+
+        // Track in flow counters and reset idle buffer
+        _increaseCumulativeWithdrawals(grossAssets);
+
+        emit InstantRedemption(owner, recipient, shares, grossAssets, fee, netAssets, rate);
+        return netAssets;
     }
 
     /// @notice Payout protocol fees through minting shares.
