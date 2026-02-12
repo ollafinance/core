@@ -200,10 +200,6 @@ contract MockAccountingStakingManager is IStakingManager {
         emit SlashingDeltaMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
-    function syncAttesters() external pure override {
-        return;
-    }
-
     function getUnstakedFunds() public virtual override returns (uint256 received) {
         uint256 target = gasBurnTarget;
         if (target != 0) {

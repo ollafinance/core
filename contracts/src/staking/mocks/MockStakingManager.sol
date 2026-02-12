@@ -260,12 +260,6 @@ contract MockStakingManager is IStakingManager {
         return false;
     }
 
-    /// @inheritdoc IStakingManager
-    function syncAttesters() external pure override {
-        // No-op for mock
-        return;
-    }
-
     function _isSlashingDeltaStale() internal view returns (bool) {
         uint256 lastUpdated = _slashingDeltaLastUpdated;
         if (lastUpdated == 0) {
