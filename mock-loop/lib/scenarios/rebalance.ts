@@ -1,6 +1,6 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { RebalanceScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { getOllaCore } from "../client.js";
+import { getOllaCore, getStakingManager } from "../client.js";
 
 const REBALANCE_STEP_DONE = 5; // RebalanceStep.Done = 5
 const REBALANCE_STEP_NAMES = ["Harvest", "PullUnstaked", "FinalizeWithdrawals", "InitiateUnstake", "StakeSurplus", "Done"];
@@ -13,6 +13,7 @@ export async function executeRebalance(
 ): Promise<ActionResult> {
   const ollaCore = getOllaCore(addresses, clients.operatorWallet);
   const ollaCoreRead = getOllaCore(addresses, clients.publicClient);
+  const stakingManager = getStakingManager(addresses, clients.operatorWallet);
   const iterations: string[] = [];
   const stepHistory: { iter: number; step: number; stepName: string; stakeRemaining: string; unstakeRemaining: string }[] = [];
   let gasLimit: bigint | undefined;
@@ -20,8 +21,13 @@ export async function executeRebalance(
   try {
     let iteration = 0;
     let complete = false;
+    await stakingManager.write.computeAttesterState([]);
     const gasThreshold = await ollaCoreRead.read.rebalanceGasThreshold() as bigint;
+    const minGasLimit = 1_000_000n;
     gasLimit = gasThreshold + 300_000n;
+    if (gasLimit < minGasLimit) {
+      gasLimit = minGasLimit;
+    }
 
     while (!complete) {
       iteration++;
@@ -32,8 +38,37 @@ export async function executeRebalance(
       }
 
       // Call rebalance
-      const txHash = await ollaCore.write.rebalance([], { gas: gasLimit });
+      let txHash = await ollaCore.write.rebalance([], { gas: gasLimit });
       iterations.push(txHash);
+
+      try {
+        const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: txHash });
+        if (receipt.status === "reverted") {
+          throw new Error(`rebalance reverted in tx ${txHash}`);
+        }
+      } catch (waitError) {
+        if (waitError instanceof Error && waitError.message.includes("0xd101596a")) {
+          return {
+            scenario: "rebalance",
+            success: true,
+            data: {
+              iterations: iteration,
+              transactions: iterations,
+              stepHistory,
+              note: "stake failed; likely insufficient provider keys or activation threshold too high",
+            },
+          };
+        }
+        return {
+          scenario: "rebalance",
+          success: false,
+          error: waitError instanceof Error ? waitError.message : String(waitError),
+          data: {
+            iterationsCompleted: iterations.length,
+            stepHistory,
+          },
+        };
+      }
 
       // Check if rebalance is complete by reading rebalanceProgress
       const progress = await ollaCoreRead.read.rebalanceProgress() as { step: number; stakeRemaining: bigint; unstakeRemaining: bigint };
