@@ -14,14 +14,14 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 
-/// @title OllaCoreRebalanceInfiniteRestart
+/// @title OllaCoreRebalanceIdleGuard
 /// @notice Tests that rebalance does not enter an infinite restart loop when there is an
 ///         unstakeable remainder (e.g. 2 AZTEC when minimum stake is 200000 AZTEC ).
 ///
 ///         The fix adds a _rebalanceIdleBuffer flag that records bufferedAssets when a cycle
 ///         completes with no productive staking/unstaking/finalization. Subsequent rebalance calls
 ///         skip starting a new cycle if the buffer hasn't changed.
-contract OllaCoreRebalanceInfiniteRestart is Test {
+contract OllaCoreRebalanceIdleGuard is Test {
     uint256 internal constant DECIMALS = 1e18;
 
     MockAztec internal asset;
