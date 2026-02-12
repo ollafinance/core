@@ -497,7 +497,6 @@ contract OllaCore is
                 _rebalanceProgress = progress;
                 return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
             }
-            _modules.stakingManager.syncAttesters();
             _pullUnstakedFunds();
             if (_modules.stakingManager.hasExitableUnstakes()) {
                 _rebalanceProgress = progress;

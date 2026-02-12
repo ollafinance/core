@@ -13,13 +13,17 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     function test_Unstake_InitiatesWithdrawal() external {
         _setupStakedAttester();
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
-        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount - ACTIVATION_THRESHOLD);
+        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount);
         assertEq(stakingManager.getActivatedAttesterCount(), 0);
         assertEq(stakingManager.getPendingUnstakeCount(), 1);
     }
@@ -48,11 +52,15 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     }
 
     function test_Unstake_NoStaked_ReturnsZero() external {
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
         vm.prank(core);
         uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD);
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(unstakedAmount, 0, "unstake should return zero when nothing is staked");
         assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "staked amount should remain unchanged");
@@ -79,9 +87,13 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         vm.prank(core);
         uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(unstakedAmount, ACTIVATION_THRESHOLD * 2, "unstake should return requested amount");
-        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
+        // stakedAmount includes exiting attesters (all 3 are still counted)
+        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3);
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
     }
@@ -89,14 +101,19 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     function test_Unstake_ExceedsStaked_ClampsAndUpdates() external {
         _setupMultipleStakedAttesters(2);
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
         vm.prank(core);
         uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(unstakedAmount, stateBefore.stakedAmount, "unstake should clamp to staked amount");
-        assertEq(stateAfter.stakedAmount, 0, "staked amount should be fully drained");
+        // stakedAmount still includes exiting attesters
+        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "staked amount includes exiting attesters");
         assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
         assertEq(stakingManager.getPendingUnstakeCount(), 2, "pending count should match attesters");
     }
@@ -314,8 +331,12 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         vm.prank(core);
         stakingManager.unstake(unstakeAmount);
 
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
-        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * (stakeCount - unstakeCount));
+        // stakedAmount includes exiting attesters (all stakeCount are still counted)
+        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * stakeCount);
         assertEq(stakingManager.getActivatedAttesterCount(), stakeCount - unstakeCount);
     }
 }

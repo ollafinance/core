@@ -137,21 +137,4 @@ contract StakingManagerReentrancyTest is Test {
         );
         stakingManager.getUnstakedFunds();
     }
-
-    function test_RevertWhen_CleanActivatedAttesters_ReenteredFromRollupDeposit() external {
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.addKeysToProvider(keys);
-
-        aztec.mint(core, ACTIVATION_THRESHOLD);
-
-        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.syncAttesters, ()));
-        rollup.setReenterOnDeposit(true);
-
-        vm.prank(core);
-        vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
-        );
-        stakingManager.stake(ACTIVATION_THRESHOLD);
-    }
 }

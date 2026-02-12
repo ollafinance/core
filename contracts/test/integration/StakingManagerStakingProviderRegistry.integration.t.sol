@@ -242,6 +242,10 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
     function test_FullUnstakeFlow_StakeThenUnstakeThenClaim() external {
         _setupStakedAttesters(3);
 
+        // Refresh cached state so view functions work
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
         assertEq(stateBefore.stakedAmount, ACTIVATION_THRESHOLD * 3);
 
@@ -325,9 +329,9 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
             rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
         }
 
-        // Clean activated attesters
-        vm.prank(core);
-        stakingManager.syncAttesters();
+        // computeAttesterState() syncs Active→Exiting for externally exited attesters
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
 
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
@@ -389,11 +393,17 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
+        // Refresh cached state so view functions reflect current attester state
+        vm.prank(defaultAdmin);
+        stakingManager.computeAttesterState();
+
         // Query staking state from StakingManager
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
 
-        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD); // 1 still validating
-        assertEq(state.withdrawableAmount, ACTIVATION_THRESHOLD * 2); // 2 ready to claim
+        // stakedAmount includes all Active + Exiting attesters (3 × 100 ether)
+        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3, "stakedAmount includes exiting attesters");
+        // The 2 unstaked attesters have exitable exits (mock rollup auto-finalizes)
+        assertEq(state.withdrawableAmount, ACTIVATION_THRESHOLD * 2, "2 exits ready to claim");
     }
 
     function test_ProviderConfig_DelegatesToRegistry() external view {

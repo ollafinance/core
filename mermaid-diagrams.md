@@ -63,6 +63,7 @@ core -->|"request-,claim-,finalize-withdrawal"| withdrawQ
 core -->|"checkDepositAllowed / checkWithdrawalMinimum / checkQueueRatio / checkAccountingLiveness"| safety
 
 %% Operator cycle (end-state orchestration)
+ollaOperatorWallet -->|"computeAttesterState()"| stkMan
 ollaOperatorWallet -->|"rebalance()"| core
 ollaOperatorWallet -->|"setRebalanceGasThreshold()"| core
 ollaOperatorWallet -->|"harvestRewards()"| core
@@ -204,9 +205,10 @@ sequenceDiagram
     participant SM as StakingManager
     participant AZ as AssetToken
 
+    OP->>SM: computeAttesterState()
+    Note right of SM: syncs attester states + caches staking data
     OP->>C: rebalance()
     Note over C: Step 2: Pull unstaked funds
-    C->>SM: cleanActivatedAttesters()
     C->>SM: getUnstakedFunds()
     SM-->>C: transfer matured unstakes
     C->>AZ: balanceOf(C) increases
@@ -292,6 +294,8 @@ sequenceDiagram
     participant RV as RewardsVault
     participant WQ as WithdrawalQueue
 
+    OP->>SM: computeAttesterState()
+    Note right of SM: syncs attester states + caches staking data
     OP->>C: rebalance()
 
     Note over C: Step 1: Harvest rewards
@@ -302,7 +306,6 @@ sequenceDiagram
     RV-->>C: rewardsDelta
 
     Note over C: Step 2: Pull unstaked funds
-    C->>SM: cleanActivatedAttesters()
     C->>SM: getUnstakedFunds()
     SM-->>C: transfer matured unstakes
     C->>C: bufferedAssets += received
@@ -347,6 +350,8 @@ sequenceDiagram
     participant WQ as WithdrawalQueue
     participant ST as StAztec
 
+    OP->>SM: computeAttesterState()
+    Note right of SM: syncs attester states + caches staking data
     OP->>C: updateAccounting()
     C->>SAF: checkAccountingLiveness()
     C->>SM: getClaimableRewards()

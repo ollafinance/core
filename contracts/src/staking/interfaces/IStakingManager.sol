@@ -13,8 +13,8 @@ interface IStakingManager {
                                   STRUCTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Local registry state for attesters.
-    enum InternalAttesterState {
+    /// @notice Local registry status for attesters.
+    enum InternalAttesterStatus {
         Inactive,
         Active,
         Exiting
@@ -32,14 +32,14 @@ interface IStakingManager {
         G1Point proofOfPossession;
     }
 
-    /// @notice Tracks an attester with their originally staked amount and last seen state.
+    /// @notice Tracks an attester with their originally staked amount and last seen status.
     /// @param attester The attester address.
     /// @param stakedAmount The amount originally staked (activation threshold at stake time).
-    /// @param state The local registry state.
+    /// @param status The local registry status.
     struct AttesterInfo {
         address attester;
         uint256 stakedAmount;
-        InternalAttesterState state;
+        InternalAttesterStatus status;
     }
 
     /// @notice Configuration for the staking provider.
@@ -51,10 +51,12 @@ interface IStakingManager {
     }
 
     /// @notice Aggregated staking state from on-chain queries.
+    /// @param slashingDelta Cumulative slashing delta across rollup snapshots.
     /// @param stakedAmount Total amount in VALIDATING status with effectiveBalance > 0.
     /// @param pendingUnstakeAmount Total amount in exit state, not yet exitable.
     /// @param withdrawableAmount Total amount in exit state, now exitable.
     struct StakingState {
+        uint256 slashingDelta;
         uint256 stakedAmount;
         uint256 pendingUnstakeAmount;
         uint256 withdrawableAmount;
@@ -97,6 +99,30 @@ interface IStakingManager {
     /// @param reason The failure reason.
     event RewardClaimFailed(address indexed attester, string reason);
 
+    /// @notice Emitted when the cached attester state is updated.
+    /// @param slashingDelta The updated slashing delta.
+    /// @param totalStaked The updated total staked.
+    /// @param pendingUnstakeAmount The updated pending unstake amount.
+    /// @param withdrawableAmount The updated withdrawable amount.
+    /// @param timestamp The timestamp when the cache was updated.
+    event AttesterStateUpdated(
+        uint256 indexed slashingDelta,
+        uint256 indexed totalStaked,
+        uint256 pendingUnstakeAmount,
+        uint256 withdrawableAmount,
+        uint256 indexed timestamp
+    );
+
+    /// @notice Emitted when an attester state update detects stale state.
+    /// @param lastUpdated The last attester state update timestamp.
+    /// @param maxAge The configured maximum age for freshness.
+    event AttesterStateStale(uint256 indexed lastUpdated, uint256 indexed maxAge);
+
+    /// @notice Emitted when the attester state max age is updated.
+    /// @param oldMaxAge The previous maximum age.
+    /// @param newMaxAge The new maximum age.
+    event AttesterStateMaxAgeUpdated(uint256 indexed oldMaxAge, uint256 indexed newMaxAge);
+
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -124,6 +150,9 @@ interface IStakingManager {
 
     /// @notice Thrown when caller is not authorized core.
     error StakingManager__UnauthorizedCore(address caller);
+
+    /// @notice Thrown when the cached attester state is stale.
+    error StakingManager__AttesterStateStale(uint256 lastUpdated, uint256 maxAge);
 
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
@@ -163,10 +192,6 @@ interface IStakingManager {
     /// @return unstakedAmount The amount initiated for unstake in this call.
     function unstake(uint256 amount) external returns (uint256 unstakedAmount);
 
-    /// @notice Syncs attesters with the rollup and moves them to exiting or inactive if needed.
-    /// @dev Since attesters can exit due to external reasons, local state is not guaranteed to be in sync.
-    function syncAttesters() external;
-
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.
     function getUnstakedFunds() external returns (uint256 received);
@@ -175,34 +200,58 @@ interface IStakingManager {
     /// @return harvested The amount of rewards harvested.
     function harvestRewards() external returns (uint256 harvested);
 
+    /*//////////////////////////////////////////////////////////////
+                           OPERATOR FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Computes all attester-derived state (slashing delta, total staked, pending unstakes, withdrawable)
+    ///         using bounded work and caches the results on completion.
+    /// @return slashingDelta The cached slashing delta after this call.
+    /// @return completed True if the computation completed in this call.
+    function computeAttesterState() external returns (uint256 slashingDelta, bool completed);
+
+    /// @notice Sets the maximum allowed age for the cached attester state.
+    /// @param maxAge The maximum age in seconds.
+    function setAttesterStateMaxAge(uint256 maxAge) external;
+
+    /*//////////////////////////////////////////////////////////////
+                              VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Returns the cumulative slashing delta from the rollup.
     /// @dev Only callable by the configured core address.
     /// @return slashingDelta The cumulative slashing delta.
-    function getSlashingDelta() external returns (uint256 slashingDelta);
-
-    /*//////////////////////////////////////////////////////////////
-                             VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
+    function getSlashingDelta() external view returns (uint256 slashingDelta);
 
     /// @notice Returns claimable rewards.
     /// @dev Only callable by the configured core address. Does not actually claim rewards.
     /// @return claimableRewards The total rewards claimalbe to rewards recipient.
     function getClaimableRewards() external view returns (uint256 claimableRewards);
 
-    /// @notice Returns the total staked principal across validator states.
+    /// @notice Returns attester state liveness data.
+    /// @dev Covers all cached attester-derived state (slashing delta, total staked, pending unstakes, withdrawable).
+    /// @return lastUpdated The last timestamp when attester state was updated.
+    /// @return maxAge The maximum age allowed for freshness.
+    /// @return isStale True if the cached attester state is stale.
+    function getAttesterStateLiveness() external view returns (uint256 lastUpdated, uint256 maxAge, bool isStale);
+
+    /// @notice Returns the cached total staked principal.
+    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return stakedTotal The total staked principal.
     function totalStaked() external view returns (uint256 stakedTotal);
 
-    /// @notice Returns the current staking state by querying the rollup.
-    /// @dev Iterates through all attesters and queries getAttesterView for each.
+    /// @notice Returns the cached aggregated staking state.
+    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return state The aggregated staking state.
     function getStakingState() external view returns (StakingState memory state);
 
-    /// @notice Returns the total amount pending unstake across the rollup.
+    /// @notice Returns the cached total amount pending unstake.
+    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return pendingUnstakeAmount The total pending unstake amount.
     function pendingUnstakes() external view returns (uint256 pendingUnstakeAmount);
 
-    /// @notice Returns true if any exitable unstake exists.
+    /// @notice Returns true if any exitable unstake exists from cached state.
+    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return True if there are unstake exits ready to be finalized.
     function hasExitableUnstakes() external view returns (bool);
 
@@ -225,7 +274,7 @@ interface IStakingManager {
 
     /// @notice Checks if an attester is exiting.
     /// @param attester The attester address.
-    /// @return True if the attester is in the exiting state.
+    /// @return True if the attester is in the exiting status.
     function isUnstakePending(address attester) external view returns (bool);
 
     /// @notice Returns the core address.
