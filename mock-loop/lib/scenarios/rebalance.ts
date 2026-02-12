@@ -15,10 +15,13 @@ export async function executeRebalance(
   const ollaCoreRead = getOllaCore(addresses, clients.publicClient);
   const iterations: string[] = [];
   const stepHistory: { iter: number; step: number; stepName: string; stakeRemaining: string; unstakeRemaining: string }[] = [];
+  let gasLimit: bigint | undefined;
 
   try {
     let iteration = 0;
     let complete = false;
+    const gasThreshold = await ollaCoreRead.read.rebalanceGasThreshold() as bigint;
+    gasLimit = gasThreshold + 300_000n;
 
     while (!complete) {
       iteration++;
@@ -29,7 +32,7 @@ export async function executeRebalance(
       }
 
       // Call rebalance
-      const txHash = await ollaCore.write.rebalance([]);
+      const txHash = await ollaCore.write.rebalance([], { gas: gasLimit });
       iterations.push(txHash);
 
       // Check if rebalance is complete by reading rebalanceProgress
