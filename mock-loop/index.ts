@@ -67,13 +67,14 @@ async function executeScenario(
   tick: number,
   clients: ReturnType<typeof createClients>,
   addresses: ReturnType<typeof loadDeployments>,
-  scenarioState: any
+  scenarioState: any,
+  runState: any
 ): Promise<ActionResult> {
   switch (scenario.type) {
     case "provider-keys":
-      return executeProviderKeys(scenario, tick, clients, addresses);
+      return executeProviderKeys(scenario, tick, clients, addresses, runState);
     case "mock-rewards":
-      return executeMockRewards(scenario, tick, clients, addresses, scenarioState);
+      return executeMockRewards(scenario, tick, clients, addresses, scenarioState, runState);
     case "user-deposit":
       return executeUserDeposit(scenario, tick, clients, addresses);
     case "rebalance":
@@ -143,7 +144,8 @@ async function runTick(
   addresses: ReturnType<typeof loadDeployments>,
   previousState: Awaited<ReturnType<typeof readFullState>> | null,
   logger: Logger,
-  scenarioStates: any[]
+  scenarioStates: any[],
+  runState: any
 ): Promise<{ result: TickResult; state: Awaited<ReturnType<typeof readFullState>> }> {
   const startTime = Date.now();
   const actions: ActionResult[] = [];
@@ -155,7 +157,7 @@ async function runTick(
       logger.logScenarioStart(scenario.type, tick);
 
       try {
-        const result = await executeScenario(scenario, tick, clients, addresses, scenarioState);
+        const result = await executeScenario(scenario, tick, clients, addresses, scenarioState, runState);
         actions.push(result);
         logger.logScenarioComplete(result, tick);
         if (scenario.type === "user-claim" && result.success) {
@@ -265,6 +267,7 @@ async function main() {
   let tick = 0;
   let running = true;
   const scenarioStates: any[] = config.scenarios.map(() => ({}));
+  const runState: any = { attesters: [] };
 
   // Handle graceful shutdown
   process.on("SIGINT", () => {
@@ -291,7 +294,8 @@ async function main() {
         addresses,
         currentState,
         logger,
-        scenarioStates
+        scenarioStates,
+        runState
       );
 
       currentState = state;

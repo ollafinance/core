@@ -1,6 +1,6 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { RebalanceScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { getOllaCore, getStakingManager } from "../client.js";
+import { getOllaCore, getStakingManager, loadAbi } from "../client.js";
 
 const REBALANCE_STEP_DONE = 5; // RebalanceStep.Done
 const STAKE_FAILED_SELECTOR = "0xd101596a"; // Stake failed error selector
@@ -15,6 +15,8 @@ export async function executeRebalance(
   const ollaCore = getOllaCore(addresses, clients.operatorWallet);
   const ollaCoreRead = getOllaCore(addresses, clients.publicClient);
   const stakingManager = getStakingManager(addresses, clients.operatorWallet);
+  const stakingManagerAbi = loadAbi("StakingManager");
+  const stakingManagerAddress = addresses.StakingManagerProxy as `0x${string}`;
   const iterations: string[] = [];
   const stepHistory: { iter: number; step: number; stepName: string; stakeRemaining: string; unstakeRemaining: string }[] = [];
   let gasLimit: bigint | undefined;
@@ -22,7 +24,17 @@ export async function executeRebalance(
   try {
     let iteration = 0;
     let complete = false;
-    await stakingManager.write.computeAttesterState([]);
+    const attesterGas = 500_000n;
+    const preComputeTx = await clients.operatorWallet.writeContract({
+      address: stakingManagerAddress,
+      abi: stakingManagerAbi,
+      functionName: "computeAttesterState",
+      args: [],
+      gas: attesterGas,
+      chain: null,
+      account: clients.operatorWallet.account,
+    } as any);
+    await clients.publicClient.waitForTransactionReceipt({ hash: preComputeTx });
     const gasThreshold = await ollaCoreRead.read.rebalanceGasThreshold() as bigint;
     const minGasLimit = 1_000_000n;
     gasLimit = gasThreshold + 300_000n;
@@ -85,6 +97,17 @@ export async function executeRebalance(
       }
     }
 
+    const postComputeTx = await clients.operatorWallet.writeContract({
+      address: stakingManagerAddress,
+      abi: stakingManagerAbi,
+      functionName: "computeAttesterState",
+      args: [],
+      gas: attesterGas,
+      chain: null,
+      account: clients.operatorWallet.account,
+    } as any);
+    await clients.publicClient.waitForTransactionReceipt({ hash: postComputeTx });
+
     return {
       scenario: "rebalance",
       success: true,
@@ -92,6 +115,7 @@ export async function executeRebalance(
         iterations: iteration,
         transactions: iterations,
         stepHistory,
+        postComputeTx,
       },
     };
   } catch (error) {

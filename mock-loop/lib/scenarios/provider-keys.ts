@@ -6,7 +6,8 @@ export async function executeProviderKeys(
   scenario: ProviderKeysScenario,
   _tick: number,
   _clients: { publicClient: PublicClient; operatorWallet: WalletClient },
-  addresses: DeploymentAddresses
+  addresses: DeploymentAddresses,
+  runState: any
 ): Promise<ActionResult> {
   const registry = getStakingProviderRegistry(addresses, _clients.operatorWallet);
 
@@ -57,6 +58,12 @@ export async function executeProviderKeys(
 
     // Add keys to provider
     const txHash = await registry.write.addKeysToProvider([keyStores]);
+    if (!runState.attesters) {
+      runState.attesters = [];
+    }
+    for (const keyStore of keyStores) {
+      runState.attesters.push(keyStore.attester);
+    }
 
     return {
       scenario: "provider-keys",

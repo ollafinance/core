@@ -1,23 +1,33 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { MockRewardsScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { getMockAztecRollup, getRewardsVault } from "../client.js";
+import { getMockAztecRollup } from "../client.js";
 
 export async function executeMockRewards(
   scenario: MockRewardsScenario,
   _tick: number,
   clients: { publicClient: PublicClient; operatorWallet: WalletClient },
   addresses: DeploymentAddresses,
-  state: any
+  state: any,
+  runState: any
 ): Promise<ActionResult> {
   const rollup = getMockAztecRollup(addresses, clients.operatorWallet);
+  const rollupRead = getMockAztecRollup(addresses, clients.publicClient);
   try {
     const actions: string[] = [];
 
-    // First run: set reward rate
-    if (!state?.initialized) {
-      const rateTx = await rollup.write.setRewardRatePerSecond([BigInt(scenario.rate)]);
+    const attesters = Array.isArray(runState.attesters) ? runState.attesters : [];
+    const stakeReads = await Promise.all(
+      attesters.map((attester: `0x${string}`) => rollupRead.read.stakes([attester]))
+    ) as bigint[];
+    const stakedAmount = stakeReads.reduce((sum, stake) => sum + stake, 0n);
+    const rateBps = BigInt(scenario.rateBps);
+    const perTickReward = (stakedAmount * rateBps) / 10_000n;
+    const targetRate = perTickReward * 1000n;
+
+    if (state?.lastRate !== targetRate.toString()) {
+      const rateTx = await rollup.write.setRewardRatePerSecond([targetRate]);
       actions.push(`setRewardRatePerSecond: ${rateTx}`);
-      state.initialized = true;
+      state.lastRate = targetRate.toString();
     }
 
     // Each tick: call tick() on the rollup
@@ -29,7 +39,9 @@ export async function executeMockRewards(
       success: true,
       data: {
         actions,
-        rate: scenario.rate,
+        rateBps: scenario.rateBps,
+        stakedAmount: stakedAmount.toString(),
+        perTickReward: perTickReward.toString(),
       },
     };
   } catch (error) {

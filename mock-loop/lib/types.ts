@@ -13,7 +13,7 @@ export interface MockRewardsScenario {
   type: "mock-rewards";
   enabled: boolean;
   shouldRun?: ScenarioShouldRun;
-  rate: string; // BigInt as string
+  rateBps: number;
 }
 
 export interface UserDepositScenario {

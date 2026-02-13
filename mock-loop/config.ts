@@ -23,13 +23,13 @@ export const defaultConfig: RunConfig = {
       type: "mock-rewards",
       enabled: true,
       shouldRun: everyNTick(1),
-      rate: "1000000000000000000", // 1 ether per tick
+      rateBps: 10, // 0.1% per tick
     },
     {
       type: "user-deposit",
       enabled: true,
       shouldRun: (_state, tick) => tick === 1,
-      amount: "200000000000000000000000", // 200k ether
+      amount: "200000000000000000000000", // 200k AZTEC
       privateKey: ANVIL_ACCOUNT_1_PRIVATE_KEY, // Anvil account 1
     },
     {
