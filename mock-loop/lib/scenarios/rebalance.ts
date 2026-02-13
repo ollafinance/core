@@ -1,6 +1,6 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { RebalanceScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { getOllaCore, getStakingManager, loadAbi } from "../client.js";
+import { getOllaCore, loadAbi } from "../client.js";
 
 const REBALANCE_STEP_DONE = 5; // RebalanceStep.Done
 const STAKE_FAILED_SELECTOR = "0xd101596a"; // Stake failed error selector
@@ -14,11 +14,11 @@ export async function executeRebalance(
 ): Promise<ActionResult> {
   const ollaCore = getOllaCore(addresses, clients.operatorWallet);
   const ollaCoreRead = getOllaCore(addresses, clients.publicClient);
-  const stakingManager = getStakingManager(addresses, clients.operatorWallet);
   const stakingManagerAbi = loadAbi("StakingManager");
   const stakingManagerAddress = addresses.StakingManagerProxy as `0x${string}`;
   const iterations: string[] = [];
   const stepHistory: { iter: number; step: number; stepName: string; stakeRemaining: string; unstakeRemaining: string }[] = [];
+  let lastProgress: { step: number; stakeRemaining: bigint; unstakeRemaining: bigint } | null = null;
   let gasLimit: bigint | undefined;
 
   try {
@@ -92,10 +92,26 @@ export async function executeRebalance(
         stakeRemaining: progress.stakeRemaining.toString(),
         unstakeRemaining: progress.unstakeRemaining.toString()
       });
-      console.log(
-        `rebalance progress (iter ${iteration}): ${REBALANCE_STEP_NAMES[progress.step] ?? "Unknown"} ` +
-          `stakeRemaining=${progress.stakeRemaining} unstakeRemaining=${progress.unstakeRemaining}`
-      );
+      if (
+        lastProgress &&
+        progress.step === lastProgress.step &&
+        progress.stakeRemaining === lastProgress.stakeRemaining &&
+        progress.unstakeRemaining === lastProgress.unstakeRemaining
+      ) {
+        return {
+          scenario: "rebalance",
+          success: true,
+          data: {
+            iterations: iteration,
+            transactions: iterations,
+            stepHistory,
+            note: "rebalance made no progress; yielding until next tick",
+          },
+        };
+      }
+
+      lastProgress = progress;
+
       if (progress.step === REBALANCE_STEP_DONE) {
         complete = true;
       }
