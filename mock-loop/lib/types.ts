@@ -1,9 +1,10 @@
 // Scenario configuration types
+export type ScenarioShouldRun = (state: any, tick: number) => boolean;
+
 export interface ProviderKeysScenario {
   type: "provider-keys";
   enabled: boolean;
-  every?: number;
-  at?: number;
+  shouldRun?: ScenarioShouldRun;
   minKeys: number;
   seedCount: number;
 }
@@ -11,16 +12,14 @@ export interface ProviderKeysScenario {
 export interface MockRewardsScenario {
   type: "mock-rewards";
   enabled: boolean;
-  every?: number;
-  at?: number;
+  shouldRun?: ScenarioShouldRun;
   rate: string; // BigInt as string
 }
 
 export interface UserDepositScenario {
   type: "user-deposit";
   enabled: boolean;
-  every?: number;
-  at?: number;
+  shouldRun?: ScenarioShouldRun;
   amount: string; // BigInt as string
   privateKey: string;
 }
@@ -28,30 +27,26 @@ export interface UserDepositScenario {
 export interface RebalanceScenario {
   type: "rebalance";
   enabled: boolean;
-  every?: number;
-  at?: number;
+  shouldRun?: ScenarioShouldRun;
 }
 
 export interface AccountingScenario {
   type: "accounting";
   enabled: boolean;
-  every?: number;
-  at?: number;
+  shouldRun?: ScenarioShouldRun;
 }
 
 export interface UserInitiateWithdrawScenario {
   type: "user-initiate-withdraw";
   enabled: boolean;
-  every?: number;
-  at?: number;
+  shouldRun?: ScenarioShouldRun;
   privateKey: string;
 }
 
 export interface UserClaimScenario {
   type: "user-claim";
   enabled: boolean;
-  every?: number;
-  at?: number;
+  shouldRun?: ScenarioShouldRun;
   privateKey: string;
 }
 

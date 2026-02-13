@@ -52,29 +52,13 @@ async function loadConfig(configPath?: string): Promise<RunConfig> {
   return customConfig as RunConfig;
 }
 
-function shouldRunScenario(scenario: ScenarioConfig, tick: number): boolean {
+function shouldRunScenario(
+  scenario: ScenarioConfig,
+  state: any,
+  tick: number
+): boolean {
   if (!scenario.enabled) return false;
-
-  // Check 'at' constraint - must be at or after this tick
-  if (scenario.at !== undefined && tick < scenario.at) return false;
-
-  // Check 'every' constraint
-  if (scenario.every !== undefined) {
-    // If both 'at' and 'every' are set, run every tick after 'at' that matches 'every'
-    if (scenario.at !== undefined) {
-      // Run at tick 'at' and every 'every' ticks after that
-      return (tick - scenario.at) % scenario.every === 0;
-    }
-    // Just 'every' - run on ticks divisible by 'every'
-    return tick % scenario.every === 0;
-  }
-
-  // Just 'at' - run only at that specific tick
-  if (scenario.at !== undefined) {
-    return tick === scenario.at;
-  }
-
-  // No scheduling constraints - don't run automatically
+  if (scenario.shouldRun) return scenario.shouldRun(state, tick);
   return false;
 }
 
@@ -157,20 +141,25 @@ async function runTick(
   clients: ReturnType<typeof createClients>,
   addresses: ReturnType<typeof loadDeployments>,
   previousState: Awaited<ReturnType<typeof readFullState>> | null,
-  logger: Logger
+  logger: Logger,
+  scenarioStates: any[]
 ): Promise<{ result: TickResult; state: Awaited<ReturnType<typeof readFullState>> }> {
   const startTime = Date.now();
   const actions: ActionResult[] = [];
 
   // Execute scenarios in order
-  for (const scenario of config.scenarios) {
-    if (shouldRunScenario(scenario, tick)) {
+  for (const [index, scenario] of config.scenarios.entries()) {
+    const scenarioState = scenarioStates[index];
+    if (shouldRunScenario(scenario, scenarioState, tick)) {
       logger.logScenarioStart(scenario.type, tick);
 
       try {
         const result = await executeScenario(scenario, tick, clients, addresses);
         actions.push(result);
         logger.logScenarioComplete(result, tick);
+        if (scenario.type === "user-claim" && result.success) {
+          scenarioStates[index] = { ...scenarioState, completed: true };
+        }
       } catch (error) {
         const failedResult: ActionResult = {
           scenario: scenario.type,
@@ -274,6 +263,7 @@ async function main() {
   // Main loop
   let tick = 0;
   let running = true;
+  const scenarioStates: any[] = config.scenarios.map(() => ({}));
 
   // Handle graceful shutdown
   process.on("SIGINT", () => {
@@ -299,7 +289,8 @@ async function main() {
         clients,
         addresses,
         currentState,
-        logger
+        logger,
+        scenarioStates
       );
 
       currentState = state;
