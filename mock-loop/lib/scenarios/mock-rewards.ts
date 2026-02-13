@@ -15,14 +15,11 @@ export async function executeMockRewards(
   try {
     const actions: string[] = [];
 
-    const attesters = Array.isArray(runState.attesters) ? runState.attesters : [];
-    const stakeReads = await Promise.all(
-      attesters.map((attester: `0x${string}`) => rollupRead.read.stakes([attester]))
-    ) as bigint[];
-    const stakedAmount = stakeReads.reduce((sum, stake) => sum + stake, 0n);
+    const totalStaked = await rollupRead.read.totalStaked() as bigint;
+    const stakedAmount = totalStaked;
     const rateBps = BigInt(scenario.rateBps);
     const perTickReward = (stakedAmount * rateBps) / 10_000n;
-    const targetRate = perTickReward * 1000n;
+    const targetRate = perTickReward;
 
     if (state?.lastRate !== targetRate.toString()) {
       const rateTx = await rollup.write.setRewardRatePerSecond([targetRate]);
@@ -40,6 +37,7 @@ export async function executeMockRewards(
       data: {
         actions,
         rateBps: scenario.rateBps,
+        rollupTotalStaked: totalStaked.toString(),
         stakedAmount: stakedAmount.toString(),
         perTickReward: perTickReward.toString(),
       },

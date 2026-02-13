@@ -92,6 +92,10 @@ export async function executeRebalance(
         stakeRemaining: progress.stakeRemaining.toString(),
         unstakeRemaining: progress.unstakeRemaining.toString()
       });
+      console.log(
+        `rebalance progress (iter ${iteration}): ${REBALANCE_STEP_NAMES[progress.step] ?? "Unknown"} ` +
+          `stakeRemaining=${progress.stakeRemaining} unstakeRemaining=${progress.unstakeRemaining}`
+      );
       if (progress.step === REBALANCE_STEP_DONE) {
         complete = true;
       }

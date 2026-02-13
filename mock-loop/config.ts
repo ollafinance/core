@@ -23,7 +23,7 @@ export const defaultConfig: RunConfig = {
       type: "mock-rewards",
       enabled: true,
       shouldRun: everyNTick(1),
-      rateBps: 10, // 0.1% per tick
+      rateBps: 50, // 0.1% per tick
     },
     {
       type: "user-deposit",

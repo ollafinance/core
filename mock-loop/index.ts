@@ -266,18 +266,42 @@ async function main() {
   // Main loop
   let tick = 0;
   let running = true;
+  let shutdownTimer: NodeJS.Timeout | null = null;
+  let shutdownRequested = false;
   const scenarioStates: any[] = config.scenarios.map(() => ({}));
   const runState: any = { attesters: [] };
 
   // Handle graceful shutdown
   process.on("SIGINT", () => {
     console.log("\nReceived SIGINT, shutting down gracefully...");
+    if (shutdownRequested) {
+      console.log("Force exiting now.");
+      process.exit(130);
+    }
+    shutdownRequested = true;
     running = false;
+    if (!shutdownTimer) {
+      shutdownTimer = setTimeout(() => {
+        console.log("Graceful shutdown timed out. Forcing exit.");
+        process.exit(130);
+      }, 3_000);
+    }
   });
 
   process.on("SIGTERM", () => {
     console.log("\nReceived SIGTERM, shutting down gracefully...");
+    if (shutdownRequested) {
+      console.log("Force exiting now.");
+      process.exit(143);
+    }
+    shutdownRequested = true;
     running = false;
+    if (!shutdownTimer) {
+      shutdownTimer = setTimeout(() => {
+        console.log("Graceful shutdown timed out. Forcing exit.");
+        process.exit(143);
+      }, 3_000);
+    }
   });
 
   console.log("\nStarting main loop...");
