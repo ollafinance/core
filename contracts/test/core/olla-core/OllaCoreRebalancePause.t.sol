@@ -564,20 +564,27 @@ contract OllaCoreRebalancePauseTest is Test {
             "pause complete event"
         );
 
+        // Rebalance completion no longer calls _updateAccountingInternal. The operator
+        // must call computeAttesterState() then updateAccounting() separately.
         bytes32 accountingUpdated =
             keccak256("AccountingUpdated(uint256,uint256,uint256,int256,uint256,uint256,uint256,uint256)");
-        bytes32 attestersRead = keccak256("AttestersStateRead(uint256,uint256,uint256)");
-        assertTrue(_hasEvent(entries, accountingUpdated, address(vault)), "accounting updated");
-        assertTrue(_hasEvent(entries, attestersRead, address(vault)), "attesters read");
+        assertFalse(
+            _hasEvent(entries, accountingUpdated, address(vault)), "no accounting update during rebalance completion"
+        );
 
-        IOllaCore.FlowCounters memory flows = vault.flowCounters();
-        assertEq(flows.latestReportCumulativeDeposits, depositAmount, "accounting snapshot updated");
         assertFalse(vault.isRebalancePaused(), "pause cleared");
         assertEq(
             vault.rebalancePauseReason(),
             uint8(IOllaCore.RebalancePauseReason.RebalanceComplete),
             "pause reason complete"
         );
+
+        // Operator calls updateAccounting separately after rebalance
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        assertEq(flows.latestReportCumulativeDeposits, depositAmount, "accounting snapshot updated");
     }
 
     function test_Rebalance_PartialProgressDoesNotUpdateAccounting() external {
@@ -612,12 +619,27 @@ contract OllaCoreRebalancePauseTest is Test {
             keccak256("AccountingUpdated(uint256,uint256,uint256,int256,uint256,uint256,uint256,uint256)");
         assertFalse(_hasEvent(partialLogs, accountingUpdated, address(vault)), "no accounting update on partial");
 
+        // Complete the rebalance — accounting is NOT updated inline anymore
         vm.recordLogs();
         vm.prank(operator);
         vault.rebalance();
         Vm.Log[] memory completionLogs = vm.getRecordedLogs();
 
-        assertTrue(_hasEvent(completionLogs, accountingUpdated, address(vault)), "accounting update on completion");
+        assertFalse(
+            _hasEvent(completionLogs, accountingUpdated, address(vault)),
+            "no accounting update during rebalance completion"
+        );
+
+        // Operator must call updateAccounting separately
+        vm.recordLogs();
+        vm.prank(operator);
+        vault.updateAccounting();
+        Vm.Log[] memory accountingLogs = vm.getRecordedLogs();
+
+        assertTrue(
+            _hasEvent(accountingLogs, accountingUpdated, address(vault)),
+            "accounting update on separate updateAccounting call"
+        );
     }
 
     function test_UpdateAccounting_RevertsWhenRebalancePaused() external {
@@ -657,29 +679,33 @@ contract OllaCoreRebalancePauseTest is Test {
 
         revertingStakingManager.setStakeReturnAmount(0);
 
-        // Configure safety module to revert on the 2nd checkAccountingLiveness call.
-        // The first call happens at the start of rebalance (passes), the second happens
-        // inside _updateAccountingInternal at completion (reverts), causing the entire
-        // rebalance transaction to revert and preserving the paused state.
+        // With the accounting update removed from rebalance completion, the safety
+        // module revert on the 2nd call no longer affects the rebalance itself.
+        // Rebalance now succeeds even if the safety module would have reverted
+        // during an accounting update.
         revertingModule.setRevertAfter(2);
 
-        vm.expectRevert(bytes("ACCOUNTING_LIVENESS_REVERT"));
         vm.prank(operator);
         revertingVault.rebalance();
 
-        // The revert rolled back all state changes, so pause is not active
-        // (the rebalance never committed). The system is stuck until the safety
-        // module issue is resolved.
-        assertFalse(revertingVault.isRebalancePaused(), "pause not set because tx reverted");
+        // Rebalance completed and unpaused successfully
+        assertFalse(revertingVault.isRebalancePaused(), "pause cleared after successful rebalance");
 
-        // Once the safety module recovers, rebalance succeeds end-to-end
+        // However, a separate updateAccounting call will revert because the safety
+        // module's checkAccountingLiveness fails.
+        revertingModule.resetCheckCount();
+        revertingModule.setRevertAfter(1);
+
+        vm.expectRevert(bytes("ACCOUNTING_LIVENESS_REVERT"));
+        vm.prank(operator);
+        revertingVault.updateAccounting();
+
+        // Once the safety module recovers, updateAccounting succeeds
         revertingModule.setRevertAfter(0);
         revertingModule.resetCheckCount();
 
         vm.prank(operator);
-        revertingVault.rebalance();
-
-        assertFalse(revertingVault.isRebalancePaused(), "pause cleared after successful rebalance");
+        revertingVault.updateAccounting();
     }
 
     /*//////////////////////////////////////////////////////////////

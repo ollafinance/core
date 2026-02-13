@@ -35,6 +35,8 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     mapping(address attester => uint256 stake) public stakes;
+    /// @notice Total stake currently active on the rollup.
+    uint256 public totalStaked;
     /// @inheritdoc IMockAztecRollup
     mapping(address attester => address withdrawer) public withdrawers;
     mapping(address attester => Exit exit) private _exits;
@@ -75,8 +77,14 @@ contract MockAztecRollup is IMockAztecRollup {
         G1Point calldata _proofOfPossession,
         bool
     ) external override {
+        uint256 previousStake = stakes[_attester];
         STAKING_ASSET.safeTransferFrom(msg.sender, address(this), _activationThreshold);
         stakes[_attester] = _activationThreshold;
+        if (previousStake > 0) {
+            totalStaked = totalStaked - previousStake + _activationThreshold;
+        } else {
+            totalStaked += _activationThreshold;
+        }
         withdrawers[_attester] = _withdrawer;
         _publicKeys[_attester] = _publicKeyInG1;
         emit Deposit(_attester, _withdrawer, _publicKeyInG1, _publicKeyInG2, _proofOfPossession, _activationThreshold);
@@ -92,6 +100,10 @@ contract MockAztecRollup is IMockAztecRollup {
         }
 
         uint256 amount = stakes[_attester];
+        stakes[_attester] = 0;
+        if (amount > 0) {
+            totalStaked -= amount;
+        }
 
         _exits[_attester] = Exit({
             withdrawalId: 0,

@@ -23,3 +23,4 @@ contracts/.forge-snapshots/
 
 # Solidity compiler artifacts (downloaded by forge)
 soljson-*.js
+mock-loop/runs/

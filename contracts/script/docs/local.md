@@ -16,6 +16,7 @@ The examples below assume `FOUNDRY_PROFILE=local` is set.
 - `DEPLOY_ENV` defaults to `local`.
 - Addresses default to `deployments/<DEPLOY_ENV>.json` when possible.
 - Scripts default to Anvil account-0 for signing when `chainid == 31337`.
+- The Anvil account-1 private key shown below is a default test account and only for local development.
 
 ## Inspect
 
@@ -36,46 +37,6 @@ forge script script/rollup/TickRewards.s.sol --broadcast  # COINBASE defaults to
 forge script script/ops/Rebalance.s.sol --broadcast  # CORE defaults to OllaCoreProxy
 forge script script/ops/UpdateAccounting.s.sol --broadcast  # CORE defaults to OllaCoreProxy
 ```
-
-## Local dev (3 terminals)
-
-term-1:
-
-```bash
-yarn dev:chain
-```
-
-term-2:
-
-```bash
-yarn deploy:local && yarn dev:local-start-mock-loop
-```
-
-term-3:
-
-```bash
-yarn dev:local-god-mint-user 200000
-yarn dev:local-user-deposit 200000
-
-# Later, as needed
-yarn dev:local-operator-rebalance
-yarn dev:local-operator-update-accounting
-yarn dev:local-user-initiate-withdraw-all
-
-# After withdrawals are finalized by operator rebalances
-yarn dev:local-user-claim-withdrawals
-```
-
-Defaults:
-
-- God/admin/operator: Anvil account-0.
-- User: Anvil account-1 (override with `USER_PRIVATE_KEY`/`USER_ADDRESS`).
-- CLI amounts like `200000` are interpreted as whole tokens (18 decimals).
-
-Notes:
-
-- `deploy:local` seeds provider keys automatically, so staking can start immediately.
-- The mock loop only accrues rewards when there is rollup stake.
 
 ## Provider keys
 
@@ -99,4 +60,30 @@ TARGET=0x0000000000000000000000000000000000000001 forge script script/ops/GrantO
 cd contracts
 
 THRESHOLD=10000000000000000000 forge script script/rollup/DemoFinalizeWithdraw.s.sol --broadcast  # ROLLUP defaults to MockAztecRollup; ATTESTER/RECIPIENT default to broadcaster
+```
+
+## Mint tokens
+
+```bash
+cd contracts
+
+AMOUNT=200000 forge script script/local/MintAztecTo.s.sol --broadcast  # TO defaults to Anvil account-1
+```
+
+## User operations
+
+```bash
+cd contracts
+
+# Deposit
+AMOUNT=100000 PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d \
+  forge script script/local/UserDeposit.s.sol --broadcast
+
+# Initiate withdrawal (full balance)
+PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d \
+  forge script script/local/UserInitiateWithdrawAll.s.sol --broadcast
+
+# Claim finalized withdrawals
+PRIVATE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d \
+  forge script script/local/UserClaimWithdrawals.s.sol --broadcast
 ```
