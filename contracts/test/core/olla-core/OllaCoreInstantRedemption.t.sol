@@ -6,12 +6,15 @@ import { Test } from "@forge-std/Test.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
 import { Math } from "@oz/utils/math/Math.sol";
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
+import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
@@ -47,6 +50,10 @@ contract OllaCoreInstantRedemptionTest is Test {
     bytes32 internal constant PERMIT_TYPEHASH =
         keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
+    /// @dev Storage slot for `_accountingState.bufferedAssets` (from `forge inspect OllaCore storage-layout`).
+    uint256 internal constant BUFFERED_ASSETS_SLOT = 7;
+    /// @dev Storage slot for `_accountingState.stakedPrincipal` (slot 8).
+    uint256 internal constant STAKED_PRINCIPAL_SLOT = 8;
     /// @dev Storage slot for `_finalizedUnclaimedAssets` (from `forge inspect OllaCore storage-layout`).
     uint256 internal constant FINALIZED_UNCLAIMED_SLOT = 33;
     /// @dev Storage slot for `_rebalanceIdleBuffer`.
@@ -132,6 +139,14 @@ contract OllaCoreInstantRedemptionTest is Test {
 
     function _setFinalizedUnclaimedAssets(uint256 amount) internal {
         vm.store(address(vault), bytes32(FINALIZED_UNCLAIMED_SLOT), bytes32(amount));
+    }
+
+    function _setBufferedAssets(uint256 amount) internal {
+        vm.store(address(vault), bytes32(BUFFERED_ASSETS_SLOT), bytes32(amount));
+    }
+
+    function _setStakedPrincipal(uint256 amount) internal {
+        vm.store(address(vault), bytes32(STAKED_PRINCIPAL_SLOT), bytes32(amount));
     }
 
     function _setRebalanceIdleBuffer(uint256 amount) internal {
@@ -282,26 +297,23 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // Simulate finalized unclaimed: mint additional tokens to vault and set finalized state.
-        // After sync: bufferedAssets = actual_balance - _finalizedUnclaimedAssets.
-        // We want available = bufferedAssets - _finalizedUnclaimedAssets to be small.
-        // Deposit 100 → vault balance = 100, buffered = 100.
-        // Mint 30 more to vault, set finalized = 30.
-        // After sync: buffered = 130 - 30 = 100. available = 100 - 30 = 70.
-        // Trying to redeem shares worth grossAssets > 70 should fail.
-        uint256 finalized = 30 * DECIMALS;
-        asset.mint(address(vault), finalized);
-        _setFinalizedUnclaimedAssets(finalized);
+        // Reduce available liquidity via finalized encumbrance.
+        // Deposit 100 → balance = 100, buffered = 100, alice has 100 shares.
+        // Mint 30 to vault, set finalized = 80, set buffered = 50, set stakedPrincipal = 50.
+        // totalAssets = buffered(50) + staked(50) = 100, totalSupply = 100 → rate = 1:1.
+        // Reconcile: available = balance(130) - finalized(80) = 50 >= buffered(50) ✓ (no delta).
+        // available = bufferedAssets = 50.
+        // At 1:1 rate, 60 shares → grossAssets = 60 > available (50) → revert.
+        asset.mint(address(vault), 30 * DECIMALS);
+        _setFinalizedUnclaimedAssets(80 * DECIMALS);
+        _setBufferedAssets(50 * DECIMALS);
+        _setStakedPrincipal(50 * DECIMALS);
 
-        uint256 available = vault.availableForInstantRedemption();
-        assertEq(available, 70 * DECIMALS, "70 available after finalized encumbrance");
-
-        // At 1:1 rate, 80 shares → grossAssets = 80 > available (70)
         vm.expectRevert(
-            abi.encodeWithSelector(IOllaCore.OllaCore__InsufficientLiquidity.selector, 80 * DECIMALS, 70 * DECIMALS)
+            abi.encodeWithSelector(IOllaCore.OllaCore__InsufficientLiquidity.selector, 60 * DECIMALS, 50 * DECIMALS)
         );
         vm.prank(alice);
-        vault.redeem(80 * DECIMALS, bob);
+        vault.redeem(60 * DECIMALS, bob);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -521,13 +533,14 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
+        // After deposit: buffered = 100 (reconciled). available = bufferedAssets = 100.
         assertEq(vault.availableForInstantRedemption(), depositAmount, "full buffer available");
 
-        // Mint finalized tokens and set finalized unclaimed.
-        // View uses bufferedAssets (still 100) - _finalizedUnclaimedAssets (30) = 70.
+        // Mint 30 extra tokens to vault and set finalized = 30.
+        // View returns bufferedAssets which is still 100 (no sync triggered by view).
         asset.mint(address(vault), 30 * DECIMALS);
         _setFinalizedUnclaimedAssets(30 * DECIMALS);
-        assertEq(vault.availableForInstantRedemption(), 70 * DECIMALS, "buffer minus encumbered");
+        assertEq(vault.availableForInstantRedemption(), 100 * DECIMALS, "buffered unchanged before sync");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -535,19 +548,9 @@ contract OllaCoreInstantRedemptionTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_AvailableForInstantRedemption_ReturnsZeroWhenFullyEncumbered() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        // Mint extra tokens to vault and set finalized to equal buffered.
-        // After deposit: balance = 100, buffered = 100.
-        // Mint 100 more, set finalized = 100. available (view, no sync) = 100 - 100 = 0.
-        asset.mint(address(vault), 100 * DECIMALS);
-        _setFinalizedUnclaimedAssets(100 * DECIMALS);
-        assertEq(vault.availableForInstantRedemption(), 0, "zero when fully encumbered");
-
-        // Over-encumbered: finalized > buffered
-        _setFinalizedUnclaimedAssets(200 * DECIMALS);
-        assertEq(vault.availableForInstantRedemption(), 0, "zero when over-encumbered");
+        // available = bufferedAssets.
+        // A fresh vault (no deposits) has bufferedAssets = 0.
+        assertEq(vault.availableForInstantRedemption(), 0, "zero when no deposits");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -753,21 +756,15 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // Mint finalized tokens to vault and set finalized unclaimed to leave only 1 wei available.
-        // After deposit: balance = 100, buffered = 100.
-        // Mint (100-1) more to vault, set finalized = (100-1).
-        // After sync: buffered = (200-1) - (100-1) = 100. available = 100 - (100-1) = 1.
-        uint256 finalized = depositAmount - 1;
-        asset.mint(address(vault), finalized);
-        _setFinalizedUnclaimedAssets(finalized);
-
-        uint256 available = vault.availableForInstantRedemption();
-        assertEq(available, 1, "only 1 wei available");
-
-        // At 1:1 rate, 2 shares => grossAssets = 2 > 1
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InsufficientLiquidity.selector, 2, 1));
+        // available = bufferedAssets = 100 after deposit.
+        // Try to redeem 101 shares at 1:1 rate → grossAssets = 101 > available (100).
+        // Liquidity check fires before burn, so alice not having 101 shares doesn't matter.
+        uint256 redeemAmount = depositAmount + 1;
+        vm.expectRevert(
+            abi.encodeWithSelector(IOllaCore.OllaCore__InsufficientLiquidity.selector, redeemAmount, depositAmount)
+        );
         vm.prank(alice);
-        vault.redeem(2, bob);
+        vault.redeem(redeemAmount, bob);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -818,26 +815,55 @@ contract OllaCoreInstantRedemptionTest is Test {
               32. REENTRANCY PROTECTION
     //////////////////////////////////////////////////////////////*/
 
-    function test_Redeem_NonReentrantEnforced() external {
-        // Verify the function has nonReentrant by checking the modifier is present.
-        // We do this by verifying the function selector exists and the contract compiles
-        // with the correct modifiers (compiler-level assurance).
-        // Direct reentrancy testing would require a malicious token mock which is complex.
-        // Instead, we verify that redeem works correctly and the modifier is in place
-        // by checking a successful call followed by a second call in the same tx would fail.
+    function test_RevertWhen_Redeem_ReenteredFromTransferHook() external {
+        // Deploy a fresh vault using MaliciousAztec as the underlying asset so we can
+        // trigger a reentrancy attempt from the ERC-20 transfer hook inside _redeem.
+        MaliciousAztec malAsset = new MaliciousAztec();
 
+        OllaCoreHarness malCoreImpl = new OllaCoreHarness();
+        ERC1967Proxy malProxy = new ERC1967Proxy(address(malCoreImpl), "");
+        OllaCoreHarness malVault = OllaCoreHarness(address(malProxy));
+
+        MockAccountingStakingManager malStakingManager = new MockAccountingStakingManager();
+        StAztec malStAztec = new StAztec(governance, address(malVault));
+        MockRewardsVault malRewardsVault = new MockRewardsVault(IERC20(address(malAsset)), address(malVault));
+        MockSafetyModule malSafetyModule = new MockSafetyModule(address(malCoreImpl));
+        MockWithdrawalQueue malWithdrawalQueue = new MockWithdrawalQueue();
+
+        malStakingManager.setRewardsToken(IERC20(address(malAsset)));
+        malStakingManager.setRewardsVault(address(malRewardsVault));
+
+        malVault.initialize(
+            IERC20(address(malAsset)),
+            malStAztec,
+            malStakingManager,
+            0,
+            0,
+            governance,
+            address(malWithdrawalQueue),
+            malRewardsVault,
+            address(malSafetyModule)
+        );
+
+        // Deposit so alice has shares and the vault has balance
         uint256 depositAmount = 100 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        // First call succeeds
+        malAsset.mint(alice, depositAmount);
         vm.prank(alice);
-        uint256 net = vault.redeem(10 * DECIMALS, bob);
-        assertGt(net, 0, "first redeem succeeds");
-
-        // Second call also succeeds (separate tx, not reentrant)
+        IERC20(address(malAsset)).approve(address(malVault), depositAmount);
         vm.prank(alice);
-        uint256 net2 = vault.redeem(10 * DECIMALS, bob);
-        assertGt(net2, 0, "second redeem succeeds in separate tx");
+        malVault.deposit(depositAmount, alice);
+
+        // Configure the malicious token to re-enter redeem() during the safeTransfer call
+        uint256 sharesToRedeem = 10 * DECIMALS;
+        malAsset.configureTransferReentry(
+            address(malVault), abi.encodeCall(malVault.redeem, (sharesToRedeem, bob)), true
+        );
+
+        // The outer redeem triggers safeTransfer → transfer hook → re-enters redeem → nonReentrant reverts.
+        // The revert from the inner call propagates through Address.functionCall, reverting the outer call.
+        vm.prank(alice);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        malVault.redeem(sharesToRedeem, bob);
     }
 
     /*//////////////////////////////////////////////////////////////

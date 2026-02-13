@@ -894,16 +894,11 @@ contract OllaCore is
     }
 
     /// @notice Returns the maximum assets currently available for instant redemptions.
-    /// @return available The available assets (bufferedAssets minus finalized unclaimed).
-    // Slither: timestamp warning is a false positive; this is an accounting comparison, not a timestamp check.
-    // slither-disable-next-line timestamp
+    /// @dev After reconciliation, `bufferedAssets` already equals `balance - _finalizedUnclaimedAssets`,
+    ///      so it directly represents unencumbered liquid assets.
+    /// @return available The unencumbered buffered assets available for instant redemptions.
     function availableForInstantRedemption() public view override returns (uint256 available) {
-        uint256 buffered = _accountingState.bufferedAssets;
-        uint256 encumbered = _finalizedUnclaimedAssets;
-        if (buffered <= encumbered) {
-            return 0;
-        }
-        return buffered - encumbered;
+        return _accountingState.bufferedAssets;
     }
 
     /// @notice Returns the current total assets held by the vault.
@@ -1223,10 +1218,8 @@ contract OllaCore is
             revert OllaCore__SafetyModulePaused();
         }
 
-        // Reconcile buffer with actual balance before computing availability
         _syncBufferedWithBalance();
 
-        // SafetyModule withdrawal minimum check
         ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
 
         // Compute exchange rate and asset amounts
@@ -1235,7 +1228,7 @@ contract OllaCore is
         uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
         netAssets = grossAssets - fee;
 
-        // Check liquidity (uses simple formula: bufferedAssets - _finalizedUnclaimedAssets)
+        // Check liquidity — bufferedAssets already excludes _finalizedUnclaimedAssets after sync
         uint256 available = availableForInstantRedemption();
         // Slither: timestamp warning is a false positive; this is a liquidity guard, not a timestamp check.
         // slither-disable-next-line timestamp

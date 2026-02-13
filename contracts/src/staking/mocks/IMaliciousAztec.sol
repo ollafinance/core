@@ -11,6 +11,12 @@ interface IMaliciousAztec {
     /// @param enabled Whether to enable the reentrancy attempt.
     function configureReentry(address target, bytes calldata data, bool enabled) external;
 
+    /// @notice Configure a reentrancy attempt during transfer.
+    /// @param target The contract to call.
+    /// @param data The calldata to use.
+    /// @param enabled Whether to enable the reentrancy attempt.
+    function configureTransferReentry(address target, bytes calldata data, bool enabled) external;
+
     /// @notice Set allowance from this token contract to itself.
     /// @param amount The allowance amount.
     function setSelfAllowance(uint256 amount) external;

@@ -562,7 +562,7 @@ interface IOllaCore {
     function previewDeposit(uint256 assets) external view returns (uint256 shares);
 
     /// @notice Returns the maximum assets currently available for instant redemptions.
-    /// @return The available assets (bufferedAssets - _finalizedUnclaimedAssets).
+    /// @return The unencumbered buffered assets available for instant redemptions.
     function availableForInstantRedemption() external view returns (uint256);
 
     /// @notice Returns the instant redemption fee in basis points.
