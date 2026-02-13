@@ -1,0 +1,585 @@
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity ^0.8.27;
+
+import { Test, Vm } from "@forge-std/Test.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { OllaCore } from "src/core/OllaCore.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { StAztec } from "src/core/StAztec.sol";
+import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { RewardsVault } from "src/core/RewardsVault.sol";
+import { StakingManager } from "src/staking/StakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
+import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
+import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
+import { AttesterView } from "src/staking/libraries/AztecTypes.sol";
+
+/// @title ComputeAttesterStateIntegration
+/// @notice Targeted integration test: deposit -> rebalance -> computeAttesterState -> assert totalStaked > 0.
+///         Uses vm.load to read StakingManager private storage for debugging.
+contract ComputeAttesterStateIntegration is Test {
+    uint256 internal constant DECIMALS = 1e18;
+
+    // ── StakingManager storage slot constants (from `forge inspect StakingManager storageLayout`) ──
+    uint256 internal constant SLOT_ATTESTERS_ARRAY = 6; // _attesters (dynamic array length)
+    uint256 internal constant SLOT_ACTIVE_COUNT = 8;
+    uint256 internal constant SLOT_EXITING_COUNT = 9;
+    uint256 internal constant SLOT_LAST_ATTESTER_STATE_TS = 10;
+    uint256 internal constant SLOT_ATTESTER_STATE_MAX_AGE = 11;
+    uint256 internal constant SLOT_ATTESTER_STATE_CURSOR = 14;
+    // _accumulator occupies slots 15-18 (StakingState: slashingDelta, stakedAmount, pendingUnstakeAmount, withdrawableAmount)
+    uint256 internal constant SLOT_ACCUMULATOR_SLASHING = 15;
+    uint256 internal constant SLOT_ACCUMULATOR_STAKED = 16;
+    uint256 internal constant SLOT_ACCUMULATOR_PENDING = 17;
+    uint256 internal constant SLOT_ACCUMULATOR_WITHDRAWABLE = 18;
+    // _cachedState occupies slots 19-22
+    uint256 internal constant SLOT_CACHED_SLASHING = 19;
+    uint256 internal constant SLOT_CACHED_STAKED = 20;
+    uint256 internal constant SLOT_CACHED_PENDING = 21;
+    uint256 internal constant SLOT_CACHED_WITHDRAWABLE = 22;
+    uint256 internal constant SLOT_GAS_THRESHOLD = 23;
+
+    // ── Debug events ──
+    event DebugAttesterArray(uint256 length);
+    event DebugAttesterInfo(uint256 index, address attester, uint256 stakedAmount, uint256 status);
+    event DebugCursor(uint256 attesterStateCursor);
+    event DebugGasThreshold(uint256 gasThreshold);
+    event DebugActiveCount(uint256 activeCount);
+    event DebugAccumulator(uint256 slashing, uint256 staked, uint256 pending, uint256 withdrawable);
+    event DebugCachedState(uint256 slashing, uint256 staked, uint256 pending, uint256 withdrawable);
+    event DebugRollupView(address attester, uint256 effectiveBalance, uint256 status);
+    event DebugComputeResult(uint256 slashingDelta, bool completed);
+    event DebugTimestamps(uint256 lastUpdated, uint256 maxAge, uint256 blockTimestamp);
+
+    MockAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    StakingManager internal stakingManager;
+    StakingProviderRegistry internal stakingProviderRegistry;
+    WithdrawalQueue internal withdrawalQueue;
+    RewardsVault internal rewardsVault;
+    SafetyModule internal safetyModule;
+    MockAztecRollup internal mockRollup;
+    MockAztecRollupRegistry internal mockRollupRegistry;
+    address internal governance;
+    address internal operator;
+    address internal alice;
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+
+        // Deploy OllaCore
+        OllaCore coreImplementation = new OllaCore();
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        vault = OllaCore(address(coreProxy));
+
+        governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+
+        // Deploy WithdrawalQueue
+        WithdrawalQueue queueImplementation = new WithdrawalQueue();
+        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
+        withdrawalQueue = WithdrawalQueue(address(queueProxy));
+        withdrawalQueue.initialize(address(vault), governance);
+
+        // Deploy RewardsVault
+        RewardsVault rewardsImplementation = new RewardsVault();
+        ERC1967Proxy rewardsProxy = new ERC1967Proxy(address(rewardsImplementation), "");
+        rewardsVault = RewardsVault(address(rewardsProxy));
+        rewardsVault.initialize(IERC20(asset), address(vault), governance);
+
+        // Deploy Mock Rollup and Registry
+        mockRollup = new MockAztecRollup(IERC20(asset), 0);
+        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup));
+
+        // Deploy StakingProviderRegistry (before StakingManager)
+        StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
+        ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImplementation), "");
+        stakingProviderRegistry = StakingProviderRegistry(address(registryProxy));
+
+        // Deploy StakingManager
+        StakingManager smImplementation = new StakingManager();
+        ERC1967Proxy smProxy = new ERC1967Proxy(address(smImplementation), "");
+        stakingManager = StakingManager(address(smProxy));
+
+        // Initialize StakingProviderRegistry with StakingManager address
+        stakingProviderRegistry.initialize(
+            address(stakingManager),
+            governance,
+            governance, // rewardsRecipient same as admin for simplicity
+            governance
+        );
+
+        // Initialize StakingManager
+        stakingManager.initialize(
+            IERC20(asset),
+            address(mockRollupRegistry),
+            address(rewardsVault),
+            address(vault),
+            address(stakingProviderRegistry),
+            governance
+        );
+
+        // Deploy SafetyModule
+        safetyModule =
+            new SafetyModule(governance, governance, address(vault), 1_000_000 * DECIMALS, 500, 6_000, 1 days);
+
+        // Initialize OllaCore
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        operator = makeAddr("operator");
+        alice = makeAddr("alice");
+
+        // Grant OPERATOR_ROLE on both OllaCore and StakingManager
+        vm.startPrank(governance);
+        vault.grantRole(vault.OPERATOR_ROLE(), operator);
+        stakingManager.grantRole(stakingManager.OPERATOR_ROLE(), operator);
+        vm.stopPrank();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
+        asset.mint(owner, assets);
+        vm.prank(owner);
+        asset.approve(address(vault), assets);
+        vm.prank(owner);
+        shares = vault.deposit(assets, owner);
+    }
+
+    uint256 internal _keyOffset;
+
+    function _createMockKeys(uint256 count) internal returns (IStakingManager.KeyStore[] memory) {
+        IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](count);
+        for (uint256 i; i < count; ++i) {
+            uint256 keyId = _keyOffset + i + 1;
+            keys[i] = IStakingManager.KeyStore({
+                attester: address(uint160(keyId)),
+                publicKeyG1: G1Point({ x: keyId, y: keyId + 1 }),
+                publicKeyG2: G2Point({ x0: keyId, x1: keyId + 1, y0: keyId + 2, y1: keyId + 3 }),
+                proofOfPossession: G1Point({ x: keyId + 10, y: keyId + 11 })
+            });
+        }
+        _keyOffset += count;
+        return keys;
+    }
+
+    function _addKeys(uint256 count) internal {
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
+        vm.prank(governance);
+        stakingProviderRegistry.addKeysToProvider(keys);
+    }
+
+    /// @dev Reads the _attesters array length from StakingManager storage.
+    function _readAttestersLength() internal view returns (uint256) {
+        return uint256(vm.load(address(stakingManager), bytes32(SLOT_ATTESTERS_ARRAY)));
+    }
+
+    /// @dev Reads AttesterInfo at a given index from the dynamic _attesters array.
+    ///      Dynamic array elements start at keccak256(slot). Each AttesterInfo is 3 slots:
+    ///        slot+0: address attester (packed in lower 20 bytes)
+    ///        slot+1: uint256 stakedAmount
+    ///        slot+2: InternalAttesterStatus (uint8, stored as uint256)
+    function _readAttesterInfo(uint256 index)
+        internal
+        view
+        returns (address attester, uint256 stakedAmount, uint256 status)
+    {
+        bytes32 baseSlot = keccak256(abi.encode(SLOT_ATTESTERS_ARRAY));
+        uint256 elementSlot = uint256(baseSlot) + (index * 3); // 3 slots per AttesterInfo
+        attester = address(uint160(uint256(vm.load(address(stakingManager), bytes32(elementSlot)))));
+        stakedAmount = uint256(vm.load(address(stakingManager), bytes32(elementSlot + 1)));
+        status = uint256(vm.load(address(stakingManager), bytes32(elementSlot + 2)));
+    }
+
+    function _readCursor() internal view returns (uint256) {
+        return uint256(vm.load(address(stakingManager), bytes32(SLOT_ATTESTER_STATE_CURSOR)));
+    }
+
+    function _readGasThreshold() internal view returns (uint256) {
+        return uint256(vm.load(address(stakingManager), bytes32(SLOT_GAS_THRESHOLD)));
+    }
+
+    function _readActiveCount() internal view returns (uint256) {
+        return uint256(vm.load(address(stakingManager), bytes32(SLOT_ACTIVE_COUNT)));
+    }
+
+    function _readAccumulator() internal view returns (uint256 s, uint256 st, uint256 p, uint256 w) {
+        s = uint256(vm.load(address(stakingManager), bytes32(SLOT_ACCUMULATOR_SLASHING)));
+        st = uint256(vm.load(address(stakingManager), bytes32(SLOT_ACCUMULATOR_STAKED)));
+        p = uint256(vm.load(address(stakingManager), bytes32(SLOT_ACCUMULATOR_PENDING)));
+        w = uint256(vm.load(address(stakingManager), bytes32(SLOT_ACCUMULATOR_WITHDRAWABLE)));
+    }
+
+    function _readCachedState() internal view returns (uint256 s, uint256 st, uint256 p, uint256 w) {
+        s = uint256(vm.load(address(stakingManager), bytes32(SLOT_CACHED_SLASHING)));
+        st = uint256(vm.load(address(stakingManager), bytes32(SLOT_CACHED_STAKED)));
+        p = uint256(vm.load(address(stakingManager), bytes32(SLOT_CACHED_PENDING)));
+        w = uint256(vm.load(address(stakingManager), bytes32(SLOT_CACHED_WITHDRAWABLE)));
+    }
+
+    function _readTimestamps() internal view returns (uint256 lastUpdated, uint256 maxAge) {
+        lastUpdated = uint256(vm.load(address(stakingManager), bytes32(SLOT_LAST_ATTESTER_STATE_TS)));
+        maxAge = uint256(vm.load(address(stakingManager), bytes32(SLOT_ATTESTER_STATE_MAX_AGE)));
+    }
+
+    /// @dev Emits all StakingManager internal debug state.
+    function _emitFullDebugState(string memory phase) internal {
+        emit log_string(string.concat("=== DEBUG: ", phase, " ==="));
+
+        // Attester array
+        uint256 length = _readAttestersLength();
+        emit DebugAttesterArray(length);
+        for (uint256 i; i < length; ++i) {
+            (address attester, uint256 stakedAmount, uint256 status) = _readAttesterInfo(i);
+            emit DebugAttesterInfo(i, attester, stakedAmount, status);
+
+            // Also query the rollup view for this attester
+            AttesterView memory view_ = mockRollup.getAttesterView(attester);
+            emit DebugRollupView(attester, view_.effectiveBalance, uint256(view_.status));
+        }
+
+        // Cursor
+        emit DebugCursor(_readCursor());
+
+        // Gas threshold
+        emit DebugGasThreshold(_readGasThreshold());
+
+        // Active count
+        emit DebugActiveCount(_readActiveCount());
+
+        // Accumulator
+        {
+            (uint256 s, uint256 st, uint256 p, uint256 w) = _readAccumulator();
+            emit DebugAccumulator(s, st, p, w);
+        }
+
+        // Cached state
+        {
+            (uint256 s, uint256 st, uint256 p, uint256 w) = _readCachedState();
+            emit DebugCachedState(s, st, p, w);
+        }
+
+        // Timestamps
+        {
+            (uint256 lastUpdated, uint256 maxAge) = _readTimestamps();
+            emit DebugTimestamps(lastUpdated, maxAge, block.timestamp);
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Core test: deposit -> rebalance -> computeAttesterState -> totalStaked > 0
+    function test_computeAttesterState_reflectsStakedAmount() external {
+        // ── Setup ──
+        uint256 activationThreshold = 200_000 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        _addKeys(5);
+
+        uint256 depositAmount = 200_006 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // ── Debug: state before rebalance ──
+        _emitFullDebugState("BEFORE REBALANCE");
+
+        // ── Step 1: Rebalance (stakes funds on rollup) ──
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.AccountingState memory stateAfterRebalance1 = vault.accountingState();
+        emit log_named_uint("bufferedAssets after rebalance 1", stateAfterRebalance1.bufferedAssets);
+        emit log_named_uint("stakedPrincipal after rebalance 1", stateAfterRebalance1.stakedPrincipal);
+
+        // If rebalance is still in progress (paused mid-cycle), call again
+        if (vault.isRebalancePaused()) {
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        // ── Debug: state after rebalance ──
+        _emitFullDebugState("AFTER REBALANCE");
+
+        IOllaCore.AccountingState memory stateAfterRebalance = vault.accountingState();
+        emit log_named_uint("bufferedAssets after rebalance", stateAfterRebalance.bufferedAssets);
+        emit log_named_uint("stakedPrincipal after rebalance", stateAfterRebalance.stakedPrincipal);
+
+        // Verify funds are actually on the rollup
+        uint256 attesterCount = _readAttestersLength();
+        assertGt(attesterCount, 0, "Should have at least one attester registered");
+
+        for (uint256 i; i < attesterCount; ++i) {
+            (address attester,,) = _readAttesterInfo(i);
+            uint256 rollupStake = mockRollup.stakes(attester);
+            emit log_named_address("attester", attester);
+            emit log_named_uint("rollup stake", rollupStake);
+            assertGt(rollupStake, 0, "Attester should have stake on rollup");
+        }
+
+        // ── Step 2: computeAttesterState ──
+        emit log_string("=== Calling computeAttesterState ===");
+
+        vm.prank(operator);
+        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
+        emit DebugComputeResult(slashingDelta, completed);
+
+        assertTrue(completed, "computeAttesterState should complete in one pass");
+
+        // ── Debug: state after computeAttesterState ──
+        _emitFullDebugState("AFTER computeAttesterState");
+
+        // ── Key assertion: totalStaked must reflect the staked amount ──
+        uint256 totalStaked = stakingManager.totalStaked();
+        emit log_named_uint("totalStaked from StakingManager", totalStaked);
+
+        assertGt(totalStaked, 0, "totalStaked must be > 0 after staking + computeAttesterState");
+        assertEq(totalStaked, activationThreshold, "totalStaked should equal activation threshold (1 attester)");
+    }
+
+    /// @notice Isolates computeAttesterState by checking each step of the accumulator loop.
+    function test_computeAttesterState_accumulatorDebug() external {
+        // ── Setup: stake one attester directly through StakingManager ──
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        _addKeys(1);
+
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // ── Rebalance to stake ──
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Complete rebalance if multi-step
+        for (uint256 i; i < 5; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        // ── Verify attester is registered and active ──
+        uint256 length = _readAttestersLength();
+        emit log_named_uint("_attesters.length", length);
+        assertEq(length, 1, "Should have exactly 1 attester");
+
+        (address attester, uint256 stakedAmt, uint256 status) = _readAttesterInfo(0);
+        emit log_named_address("attester[0].attester", attester);
+        emit log_named_uint("attester[0].stakedAmount", stakedAmt);
+        emit log_named_uint("attester[0].status (0=Inactive,1=Active,2=Exiting)", status);
+        assertEq(status, 1, "Attester should be Active (1)");
+        assertEq(stakedAmt, activationThreshold, "stakedAmount should match activation threshold");
+
+        // ── Verify rollup view ──
+        AttesterView memory view_ = mockRollup.getAttesterView(attester);
+        emit log_named_uint("rollup effectiveBalance", view_.effectiveBalance);
+        emit log_named_uint("rollup status (3=VALIDATING)", uint256(view_.status));
+        assertGt(view_.effectiveBalance, 0, "Rollup should report positive effectiveBalance");
+
+        // ── Check cursor and gas threshold before compute ──
+        uint256 cursor = _readCursor();
+        uint256 gasThresh = _readGasThreshold();
+        emit log_named_uint("cursor before compute", cursor);
+        emit log_named_uint("gasThreshold", gasThresh);
+        assertEq(cursor, 0, "Cursor should be 0 before first compute");
+
+        // ── Call computeAttesterState ──
+        vm.prank(operator);
+        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
+
+        emit log_named_uint("slashingDelta", slashingDelta);
+        emit log_named_uint("completed (1=true)", completed ? 1 : 0);
+        assertTrue(completed, "Should complete in one pass with 1 attester");
+
+        // ── Check accumulator and cached state after ──
+        {
+            (uint256 accSlash, uint256 accStaked, uint256 accPending, uint256 accWithdrawable) = _readAccumulator();
+            emit log_named_uint("accumulator.stakedAmount", accStaked);
+            assertEq(accStaked, activationThreshold, "Accumulator stakedAmount should match");
+        }
+
+        {
+            (uint256 cacSlash, uint256 cacStaked, uint256 cacPending, uint256 cacWithdrawable) = _readCachedState();
+            emit log_named_uint("cachedState.stakedAmount", cacStaked);
+            assertEq(cacStaked, activationThreshold, "Cached stakedAmount should match");
+        }
+
+        // ── Final: totalStaked should be > 0 ──
+        uint256 totalStaked = stakingManager.totalStaked();
+        emit log_named_uint("totalStaked()", totalStaked);
+        assertEq(totalStaked, activationThreshold, "totalStaked must equal activation threshold");
+    }
+
+    /// @notice Tests that the full flow (deposit -> rebalance -> compute -> updateAccounting)
+    ///         results in OllaCore.stakedPrincipal reflecting the staked amount.
+    function test_fullFlow_stakedPrincipalUpdatedAfterCompute() external {
+        uint256 activationThreshold = 200_000 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        _addKeys(3); // extra key so remainder doesn't cause InsufficientKeys
+
+        uint256 depositAmount = 400_000 * DECIMALS; // exactly 2 attesters worth
+        _performDeposit(alice, depositAmount);
+
+        // ── Rebalance to stake ──
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Complete rebalance
+        for (uint256 i; i < 10; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        IOllaCore.AccountingState memory statePostRebalance = vault.accountingState();
+        emit log_named_uint("stakedPrincipal after rebalance (before compute)", statePostRebalance.stakedPrincipal);
+
+        // ── computeAttesterState ──
+        vm.prank(operator);
+        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
+        assertTrue(completed, "computeAttesterState must complete");
+
+        uint256 totalStaked = stakingManager.totalStaked();
+        emit log_named_uint("totalStaked after compute", totalStaked);
+        assertEq(totalStaked, activationThreshold * 2, "totalStaked should be 2x activation threshold");
+
+        // ── updateAccounting to sync OllaCore ──
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        IOllaCore.AccountingState memory statePostAccounting = vault.accountingState();
+        emit log_named_uint("stakedPrincipal after updateAccounting", statePostAccounting.stakedPrincipal);
+        assertEq(
+            statePostAccounting.stakedPrincipal,
+            activationThreshold * 2,
+            "OllaCore stakedPrincipal must match totalStaked after updateAccounting"
+        );
+    }
+
+    /// @notice Tests multi-attester scenario to ensure the loop processes all attesters.
+    function test_computeAttesterState_multipleAttesters() external {
+        uint256 activationThreshold = 50 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        uint256 numAttesters = 5;
+        _addKeys(numAttesters);
+
+        uint256 depositAmount = activationThreshold * numAttesters;
+        _performDeposit(alice, depositAmount);
+
+        // Rebalance to stake all
+        vm.prank(operator);
+        vault.rebalance();
+
+        for (uint256 i; i < 10; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        // Verify all attesters registered
+        uint256 length = _readAttestersLength();
+        emit log_named_uint("attester count", length);
+        assertEq(length, numAttesters, "Should have all attesters registered");
+
+        // Dump all attester states
+        for (uint256 i; i < length; ++i) {
+            (address att, uint256 amt, uint256 sts) = _readAttesterInfo(i);
+            emit DebugAttesterInfo(i, att, amt, sts);
+            assertEq(sts, 1, "All attesters should be Active");
+            assertEq(amt, activationThreshold, "All attesters should have correct stakedAmount");
+        }
+
+        // computeAttesterState
+        vm.prank(operator);
+        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
+        assertTrue(completed, "Should complete in one pass");
+
+        uint256 totalStaked = stakingManager.totalStaked();
+        emit log_named_uint("totalStaked", totalStaked);
+        assertEq(totalStaked, activationThreshold * numAttesters, "totalStaked should be sum of all attester stakes");
+    }
+
+    /// @notice Demonstrates that too-low gas can produce a zero cached state.
+    function test_computeAttesterState_lowGasProducesZeroCache() external {
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        _addKeys(1);
+
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        for (uint256 i; i < 5; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        uint256 length = _readAttestersLength();
+        assertEq(length, 1, "Should have exactly 1 attester");
+
+        emit log_string("=== computeAttesterState with low gas ===");
+        bytes memory payload = abi.encodeWithSelector(stakingManager.computeAttesterState.selector);
+        vm.prank(operator);
+        (bool okLow, bytes memory retLow) = address(stakingManager).call{ gas: 70_000 }(payload);
+        assertTrue(okLow, "low-gas computeAttesterState should not revert");
+        if (retLow.length == 64) {
+            (uint256 slashingDelta, bool completed) = abi.decode(retLow, (uint256, bool));
+            emit DebugComputeResult(slashingDelta, completed);
+        }
+
+        (uint256 cachedSlashLow, uint256 cachedStakedLow,,) = _readCachedState();
+        emit DebugCachedState(cachedSlashLow, cachedStakedLow, 0, 0);
+        assertEq(cachedStakedLow, 0, "cached stakedAmount should remain 0 with low gas");
+
+        emit log_string("=== computeAttesterState with sufficient gas ===");
+        vm.prank(operator);
+        (uint256 slashingDeltaOk, bool completedOk) = stakingManager.computeAttesterState();
+        emit DebugComputeResult(slashingDeltaOk, completedOk);
+        assertTrue(completedOk, "computeAttesterState should complete with sufficient gas");
+
+        uint256 totalStaked = stakingManager.totalStaked();
+        emit log_named_uint("totalStaked", totalStaked);
+        assertEq(totalStaked, activationThreshold, "totalStaked should match activation threshold");
+    }
+}

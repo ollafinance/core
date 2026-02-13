@@ -692,7 +692,11 @@ contract OllaCore is
 
         IOllaCore.RebalanceProgress memory progressSnapshot = _rebalanceProgress;
         if (_rebalancePaused && _rebalanceCompletionSatisfied(progressSnapshot)) {
-            _updateAccountingInternal();
+            // NOTE: _updateAccountingInternal() is NOT called here. The operator must call
+            // computeAttesterState() on the StakingManager first (to refresh the cached
+            // staking totals), and then call updateAccounting() separately. Calling
+            // _updateAccountingInternal before computeAttesterState would read a stale
+            // _cachedState from the StakingManager and overwrite stakedPrincipal with 0.
             _rebalancePaused = false;
             _rebalancePauseReason = uint8(IOllaCore.RebalancePauseReason.RebalanceComplete);
             _rebalanceRequiredBufferSnapshot = 0;
