@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { Math } from "@oz/utils/math/Math.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 
@@ -183,9 +184,11 @@ contract OllaCoreWithdrawalQueueTest is Test {
         _deposit(alice, 18 ether);
         vault.exposedApplyAccountingUpdates(0, 6 ether, 0, 0, 0);
 
-        uint256 rate = vault.exchangeRate();
         uint256 shares = 9 ether;
-        uint256 expectedAssets = shares * rate / 1e18;
+        uint256 totalAssets = vault.totalAssets();
+        uint256 supply = stAztec.totalSupply();
+        uint256 expectedAssets = Math.mulDiv(shares, totalAssets, supply, Math.Rounding.Floor);
+        uint256 rate = vault.exchangeRate();
 
         (uint256 requestId,) = _requestRedeem(alice, shares, alice);
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
