@@ -8,7 +8,7 @@ import { IERC20Mintable } from "src/interfaces/IERC20Mintable.sol";
 import { IMaliciousAztec } from "src/staking/mocks/IMaliciousAztec.sol";
 
 /// @title MaliciousAztec
-/// @notice Test-only ERC20 that attempts reentrancy during transferFrom.
+/// @notice Test-only ERC20 that attempts reentrancy during transfer or transferFrom.
 /// @author Olla Core contributors
 contract MaliciousAztec is IMaliciousAztec, IERC20Mintable, ERC20 {
     using Address for address;
@@ -16,6 +16,10 @@ contract MaliciousAztec is IMaliciousAztec, IERC20Mintable, ERC20 {
     address private _reentryTarget;
     bytes private _reentryCalldata;
     bool private _reenterOnTransferFrom;
+
+    address private _transferReentryTarget;
+    bytes private _transferReentryCalldata;
+    bool private _reenterOnTransfer;
 
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
@@ -37,6 +41,16 @@ contract MaliciousAztec is IMaliciousAztec, IERC20Mintable, ERC20 {
         _reenterOnTransferFrom = enabled;
     }
 
+    /// @notice Configure a reentrancy attempt during transfer.
+    /// @param target The contract to call.
+    /// @param data The calldata to use.
+    /// @param enabled Whether to enable the reentrancy attempt.
+    function configureTransferReentry(address target, bytes calldata data, bool enabled) external override {
+        _transferReentryTarget = target;
+        _transferReentryCalldata = data;
+        _reenterOnTransfer = enabled;
+    }
+
     /// @notice Set allowance from this token contract to itself.
     /// @param amount The allowance amount.
     function setSelfAllowance(uint256 amount) external override {
@@ -48,6 +62,15 @@ contract MaliciousAztec is IMaliciousAztec, IERC20Mintable, ERC20 {
     /// @param amount The token amount to mint.
     function mint(address to, uint256 amount) external override {
         _mint(to, amount);
+    }
+
+    /// @inheritdoc ERC20
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        if (_reenterOnTransfer) {
+            _reenterOnTransfer = false;
+            _transferReentryTarget.functionCall(_transferReentryCalldata);
+        }
+        return super.transfer(to, amount);
     }
 
     /// @inheritdoc ERC20

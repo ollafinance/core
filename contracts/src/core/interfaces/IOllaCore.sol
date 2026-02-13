@@ -239,6 +239,29 @@ interface IOllaCore {
     /// @param paused Whether rebalance pause is active.
     /// @param reason The reason for the pause update.
     event RebalancePauseUpdated(bool paused, RebalancePauseReason reason);
+
+    /// @notice Emitted when an instant redemption is completed.
+    /// @param owner The share owner.
+    /// @param recipient The address receiving the net assets.
+    /// @param shares The shares burned.
+    /// @param grossAssets The total assets before fee.
+    /// @param fee The fee deducted and sent to treasury.
+    /// @param netAssets The net assets transferred to the recipient.
+    /// @param exchangeRate The exchange rate used.
+    event InstantRedemption(
+        address indexed owner,
+        address indexed recipient,
+        uint256 shares,
+        uint256 grossAssets,
+        uint256 fee,
+        uint256 netAssets,
+        uint256 exchangeRate
+    );
+
+    /// @notice Emitted when the instant redemption fee is updated.
+    /// @param oldFeeBP The previous fee in basis points.
+    /// @param newFeeBP The new fee in basis points.
+    event InstantRedemptionFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
@@ -290,6 +313,9 @@ interface IOllaCore {
 
     /// @notice Thrown when an action requires rebalance completion.
     error OllaCore__RebalanceInProgress();
+
+    /// @notice Thrown when an instant redemption exceeds available liquidity.
+    error OllaCore__InsufficientLiquidity(uint256 requested, uint256 available);
 
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
@@ -358,6 +384,24 @@ interface IOllaCore {
     /// @return assets The assets claimed for the request.
     function claimRequestById(uint256 requestId) external returns (uint256 assets);
 
+    /// @notice Instantly redeems stAztec shares for AZTEC assets.
+    /// @param shares The number of shares to redeem.
+    /// @param recipient The recipient of the net assets.
+    /// @return assetsAfterFee The net assets transferred to the recipient.
+    function redeem(uint256 shares, address recipient) external returns (uint256 assetsAfterFee);
+
+    /// @notice Instantly redeems stAztec shares for AZTEC assets with a permit signature.
+    /// @param shares The number of shares to redeem.
+    /// @param recipient The recipient of the net assets.
+    /// @param deadline The permit deadline timestamp.
+    /// @param v The permit signature v.
+    /// @param r The permit signature r.
+    /// @param s The permit signature s.
+    /// @return assetsAfterFee The net assets transferred to the recipient.
+    function redeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        returns (uint256 assetsAfterFee);
+
     /*//////////////////////////////////////////////////////////////
                       PROVIDER ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -410,6 +454,10 @@ interface IOllaCore {
     /// @notice Sets the gas threshold used for rebalance step gating.
     /// @param newThreshold The new gas threshold.
     function setRebalanceGasThreshold(uint256 newThreshold) external;
+
+    /// @notice Sets the instant redemption fee in basis points.
+    /// @param newFeeBP The new fee (0-10000).
+    function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
 
     /// @notice Recovers stAztec sent directly to the core.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
@@ -512,6 +560,14 @@ interface IOllaCore {
     /// @param assets The asset amount being deposited.
     /// @return shares The shares that would be minted.
     function previewDeposit(uint256 assets) external view returns (uint256 shares);
+
+    /// @notice Returns the maximum assets currently available for instant redemptions.
+    /// @return The unencumbered buffered assets available for instant redemptions.
+    function availableForInstantRedemption() external view returns (uint256);
+
+    /// @notice Returns the instant redemption fee in basis points.
+    /// @return The instant redemption fee BP.
+    function instantRedemptionFeeBP() external view returns (uint256);
 
     /// @notice Returns the protocol fee in basis points.
     /// @return The protocol fee BP.

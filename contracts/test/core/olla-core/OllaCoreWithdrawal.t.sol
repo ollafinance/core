@@ -7,6 +7,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
 import { ECDSA } from "@oz/utils/cryptography/ECDSA.sol";
+import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
@@ -19,6 +20,7 @@ import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingMa
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 
 contract OllaCoreWithdrawalTest is Test {
+    using Math for uint256;
     /*//////////////////////////////////////////////////////////////
                                EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -418,5 +420,46 @@ contract OllaCoreWithdrawalTest is Test {
         vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner));
         vm.prank(permitOwner);
         vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+      REQUEST REDEEM: assetsExpected MATCHES convertToAssets
+      (NO DOUBLE-MULDIV ROUNDING)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Ensures _requestRedeem computes assetsExpected identically to the
+    ///         public convertToAssets view, proving there is no double-mulDiv
+    ///         rounding discrepancy. Uses a non-trivial exchange rate that would
+    ///         surface a 1-wei divergence under the old two-step approach.
+    function test_RequestRedeem_AssetsExpectedMatchesConvertToAssets() external {
+        // Deposit a small amount so supply = 3
+        uint256 depositAmount = 3;
+        _performDeposit(alice, depositAmount);
+
+        // Simulate rewards that create an awkward rate: totalAssets = 1e18 + 1
+        uint256 rewards = 1 ether - 3 + 1;
+        asset.mint(address(vault), rewards);
+
+        // Trigger buffer sync so totalAssets reflects the rewards
+        vm.prank(governance);
+        vault.rebalance();
+
+        // Snapshot state before requestRedeem
+        uint256 totalAssetsBefore = vault.totalAssets();
+        uint256 supplyBefore = stAztec.totalSupply();
+        uint256 sharesToRedeem = 2;
+
+        // Single-step expected value (what convertToAssets returns)
+        uint256 expectedAssets = sharesToRedeem.mulDiv(totalAssetsBefore, supplyBefore, Math.Rounding.Floor);
+        uint256 viewAssets = vault.convertToAssets(sharesToRedeem);
+        assertEq(viewAssets, expectedAssets, "convertToAssets matches single-step formula");
+
+        // Request redeem and check assetsExpected stored in the queue
+        vm.prank(alice);
+        vault.requestRedeem(sharesToRedeem, bob);
+
+        (, uint256 recordedShares, uint256 recordedAssets,) = _queueRequestSnapshot();
+        assertEq(recordedShares, sharesToRedeem, "shares match");
+        assertEq(recordedAssets, expectedAssets, "assetsExpected matches single-step convertToAssets");
     }
 }
