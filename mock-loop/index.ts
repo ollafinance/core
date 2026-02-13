@@ -66,13 +66,14 @@ async function executeScenario(
   scenario: ScenarioConfig,
   tick: number,
   clients: ReturnType<typeof createClients>,
-  addresses: ReturnType<typeof loadDeployments>
+  addresses: ReturnType<typeof loadDeployments>,
+  scenarioState: any
 ): Promise<ActionResult> {
   switch (scenario.type) {
     case "provider-keys":
       return executeProviderKeys(scenario, tick, clients, addresses);
     case "mock-rewards":
-      return executeMockRewards(scenario, tick, clients, addresses);
+      return executeMockRewards(scenario, tick, clients, addresses, scenarioState);
     case "user-deposit":
       return executeUserDeposit(scenario, tick, clients, addresses);
     case "rebalance":
@@ -154,7 +155,7 @@ async function runTick(
       logger.logScenarioStart(scenario.type, tick);
 
       try {
-        const result = await executeScenario(scenario, tick, clients, addresses);
+        const result = await executeScenario(scenario, tick, clients, addresses, scenarioState);
         actions.push(result);
         logger.logScenarioComplete(result, tick);
         if (scenario.type === "user-claim" && result.success) {

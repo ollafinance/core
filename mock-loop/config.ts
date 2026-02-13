@@ -53,8 +53,7 @@ export const defaultConfig: RunConfig = {
       enabled: true,
       shouldRun: (state, tick) => {
         if (state?.completed === true) return false;
-        if (tick < 35) return false;
-        return (tick - 35) % 1 === 0;
+        return tick >= 35;
       },
       privateKey: ANVIL_ACCOUNT_1_PRIVATE_KEY,
     },

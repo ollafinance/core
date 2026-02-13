@@ -39,7 +39,7 @@ export async function executeRebalance(
       }
 
       // Call rebalance
-      let txHash = await ollaCore.write.rebalance([], { gas: gasLimit });
+      const txHash = await ollaCore.write.rebalance([], { gas: gasLimit });
       iterations.push(txHash);
 
       try {
@@ -73,9 +73,9 @@ export async function executeRebalance(
 
       // Check if rebalance is complete by reading rebalanceProgress
       const progress = await ollaCoreRead.read.rebalanceProgress() as { step: number; stakeRemaining: bigint; unstakeRemaining: bigint };
-      stepHistory.push({ 
-        iter: iteration, 
-        step: progress.step, 
+      stepHistory.push({
+        iter: iteration,
+        step: progress.step,
         stepName: REBALANCE_STEP_NAMES[progress.step] ?? "Unknown",
         stakeRemaining: progress.stakeRemaining.toString(),
         unstakeRemaining: progress.unstakeRemaining.toString()

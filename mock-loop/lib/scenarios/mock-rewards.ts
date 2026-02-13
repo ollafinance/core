@@ -2,24 +2,22 @@ import type { WalletClient, PublicClient } from "viem";
 import type { MockRewardsScenario, DeploymentAddresses, ActionResult } from "../types.js";
 import { getMockAztecRollup, getRewardsVault } from "../client.js";
 
-// Track if we've initialized the reward rate
-let initialized = false;
-
 export async function executeMockRewards(
   scenario: MockRewardsScenario,
   _tick: number,
   clients: { publicClient: PublicClient; operatorWallet: WalletClient },
-  addresses: DeploymentAddresses
+  addresses: DeploymentAddresses,
+  state: any
 ): Promise<ActionResult> {
   const rollup = getMockAztecRollup(addresses, clients.operatorWallet);
   try {
     const actions: string[] = [];
 
     // First run: set reward rate
-    if (!initialized) {
+    if (!state?.initialized) {
       const rateTx = await rollup.write.setRewardRatePerSecond([BigInt(scenario.rate)]);
       actions.push(`setRewardRatePerSecond: ${rateTx}`);
-      initialized = true;
+      state.initialized = true;
     }
 
     // Each tick: call tick() on the rollup
