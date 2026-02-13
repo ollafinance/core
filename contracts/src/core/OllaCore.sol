@@ -692,11 +692,7 @@ contract OllaCore is
 
         IOllaCore.RebalanceProgress memory progressSnapshot = _rebalanceProgress;
         if (_rebalancePaused && _rebalanceCompletionSatisfied(progressSnapshot)) {
-            // NOTE: _updateAccountingInternal() is NOT called here. The operator must call
-            // computeAttesterState() on the StakingManager first (to refresh the cached
-            // staking totals), and then call updateAccounting() separately. Calling
-            // _updateAccountingInternal before computeAttesterState would read a stale
-            // _cachedState from the StakingManager and overwrite stakedPrincipal with 0.
+            _updateAccountingInternal();
             _rebalancePaused = false;
             _rebalancePauseReason = uint8(IOllaCore.RebalancePauseReason.RebalanceComplete);
             _rebalanceRequiredBufferSnapshot = 0;
@@ -1162,7 +1158,6 @@ contract OllaCore is
             totalStaked = actualStaked;
         } catch {
             revert OllaCore__StakeFailed(stakeable);
-            // TODO: is there a better way to show if this is due to out of gas?
         }
 
         // Slither: explicit nonzero check; no timestamp usage.

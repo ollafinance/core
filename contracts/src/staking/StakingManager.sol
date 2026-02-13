@@ -763,14 +763,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             acc = _accumulator;
         }
 
-        bool progressed;
-        (acc, progressed) = _accumulateAttesterState(rollup, acc);
+        acc = _accumulateAttesterState(rollup, acc);
         _accumulator = acc;
 
-        // Only report completion when cursor wraps to 0 AND the loop actually
-        // made progress. Without the progress check a low-gas call that never
-        // enters the loop would report completed=true with a zeroed accumulator.
-        if (_attesterStateCursor == 0 && progressed) {
+        if (_attesterStateCursor == 0) {
             slashingDelta = acc.slashingDelta;
             completed = true;
         }
@@ -782,20 +778,18 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-next-line pess-multiple-storage-read -- length read + indexed access unavoidable in loop
     function _accumulateAttesterState(IAztecRollup rollup, StakingState memory acc)
         internal
-        returns (StakingState memory, bool progressed)
+        returns (StakingState memory)
     {
         uint256 length = _attesters.length;
         if (length == 0) {
             _attesterStateCursor = 0;
-            return (acc, true);
+            return acc;
         }
 
         uint256 i = _attesterStateCursor;
         if (i > length - 1) {
             i = 0;
         }
-
-        uint256 startIndex = i;
 
         // Bounded by gasThreshold and cursor.
         bool skip;
@@ -830,9 +824,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             ++i;
         }
 
-        progressed = i > startIndex;
         _updateAttesterStateCursor(i);
-        return (acc, progressed);
+        return acc;
     }
 
     /// @notice Updates the attester state cursor after iteration.
