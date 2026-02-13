@@ -1,0 +1,128 @@
+name: Audit finding
+description: Report a security, correctness, or optimization finding from an audit
+title: "[Audit-<SEVERITY>] "
+labels:
+  - audit
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this finding?
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+        - Informational
+        - Gas
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      description: What area does this finding relate to?
+      options:
+        - Access Control
+        - Reentrancy
+        - Arithmetic
+        - Upgrade Safety
+        - Authorization
+        - State Accounting
+        - Input Validation
+        - Gas Optimization
+        - Code Quality
+        - Design
+    validations:
+      required: true
+  - type: input
+    id: contracts
+    attributes:
+      label: Contract(s)
+      description: Which contract(s) are affected?
+      placeholder: "ContractName.sol"
+    validations:
+      required: true
+  - type: input
+    id: functions
+    attributes:
+      label: Function(s)
+      description: Which function(s) are affected?
+      placeholder: "functionName()"
+    validations:
+      required: false
+  - type: input
+    id: lines
+    attributes:
+      label: Line(s)
+      description: File and line range
+      placeholder: "ContractName.sol:L123-L145"
+    validations:
+      required: false
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of the finding — what is the issue and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who is affected and what is the worst-case outcome? Be specific about attack scenarios or failure modes.
+    validations:
+      required: true
+  - type: textarea
+    id: poc
+    attributes:
+      label: Proof of Concept
+      description: Minimal steps to reproduce or demonstrate the issue. Include code snippets showing the vulnerable pattern.
+      placeholder: |
+        ```solidity
+        // Vulnerable pattern
+        ```
+    validations:
+      required: false
+  - type: textarea
+    id: fix
+    attributes:
+      label: Recommended Fix
+      description: Specific, actionable fix. Include a code snippet if helpful.
+      placeholder: |
+        ```solidity
+        // Suggested fix
+        ```
+    validations:
+      required: true
+  - type: input
+    id: related
+    attributes:
+      label: Related findings
+      description: List any related finding IDs or issue numbers
+      placeholder: "S-2, #45"
+    validations:
+      required: false
+  - type: dropdown
+    id: source
+    attributes:
+      label: Detected by
+      description: How was this finding discovered?
+      options:
+        - Internal audit review
+        - External audit
+        - Static analysis (Slither)
+        - Linter (Solhint)
+        - Fuzz / invariant testing
+        - Manual review
+        - Community report
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Any other relevant information (e.g., external audit relevance, references to similar findings in other protocols).
+    validations:
+      required: false
