@@ -65,6 +65,7 @@ contract WithdrawalQueueHandler is Test {
             return;
         }
 
+        vm.prank(core);
         queue.claimWithdrawal(id);
     }
 }

@@ -214,6 +214,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 10, 100, 1e18);
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__NotFinalized.selector, 1));
+        vm.prank(core);
         queue.claimWithdrawal(1);
     }
 
@@ -224,15 +225,16 @@ contract WithdrawalQueueTest is Test {
         vm.prank(core);
         queue.finalizeWithdrawals(200);
 
+        vm.prank(core);
         queue.claimWithdrawal(1);
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__AlreadyClaimed.selector, 1));
+        vm.prank(core);
         queue.claimWithdrawal(1);
     }
 
     function test_Claim_ReturnsAssetsExpected() public {
         address alice = makeAddr("alice");
-        address caller = makeAddr("caller");
         _request(alice, 10, 150, 1e18);
 
         vm.prank(core);
@@ -241,11 +243,66 @@ contract WithdrawalQueueTest is Test {
         vm.expectEmit(true, true, false, true, address(queue));
         emit WithdrawalClaimed(1, alice, 150);
 
-        vm.prank(caller);
+        vm.prank(core);
         uint256 assets = queue.claimWithdrawal(1);
 
         assertEq(assets, 150, "claim should return the expected assets");
         assertEq(queue.totalPendingAssets(), 0, "claim should not change pending totals");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           ACCESS CONTROL
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ClaimWithdrawal_RevertWhen_Unauthorized() public {
+        address alice = makeAddr("alice");
+        address attacker = makeAddr("attacker");
+        _request(alice, 10, 100, 1e18);
+
+        vm.prank(core);
+        queue.finalizeWithdrawals(200);
+
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, attacker));
+        vm.prank(attacker);
+        queue.claimWithdrawal(1);
+    }
+
+    function test_ClaimWithdrawal_RevertWhen_CalledByAdmin() public {
+        address alice = makeAddr("alice");
+        _request(alice, 10, 100, 1e18);
+
+        vm.prank(core);
+        queue.finalizeWithdrawals(200);
+
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, admin));
+        vm.prank(admin);
+        queue.claimWithdrawal(1);
+    }
+
+    function test_ClaimWithdrawal_RevertWhen_CalledByRecipient() public {
+        address alice = makeAddr("alice");
+        _request(alice, 10, 100, 1e18);
+
+        vm.prank(core);
+        queue.finalizeWithdrawals(200);
+
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, alice));
+        vm.prank(alice);
+        queue.claimWithdrawal(1);
+    }
+
+    function testFuzz_ClaimWithdrawal_RevertWhen_NotCore(address caller) public {
+        vm.assume(caller != core);
+
+        address alice = makeAddr("alice");
+        _request(alice, 10, 100, 1e18);
+
+        vm.prank(core);
+        queue.finalizeWithdrawals(200);
+
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, caller));
+        vm.prank(caller);
+        queue.claimWithdrawal(1);
     }
 
     /*//////////////////////////////////////////////////////////////

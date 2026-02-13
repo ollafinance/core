@@ -40,6 +40,20 @@ forge build
 forge test
 ```
 
+## Local development
+
+Start a local Anvil chain:
+
+```bash
+# Terminal 1: Start chain
+yarn dev:chain
+
+# Terminal 2: Deploy contracts
+yarn deploy:local
+```
+
+For automated protocol testing with the TypeScript mock loop, see [`mock-loop/README.md`](mock-loop/README.md).
+
 Invariant-only suite:
 
 ```bash
