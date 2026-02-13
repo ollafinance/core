@@ -173,6 +173,37 @@ sequenceDiagram
     C->>AZ: transfer(recipient, assetsExpected)
 ```
 
+### Instant Redemption
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as OllaCore
+    participant SAF as SafetyModule
+    participant ST as StAztec
+    participant AZ as AssetToken
+    participant GOV as Governance Treasury
+
+    U->>C: redeem(shares, recipient)
+    C->>SAF: isPaused()
+    SAF-->>C: false
+    C->>C: syncBufferedWithBalance()
+    Note right of C: bufferedAssets = balance - _finalizedUnclaimedAssets
+    C->>SAF: checkWithdrawalMinimum(shares)
+    C->>C: grossAssets = convertToAssets(shares)
+    C->>C: fee = grossAssets * feeBP / BP_DIVISOR
+    C->>C: netAssets = grossAssets - fee
+    C->>C: available = availableForInstantRedemption()
+    C->>C: require grossAssets <= available
+    C->>ST: burn(owner=U, amount=shares)
+    C->>C: bufferedAssets -= grossAssets
+    C->>AZ: transfer(recipient, netAssets)
+    opt fee > 0
+        C->>AZ: transfer(governance, fee)
+    end
+    C-->>U: netAssets
+```
+
 ### Rebalance use cases
 
 #### Harvest rewards
