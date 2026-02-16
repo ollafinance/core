@@ -745,7 +745,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     ///      mechanism: any tokens accidentally sent directly to the StakingManager are forwarded to
     ///      `core` alongside the legitimately finalized funds. The `sumOfExitAmounts != newlyFinalized`
     ///      check guarantees the newly finalized amount is correct before the full-balance sweep occurs.
-    ///      See: internal audit finding S-4.
     /// @param balanceBefore The token balance before finalization.
     /// @param sumOfExitAmounts The sum of finalized exit amounts.
     /// @return claimed The amount claimed and transferred (entire balance, not just newly finalized).
