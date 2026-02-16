@@ -54,6 +54,10 @@ contract StAztec is ERC20Permit, AccessControl, IStAztec {
     }
 
     /// @notice Burns stAztec shares from an account.
+    /// @dev This function bypasses ERC-20 allowance checks by design. Only the holder of
+    ///      BURNER_ROLE (expected to be OllaCore exclusively) can call it. If BURNER_ROLE is
+    ///      ever granted to another address, that address can burn any user's shares without
+    ///      approval — treat BURNER_ROLE as a critical, god-mode permission.
     /// @param from The account to burn shares from.
     /// @param amount The amount of shares to burn.
     function burn(address from, uint256 amount) external override onlyRole(BURNER_ROLE) {
