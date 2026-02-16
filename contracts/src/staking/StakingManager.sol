@@ -740,9 +740,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end reentrancy-benign
 
     /// @notice Finalizes a claim by validating and transferring unstaked funds.
+    /// @dev This function intentionally sweeps the **entire** staking asset balance held by this
+    ///      contract to `core`, not just the `newlyFinalized` amount. This serves as a recovery
+    ///      mechanism: any tokens accidentally sent directly to the StakingManager are forwarded to
+    ///      `core` alongside the legitimately finalized funds. The `sumOfExitAmounts != newlyFinalized`
+    ///      check guarantees the newly finalized amount is correct before the full-balance sweep occurs.
+    ///      See: internal audit finding S-4.
     /// @param balanceBefore The token balance before finalization.
     /// @param sumOfExitAmounts The sum of finalized exit amounts.
-    /// @return claimed The amount claimed and transferred.
+    /// @return claimed The amount claimed and transferred (entire balance, not just newly finalized).
     function _finalizeClaim(uint256 balanceBefore, uint256 sumOfExitAmounts) internal returns (uint256 claimed) {
         uint256 balanceAfter = stakingAsset.balanceOf(address(this));
         uint256 newlyFinalized = balanceAfter - balanceBefore;
@@ -750,6 +756,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             revert StakingManager__ClaimAmountMismatch();
         }
 
+        // Intentional full-balance sweep: transfers newlyFinalized + any tokens previously stuck in this contract.
         claimed = balanceAfter;
         if (claimed > 0) {
             stakingAsset.safeTransfer(core, claimed);
