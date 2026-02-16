@@ -360,7 +360,7 @@ contract RealisticStakingManager is IStakingManager {
 
     function setGasThreshold(uint256) external pure override { }
 
-    function getUnstakedFunds() external override returns (uint256 received) {
+    function getUnstakedFunds() external override returns (uint256 received, bool hasRemainingExits) {
         // Transfer pending unstaked funds back to caller (OllaCore)
         received = pendingUnstakeAmount;
         if (received > 0) {
@@ -368,7 +368,7 @@ contract RealisticStakingManager is IStakingManager {
             withdrawableAmount = 0;
             stakingAsset.safeTransfer(msg.sender, received);
         }
-        return received;
+        return (received, false);
     }
 
     function totalStaked() external view override returns (uint256) {

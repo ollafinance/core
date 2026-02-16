@@ -36,7 +36,7 @@ contract MaliciousReentrantStakingManager is MockAccountingStakingManager {
                                CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function getUnstakedFunds() public override returns (uint256 received) {
+    function getUnstakedFunds() public override returns (uint256 received, bool hasRemainingExits) {
         _attemptReentry();
         return super.getUnstakedFunds();
     }

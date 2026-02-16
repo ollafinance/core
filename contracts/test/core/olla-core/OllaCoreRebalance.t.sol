@@ -1080,7 +1080,10 @@ contract OllaCoreRebalanceTest is Test {
                      ATTESTER STATE STALENESS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Rebalance_RevertsWhen_AttesterStateStale() external {
+    /// @notice Rebalance self-heals stale attester state via the ComputeAttesterState step
+    /// instead of reverting. The step calls computeAttesterState() which refreshes the timestamp,
+    /// allowing subsequent accounting reads (totalStaked, getSlashingDelta) to succeed.
+    function test_Rebalance_SelfHealsStaleAttesterState() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
@@ -1092,11 +1095,14 @@ contract OllaCoreRebalanceTest is Test {
 
         vm.warp(lastUpdated + maxAge + 1);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
-        );
+        // Rebalance should succeed — the ComputeAttesterState step refreshes the stale state
         vm.prank(operator);
         vault.rebalance();
+
+        // Verify the attester state is no longer stale after rebalance
+        (uint256 updatedAt,, bool isStale) = stakingManager.getAttesterStateLiveness();
+        assertEq(updatedAt, block.timestamp, "attester state timestamp should be current");
+        assertFalse(isStale, "attester state should not be stale after rebalance");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1664,8 +1670,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function setGasThreshold(uint256) external pure override { }
 
-    function getUnstakedFunds() external pure override returns (uint256 received) {
-        return 0;
+    function getUnstakedFunds() external pure override returns (uint256 received, bool hasRemainingExits) {
+        return (0, false);
     }
 
     function harvestRewards() external override returns (uint256 harvested) {

@@ -354,7 +354,7 @@ contract RebalanceIntegrationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Tests the full flow: fresh mock state → accounting succeeds → rebalance succeeds →
-    ///         stale state → both revert → refresh → accounting succeeds again.
+    ///         stale state → accounting reverts → rebalance self-heals → accounting succeeds again.
     function test_EndToEnd_OperatorCacheToAccountingToRebalance() external {
         uint256 depositAmount = 50 * DECIMALS;
         _performDeposit(user, depositAmount);
@@ -409,20 +409,16 @@ contract RebalanceIntegrationTest is Test {
         vm.prank(operator);
         vault.updateAccounting();
 
-        // 6. Verify rebalance() also reverts with stale data
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, shortMaxAge
-            )
-        );
+        // 6. Rebalance self-heals — ComputeAttesterState step refreshes the stale state
         vm.prank(operator);
         vault.rebalance();
 
-        // 7. Refresh the state (simulating operator calling computeAttesterState)
-        //    Mock's setSlashingDelta auto-refreshes the liveness timestamp
-        stakingManager.setSlashingDelta(slashing);
+        // Verify the attester state is no longer stale after rebalance
+        (uint256 updatedAt,, bool isStale) = stakingManager.getAttesterStateLiveness();
+        assertEq(updatedAt, block.timestamp, "attester state should be refreshed by rebalance");
+        assertFalse(isStale, "attester state should not be stale after rebalance self-heal");
 
-        // 8. After refresh, updateAccounting() should succeed again
+        // 7. After rebalance self-healed the state, updateAccounting() should also succeed
         vm.prank(operator);
         vault.updateAccounting();
 
@@ -430,7 +426,7 @@ contract RebalanceIntegrationTest is Test {
         assertGt(
             reportAfterRefresh.timestamp,
             reportAfterAccounting.timestamp,
-            "accounting timestamp should advance after refresh"
+            "accounting timestamp should advance after rebalance self-healed state"
         );
     }
 }

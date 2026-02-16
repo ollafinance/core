@@ -23,7 +23,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
@@ -59,7 +59,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
     function test_GetUnstakedFunds_ReturnsZeroWhenNoPending() external {
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
         assertEq(claimed, 0);
     }
 
@@ -72,7 +72,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD * 3);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD * 3);
@@ -92,7 +92,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
@@ -104,7 +104,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         coreBalanceBefore = aztec.balanceOf(core);
         vm.prank(core);
-        claimed = stakingManager.getUnstakedFunds();
+        (claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD);
@@ -132,7 +132,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         vm.recordLogs();
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bool foundEvent = false;
@@ -172,7 +172,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD, "claimed should include externally finalized exit");
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core should receive funds");
@@ -194,7 +194,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         vm.recordLogs();
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bytes32 unstakeFinalizedSelector = keccak256("UnstakeFinalized(address,uint256)");
@@ -234,7 +234,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         rollup.finalizeWithdraw(keys[0].attester);
 
         vm.prank(core);
-        uint256 claimedFirst = stakingManager.getUnstakedFunds();
+        (uint256 claimedFirst,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimedFirst, ACTIVATION_THRESHOLD, "initial claim should sweep external finalize");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should be cleared");
@@ -250,7 +250,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD, "should sweep pre-existing balance");
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core should receive sweep");
@@ -270,7 +270,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         uint256 expected = ACTIVATION_THRESHOLD * 2;
         assertEq(claimed, expected, "claimed should include external and internal finalizations");
@@ -344,7 +344,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
             if (!success) {
                 continue;
             }
-            uint256 claimedCandidate = abi.decode(data, (uint256));
+            (uint256 claimedCandidate,) = abi.decode(data, (uint256, bool));
             if (claimedCandidate > 0 && claimedCandidate < expectedTotal) {
                 selectedGas = gasOptions[i];
                 claimedObserved = claimedCandidate;
@@ -361,7 +361,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimedFirst = stakingManager.getUnstakedFunds{ gas: selectedGas }();
+        (uint256 claimedFirst,) = stakingManager.getUnstakedFunds{ gas: selectedGas }();
 
         assertEq(claimedFirst, claimedObserved, "claimed amount should match probe");
         assertGt(claimedFirst, 0, "initial claim should return some funds");
@@ -375,7 +375,8 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
                 break;
             }
             vm.prank(core);
-            totalClaimed += stakingManager.getUnstakedFunds{ gas: selectedGas }();
+            (uint256 iterClaimed,) = stakingManager.getUnstakedFunds{ gas: selectedGas }();
+            totalClaimed += iterClaimed;
         }
 
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "remaining exits should complete across calls");
@@ -411,7 +412,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
             if (!success) {
                 continue;
             }
-            uint256 claimedCandidate = abi.decode(data, (uint256));
+            (uint256 claimedCandidate,) = abi.decode(data, (uint256, bool));
             if (claimedCandidate > 0 && claimedCandidate < expectedTotal) {
                 selectedGas = gasOptions[i];
                 claimedObserved = claimedCandidate;
@@ -425,7 +426,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimedFirst = stakingManager.getUnstakedFunds{ gas: selectedGas }();
+        (uint256 claimedFirst,) = stakingManager.getUnstakedFunds{ gas: selectedGas }();
 
         assertEq(claimedFirst, claimedObserved, "claimed amount should match probe");
         assertGt(claimedFirst, 0, "initial claim should return some funds");
@@ -439,7 +440,8 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
                 break;
             }
             vm.prank(core);
-            totalClaimed += stakingManager.getUnstakedFunds{ gas: selectedGas }();
+            (uint256 iterClaimed,) = stakingManager.getUnstakedFunds{ gas: selectedGas }();
+            totalClaimed += iterClaimed;
         }
 
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "all pending unstakes should be finalized");

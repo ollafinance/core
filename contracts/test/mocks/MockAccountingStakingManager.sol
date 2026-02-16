@@ -200,7 +200,7 @@ contract MockAccountingStakingManager is IStakingManager {
         emit AttesterStateMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
-    function getUnstakedFunds() public virtual override returns (uint256 received) {
+    function getUnstakedFunds() public virtual override returns (uint256 received, bool hasRemainingExits) {
         uint256 target = gasBurnTarget;
         if (target != 0) {
             uint256 safetyMargin = 25_000;
@@ -212,19 +212,21 @@ contract MockAccountingStakingManager is IStakingManager {
             }
         }
 
+        bool _hasRemainingExits = withdrawableUnstakeAmount > 0;
+
         uint256 amount = unstakedAmount;
         if (amount == 0) {
-            return 0;
+            return (0, _hasRemainingExits);
         }
 
         IERC20 token = unstakedToken;
         if (address(token) == address(0)) {
-            return 0;
+            return (0, _hasRemainingExits);
         }
 
         unstakedAmount = 0;
         token.safeTransfer(msg.sender, amount);
-        return amount;
+        return (amount, _hasRemainingExits);
     }
 
     function harvestRewards() external override returns (uint256 harvested) {
