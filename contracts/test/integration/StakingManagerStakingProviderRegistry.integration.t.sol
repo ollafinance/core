@@ -260,7 +260,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD * 2);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);
@@ -339,7 +339,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         // Claim the externally exited funds
         uint256 coreBalanceBefore = aztec.balanceOf(core);
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD * 2);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);

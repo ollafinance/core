@@ -53,7 +53,9 @@ export const defaultConfig: RunConfig = {
       enabled: true,
       shouldRun: (state, tick) => {
         if (state?.completed === true) return false;
-        return tick >= 35;
+        // Claim after the second rebalance post-withdrawal (tick 42) has had time
+        // to pull unstaked funds and finalize the withdrawal request.
+        return tick >= 43;
       },
       privateKey: ANVIL_ACCOUNT_1_PRIVATE_KEY,
     },

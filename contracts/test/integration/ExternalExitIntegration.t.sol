@@ -267,12 +267,13 @@ contract ExternalExitIntegrationTest is Test {
 
         vm.recordLogs();
 
-        // First rebalance call: claims exits but returns early because
-        // hasExitableUnstakes() reads from stale cache (exits were just claimed)
+        // Single rebalance call: claims exits AND completes the full cycle
+        // because getUnstakedFunds() returns hasRemainingExits=false (via _exitingCount)
+        // after all exiting attesters have been finalized.
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.rebalance();
+        (, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bool foundEvent = false;
@@ -286,12 +287,6 @@ contract ExternalExitIntegrationTest is Test {
             }
         }
         assertTrue(foundEvent, "UnstakedFundsClaimed event not found");
-
-        // Refresh cache after exits are claimed, then continue the rebalance
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-        vm.prank(operator);
-        (, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
 
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         uint256 expectedFinalized = request.assetsExpected;

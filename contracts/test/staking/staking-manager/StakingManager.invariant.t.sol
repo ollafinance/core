@@ -197,7 +197,7 @@ contract StakingManagerHandler is Test {
     function getUnstakedFunds() external {
         vm.prank(core);
         try stakingManager.getUnstakedFunds() returns (
-            uint256
+            uint256, bool
         ) {
         // Could track claimed amount if needed
         }

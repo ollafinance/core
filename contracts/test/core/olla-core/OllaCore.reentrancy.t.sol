@@ -71,8 +71,8 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function getUnstakedFunds() external pure override returns (uint256) {
-        return 0;
+    function getUnstakedFunds() external pure override returns (uint256, bool) {
+        return (0, false);
     }
 
     function getClaimableRewards() external pure override returns (uint256) {

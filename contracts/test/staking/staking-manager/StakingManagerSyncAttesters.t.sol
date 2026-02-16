@@ -225,7 +225,7 @@ contract StakingManagerSyncAttestersTest is StakingManagerBaseTest {
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
         vm.prank(core);
-        uint256 claimed = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD * exited);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);

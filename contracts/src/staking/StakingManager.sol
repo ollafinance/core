@@ -212,8 +212,16 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
-    function getUnstakedFunds() external override onlyCore nonReentrant returns (uint256 received) {
-        return _claimUnstakedFunds();
+    function getUnstakedFunds()
+        external
+        override
+        onlyCore
+        nonReentrant
+        returns (uint256 received, bool hasRemainingExits)
+    {
+        received = _claimUnstakedFunds();
+        hasRemainingExits = _exitingCount > 0;
+        return (received, hasRemainingExits);
     }
 
     /// @inheritdoc IStakingManager
@@ -447,6 +455,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         uint256 balanceBefore = stakingAsset.balanceOf(address(this));
         uint256 sumOfExitAmounts = _finalizeUnstakes(rollup);
         claimed = _finalizeClaim(balanceBefore, sumOfExitAmounts);
+
         return claimed;
     }
 
