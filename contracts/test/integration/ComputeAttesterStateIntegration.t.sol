@@ -286,6 +286,19 @@ contract ComputeAttesterStateIntegration is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                              HELPERS (EVENT)
+    //////////////////////////////////////////////////////////////*/
+
+    function _hasEvent(Vm.Log[] memory entries, bytes32 topic, address emitter) internal pure returns (bool) {
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].emitter == emitter && entries[i].topics[0] == topic) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                               TESTS
     //////////////////////////////////////////////////////////////*/
 
@@ -436,9 +449,10 @@ contract ComputeAttesterStateIntegration is Test {
         assertEq(totalStaked, activationThreshold, "totalStaked must equal activation threshold");
     }
 
-    /// @notice Tests that the full flow (deposit -> rebalance -> compute -> updateAccounting)
-    ///         results in OllaCore.stakedPrincipal reflecting the staked amount.
-    function test_fullFlow_stakedPrincipalUpdatedAfterCompute() external {
+    /// @notice Tests that the full flow (deposit -> rebalance) results in
+    ///         OllaCore.stakedPrincipal reflecting the staked amount, because rebalance
+    ///         now integrates computeAttesterState and _updateAccountingInternal.
+    function test_fullFlow_stakedPrincipalUpdatedAfterRebalance() external {
         uint256 activationThreshold = 200_000 * DECIMALS;
         mockRollup.setActivationThreshold(activationThreshold);
 
@@ -450,39 +464,31 @@ contract ComputeAttesterStateIntegration is Test {
         uint256 depositAmount = 400_000 * DECIMALS; // exactly 2 attesters worth
         _performDeposit(alice, depositAmount);
 
-        // ── Rebalance to stake ──
+        // ── Rebalance to stake (now includes computeAttesterState + updateAccounting) ──
         vm.prank(operator);
         vault.rebalance();
 
-        // Complete rebalance
+        // Complete rebalance if multi-step
         for (uint256 i; i < 10; ++i) {
             if (!vault.isRebalancePaused()) break;
             vm.prank(operator);
             vault.rebalance();
         }
 
-        IOllaCore.AccountingState memory statePostRebalance = vault.accountingState();
-        emit log_named_uint("stakedPrincipal after rebalance (before compute)", statePostRebalance.stakedPrincipal);
+        assertFalse(vault.isRebalancePaused(), "rebalance should complete and unpause");
 
-        // ── computeAttesterState ──
-        vm.prank(operator);
-        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
-        assertTrue(completed, "computeAttesterState must complete");
-
+        // ── Verify totalStaked on StakingManager is correct ──
         uint256 totalStaked = stakingManager.totalStaked();
-        emit log_named_uint("totalStaked after compute", totalStaked);
+        emit log_named_uint("totalStaked after rebalance", totalStaked);
         assertEq(totalStaked, activationThreshold * 2, "totalStaked should be 2x activation threshold");
 
-        // ── updateAccounting to sync OllaCore ──
-        vm.prank(operator);
-        vault.updateAccounting();
-
-        IOllaCore.AccountingState memory statePostAccounting = vault.accountingState();
-        emit log_named_uint("stakedPrincipal after updateAccounting", statePostAccounting.stakedPrincipal);
+        // ── Verify OllaCore.stakedPrincipal is synced via accounting ──
+        IOllaCore.AccountingState memory statePostRebalance = vault.accountingState();
+        emit log_named_uint("stakedPrincipal after rebalance", statePostRebalance.stakedPrincipal);
         assertEq(
-            statePostAccounting.stakedPrincipal,
+            statePostRebalance.stakedPrincipal,
             activationThreshold * 2,
-            "OllaCore stakedPrincipal must match totalStaked after updateAccounting"
+            "OllaCore stakedPrincipal must match totalStaked after rebalance"
         );
     }
 
@@ -533,8 +539,339 @@ contract ComputeAttesterStateIntegration is Test {
         assertEq(totalStaked, activationThreshold * numAttesters, "totalStaked should be sum of all attester stakes");
     }
 
-    /// @notice Demonstrates that too-low gas can produce a zero cached state.
-    function test_computeAttesterState_lowGasProducesZeroCache() external {
+    /*//////////////////////////////////////////////////////////////
+                    G-1: MULTI-CALL COMPUTE WITHIN REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Deploys 12 attesters with a high gasThreshold so computeAttesterState processes
+    ///         only ~1-2 attesters per call.  Verifies multi-pass rebalance resume and final accounting.
+    function test_multiCallComputeAttesterState_withinRebalance() external {
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        uint256 numAttesters = 12;
+        _addKeys(numAttesters);
+
+        uint256 depositAmount = activationThreshold * numAttesters;
+        _performDeposit(alice, depositAmount);
+
+        // Set a high gasThreshold on StakingManager so the accumulation loop
+        // can only process ~1-2 attesters per call.
+        vm.prank(address(vault));
+        stakingManager.setGasThreshold(400_000);
+
+        // ── First rebalance call: should stake and enter ComputeAttesterState ──
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Continue calling until paused at ComputeAttesterState (or until rebalance completes)
+        uint256 maxCalls = 30;
+        uint256 callsMade = 1;
+        uint256 pausedAtComputeCount;
+        for (uint256 i; i < maxCalls; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
+                pausedAtComputeCount++;
+            }
+            vm.prank(operator);
+            vault.rebalance();
+            callsMade++;
+        }
+
+        // Verify rebalance completed
+        assertFalse(vault.isRebalancePaused(), "rebalance should complete after multi-pass compute");
+        IOllaCore.RebalanceProgress memory finalProgress = vault.rebalanceProgress();
+        assertEq(uint256(finalProgress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should reach Done step");
+
+        // Verify stakedPrincipal matches actual staked amount
+        IOllaCore.AccountingState memory stateAfter = vault.accountingState();
+        assertEq(
+            stateAfter.stakedPrincipal,
+            activationThreshold * numAttesters,
+            "stakedPrincipal must match total staked amount"
+        );
+
+        // Verify totalStaked on StakingManager is correct
+        uint256 totalStaked = stakingManager.totalStaked();
+        assertEq(totalStaked, activationThreshold * numAttesters, "StakingManager totalStaked must match");
+    }
+
+    /// @notice Same as above but verifies AccountingUpdated is emitted on the completion call.
+    function test_multiCallComputeAttesterState_emitsAccountingUpdated() external {
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        uint256 numAttesters = 10;
+        _addKeys(numAttesters);
+
+        uint256 depositAmount = activationThreshold * numAttesters;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(address(vault));
+        stakingManager.setGasThreshold(400_000);
+
+        // Run rebalance, recording logs on every call (including the first)
+        uint256 maxCalls = 30;
+        bool emittedAccounting;
+        bytes32 accountingUpdatedTopic =
+            keccak256("AccountingUpdated(uint256,uint256,uint256,int256,uint256,uint256,uint256,uint256)");
+
+        for (uint256 i; i < maxCalls; ++i) {
+            vm.recordLogs();
+            vm.prank(operator);
+            vault.rebalance();
+            Vm.Log[] memory entries = vm.getRecordedLogs();
+
+            if (_hasEvent(entries, accountingUpdatedTopic, address(vault))) {
+                emittedAccounting = true;
+            }
+
+            if (!vault.isRebalancePaused()) break;
+        }
+
+        assertFalse(vault.isRebalancePaused(), "rebalance should complete");
+        assertTrue(emittedAccounting, "AccountingUpdated event must be emitted on the completion call");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              G-3: GAS THRESHOLD MISCONFIGURATION STALL
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Sets an extremely high gasThreshold after staking, causing computeAttesterState
+    ///         to never satisfy the gas check inside its loop during rebalance.
+    ///         Documents the stall behavior.
+    function test_gasThresholdMisconfiguration_stallsComputeAttesterState() external {
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        // Add enough keys for two batches so we can complete one rebalance and start another
+        _addKeys(3);
+
+        // Phase 1: Deposit and rebalance normally to stake 1 attester
+        uint256 depositAmount = activationThreshold;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(operator);
+        vault.rebalance();
+
+        for (uint256 i; i < 10; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        assertFalse(vault.isRebalancePaused(), "first rebalance should complete");
+        assertGt(_readAttestersLength(), 0, "should have at least 1 attester");
+
+        // Phase 2: Set extremely high gasThreshold so computeAttesterState loop
+        // never processes any attester.
+        vm.prank(address(vault));
+        stakingManager.setGasThreshold(10_000_000);
+
+        // New deposit to clear idle buffer guard and trigger a new rebalance cycle
+        _performDeposit(alice, activationThreshold);
+
+        // Call rebalance repeatedly with limited gas. The staking step will also be affected
+        // by the high threshold (no new staking), but that's fine — the key point is that
+        // ComputeAttesterState cannot complete.
+        uint256 stallCount;
+        for (uint256 i; i < 10; ++i) {
+            vm.prank(operator);
+            vault.rebalance{ gas: 5_000_000 }();
+
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
+                stallCount++;
+            }
+
+            if (!vault.isRebalancePaused()) break;
+        }
+
+        // The rebalance should still be paused (stalled at ComputeAttesterState)
+        assertTrue(vault.isRebalancePaused(), "rebalance should remain paused (stalled)");
+
+        IOllaCore.RebalanceProgress memory finalProgress = vault.rebalanceProgress();
+        assertEq(
+            uint256(finalProgress.step),
+            uint256(IOllaCore.RebalanceStep.ComputeAttesterState),
+            "step should be stuck at ComputeAttesterState"
+        );
+
+        assertGt(stallCount, 0, "should have stalled at ComputeAttesterState at least once");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+           G-4: EMPTY ATTESTER ARRAY DURING REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Deposits funds below the activation threshold so _stake returns 0 (no attesters created).
+    ///         StakeSurplus step produces 0 staked, ComputeAttesterState completes immediately.
+    function test_emptyAttesterArray_computeAttesterStateCompletesImmediately() external {
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        // Add keys (so _stake won't revert with InsufficientKeys), but deposit less
+        // than the activation threshold — _calculateAttestersToStake returns 0 → _stake returns 0.
+        _addKeys(1);
+
+        uint256 depositAmount = 50 * DECIMALS; // below 100 ether threshold
+        _performDeposit(alice, depositAmount);
+
+        // StakeSurplus: stakeRemaining = 50, but _stake returns 0 (amount < threshold)
+        // → advances to ComputeAttesterState with empty attester array
+        vm.prank(operator);
+        vault.rebalance();
+
+        // With no attesters, computeAttesterState completes immediately (empty array → progressed=true)
+        // So rebalance should reach Done
+        for (uint256 i; i < 5; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        // Verify rebalance completed and pause is cleared
+        assertFalse(vault.isRebalancePaused(), "rebalance should complete with empty attester array");
+        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should reach Done");
+
+        // Verify the attester array is indeed empty
+        uint256 length = _readAttestersLength();
+        assertEq(length, 0, "attester array should be empty");
+
+        // Verify accounting state — nothing staked, everything buffered
+        IOllaCore.AccountingState memory state = vault.accountingState();
+        assertEq(state.stakedPrincipal, 0, "stakedPrincipal should be 0 with no attesters");
+        assertEq(state.bufferedAssets, depositAmount, "all assets should remain buffered");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+        G-5: STANDALONE updateAccounting() AFTER REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Completes a full rebalance cycle, then calls computeAttesterState + updateAccounting
+    ///         to verify the steady-state refresh path still works.
+    function test_standaloneUpdateAccounting_afterRebalance() external {
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        _addKeys(2);
+
+        uint256 depositAmount = activationThreshold * 2;
+        _performDeposit(alice, depositAmount);
+
+        // Complete full rebalance cycle
+        vm.prank(operator);
+        vault.rebalance();
+
+        for (uint256 i; i < 10; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        assertFalse(vault.isRebalancePaused(), "rebalance should complete");
+
+        // Verify stakedPrincipal after rebalance
+        IOllaCore.AccountingState memory stateAfterRebalance = vault.accountingState();
+        assertEq(
+            stateAfterRebalance.stakedPrincipal, activationThreshold * 2, "stakedPrincipal should match after rebalance"
+        );
+
+        // Simulate time passing, then refresh cache via standalone computeAttesterState
+        vm.warp(block.timestamp + 1 hours);
+
+        vm.prank(operator);
+        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
+        assertTrue(completed, "standalone computeAttesterState should complete");
+        assertEq(slashingDelta, 0, "no slashing should have occurred");
+
+        // Call updateAccounting as operator — verify it succeeds
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        // Verify stakedPrincipal is still correct
+        IOllaCore.AccountingState memory stateAfterAccounting = vault.accountingState();
+        assertEq(
+            stateAfterAccounting.stakedPrincipal,
+            activationThreshold * 2,
+            "stakedPrincipal should be correct after standalone updateAccounting"
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+          G-6: _hasGasForStep() VS INTERNAL GAS THRESHOLD
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Verifies that when _hasGasForStep passes but computeAttesterState internally
+    ///         cannot progress (due to its own gas threshold), progress is saved correctly
+    ///         without corruption.
+    function test_hasGasForStep_passesButInternalGasThresholdStops() external {
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        _addKeys(5);
+
+        uint256 depositAmount = activationThreshold * 5;
+        _performDeposit(alice, depositAmount);
+
+        // Set StakingManager gas threshold high enough that the internal loop breaks early
+        // but low enough that _hasGasForStep() in OllaCore still passes
+        vm.prank(address(vault));
+        stakingManager.setGasThreshold(300_000);
+
+        // Run rebalance
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Keep calling, checking that step saves progress correctly
+        uint256 computeCallCount;
+        for (uint256 i; i < 15; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
+                computeCallCount++;
+            }
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        // Verify rebalance eventually completes
+        assertFalse(vault.isRebalancePaused(), "rebalance should eventually complete");
+
+        // Verify no data corruption — stakedPrincipal and totalStaked should match
+        IOllaCore.AccountingState memory state = vault.accountingState();
+        uint256 totalStaked = stakingManager.totalStaked();
+        assertEq(state.stakedPrincipal, totalStaked, "stakedPrincipal must match StakingManager totalStaked");
+        assertEq(totalStaked, activationThreshold * 5, "totalStaked should equal all 5 attesters");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+               EXISTING TESTS (PRESERVED)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Demonstrates that too-low gas on a standalone computeAttesterState call
+    ///         does not corrupt the existing cached state (populated by rebalance).
+    function test_computeAttesterState_lowGasDoesNotCorruptCache() external {
         uint256 activationThreshold = 100 * DECIMALS;
         mockRollup.setActivationThreshold(activationThreshold);
 
@@ -546,6 +883,7 @@ contract ComputeAttesterStateIntegration is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
+        // Rebalance now includes computeAttesterState, so cache is populated after rebalance
         vm.prank(operator);
         vault.rebalance();
 
@@ -558,6 +896,10 @@ contract ComputeAttesterStateIntegration is Test {
         uint256 length = _readAttestersLength();
         assertEq(length, 1, "Should have exactly 1 attester");
 
+        // Cache should already be populated from rebalance
+        (uint256 cachedSlashPre, uint256 cachedStakedPre,,) = _readCachedState();
+        assertEq(cachedStakedPre, activationThreshold, "cached stakedAmount should be set by rebalance");
+
         emit log_string("=== computeAttesterState with low gas ===");
         bytes memory payload = abi.encodeWithSelector(stakingManager.computeAttesterState.selector);
         vm.prank(operator);
@@ -566,11 +908,14 @@ contract ComputeAttesterStateIntegration is Test {
         if (retLow.length == 64) {
             (uint256 slashingDelta, bool completed) = abi.decode(retLow, (uint256, bool));
             emit DebugComputeResult(slashingDelta, completed);
+            // The low-gas call should NOT report completed (progressed boolean check)
+            assertFalse(completed, "low-gas call should not complete");
         }
 
+        // The existing cache should NOT be corrupted by the low-gas call
         (uint256 cachedSlashLow, uint256 cachedStakedLow,,) = _readCachedState();
         emit DebugCachedState(cachedSlashLow, cachedStakedLow, 0, 0);
-        assertEq(cachedStakedLow, 0, "cached stakedAmount should remain 0 with low gas");
+        assertEq(cachedStakedLow, activationThreshold, "cached stakedAmount should be preserved after low-gas call");
 
         emit log_string("=== computeAttesterState with sufficient gas ===");
         vm.prank(operator);
