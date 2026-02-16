@@ -10,6 +10,11 @@ import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 
 /// @title WithdrawalQueue
 /// @notice FIFO queue for async withdrawal requests.
+/// @dev This queue uses strict FIFO ordering for finalization. Known limitation: a large request at the
+///      head of the queue can block smaller requests behind it from being finalized, even if sufficient
+///      liquidity exists for those smaller requests (head-of-line blocking). This is an intentional design
+///      trade-off for simplicity, fairness (earlier requests are always served first), and gas efficiency
+///      (no scanning past unfinalizable requests).
 /// @author Olla Core contributors
 contract WithdrawalQueue is
     Initializable,
@@ -131,6 +136,10 @@ contract WithdrawalQueue is
 
     // slither-disable-start pess-multiple-storage-read
     /// @notice Finalizes withdrawals using available liquidity.
+    /// @dev The loop processes requests in strict FIFO order and breaks (does not skip) when a request's
+    ///      `assetsExpected` exceeds the remaining `available` liquidity. This means a single large
+    ///      unfinalizable request at the head blocks all subsequent requests, even smaller ones with
+    ///      sufficient liquidity. This is a known limitation.
     /// @param available The available assets to finalize.
     /// @return used The assets used for finalization.
     /// @return finalizedCount The number of requests finalized.
@@ -153,6 +162,7 @@ contract WithdrawalQueue is
             WithdrawalRequest storage request = _requests[currentId];
             if (!request.finalized) {
                 uint256 assetsExpected = request.assetsExpected;
+                // Breaks on first under-funded request; does not skip.
                 if (available < assetsExpected) {
                     break;
                 }
