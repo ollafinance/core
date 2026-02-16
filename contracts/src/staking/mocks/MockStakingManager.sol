@@ -237,8 +237,8 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function getUnstakedFunds() external pure override returns (uint256 received) {
-        return 0;
+    function getUnstakedFunds() external pure override returns (uint256 received, bool hasRemainingExits) {
+        return (0, false);
     }
 
     /// @inheritdoc IStakingManager

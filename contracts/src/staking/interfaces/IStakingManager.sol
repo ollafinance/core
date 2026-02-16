@@ -197,7 +197,8 @@ interface IStakingManager {
 
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.
-    function getUnstakedFunds() external returns (uint256 received);
+    /// @return hasRemainingExits True if there are still attesters in exiting state after finalization.
+    function getUnstakedFunds() external returns (uint256 received, bool hasRemainingExits);
 
     /// @notice Claims sequencer rewards to RewardsVault.
     /// @return harvested The amount of rewards harvested.
