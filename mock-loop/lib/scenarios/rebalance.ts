@@ -2,9 +2,10 @@ import type { WalletClient, PublicClient } from "viem";
 import type { RebalanceScenario, DeploymentAddresses, ActionResult } from "../types.js";
 import { getOllaCore, loadAbi } from "../client.js";
 
-const REBALANCE_STEP_DONE = 5; // RebalanceStep.Done
+const REBALANCE_STEP_DONE = 6; // RebalanceStep.Done
+const REBALANCE_STEP_PULL_UNSTAKED = 1; // RebalanceStep.PullUnstaked
 const STAKE_FAILED_SELECTOR = "0xd101596a"; // Stake failed error selector
-const REBALANCE_STEP_NAMES = ["Harvest", "PullUnstaked", "FinalizeWithdrawals", "InitiateUnstake", "StakeSurplus", "Done"];
+const REBALANCE_STEP_NAMES = ["Harvest", "PullUnstaked", "FinalizeWithdrawals", "InitiateUnstake", "StakeSurplus", "ComputeAttesterState", "Done"];
 
 export async function executeRebalance(
   _scenario: RebalanceScenario,
@@ -98,6 +99,25 @@ export async function executeRebalance(
         progress.stakeRemaining === lastProgress.stakeRemaining &&
         progress.unstakeRemaining === lastProgress.unstakeRemaining
       ) {
+        // When stuck at PullUnstaked, the on-chain hasExitableUnstakes() check
+        // uses cached attester state that may be stale after pullUnstakedFunds()
+        // already finalized the exits. Refresh the cache and retry once.
+        if (progress.step === REBALANCE_STEP_PULL_UNSTAKED) {
+          const refreshTx = await clients.operatorWallet.writeContract({
+            address: stakingManagerAddress,
+            abi: stakingManagerAbi,
+            functionName: "computeAttesterState",
+            args: [],
+            gas: attesterGas,
+            chain: null,
+            account: clients.operatorWallet.account,
+          } as any);
+          await clients.publicClient.waitForTransactionReceipt({ hash: refreshTx });
+          // Clear lastProgress so the next iteration won't immediately trigger
+          // the no-progress check again — give it one more try with fresh state.
+          lastProgress = null;
+          continue;
+        }
         return {
           scenario: "rebalance",
           success: true,

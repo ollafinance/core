@@ -577,7 +577,7 @@ contract OllaCore is
             uint256 pending = _modules.withdrawalQueue.totalPendingAssets();
             // Slither: zero guard only; no timestamp usage.
             // slither-disable-next-line incorrect-equality,timestamp
-            if (pending == 0 || _accountingState.bufferedAssets == 0) {
+            if (pending == 0 || _accountingState.bufferedAssets == 0 || finalizedAmount == 0) {
                 (uint256 requiredBuffer,) = _computeRequiredBuffer();
                 progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
                 progress.step = IOllaCore.RebalanceStep.InitiateUnstake;
@@ -1629,7 +1629,15 @@ contract OllaCore is
         // Slither: zero guard only; no timestamp usage.
         // slither-disable-next-line incorrect-equality,timestamp
         if (pending != 0 && bufferedAssets != 0) {
-            return false;
+            // If there are pending unstakes, keep the pause — unstaked funds will arrive
+            // and be pulled in a future cycle to cover the pending withdrawals.
+            // If there are no pending unstakes, the rebalance has done all it can —
+            // allow completion so the protocol can accept new deposits or process
+            // finalization once more buffer arrives.
+            uint256 pendingUnstakeAmount = _modules.stakingManager.pendingUnstakes();
+            if (pendingUnstakeAmount > 0) {
+                return false;
+            }
         }
 
         // The rebalance state machine already ensures that surplus buffer is staked when possible.
