@@ -1,0 +1,27 @@
+# Trust Assumptions
+
+This document enumerates the critical trust assumptions that underpin the Olla protocol's security model. Each assumption represents a design decision where the protocol deliberately grants elevated privileges to a specific role or external dependency. These are **by design, not bugs** — but violating any of them can have severe consequences.
+
+This serves two purposes:
+
+1. **For the development team and governance:** a checklist of invariants that must be maintained across upgrades, role grants, and module replacements.
+2. **For external auditors:** a clear declaration of what the protocol considers in-scope trust versus out-of-scope trust, reducing ambiguity during audit engagements.
+
+## Assumptions
+
+| # | Assumption | Contracts | Impact if Violated |
+|---|---|---|---|
+| T-1 | `BURNER_ROLE` is held exclusively by OllaCore | StAztec | Any other holder can burn arbitrary users' stAztec without allowance, effectively confiscating their staking position |
+| T-2 | `MINTER_ROLE` is held exclusively by OllaCore | StAztec | Any other holder can mint unbacked stAztec, diluting all existing holders |
+| T-3 | `OPERATOR_ROLE` is trusted to submit correct accounting data | OllaCore, StakingManager | A malicious operator can manipulate the exchange rate, over/under-report rewards or slashing |
+| T-4 | `DEFAULT_ADMIN_ROLE` (governance) can upgrade all UUPS proxies | OllaCore, WithdrawalQueue, RewardsVault, StakingManager, StakingProviderRegistry | A compromised governance key can replace any implementation — full protocol rug |
+| T-5 | Governance can set protocol fees up to 100% | OllaCore | Fee misconfiguration can extract all yield from stakers |
+| T-6 | Governance can hot-swap modules (StakingManager, RewardsVault, WithdrawalQueue, SafetyModule) | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
+| T-7 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
+| T-8 | `GUARDIAN_ROLE` can pause/unpause and force-unpause a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-unpausing mid-rebalance leaves state machine inconsistent |
+
+## Mitigations
+
+- **T-1 through T-6** are governance-controlled risks. The primary mitigation is a **timelocked multisig** for all admin and role-grant operations, giving the community a window to react to malicious proposals.
+- **T-7** is an external dependency risk. The protocol relies on the Aztec rollup behaving as specified. Circuit breakers in SafetyModule (rate drop, accounting staleness) provide partial protection.
+- **T-8** is mitigated by separating `GUARDIAN_ROLE` from `DEFAULT_ADMIN_ROLE` — the guardian can pause but cannot upgrade or drain.

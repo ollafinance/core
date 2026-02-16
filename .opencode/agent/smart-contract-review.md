@@ -139,24 +139,24 @@ This agent can file GitHub issues for audit findings using the repository's `aud
 Before filing the first audit issue, ensure the severity labels exist. Run this once:
 
 ```bash
-gh label create "audit-critical" --color "B60205" --description "Critical severity audit finding" 2>/dev/null || true
-gh label create "audit-high" --color "D93F0B" --description "High severity audit finding" 2>/dev/null || true
-gh label create "audit-medium" --color "FBCA04" --description "Medium severity audit finding" 2>/dev/null || true
-gh label create "audit-low" --color "0E8A16" --description "Low severity audit finding" 2>/dev/null || true
-gh label create "audit-informational" --color "C5DEF5" --description "Informational audit finding" 2>/dev/null || true
-gh label create "audit-gas" --color "BFD4F2" --description "Gas optimization audit finding" 2>/dev/null || true
+gh label create "critical" --color "B60205" --description "Critical severity finding" 2>/dev/null || true
+gh label create "high" --color "D93F0B" --description "High severity finding" 2>/dev/null || true
+gh label create "medium" --color "FBCA04" --description "Medium severity finding" 2>/dev/null || true
+gh label create "low" --color "0E8A16" --description "Low severity finding" 2>/dev/null || true
+gh label create "informational" --color "C5DEF5" --description "Informational finding" 2>/dev/null || true
+gh label create "gas" --color "BFD4F2" --description "Gas optimization finding" 2>/dev/null || true
 ```
 
 ### Severity → Label Mapping
 
 | Severity | Issue Title Prefix | GitHub Label |
 |---|---|---|
-| Critical | `[Audit-Critical]` | `audit`, `audit-critical` |
-| High | `[Audit-High]` | `audit`, `audit-high` |
-| Medium | `[Audit-Medium]` | `audit`, `audit-medium` |
-| Low | `[Audit-Low]` | `audit`, `audit-low` |
-| Informational | `[Audit-Info]` | `audit`, `audit-informational` |
-| Gas | `[Audit-Gas]` | `audit`, `audit-gas` |
+| Critical | `[Audit-Critical]` | `audit`, `critical` |
+| High | `[Audit-High]` | `audit`, `high` |
+| Medium | `[Audit-Medium]` | `audit`, `medium` |
+| Low | `[Audit-Low]` | `audit`, `low` |
+| Informational | `[Audit-Info]` | `audit`, `informational` |
+| Gas | `[Audit-Gas]` | `audit`, `gas` |
 
 ### Issue Body Format
 
@@ -221,7 +221,7 @@ Internal audit review
 ```bash
 gh issue create \
   --title "[Audit-<SEVERITY>] <Short descriptive title>" \
-  --label "audit,<severity-label>" \
+  --label "audit,<severity-label-lowercase>" \
   --body-file /tmp/audit-issue-body.md
 ```
 
