@@ -564,12 +564,12 @@ contract OllaCoreRebalancePauseTest is Test {
             "pause complete event"
         );
 
-        // Rebalance completion no longer calls _updateAccountingInternal. The operator
-        // must call computeAttesterState() then updateAccounting() separately.
+        // Rebalance completion calls _updateAccountingInternal after computeAttesterState
+        // completes as part of the rebalance state machine.
         bytes32 accountingUpdated =
             keccak256("AccountingUpdated(uint256,uint256,uint256,int256,uint256,uint256,uint256,uint256)");
-        assertFalse(
-            _hasEvent(entries, accountingUpdated, address(vault)), "no accounting update during rebalance completion"
+        assertTrue(
+            _hasEvent(entries, accountingUpdated, address(vault)), "accounting update during rebalance completion"
         );
 
         assertFalse(vault.isRebalancePaused(), "pause cleared");
@@ -578,10 +578,6 @@ contract OllaCoreRebalancePauseTest is Test {
             uint8(IOllaCore.RebalancePauseReason.RebalanceComplete),
             "pause reason complete"
         );
-
-        // Operator calls updateAccounting separately after rebalance
-        vm.prank(operator);
-        vault.updateAccounting();
 
         IOllaCore.FlowCounters memory flows = vault.flowCounters();
         assertEq(flows.latestReportCumulativeDeposits, depositAmount, "accounting snapshot updated");
@@ -619,26 +615,15 @@ contract OllaCoreRebalancePauseTest is Test {
             keccak256("AccountingUpdated(uint256,uint256,uint256,int256,uint256,uint256,uint256,uint256)");
         assertFalse(_hasEvent(partialLogs, accountingUpdated, address(vault)), "no accounting update on partial");
 
-        // Complete the rebalance — accounting is NOT updated inline anymore
+        // Complete the rebalance — accounting IS updated on the completion call
         vm.recordLogs();
         vm.prank(operator);
         vault.rebalance();
         Vm.Log[] memory completionLogs = vm.getRecordedLogs();
 
-        assertFalse(
-            _hasEvent(completionLogs, accountingUpdated, address(vault)),
-            "no accounting update during rebalance completion"
-        );
-
-        // Operator must call updateAccounting separately
-        vm.recordLogs();
-        vm.prank(operator);
-        vault.updateAccounting();
-        Vm.Log[] memory accountingLogs = vm.getRecordedLogs();
-
         assertTrue(
-            _hasEvent(accountingLogs, accountingUpdated, address(vault)),
-            "accounting update on separate updateAccounting call"
+            _hasEvent(completionLogs, accountingUpdated, address(vault)),
+            "accounting update on completion rebalance call"
         );
     }
 
@@ -679,33 +664,94 @@ contract OllaCoreRebalancePauseTest is Test {
 
         revertingStakingManager.setStakeReturnAmount(0);
 
-        // With the accounting update removed from rebalance completion, the safety
-        // module revert on the 2nd call no longer affects the rebalance itself.
-        // Rebalance now succeeds even if the safety module would have reverted
-        // during an accounting update.
-        revertingModule.setRevertAfter(2);
-
+        // First call: start a partial rebalance to persist _rebalancePaused = true on-chain.
+        // Use low gas to stop at an intermediate step.
+        uint256 gasLimit = 200_000;
         vm.prank(operator);
-        revertingVault.rebalance();
+        (bool firstCallOk,) =
+            address(revertingVault).call{ gas: gasLimit }(abi.encodeCall(revertingVault.rebalance, ()));
+        firstCallOk; // silence unused variable warning
 
-        // Rebalance completed and unpaused successfully
-        assertFalse(revertingVault.isRebalancePaused(), "pause cleared after successful rebalance");
+        // If the first call completed fully without partial stop, force a partial state
+        if (!revertingVault.isRebalancePaused()) {
+            stdstore.target(address(revertingVault)).sig("rebalanceProgress()").depth(0).enable_packed_slots()
+                .checked_write(uint256(IOllaCore.RebalanceStep.ComputeAttesterState));
+            stdstore.target(address(revertingVault)).sig("isRebalancePaused()").enable_packed_slots()
+                .checked_write(true);
+        }
 
-        // However, a separate updateAccounting call will revert because the safety
-        // module's checkAccountingLiveness fails.
+        assertTrue(revertingVault.isRebalancePaused(), "pause active from partial rebalance");
+
+        // _updateAccountingInternal is restored in the rebalance completion block.
+        // The completion call hits checkAccountingLiveness at entry (1st, passes),
+        // then _updateAccountingInternal calls it again (2nd, reverts).
         revertingModule.resetCheckCount();
-        revertingModule.setRevertAfter(1);
+        revertingModule.setRevertAfter(2);
 
         vm.expectRevert(bytes("ACCOUNTING_LIVENESS_REVERT"));
         vm.prank(operator);
-        revertingVault.updateAccounting();
+        revertingVault.rebalance();
 
-        // Once the safety module recovers, updateAccounting succeeds
+        // Rebalance reverted, so pause persists
+        assertTrue(revertingVault.isRebalancePaused(), "pause persists when accounting update reverts");
+
+        // Once the safety module recovers, rebalance completes and unpauses
         revertingModule.setRevertAfter(0);
         revertingModule.resetCheckCount();
 
         vm.prank(operator);
-        revertingVault.updateAccounting();
+        revertingVault.rebalance();
+
+        assertFalse(revertingVault.isRebalancePaused(), "pause cleared after successful rebalance");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    IDLE BUFFER SKIP WITH COMPUTE STEP
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RebalanceIdleBufferSkip_WithComputeAttesterStateStep() external {
+        // Deposit a small amount that is below staking minimum — no actual staking happens
+        // (MockAccountingStakingManager returns 0 from stake when useStakeReturnAmount is set)
+        _performDeposit(alice, 3 * DECIMALS);
+
+        stakingManager.setStakeReturnAmount(0);
+        stakingManager.setActivatedAttesterCount(0);
+
+        // First rebalance — runs through all steps, nothing productive
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Complete rebalance if multi-step
+        for (uint256 i; i < 5; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        assertFalse(vault.isRebalancePaused(), "first rebalance should complete");
+        IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
+        assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.Done), "first rebalance reaches Done");
+
+        // Capture buffered assets after first (unproductive) rebalance
+        IOllaCore.AccountingState memory stateAfter1 = vault.accountingState();
+        uint256 bufferedAfterFirst = stateAfter1.bufferedAssets;
+        assertGt(bufferedAfterFirst, 0, "should have buffered assets");
+
+        // Second rebalance with same conditions — should skip (idle buffer guard)
+        vm.prank(operator);
+        (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
+            vault.rebalance();
+
+        // Verify the skip — all return values are 0 and buffered is unchanged
+        assertEq(rewardsDelta, 0, "idle skip: rewardsDelta should be 0");
+        assertEq(finalizedAmount, 0, "idle skip: finalizedAmount should be 0");
+        assertEq(stakedAmount, 0, "idle skip: stakedAmount should be 0");
+        assertEq(resultingBuffer, bufferedAfterFirst, "idle skip: buffer should be unchanged");
+
+        // Rebalance progress should still be Done (it didn't start a new cycle)
+        IOllaCore.RebalanceProgress memory progress2 = vault.rebalanceProgress();
+        assertEq(uint256(progress2.step), uint256(IOllaCore.RebalanceStep.Done), "skip: still at Done step");
+        assertFalse(vault.isRebalancePaused(), "skip: rebalance not paused");
     }
 
     /*//////////////////////////////////////////////////////////////

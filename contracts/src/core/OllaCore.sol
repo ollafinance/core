@@ -634,7 +634,7 @@ contract OllaCore is
                 // Slither: zero guard only; no timestamp usage.
                 // slither-disable-next-line incorrect-equality,timestamp
                 if (progress.stakeRemaining == 0) {
-                    progress.step = IOllaCore.RebalanceStep.Done;
+                    progress.step = IOllaCore.RebalanceStep.ComputeAttesterState;
                 }
             }
             // Slither: enum state machine uses explicit equality checks; no timestamp usage.
@@ -655,13 +655,30 @@ contract OllaCore is
                     // slither-disable-next-line incorrect-equality
                     if (stakedAmount == 0) {
                         progress.stakeRemaining = 0;
-                        progress.step = IOllaCore.RebalanceStep.Done;
+                        progress.step = IOllaCore.RebalanceStep.ComputeAttesterState;
                     } else {
                         _rebalanceProgress = progress;
                         return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
                     }
                 }
+                progress.step = IOllaCore.RebalanceStep.ComputeAttesterState;
+            }
+        }
+
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
+        if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
+            if (!_hasGasForStep()) {
+                _rebalanceProgress = progress;
+                return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
+            }
+            // slither-disable-next-line unused-return -- slashingDelta is cached inside computeAttesterState
+            (, bool computeCompleted) = _modules.stakingManager.computeAttesterState();
+            if (computeCompleted) {
                 progress.step = IOllaCore.RebalanceStep.Done;
+            } else {
+                _rebalanceProgress = progress;
+                return (rewardsDelta, finalizedAmount, stakedAmount, _accountingState.bufferedAssets);
             }
         }
 
@@ -1403,38 +1420,6 @@ contract OllaCore is
         _accountingState.bufferedAssets -= amount;
     }
 
-    function _getStakingManagerState()
-        internal
-        returns (
-            uint256 currentRewards,
-            uint256 rewardsDelta,
-            uint256 slashingDelta,
-            uint256 stakedPrincipal,
-            uint256 claimableRewards
-        )
-    {
-        IOllaCore.Modules memory modules = _modules;
-        IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
-        claimableRewards = modules.stakingManager.getClaimableRewards();
-        currentRewards = accountingSnapshot.cumulativeRewards + claimableRewards;
-
-        uint256 latestReportRewards = _latestReport.rewardsSnapshot;
-
-        // Clamp signed delta; no timestamp-based control flow.
-        // slither-disable-next-line timestamp
-        int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(latestReportRewards);
-
-        // slither-disable-next-line timestamp
-        // Defensive: currentRewards should be non-decreasing, but clamp if a downstream module reports a drop.
-        // slither-disable-next-line timestamp
-        if (rewardsDeltaSigned > 0) {
-            rewardsDelta = SafeCast.toUint256(rewardsDeltaSigned);
-        }
-        slashingDelta = modules.stakingManager.getSlashingDelta();
-        stakedPrincipal = modules.stakingManager.totalStaked();
-        return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal, claimableRewards);
-    }
-
     function _computeAndFinalizeAccounting(
         ISafetyModule safetyModuleRef,
         IOllaCore.FlowCounters memory flowsSnapshot,
@@ -1556,6 +1541,39 @@ contract OllaCore is
 
     function _syncBufferedWithBalance() internal {
         _reconcileBufferedAssets(address(this));
+    }
+
+    function _getStakingManagerState()
+        internal
+        view
+        returns (
+            uint256 currentRewards,
+            uint256 rewardsDelta,
+            uint256 slashingDelta,
+            uint256 stakedPrincipal,
+            uint256 claimableRewards
+        )
+    {
+        IOllaCore.Modules memory modules = _modules;
+        IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
+        claimableRewards = modules.stakingManager.getClaimableRewards();
+        currentRewards = accountingSnapshot.cumulativeRewards + claimableRewards;
+
+        uint256 latestReportRewards = _latestReport.rewardsSnapshot;
+
+        // Clamp signed delta; no timestamp-based control flow.
+        // slither-disable-next-line timestamp
+        int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(latestReportRewards);
+
+        // slither-disable-next-line timestamp
+        // Defensive: currentRewards should be non-decreasing, but clamp if a downstream module reports a drop.
+        // slither-disable-next-line timestamp
+        if (rewardsDeltaSigned > 0) {
+            rewardsDelta = SafeCast.toUint256(rewardsDeltaSigned);
+        }
+        slashingDelta = modules.stakingManager.getSlashingDelta();
+        stakedPrincipal = modules.stakingManager.totalStaked();
+        return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal, claimableRewards);
     }
 
     function _hasGasForStep() internal view returns (bool) {
