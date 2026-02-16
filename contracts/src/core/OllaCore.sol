@@ -558,8 +558,9 @@ contract OllaCore is
                 _rebalanceProgress = progress;
                 return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
             }
-            _pullUnstakedFunds();
-            if (_modules.stakingManager.hasExitableUnstakes()) {
+            // slither-disable-next-line unused-return -- receivedAmount is not used here
+            (, bool hasRemainingExits) = _pullUnstakedFunds();
+            if (hasRemainingExits) {
                 _rebalanceProgress = progress;
                 return (rewardsDelta, 0, 0, _accountingState.bufferedAssets);
             }
@@ -1032,13 +1033,14 @@ contract OllaCore is
 
     /// @notice Pulls unstaked funds from the staking manager.
     /// @return receivedAmount The amount of unstaked funds received.
-    function _pullUnstakedFunds() internal returns (uint256 receivedAmount) {
+    /// @return hasRemainingExits True if there are still attesters in exiting state.
+    function _pullUnstakedFunds() internal returns (uint256 receivedAmount, bool hasRemainingExits) {
         IERC20 assetRef = _modules.asset;
         uint256 balanceBefore = assetRef.balanceOf(address(this));
 
         // Slither: stakingManager is trusted; rebalance is nonReentrant and role-gated.
         // slither-disable-next-line reentrancy-benign
-        receivedAmount = _modules.stakingManager.getUnstakedFunds();
+        (receivedAmount, hasRemainingExits) = _modules.stakingManager.getUnstakedFunds();
 
         uint256 balanceAfter = assetRef.balanceOf(address(this));
         uint256 actualReceived = balanceAfter - balanceBefore;
@@ -1052,7 +1054,7 @@ contract OllaCore is
             emit UnstakedFundsClaimed(actualReceived);
         }
 
-        return actualReceived;
+        return (actualReceived, hasRemainingExits);
     }
 
     // Slither: external calls under nonReentrant entrypoints; module is trusted.
