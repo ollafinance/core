@@ -437,11 +437,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
 
     function test_RevertWhen_ComputeSlashingDelta_UnauthorizedCaller() external {
         address unauthorized = makeAddr("unauthorized");
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, unauthorized, stakingManager.OPERATOR_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__Unauthorized.selector, unauthorized));
         vm.prank(unauthorized);
         stakingManager.computeAttesterState();
     }
@@ -625,6 +621,38 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
             abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
         );
         stakingManager.getStakingState();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                   CORE ADDRESS ACCESS CONTROL TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ComputeAttesterState_SucceedsAsCoreAddress() external {
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(1);
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+
+        vm.prank(core);
+        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
+
+        assertTrue(completed, "computeAttesterState should complete when called by core");
+        assertEq(slashingDelta, 0, "no slashing should have occurred");
+        assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD, "totalStaked should match activation threshold");
+    }
+
+    function test_ComputeAttesterState_SucceedsAsCoreAddress_ReturnsValidValues() external {
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(2);
+
+        // Simulate slashing on one attester
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD - 5 ether, block.timestamp);
+
+        vm.prank(core);
+        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
+
+        assertTrue(completed, "computeAttesterState should complete when called by core");
+        assertEq(slashingDelta, 5 ether, "slashing delta should reflect slashed amount");
+        assertEq(
+            stakingManager.totalStaked(), 2 * ACTIVATION_THRESHOLD, "totalStaked should include all active attesters"
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
