@@ -14,6 +14,7 @@ import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousRewardsVault } from "src/core/mocks/MaliciousRewardsVault.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MaliciousSafetyModule } from "src/safetymodule/MaliciousSafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
@@ -188,6 +189,8 @@ contract OllaCoreReentrancyTest is Test {
     address internal rewardsVault;
     address internal alice;
     address internal bob;
+    address internal permitOwner;
+    uint256 internal permitOwnerKey;
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP
@@ -229,6 +232,8 @@ contract OllaCoreReentrancyTest is Test {
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
+        permitOwnerKey = 0xA11CE;
+        permitOwner = vm.addr(permitOwnerKey);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -241,6 +246,20 @@ contract OllaCoreReentrancyTest is Test {
         asset.approve(address(vault), assets);
         vm.prank(owner);
         vault.deposit(assets, owner);
+    }
+
+    function _signPermit(address owner, uint256 ownerKey, address spender, uint256 value, uint256 deadline)
+        internal
+        view
+        returns (uint8 v, bytes32 r, bytes32 s)
+    {
+        bytes32 domainSeparator = stAztec.DOMAIN_SEPARATOR();
+        bytes32 permitTypehash =
+            keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+        bytes32 structHash =
+            keccak256(abi.encode(permitTypehash, owner, spender, value, stAztec.nonces(owner), deadline));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+        (v, r, s) = vm.sign(ownerKey, digest);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -335,6 +354,43 @@ contract OllaCoreReentrancyTest is Test {
         vm.expectRevert();
         vm.prank(governance);
         vault.rebalance();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          INSTANT REDEMPTION (FEE PATH)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_Redeem_ReenteredFromFeeTransfer() external {
+        _deposit(alice, 100 * DECIMALS);
+
+        uint256 sharesToRedeem = 10 * DECIMALS;
+
+        // Skip first transfer (net assets to recipient), fire re-entry on second (fee to governance)
+        asset.setTransferReentrySkipCount(1);
+        asset.configureTransferReentry(address(vault), abi.encodeCall(vault.redeem, (sharesToRedeem, bob)), true);
+
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.prank(alice);
+        vault.redeem(sharesToRedeem, bob);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     INSTANT REDEMPTION WITH PERMIT
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_RedeemWithPermit_ReenteredFromTransferHook() external {
+        _deposit(permitOwner, 100 * DECIMALS);
+
+        uint256 sharesToRedeem = 10 * DECIMALS;
+        uint256 deadline = block.timestamp + 1 days;
+        (uint8 v, bytes32 r, bytes32 s) =
+            _signPermit(permitOwner, permitOwnerKey, address(vault), sharesToRedeem, deadline);
+
+        asset.configureTransferReentry(address(vault), abi.encodeCall(vault.redeem, (sharesToRedeem, bob)), true);
+
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.prank(permitOwner);
+        vault.redeemWithPermit(sharesToRedeem, bob, deadline, v, r, s);
     }
 }
 
@@ -433,5 +489,93 @@ contract OllaCoreHarvestReentrancyTest is Test {
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(governance);
         vault.rebalance();
+    }
+}
+
+contract OllaCoreUpdateAccountingReentrancyTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                              CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 internal constant DECIMALS = 1e18;
+
+    /*//////////////////////////////////////////////////////////////
+                           TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    MaliciousAztec internal asset;
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockStakingManager internal stakingManager;
+    MaliciousSafetyModule internal safetyModule;
+    MockWithdrawalQueue internal withdrawalQueue;
+    address internal governance;
+    address internal rewardsVault;
+    address internal alice;
+
+    /*//////////////////////////////////////////////////////////////
+                                 SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MaliciousAztec();
+
+        OllaCore implementation = new OllaCore();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        vault = OllaCore(address(proxy));
+
+        governance = makeAddr("governance");
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockStakingManager();
+        rewardsVault = makeAddr("rewardsVault");
+        safetyModule = new MaliciousSafetyModule(address(implementation));
+        withdrawalQueue = new MockWithdrawalQueue();
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            500,
+            5_000,
+            governance,
+            address(withdrawalQueue),
+            IRewardsVault(rewardsVault),
+            address(safetyModule)
+        );
+
+        vm.startPrank(governance);
+        vault.grantRole(vault.OPERATOR_ROLE(), governance);
+        vm.stopPrank();
+
+        alice = makeAddr("alice");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _deposit(address owner, uint256 assets) internal {
+        asset.mint(owner, assets);
+        vm.prank(owner);
+        asset.approve(address(vault), assets);
+        vm.prank(owner);
+        vault.deposit(assets, owner);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         UPDATE ACCOUNTING
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_UpdateAccounting_ReenteredFromSafetyModuleCheck() external {
+        _deposit(alice, 10 * DECIMALS);
+
+        // Re-entry targets deposit() — user-callable, same nonReentrant guard applies
+        asset.mint(address(safetyModule), 1 * DECIMALS);
+        safetyModule.setReentry(address(vault), abi.encodeCall(vault.deposit, (1 * DECIMALS, alice)));
+        safetyModule.setReenterOnCheckAccountingLiveness(true);
+
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.prank(governance);
+        vault.updateAccounting();
     }
 }
