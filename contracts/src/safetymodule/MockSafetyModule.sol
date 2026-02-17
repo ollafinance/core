@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import {ISafetyModule} from "src/safetymodule/ISafetyModule.sol";
+import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 
 /// @title MockSafetyModule
 /// @notice Test stub that allows all safety checks.
