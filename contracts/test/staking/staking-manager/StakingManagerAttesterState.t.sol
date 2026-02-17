@@ -550,7 +550,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     }
 
     function test_ComputeAttesterState_CachesGetStakingState() external {
-        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(3);
+        _setupStakedAttesters(3);
 
         // Initiate unstake for 1 attester
         vm.startPrank(core);
@@ -811,5 +811,137 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         assertEq(
             withdrawableAccumRaw, expectedWithdrawable, "withdrawable accumulator should retain value until next pass"
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                  MULTI-PASS CURSOR PROGRESSION (C6)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Fuzz test: with 2-20 staked attesters and a high gas threshold, verify that
+    ///         computeAttesterState() progresses the cursor on each call and eventually
+    ///         completes with correct final values.
+    function testFuzz_ComputeAttesterState_MultiPassCursorProgression(uint8 rawCount) external {
+        uint256 attesterCount = bound(uint256(rawCount), 2, 20);
+
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(attesterCount);
+
+        for (uint256 i; i < attesterCount; ++i) {
+            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD - 1 ether, block.timestamp);
+        }
+
+        uint256 expectedSlashingDelta = attesterCount * 1 ether;
+        uint256 expectedTotalStaked = attesterCount * ACTIVATION_THRESHOLD;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(180_000);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        uint256[10] memory gasOptions =
+            [uint256(220_000), 240_000, 260_000, 280_000, 300_000, 320_000, 340_000, 360_000, 380_000, 400_000];
+
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            vm.prank(defaultAdmin);
+            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.computeAttesterState, ())
+            );
+            if (!success) continue;
+            (, bool completed) = abi.decode(data, (uint256, bool));
+            uint256 cursorAfter = _getAttesterStateCursor();
+            if (!completed && cursorAfter > 0) {
+                selectedGas = gasOptions[i];
+                break;
+            }
+        }
+
+        if (selectedGas == 0) {
+            vm.revertToState(snapshotId);
+            (uint256 deltaFull, bool completedFull) = _computeAttesterState();
+            assertTrue(completedFull, "should complete in one call");
+            assertEq(deltaFull, expectedSlashingDelta, "slashing delta mismatch (single pass)");
+            assertEq(stakingManager.totalStaked(), expectedTotalStaked, "totalStaked mismatch (single pass)");
+            assertEq(_getAttesterStateCursor(), 0, "cursor should reset after completion");
+            return;
+        }
+
+        vm.revertToState(snapshotId);
+
+        uint256 prevCursor = 0;
+        bool done;
+        uint256 passCount;
+        uint256 finalDelta;
+
+        for (uint256 p; p < 50; ++p) {
+            vm.prank(defaultAdmin);
+            (uint256 delta, bool completed) = stakingManager.computeAttesterState{ gas: selectedGas }();
+            uint256 cursorNow = _getAttesterStateCursor();
+            ++passCount;
+
+            if (completed) {
+                finalDelta = delta;
+                done = true;
+                break;
+            }
+
+            assertGt(cursorNow, prevCursor, "cursor must advance on each partial pass");
+            prevCursor = cursorNow;
+        }
+
+        if (!done) {
+            vm.prank(defaultAdmin);
+            (finalDelta, done) = stakingManager.computeAttesterState();
+            ++passCount;
+        }
+
+        assertTrue(done, "computation should complete");
+        assertGt(passCount, 1, "should require more than one pass");
+        assertEq(finalDelta, expectedSlashingDelta, "final slashing delta mismatch");
+        assertEq(stakingManager.totalStaked(), expectedTotalStaked, "totalStaked mismatch");
+        assertEq(_getAttesterStateCursor(), 0, "cursor should reset after completion");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              PARTIAL SLASHING MULTIPLE ATTESTERS (C7)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Tests that computeAttesterState correctly accumulates slashing deltas
+    ///         when multiple attesters are slashed by different percentages.
+    function test_ComputeAttesterState_PartialSlashing_MultipleAttesters() external {
+        uint256 attesterCount = 5;
+        IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(attesterCount);
+
+        // Attester 0: slashed 25% -- remaining = 75 ether
+        uint256 attester0Remaining = (ACTIVATION_THRESHOLD * 75) / 100;
+        rollup.setExternalExit(keys[0].attester, attester0Remaining, block.timestamp);
+
+        // Attester 2: slashed 50% -- remaining = 50 ether
+        uint256 attester2Remaining = (ACTIVATION_THRESHOLD * 50) / 100;
+        rollup.setExternalExit(keys[2].attester, attester2Remaining, block.timestamp);
+
+        // Attesters 1, 3, 4: no slashing (still validating, no external exit set)
+
+        uint256 expectedSlashingDelta =
+            (ACTIVATION_THRESHOLD - attester0Remaining) + (ACTIVATION_THRESHOLD - attester2Remaining);
+        assertEq(expectedSlashingDelta, 75 ether, "sanity: expected delta should be 75 ether");
+
+        uint256 expectedTotalStaked = attesterCount * ACTIVATION_THRESHOLD;
+        uint256 expectedWithdrawable = attester0Remaining + attester2Remaining;
+
+        (uint256 slashingDelta, bool completed) = _computeAttesterState();
+        assertTrue(completed, "computation should complete in a single pass");
+        assertEq(slashingDelta, expectedSlashingDelta, "slashing delta should be 25% + 50% of threshold");
+
+        assertEq(stakingManager.totalStaked(), expectedTotalStaked, "totalStaked should include all 5 attesters");
+
+        vm.prank(core);
+        uint256 cachedDelta = stakingManager.getSlashingDelta();
+        assertEq(cachedDelta, expectedSlashingDelta, "cached slashing delta should match computed value");
+
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(state.stakedAmount, expectedTotalStaked, "staking state stakedAmount mismatch");
+        assertEq(state.slashingDelta, expectedSlashingDelta, "staking state slashingDelta mismatch");
+        assertEq(state.withdrawableAmount, expectedWithdrawable, "staking state withdrawableAmount mismatch");
+        assertEq(state.pendingUnstakeAmount, 0, "no pending unstakes expected");
     }
 }
