@@ -26,7 +26,7 @@ contract TransferAdminToTimelock is BaseScript {
         address stAztec = _addrOrDeployment("STAZTEC", "StAztec", "StAztec missing");
         address safetyModule = _addrOrDeployment("SAFETY_MODULE", "SafetyModule", "SafetyModule missing");
 
-        bytes32 adminRole = AccessControlUpgradeable.DEFAULT_ADMIN_ROLE();
+        bytes32 adminRole = bytes32(0);
 
         vm.startBroadcast(pk);
 
