@@ -931,9 +931,11 @@ contract OllaCoreInstantRedemptionTest is Test {
         vm.prank(alice);
         uint256 netAssets = vault.redeem(sharesToRedeem, bob);
 
-        // Rate after sync should be 1.5e18
-        // grossAssets = 50e18 * 1.5e18 / 1e18 = 75e18
-        uint256 expectedGross = 75 * DECIMALS;
+        // With virtual offset: grossAssets = shares * (totalAssets + 1) / (supply + 1)
+        // After sync: totalAssets = 150e18, supply = 100e18 (pre-redeem values used in contract)
+        uint256 syncedTotalAssets = depositAmount + rewards; // 150e18
+        uint256 preRedeemSupply = depositAmount; // 100e18 (supply before the redeem burned shares)
+        uint256 expectedGross = sharesToRedeem.mulDiv(syncedTotalAssets + 1, preRedeemSupply + 1, Math.Rounding.Floor);
         uint256 expectedFee = expectedGross * 500 / BP_DIVISOR;
         uint256 expectedNet = expectedGross - expectedFee;
 
@@ -1014,7 +1016,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         // compute it manually with the single-step formula.
         uint256 expectedTotalAssets = depositAmount + rewards;
         uint256 supply = stAztec.totalSupply();
-        uint256 expectedGross = sharesToRedeem.mulDiv(expectedTotalAssets, supply, Math.Rounding.Floor);
+        uint256 expectedGross = sharesToRedeem.mulDiv(expectedTotalAssets + 1, supply + 1, Math.Rounding.Floor);
 
         // Perform the redeem — triggers _syncBufferedWithBalance() then _convertToAssets()
         _setInstantRedemptionFee(0); // zero fee so netAssets == grossAssets
@@ -1031,7 +1033,7 @@ contract OllaCoreInstantRedemptionTest is Test {
             uint256 viewAssets = vault.convertToAssets(remainingShares);
             uint256 postTotal = vault.totalAssets();
             uint256 postSupply = stAztec.totalSupply();
-            uint256 expectedRemaining = remainingShares.mulDiv(postTotal, postSupply, Math.Rounding.Floor);
+            uint256 expectedRemaining = remainingShares.mulDiv(postTotal + 1, postSupply + 1, Math.Rounding.Floor);
             assertEq(viewAssets, expectedRemaining, "convertToAssets consistent post-redeem");
         }
     }

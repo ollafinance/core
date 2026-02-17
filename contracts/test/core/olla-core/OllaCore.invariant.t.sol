@@ -329,7 +329,7 @@ contract OllaCoreInvariantTest is Test {
 
     function invariant_ExchangeRateMatchesTotals() external view {
         uint256 supply = stAztec.totalSupply();
-        uint256 expectedRate = supply == 0 ? 1e18 : vault.totalAssets().mulDiv(1e18, supply, Math.Rounding.Floor);
+        uint256 expectedRate = (vault.totalAssets() + 1).mulDiv(1e18, supply + 1, Math.Rounding.Floor);
 
         assertEq(vault.exchangeRate(), expectedRate, "exchange rate matches totals");
     }
@@ -344,7 +344,7 @@ contract OllaCoreInvariantTest is Test {
         uint256 supply = stAztec.totalSupply();
         IOllaCore.LatestReport memory report = vault.latestReport();
         IOllaCore.FlowCounters memory flows = vault.flowCounters();
-        uint256 expectedRate = supply == 0 ? 1e18 : report.totalAssets.mulDiv(1e18, supply, Math.Rounding.Floor);
+        uint256 expectedRate = (report.totalAssets + 1).mulDiv(1e18, supply + 1, Math.Rounding.Floor);
 
         assertEq(report.exchangeRate, expectedRate, "stored exchange rate matches snapshot");
         assertEq(report.totalAssets, vault.totalAssets(), "snapshot total assets matches total assets");
@@ -374,19 +374,11 @@ contract OllaCoreInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function _expectedShares(uint256 assets) internal view returns (uint256) {
-        uint256 supply = stAztec.totalSupply();
-        if (supply == 0) {
-            return assets;
-        }
-        return assets.mulDiv(supply, vault.totalAssets(), Math.Rounding.Floor);
+        return assets.mulDiv(stAztec.totalSupply() + 1, vault.totalAssets() + 1, Math.Rounding.Floor);
     }
 
     function _expectedAssets(uint256 shares) internal view returns (uint256) {
-        uint256 supply = stAztec.totalSupply();
-        if (supply == 0) {
-            return shares;
-        }
-        return shares.mulDiv(vault.totalAssets(), supply, Math.Rounding.Floor);
+        return shares.mulDiv(vault.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -427,12 +419,24 @@ contract OllaCoreInvariantTest is Test {
             return;
         }
 
+        uint256 total = vault.totalAssets();
         uint256 assets = 1e18;
         uint256 shares = 1e18;
-        assertEq(vault.exchangeRate(), 1e18, "zero supply: exchangeRate should be 1e18");
-        assertEq(vault.convertToShares(assets), assets, "zero supply: convertToShares equals assets");
-        assertEq(vault.convertToAssets(shares), shares, "zero supply: convertToAssets equals shares");
-        assertEq(vault.previewDeposit(assets), assets, "zero supply: previewDeposit equals assets");
+
+        // With virtual offset: exchangeRate = (total + 1) * 1e18 / (0 + 1)
+        uint256 expectedRate = (total + 1).mulDiv(1e18, 1, Math.Rounding.Floor);
+        assertEq(vault.exchangeRate(), expectedRate, "zero supply: exchangeRate with virtual offset");
+
+        // convertToShares = assets * (0 + 1) / (total + 1)
+        uint256 expectedShares = assets.mulDiv(1, total + 1, Math.Rounding.Floor);
+        assertEq(vault.convertToShares(assets), expectedShares, "zero supply: convertToShares with virtual offset");
+
+        // convertToAssets = shares * (total + 1) / (0 + 1)
+        uint256 expectedAssets = shares.mulDiv(total + 1, 1, Math.Rounding.Floor);
+        assertEq(vault.convertToAssets(shares), expectedAssets, "zero supply: convertToAssets with virtual offset");
+
+        // previewDeposit = assets * (0 + 1) / (total + 1)
+        assertEq(vault.previewDeposit(assets), expectedShares, "zero supply: previewDeposit with virtual offset");
     }
 }
 

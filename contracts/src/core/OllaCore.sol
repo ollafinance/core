@@ -1713,12 +1713,7 @@ contract OllaCore is
     }
 
     function _exchangeRate() internal view returns (uint256) {
-        IStAztec stAztecToken = _modules.stAztec;
-        uint256 supply = stAztecToken.totalSupply();
-        if (supply == 0) {
-            return _EXCHANGE_RATE_SCALE;
-        }
-        return totalAssets().mulDiv(_EXCHANGE_RATE_SCALE, supply, Math.Rounding.Floor);
+        return (totalAssets() + 1).mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + 1, Math.Rounding.Floor);
     }
 
     function _convertToSharesForDeposit(uint256 assets) internal view returns (uint256) {
@@ -1726,21 +1721,11 @@ contract OllaCore is
     }
 
     function _convertToAssets(uint256 shares) internal view returns (uint256) {
-        IStAztec stAztecToken = _modules.stAztec;
-        uint256 supply = stAztecToken.totalSupply();
-        if (supply == 0) {
-            return shares;
-        }
-        return shares.mulDiv(totalAssets(), supply, Math.Rounding.Floor);
+        return shares.mulDiv(totalAssets() + 1, _modules.stAztec.totalSupply() + 1, Math.Rounding.Floor);
     }
 
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
-        IStAztec stAztecToken = _modules.stAztec;
-        uint256 supply = stAztecToken.totalSupply();
-        if (supply == 0) {
-            return assets;
-        }
-        return assets.mulDiv(supply, totalAssets(), rounding);
+        return assets.mulDiv(_modules.stAztec.totalSupply() + 1, totalAssets() + 1, rounding);
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {

@@ -344,38 +344,32 @@ contract OllaCoreProtocolFeesTest is Test {
     /// while the spec expects a single mulDiv: shares * totalAssets / totalSupply.
     /// This causes a 1 wei difference at large values.
     function test_ConvertToAssets_RoundingError_ReproducesInvariantFailure() external {
-        // Reproduce the exact shrunk sequence from the failing invariant test:
-        // 1. setTotalStaked(10135855071863320976892102731)
-        // 2. updateAccounting()
-        // 3. deposit(3, 0)
-
-        // Step 1: Set a large totalStaked value
-        uint256 largeStaked = 10135855071863320976892102731;
-        stakingManager.setTotalStaked(largeStaked);
-
-        // Step 2: Update accounting to apply the staked principal
-        vm.prank(operator);
-        vault.updateAccounting();
-
-        // Step 3: Small deposit to create shares
+        // Step 1: Deposit first to create shares (supply > 0)
+        // With virtual offset, depositing after inflating totalAssets would yield 0 shares
+        // since shares = assets * (0 + 1) / (largeStaked + 1) = 0 (floor).
         uint256 depositAmount = 3;
         _performDeposit(alice, depositAmount);
 
-        // Now check the invariant: convertToAssets should match the spec
+        // Step 2: Set a large totalStaked value (inflates totalAssets)
+        uint256 largeStaked = 10135855071863320976892102731;
+        stakingManager.setTotalStaked(largeStaked);
+
+        // Step 3: Update accounting to apply the staked principal
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        // Step 4: Now check the invariant: convertToAssets with virtual offset
         uint256 supply = stAztec.totalSupply();
         uint256 total = vault.totalAssets();
 
-        // Use a shares value that triggers the rounding difference
-        // The invariant test uses block.number bounded to [1, type(uint96).max]
         uint256 shares = supply; // Use total supply as test shares
 
-        // Contract's implementation (two-step via exchange rate)
+        // Contract's implementation (uses virtual offset)
         uint256 contractResult = vault.convertToAssets(shares);
 
-        // Spec's expected result (single-step direct calculation)
-        uint256 expectedResult = shares.mulDiv(total, supply, Math.Rounding.Floor);
+        // Expected result with virtual offset: shares * (total + 1) / (supply + 1)
+        uint256 expectedResult = shares.mulDiv(total + 1, supply + 1, Math.Rounding.Floor);
 
-        // This assertion will fail, demonstrating the rounding error
         assertEq(contractResult, expectedResult, "convertToAssets matches spec");
     }
 }
