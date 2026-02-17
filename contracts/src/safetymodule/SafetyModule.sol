@@ -36,7 +36,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     // by convention, the other contracts has "core" as non-immutable
     // slither-disable-start immutable-states
     /// @notice The core address allowed to call checks.
-    address public immutable core;
+    address public immutable CORE;
     // slither-disable-end immutable-states
 
     /// @notice Maximum total assets allowed.
@@ -65,7 +65,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyCore() {
-        if (msg.sender != core) {
+        if (msg.sender != CORE) {
             revert ISafetyModule.SafetyModule__UnauthorizedCore(msg.sender);
         }
         _;
@@ -109,7 +109,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         maxAccountingDelay = maxAccountingDelay_;
         lastAccountingTimestamp = block.timestamp;
 
-        core = core_;
+        CORE = core_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(GUARDIAN_ROLE, guardian);
