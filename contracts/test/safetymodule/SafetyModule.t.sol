@@ -266,4 +266,87 @@ contract SafetyModuleTest is Test {
         vm.prank(core);
         safetyModule.checkWithdrawalMinimum(5 ether);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    CIRCUIT BREAKER BOUNDARY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Exactly 500 bps rate drop triggers the breaker (>= threshold).
+    function test_CheckRateDrop_ExactBoundary_Pauses() public {
+        // dropBps = (10000 - 9500) * 10000 / 10000 = 500  (== minRateDropBps)
+        uint256 oldRate = 10_000;
+        uint256 nextRate = 9_500;
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(safetyModule.RATE_DROP());
+
+        vm.prank(core);
+        safetyModule.checkRateDrop(oldRate, nextRate);
+
+        assertTrue(safetyModule.isPaused(), "exact 500 bps drop should pause");
+    }
+
+    /// @notice 499 bps rate drop does NOT trigger the breaker (< threshold).
+    function test_CheckRateDrop_ExactBoundary_NoPause() public {
+        // dropBps = (10000 - 9501) * 10000 / 10000 = 499  (< minRateDropBps)
+        uint256 oldRate = 10_000;
+        uint256 nextRate = 9_501;
+
+        vm.prank(core);
+        safetyModule.checkRateDrop(oldRate, nextRate);
+
+        assertFalse(safetyModule.isPaused(), "499 bps drop should not pause");
+    }
+
+    /// @notice Exactly 60% queue ratio triggers the breaker (>= threshold).
+    function test_CheckQueueRatio_ExactBoundary_Pauses() public {
+        // ratioBps = 6000 * 10000 / 10000 = 6000  (== maxQueueRatioBps)
+        uint256 queued = 6_000;
+        uint256 total = 10_000;
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
+
+        vm.prank(core);
+        safetyModule.checkQueueRatio(queued, total);
+
+        assertTrue(safetyModule.isPaused(), "exact 60% queue ratio should pause");
+    }
+
+    /// @notice 59.99% queue ratio does NOT trigger the breaker (< threshold).
+    function test_CheckQueueRatio_ExactBoundary_NoPause() public {
+        // ratioBps = 5999 * 10000 / 10000 = 5999  (< maxQueueRatioBps)
+        uint256 queued = 5_999;
+        uint256 total = 10_000;
+
+        vm.prank(core);
+        safetyModule.checkQueueRatio(queued, total);
+
+        assertFalse(safetyModule.isPaused(), "59.99% queue ratio should not pause");
+    }
+
+    /// @notice 1 day + 1 second elapsed triggers the breaker (> threshold).
+    function test_CheckAccountingLiveness_ExactBoundary_Pauses() public {
+        // elapsed = 1 days + 1  (> maxAccountingDelay)
+        vm.warp(block.timestamp + 1 days + 1);
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(safetyModule.ACCOUNTING_STALE());
+
+        vm.prank(core);
+        safetyModule.checkAccountingLiveness();
+
+        assertTrue(safetyModule.isPaused(), "1 day + 1s elapsed should pause");
+    }
+
+    /// @notice Exactly 1 day elapsed does NOT trigger the breaker (<= threshold with strict >).
+    function test_CheckAccountingLiveness_ExactBoundary_NoPause() public {
+        // elapsed = 1 days  (== maxAccountingDelay, not > so no trigger)
+        vm.warp(block.timestamp + 1 days);
+
+        vm.prank(core);
+        safetyModule.checkAccountingLiveness();
+
+        assertFalse(safetyModule.isPaused(), "exactly 1 day elapsed should not pause");
+    }
 }
