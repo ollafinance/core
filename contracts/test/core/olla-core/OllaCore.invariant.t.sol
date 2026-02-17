@@ -15,6 +15,8 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -499,6 +501,339 @@ contract OllaCoreDepositInvariantTest is Test {
     function invariant_ExchangeRateNonDecreasingAfterDeposits() external view {
         assertGe(
             handler.latestExchangeRate(), handler.previousExchangeRate(), "deposit should never decrease exchange rate"
+        );
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+                  LIFECYCLE HANDLER (Steps 1 & 2)
+//////////////////////////////////////////////////////////////*/
+
+contract OllaCoreLifecycleHandler is Test {
+    using Math for uint256;
+
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    MockAztec public asset;
+    OllaCore public vault;
+    StAztec public stAztec;
+    MockAccountingStakingManager public stakingManager;
+    MockRewardsVault public rewardsVault;
+    WithdrawalQueue public withdrawalQueue;
+    address public operator;
+
+    address[] public actors;
+
+    /*//////////////////////////////////////////////////////////////
+                          GHOST VARIABLES
+    //////////////////////////////////////////////////////////////*/
+
+    uint256 public ghost_totalDeposited;
+    uint256 public ghost_totalWithdrawn;
+    bool public ghost_rebalanceMonotonic;
+    uint256 public ghost_rateBeforeAccounting;
+    uint256 public ghost_rateAfterAccounting;
+
+    /*//////////////////////////////////////////////////////////////
+                        REQUEST TRACKING
+    //////////////////////////////////////////////////////////////*/
+
+    uint256[] internal _pendingRequestIds;
+    uint256[] internal _finalizedRequestIds;
+
+    /*//////////////////////////////////////////////////////////////
+                             CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
+
+    constructor(
+        MockAztec _asset,
+        OllaCore _vault,
+        StAztec _stAztec,
+        MockAccountingStakingManager _stakingManager,
+        MockRewardsVault _rewardsVault,
+        WithdrawalQueue _withdrawalQueue,
+        address _operator
+    ) {
+        asset = _asset;
+        vault = _vault;
+        stAztec = _stAztec;
+        stakingManager = _stakingManager;
+        rewardsVault = _rewardsVault;
+        withdrawalQueue = _withdrawalQueue;
+        operator = _operator;
+
+        ghost_rebalanceMonotonic = true;
+
+        for (uint256 i = 0; i < 5; i++) {
+            actors.push(makeAddr(string(abi.encode("lifecycle_actor", i))));
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                 VIEWS
+    //////////////////////////////////////////////////////////////*/
+
+    function actorsLength() external view returns (uint256) {
+        return actors.length;
+    }
+
+    function actorAt(uint256 index) external view returns (address) {
+        return actors[index];
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE ACTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function deposit(uint96 amount, uint256 actorSeed) external {
+        uint256 assets = uint256(bound(amount, 1, type(uint96).max));
+        address actor = actors[bound(actorSeed, 0, actors.length - 1)];
+
+        asset.mint(actor, assets);
+        vm.startPrank(actor);
+        asset.approve(address(vault), assets);
+        vault.deposit(assets, actor);
+        vm.stopPrank();
+
+        ghost_totalDeposited += assets;
+    }
+
+    function requestRedeem(uint256 actorSeed) external {
+        address actor = address(0);
+        uint256 actorShares = 0;
+        for (uint256 i = 0; i < actors.length; i++) {
+            uint256 idx = (actorSeed + i) % actors.length;
+            uint256 bal = stAztec.balanceOf(actors[idx]);
+            if (bal > 0) {
+                actor = actors[idx];
+                actorShares = bal;
+                break;
+            }
+        }
+        if (actor == address(0)) return;
+
+        uint256 sharesToRedeem = actorShares / 2;
+        if (sharesToRedeem == 0) sharesToRedeem = actorShares;
+
+        vm.prank(actor);
+        uint256 requestId = vault.requestRedeem(sharesToRedeem, actor);
+
+        _pendingRequestIds.push(requestId);
+    }
+
+    function rebalanceSingleStep() external {
+        IOllaCore.RebalanceProgress memory progressBefore = vault.rebalanceProgress();
+        IOllaCore.RebalanceStep stepBefore = progressBefore.step;
+
+        vm.prank(operator);
+        try vault.rebalance() { }
+        catch {
+            return;
+        }
+
+        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceStep stepAfter = progressAfter.step;
+
+        if (uint8(stepAfter) < uint8(stepBefore)) {
+            bool isDoneToRestart = stepBefore == IOllaCore.RebalanceStep.Done;
+            if (!isDoneToRestart) {
+                ghost_rebalanceMonotonic = false;
+            }
+        }
+
+        _refreshFinalizedRequests();
+    }
+
+    function claimRequest(uint256 idSeed) external {
+        _refreshFinalizedRequests();
+
+        if (_finalizedRequestIds.length == 0) return;
+
+        uint256 idx = bound(idSeed, 0, _finalizedRequestIds.length - 1);
+        uint256 requestId = _finalizedRequestIds[idx];
+
+        _finalizedRequestIds[idx] = _finalizedRequestIds[_finalizedRequestIds.length - 1];
+        _finalizedRequestIds.pop();
+
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        uint256 assetsExpected = request.assetsExpected;
+
+        vault.claimRequestById(requestId);
+
+        ghost_totalWithdrawn += assetsExpected;
+    }
+
+    function updateAccounting() external {
+        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        if (progress.step != IOllaCore.RebalanceStep.Done) return;
+        if (vault.isRebalancePaused()) return;
+
+        ghost_rateBeforeAccounting = vault.exchangeRate();
+
+        vm.prank(operator);
+        try vault.updateAccounting() { }
+        catch {
+            return;
+        }
+
+        ghost_rateAfterAccounting = vault.exchangeRate();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          INTERNAL HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _refreshFinalizedRequests() internal {
+        uint256 length = _pendingRequestIds.length;
+        uint256 i = 0;
+        while (i < length) {
+            uint256 reqId = _pendingRequestIds[i];
+            try withdrawalQueue.getRequest(reqId) returns (IWithdrawalQueue.WithdrawalRequest memory req) {
+                if (req.finalized && !req.claimed) {
+                    _finalizedRequestIds.push(reqId);
+                    _pendingRequestIds[i] = _pendingRequestIds[length - 1];
+                    _pendingRequestIds.pop();
+                    length--;
+                } else {
+                    i++;
+                }
+            } catch {
+                i++;
+            }
+        }
+    }
+}
+
+contract OllaCoreLifecycleInvariantTest is Test {
+    using Math for uint256;
+
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    OllaCore internal vault;
+    StAztec internal stAztec;
+    MockAztec internal asset;
+    MockAccountingStakingManager internal stakingManager;
+    WithdrawalQueue internal withdrawalQueue;
+    MockSafetyModule internal safetyModule;
+    MockRewardsVault internal rewardsVault;
+    OllaCoreLifecycleHandler internal handler;
+    address internal operator;
+    address internal governance;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+        governance = makeAddr("lifecycle_governance");
+        operator = makeAddr("lifecycle_operator");
+
+        OllaCore implementation = new OllaCore();
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        vault = OllaCore(address(coreProxy));
+
+        stAztec = new StAztec(governance, address(vault));
+        stakingManager = new MockAccountingStakingManager();
+        rewardsVault = new MockRewardsVault(asset, address(vault));
+        safetyModule = new MockSafetyModule(address(vault));
+
+        WithdrawalQueue queueImplementation = new WithdrawalQueue();
+        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
+        withdrawalQueue = WithdrawalQueue(address(queueProxy));
+
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setUnstakedToken(asset);
+        address providerRewardsRecipient = makeAddr("lifecycle_providerRewardsRecipient");
+        stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
+
+        vault.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            0,
+            governance,
+            address(withdrawalQueue),
+            IRewardsVault(address(rewardsVault)),
+            address(safetyModule)
+        );
+
+        withdrawalQueue.initialize(address(vault), governance);
+
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.startPrank(governance);
+        vault.grantRole(operatorRole, operator);
+        vault.grantRole(operatorRole, address(this));
+        vm.stopPrank();
+
+        handler = new OllaCoreLifecycleHandler(
+            asset, vault, stAztec, stakingManager, rewardsVault, withdrawalQueue, operator
+        );
+
+        targetContract(address(handler));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    D1 - NO TOKENS PERMANENTLY LOCKED
+    //////////////////////////////////////////////////////////////*/
+
+    function invariant_NoTokensPermanentlyLocked() external view {
+        uint256 assetInVault = asset.balanceOf(address(vault));
+        uint256 assetInStaking = asset.balanceOf(address(stakingManager));
+        uint256 assetInRewards = asset.balanceOf(address(rewardsVault));
+        uint256 totalInActors = 0;
+        for (uint256 i = 0; i < handler.actorsLength(); i++) {
+            totalInActors += asset.balanceOf(handler.actorAt(i));
+        }
+        assertEq(
+            assetInVault + assetInStaking + assetInRewards + totalInActors,
+            handler.ghost_totalDeposited(),
+            "no tokens permanently locked"
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            D2 - FINALIZED UNCLAIMED ASSETS <= BALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    function invariant_FinalizedUnclaimedAssetsLeqBalance() external view {
+        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(33))));
+        assertLe(finalizedUnclaimed, asset.balanceOf(address(vault)), "finalized unclaimed <= balance");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            D3 - STAKED PRINCIPAL <= TOTAL STAKED
+    //////////////////////////////////////////////////////////////*/
+
+    function invariant_StakedPrincipalLeqTotalStaked() external view {
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        assertLe(accounting.stakedPrincipal, stakingManager.totalStakedAmount(), "stakedPrincipal <= totalStaked");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            D4 - REBALANCE STATE MACHINE FORWARD-ONLY
+    //////////////////////////////////////////////////////////////*/
+
+    function invariant_RebalanceStateMachineForward() external view {
+        assertTrue(handler.ghost_rebalanceMonotonic(), "rebalance must only transition forward");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+      D5 - PROTOCOL FEE DOES NOT DECREASE EXCHANGE RATE
+    //////////////////////////////////////////////////////////////*/
+
+    function invariant_ProtocolFeeDoesNotDecreaseExchangeRate() external view {
+        if (handler.ghost_rateBeforeAccounting() == 0) return;
+        assertGe(
+            handler.ghost_rateAfterAccounting(),
+            handler.ghost_rateBeforeAccounting(),
+            "fee payout must not decrease rate"
         );
     }
 }

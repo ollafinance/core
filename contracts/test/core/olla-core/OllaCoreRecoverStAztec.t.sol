@@ -7,6 +7,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -125,5 +126,37 @@ contract OllaCoreRecoverStAztecTest is Test {
 
         assertEq(stAztec.balanceOf(address(vault)), vaultBalanceBefore - recoverAmount, "vault shares debited");
         assertEq(stAztec.balanceOf(governance), governanceBalanceBefore + recoverAmount, "governance receives shares");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    REBALANCE PAUSE GUARD (C4)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_RecoverStAztec_DuringRebalancePause() external {
+        uint256 shares = _performDeposit(alice, 8 * DECIMALS);
+        uint256 recoverAmount = shares / 4;
+
+        vm.prank(alice);
+        stAztec.transfer(address(vault), recoverAmount);
+
+        // Set gas threshold extremely high so PullUnstaked step returns early,
+        // keeping the rebalance mid-cycle with _rebalancePaused = true.
+        vm.prank(governance);
+        vault.setRebalanceGasThreshold(type(uint256).max);
+
+        // Grant operator role and trigger rebalance — it will pause at PullUnstaked
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.prank(governance);
+        vault.grantRole(operatorRole, address(this));
+
+        vault.rebalance();
+
+        // Verify rebalance is paused (stuck mid-cycle)
+        assertTrue(vault.isRebalancePaused(), "rebalance should be paused mid-cycle");
+
+        // Attempt recoverStAztec during rebalance pause
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        vm.prank(governance);
+        vault.recoverStAztec(alice, recoverAmount);
     }
 }

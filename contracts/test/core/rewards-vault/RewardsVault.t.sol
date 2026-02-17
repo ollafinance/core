@@ -216,4 +216,46 @@ contract RewardsVaultTest is Test {
         assertEq(vault.latestRecordedRewardsAmount(), 0);
         assertEq(vault.balance(), 0);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    MID-CALL REWARD ARRIVAL TESTS (C9)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_WithdrawToCore_RevertsIfRewardArrivesAfterRecord() external {
+        uint256 initialAmount = 10 ether;
+        aztec.mint(address(vault), initialAmount);
+
+        vm.prank(core);
+        vault.recordBalance();
+
+        uint256 extraAmount = 5 ether;
+        aztec.mint(address(vault), extraAmount);
+
+        vm.expectRevert(IRewardsVault.RewardsVault__BalanceMismatch.selector);
+        vm.prank(core);
+        vault.withdrawToCore();
+    }
+
+    function test_WithdrawToCore_SucceedsAfterReRecord() external {
+        uint256 initialAmount = 10 ether;
+        aztec.mint(address(vault), initialAmount);
+
+        vm.prank(core);
+        vault.recordBalance();
+
+        uint256 extraAmount = 5 ether;
+        aztec.mint(address(vault), extraAmount);
+
+        vm.prank(core);
+        vault.recordBalance();
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+
+        vm.prank(core);
+        vault.withdrawToCore();
+
+        assertEq(aztec.balanceOf(core) - coreBalanceBefore, initialAmount + extraAmount);
+        assertEq(vault.latestRecordedRewardsAmount(), 0);
+        assertEq(vault.balance(), 0);
+    }
 }
