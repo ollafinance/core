@@ -277,4 +277,32 @@ contract OllaCoreDepositTest is Test {
         assertEq(stAztec.balanceOf(alice), shares, "shares balance");
         assertEq(vault.totalAssets(), assets, "assets buffered");
     }
+
+    function testFuzz_MultiDepositorAtDifferentRates(uint96 deposit1, uint96 deposit2, uint96 rewards) external {
+        deposit1 = uint96(bound(deposit1, 1e18, type(uint96).max / 2));
+        deposit2 = uint96(bound(deposit2, 1e18, type(uint96).max / 2));
+        rewards = uint96(bound(rewards, 1, type(uint96).max / 2));
+
+        // Alice deposits at 1:1 rate
+        _performDeposit(alice, deposit1);
+
+        // Simulate rewards to change the exchange rate
+        stakingManager.setClaimableRewards(rewards);
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        vm.prank(governance);
+        vault.grantRole(operatorRole, address(this));
+        vault.updateAccounting();
+
+        // Snapshot state before Bob's deposit
+        uint256 supplyBeforeBob = stAztec.totalSupply();
+        uint256 totalAssetsBeforeBob = vault.totalAssets();
+
+        // Bob deposits at new rate
+        uint256 bobShares = _performDeposit(bob, deposit2);
+
+        // Assert: Bob's shares follow the ERC4626 formula with virtual offset
+        uint256 expectedBobShares =
+            uint256(deposit2).mulDiv(supplyBeforeBob + 1, totalAssetsBeforeBob + 1, Math.Rounding.Floor);
+        assertEq(bobShares, expectedBobShares, "Bob shares match ERC4626 formula");
+    }
 }

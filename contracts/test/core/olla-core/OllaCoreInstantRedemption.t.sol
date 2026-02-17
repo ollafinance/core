@@ -1037,4 +1037,56 @@ contract OllaCoreInstantRedemptionTest is Test {
             assertEq(viewAssets, expectedRemaining, "convertToAssets consistent post-redeem");
         }
     }
+
+    /*//////////////////////////////////////////////////////////////
+                   FUZZ: FEE BOUNDARY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function testFuzz_Redeem_ZeroFeeBoundary(uint96 depositAmount, uint96 redeemSeed) external {
+        depositAmount = uint96(bound(depositAmount, 2e18, type(uint96).max));
+        _performDeposit(alice, depositAmount);
+
+        _setInstantRedemptionFee(0);
+
+        uint256 shares = stAztec.balanceOf(alice);
+        uint256 maxRedeem = vault.availableForInstantRedemption();
+        uint256 rate = vault.exchangeRate();
+        uint256 maxSharesByLiquidity = maxRedeem.mulDiv(DECIMALS, rate, Math.Rounding.Floor);
+        uint256 upperBound = shares < maxSharesByLiquidity ? shares : maxSharesByLiquidity;
+        vm.assume(upperBound > 0);
+        uint256 sharesToRedeem = bound(uint256(redeemSeed), 1, upperBound);
+
+        uint256 grossAssets = sharesToRedeem.mulDiv(rate, DECIMALS, Math.Rounding.Floor);
+        uint256 govBefore = asset.balanceOf(governance);
+
+        vm.prank(alice);
+        uint256 netAssets = vault.redeem(sharesToRedeem, bob);
+
+        assertEq(netAssets, grossAssets, "0% fee: netAssets == grossAssets");
+        assertEq(asset.balanceOf(governance) - govBefore, 0, "0% fee: governance gets 0");
+    }
+
+    function testFuzz_Redeem_MaxFeeBoundary(uint96 depositAmount, uint96 redeemSeed) external {
+        depositAmount = uint96(bound(depositAmount, 2e18, type(uint96).max));
+        _performDeposit(alice, depositAmount);
+
+        _setInstantRedemptionFee(BP_DIVISOR); // 100% fee
+
+        uint256 shares = stAztec.balanceOf(alice);
+        uint256 maxRedeem = vault.availableForInstantRedemption();
+        uint256 rate = vault.exchangeRate();
+        uint256 maxSharesByLiquidity = maxRedeem.mulDiv(DECIMALS, rate, Math.Rounding.Floor);
+        uint256 upperBound = shares < maxSharesByLiquidity ? shares : maxSharesByLiquidity;
+        vm.assume(upperBound > 0);
+        uint256 sharesToRedeem = bound(uint256(redeemSeed), 1, upperBound);
+
+        uint256 grossAssets = sharesToRedeem.mulDiv(rate, DECIMALS, Math.Rounding.Floor);
+        uint256 govBefore = asset.balanceOf(governance);
+
+        vm.prank(alice);
+        uint256 netAssets = vault.redeem(sharesToRedeem, bob);
+
+        assertEq(netAssets, 0, "100% fee: netAssets == 0");
+        assertEq(asset.balanceOf(governance) - govBefore, grossAssets, "100% fee: governance gets grossAssets");
+    }
 }

@@ -473,4 +473,28 @@ contract OllaCoreWithdrawalTest is Test {
         assertEq(recordedShares, sharesToRedeem, "shares match");
         assertEq(recordedAssets, expectedAssets, "assetsExpected matches single-step convertToAssets");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                   FUZZ: REQUEST REDEEM VARYING SHARES
+    //////////////////////////////////////////////////////////////*/
+
+    function testFuzz_RequestRedeem_VaryingShares(uint96 depositAmount, uint96 sharesSeed) external {
+        depositAmount = uint96(bound(depositAmount, 2e18, type(uint96).max));
+
+        _performDeposit(alice, depositAmount);
+
+        uint256 aliceShares = stAztec.balanceOf(alice);
+        uint256 shares = bound(uint256(sharesSeed), 1, aliceShares);
+
+        uint256 expectedAssets = vault.convertToAssets(shares);
+        uint256 sharesBefore = stAztec.balanceOf(alice);
+
+        vm.prank(alice);
+        vault.requestRedeem(shares, alice);
+
+        (, uint256 recordedShares, uint256 recordedAssets,) = _queueRequestSnapshot();
+        assertEq(recordedShares, shares, "recorded shares match");
+        assertEq(recordedAssets, expectedAssets, "request assets == convertToAssets(shares)");
+        assertEq(stAztec.balanceOf(alice), sharesBefore - shares, "stAztec decreased by shares");
+    }
 }
