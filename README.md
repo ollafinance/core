@@ -57,15 +57,15 @@ yarn deploy:local
 For Option A governance timelock, use the ops scripts under `contracts/script/ops`:
 
 ```bash
-# Deploy timelock (defaults to 48h delay)
+# Deploy timelock (defaults to 48h delay, writes deployments/<env>.json)
 cd contracts
 forge script script/ops/DeployTimelock.s.sol --broadcast --rpc-url http://127.0.0.1:8545
 
-# Transfer DEFAULT_ADMIN_ROLE on all contracts to the timelock
-forge script script/ops/TransferAdminToTimelock.s.sol --broadcast --rpc-url http://127.0.0.1:8545
-
-# Set OllaCore governance address to the timelock (enables UUPS upgrades via timelock)
+# Set OllaCore governance address to the timelock (direct if admin, or via timelock if already transferred)
 forge script script/ops/SetGovernanceToTimelock.s.sol --broadcast --rpc-url http://127.0.0.1:8545
+
+# Transfer DEFAULT_ADMIN_ROLE on all contracts to the timelock (skip local MockSafetyModule)
+SKIP_SAFETY_MODULE=true forge script script/ops/TransferAdminToTimelock.s.sol --broadcast --rpc-url http://127.0.0.1:8545
 ```
 
 You can override timelock params via env vars:
@@ -74,6 +74,8 @@ You can override timelock params via env vars:
 - `TIMELOCK_PROPOSER`
 - `TIMELOCK_EXECUTOR`
 - `TIMELOCK_ADMIN`
+- `TIMELOCK_SALT` (bytes32, optional)
+- `SKIP_SAFETY_MODULE` (bool, optional)
 
 For automated protocol testing with the TypeScript mock loop, see [`mock-loop/README.md`](mock-loop/README.md).
 

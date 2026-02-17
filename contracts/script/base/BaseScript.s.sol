@@ -41,4 +41,8 @@ abstract contract BaseScript is BaseDeployer {
     function _uintOr(string memory envVar, uint256 defaultValue) internal view returns (uint256) {
         return vm.envOr(envVar, defaultValue);
     }
+
+    function _boolOr(string memory envVar, bool defaultValue) internal view returns (bool) {
+        return vm.envOr(envVar, defaultValue);
+    }
 }

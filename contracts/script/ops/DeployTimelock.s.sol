@@ -26,5 +26,17 @@ contract DeployTimelock is BaseScript {
         vm.stopBroadcast();
 
         _logDeployment("TimelockController", address(timelock));
+
+        string memory env = _deployEnv();
+        if (_deploymentExists(env)) {
+            string memory jsonKey = "timelock";
+            vm.serializeAddress(jsonKey, "TimelockController", address(timelock));
+            vm.writeJson(jsonKey, _getDeploymentPath(env), ".addresses.TimelockController");
+        } else {
+            string memory json = _initDeploymentJson(env, block.chainid, vm.addr(pk));
+            json = _addAddressToJson(json, "TimelockController", address(timelock), true);
+            json = _closeAddressesJson(json);
+            _writeDeploymentJson(env, json);
+        }
     }
 }

@@ -11,3 +11,5 @@
 - Ran `yarn lint` (solhint warnings only, no errors; see tool output file for details).
 - Added README timelock usage notes and updated mermaid diagram to show timelock admin flow.
 - Ran `yarn deploy:local --quiet && yarn dev:mock-loop:until-error`; mock loop was terminated after timeout (~4 minutes) as instructed (no errors before timeout).
+- Updated timelock scripts to persist deployments JSON, support timelock scheduling for governance update, and skip/access-check mock SafetyModule.
+- Removed timelock plan/options docs per request.

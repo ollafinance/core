@@ -36,7 +36,13 @@ contract TransferAdminToTimelock is BaseScript {
         _grantAndRevoke(stakingManager, adminRole, timelock, caller);
         _grantAndRevoke(stakingProviderRegistry, adminRole, timelock, caller);
         _grantAndRevoke(stAztec, adminRole, timelock, caller);
-        _grantAndRevoke(safetyModule, adminRole, timelock, caller);
+        if (_boolOr("SKIP_SAFETY_MODULE", false)) {
+            _logDeployment("Skip SafetyModule migration", safetyModule);
+        } else if (_supportsAccessControl(safetyModule, adminRole)) {
+            _grantAndRevoke(safetyModule, adminRole, timelock, caller);
+        } else {
+            revert("TransferAdminToTimelock: SafetyModule lacks AccessControl");
+        }
 
         vm.stopBroadcast();
     }
@@ -44,5 +50,13 @@ contract TransferAdminToTimelock is BaseScript {
     function _grantAndRevoke(address target, bytes32 role, address timelock, address caller) internal {
         AccessControlUpgradeable(target).grantRole(role, timelock);
         AccessControlUpgradeable(target).revokeRole(role, caller);
+    }
+
+    function _supportsAccessControl(address target, bytes32 role) internal view returns (bool) {
+        try AccessControlUpgradeable(target).hasRole(role, address(0)) returns (bool) {
+            return true;
+        } catch {
+            return false;
+        }
     }
 }
