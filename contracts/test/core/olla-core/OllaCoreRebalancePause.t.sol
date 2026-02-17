@@ -49,7 +49,7 @@ contract RevertingSafetyModule is ISafetyModule {
         return _paused;
     }
 
-    function core() external view override returns (address) {
+    function CORE() external view override returns (address) {
         return CORE_ADDRESS;
     }
 
@@ -430,7 +430,7 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.stopPrank();
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
-        vm.prank(operator);
+        vm.prank(governance);
         vault.setRebalanceGasThreshold(1);
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));

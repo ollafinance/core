@@ -458,13 +458,10 @@ contract OllaCore is
     function setRebalanceGasThreshold(uint256 newThreshold)
         external
         override
-        onlyRole(OPERATOR_ROLE)
+        onlyRole(DEFAULT_ADMIN_ROLE)
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (msg.sender != _modules.governance) {
-            revert OllaCore__UnauthorizedGovernance(msg.sender);
-        }
         uint256 oldThreshold = rebalanceGasThreshold;
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
@@ -963,6 +960,9 @@ contract OllaCore is
     function _deposit(address caller, uint256 assets, address recipient) internal returns (uint256 shares) {
         if (recipient == address(0)) {
             revert OllaCore__ZeroAddress("recipient");
+        }
+        if (assets == 0) {
+            revert OllaCore__InvalidAmount();
         }
 
         Modules memory modules = _modules;
@@ -1709,8 +1709,7 @@ contract OllaCore is
         view
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
-        ollaProtocolFeeAssets =
-            grossAssetRewards * protocolFeeBP / BP_DIVISOR;
+        ollaProtocolFeeAssets = grossAssetRewards * protocolFeeBP / BP_DIVISOR;
 
         uint256 protocolSharesTotal = _convertToShares(ollaProtocolFeeAssets, Math.Rounding.Floor);
 

@@ -61,7 +61,7 @@ contract ReconcileSafetyModule is ISafetyModule {
         return _paused;
     }
 
-    function core() external view override returns (address) {
+    function CORE() external view override returns (address) {
         return CORE_ADDRESS;
     }
 
