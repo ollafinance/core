@@ -17,6 +17,10 @@ interface IMaliciousAztec {
     /// @param enabled Whether to enable the reentrancy attempt.
     function configureTransferReentry(address target, bytes calldata data, bool enabled) external;
 
+    /// @notice Set the number of transfer calls to skip before triggering re-entry.
+    /// @param count The number of transfers to skip (0 = fire on first transfer).
+    function setTransferReentrySkipCount(uint256 count) external;
+
     /// @notice Set allowance from this token contract to itself.
     /// @param amount The allowance amount.
     function setSelfAllowance(uint256 amount) external;

@@ -20,6 +20,7 @@ contract MaliciousAztec is IMaliciousAztec, IERC20Mintable, ERC20 {
     address private _transferReentryTarget;
     bytes private _transferReentryCalldata;
     bool private _reenterOnTransfer;
+    uint256 private _transferReentrySkipCount;
 
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
@@ -39,6 +40,12 @@ contract MaliciousAztec is IMaliciousAztec, IERC20Mintable, ERC20 {
         _reentryTarget = target;
         _reentryCalldata = data;
         _reenterOnTransferFrom = enabled;
+    }
+
+    /// @notice Set the number of transfer calls to skip before triggering re-entry.
+    /// @param count The number of transfers to skip (0 = fire on first transfer).
+    function setTransferReentrySkipCount(uint256 count) external override {
+        _transferReentrySkipCount = count;
     }
 
     /// @notice Configure a reentrancy attempt during transfer.
@@ -67,8 +74,12 @@ contract MaliciousAztec is IMaliciousAztec, IERC20Mintable, ERC20 {
     /// @inheritdoc ERC20
     function transfer(address to, uint256 amount) public override returns (bool) {
         if (_reenterOnTransfer) {
-            _reenterOnTransfer = false;
-            _transferReentryTarget.functionCall(_transferReentryCalldata);
+            if (_transferReentrySkipCount == 0) {
+                _reenterOnTransfer = false;
+                _transferReentryTarget.functionCall(_transferReentryCalldata);
+            } else {
+                --_transferReentrySkipCount;
+            }
         }
         return super.transfer(to, amount);
     }
