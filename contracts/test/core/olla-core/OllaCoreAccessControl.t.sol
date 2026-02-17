@@ -339,4 +339,46 @@ contract OllaCoreAccessControlTest is Test {
 
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault fuzz");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    GOVERNANCE ROLE TRANSFER (C2)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetGovernance_TransfersAllRoles() external {
+        address newGovernance = makeAddr("newGovernance");
+
+        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
+        bytes32 guardianRole = vault.GUARDIAN_ROLE();
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
+
+        // Verify old governance has all roles
+        assertTrue(vault.hasRole(adminRole, governance), "old gov has admin");
+        assertTrue(vault.hasRole(guardianRole, governance), "old gov has guardian");
+        assertTrue(vault.hasRole(operatorRole, governance), "old gov has operator");
+
+        vm.prank(governance);
+        vault.setGovernance(newGovernance);
+
+        // Verify new governance has all roles
+        assertTrue(vault.hasRole(adminRole, newGovernance), "new gov has admin");
+        assertTrue(vault.hasRole(guardianRole, newGovernance), "new gov has guardian");
+        assertTrue(vault.hasRole(operatorRole, newGovernance), "new gov has operator");
+
+        // Verify old governance lost all roles
+        assertFalse(vault.hasRole(adminRole, governance), "old gov lost admin");
+        assertFalse(vault.hasRole(guardianRole, governance), "old gov lost guardian");
+        assertFalse(vault.hasRole(operatorRole, governance), "old gov lost operator");
+
+        // Verify new governance can call admin-only functions
+        vm.prank(newGovernance);
+        vault.setProtocolFeeBP(100);
+        assertEq(vault.protocolFeeBP(), 100, "new gov can set protocol fee");
+
+        // Verify old governance cannot call admin-only functions
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, governance, adminRole)
+        );
+        vm.prank(governance);
+        vault.setProtocolFeeBP(200);
+    }
 }
