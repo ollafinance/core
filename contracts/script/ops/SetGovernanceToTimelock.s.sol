@@ -14,8 +14,12 @@ contract SetGovernanceToTimelock is BaseScript {
     function run() external {
         uint256 pk = _privateKey();
         address caller = vm.addr(pk);
-        address timelock =
-            _addrOrDeployment("TIMELOCK", "TimelockController", "TIMELOCK missing: set TIMELOCK or deploy timelock");
+        address timelock = vm.envOr("TIMELOCK", address(0));
+        if (timelock == address(0)) {
+            timelock = _addrOrDeployment(
+                "TIMELOCK", "TimelockController", "TIMELOCK missing: set TIMELOCK or deploy timelock"
+            );
+        }
         address core = _addrOrDeployment("CORE", "OllaCoreProxy", "CORE missing: set CORE or deploy local");
         bytes32 adminRole = bytes32(0);
 
@@ -31,7 +35,9 @@ contract SetGovernanceToTimelock is BaseScript {
             uint256 delay = timelockController.getMinDelay();
 
             timelockController.schedule(core, 0, payload, predecessor, salt, delay);
-            timelockController.execute(core, 0, payload, predecessor, salt);
+            if (delay == 0) {
+                timelockController.execute(core, 0, payload, predecessor, salt);
+            }
         }
 
         vm.stopBroadcast();

@@ -12,19 +12,24 @@ contract TransferAdminToTimelock is BaseScript {
         uint256 pk = _privateKey();
         address caller = vm.addr(pk);
 
-        address timelock =
-            _addrOrDeployment("TIMELOCK", "TimelockController", "TIMELOCK missing: set TIMELOCK or deploy timelock");
+        address timelock = vm.envOr("TIMELOCK", address(0));
+        if (timelock == address(0)) {
+            timelock = _addrOrDeployment(
+                "TIMELOCK", "TimelockController", "TIMELOCK missing: set TIMELOCK or deploy timelock"
+            );
+        }
 
-        address core = _addrOrDeployment("CORE", "OllaCoreProxy", "CORE missing: set CORE or deploy local");
+        address core = _addrFromEnvOrDeployment("CORE", "OllaCoreProxy", "CORE missing: set CORE or deploy local");
         address withdrawalQueue =
-            _addrOrDeployment("WITHDRAWAL_QUEUE", "WithdrawalQueueProxy", "WithdrawalQueue missing");
-        address rewardsVault = _addrOrDeployment("REWARDS_VAULT", "RewardsVaultProxy", "RewardsVault missing");
-        address stakingManager = _addrOrDeployment("STAKING_MANAGER", "StakingManagerProxy", "StakingManager missing");
-        address stakingProviderRegistry = _addrOrDeployment(
+            _addrFromEnvOrDeployment("WITHDRAWAL_QUEUE", "WithdrawalQueueProxy", "WithdrawalQueue missing");
+        address rewardsVault = _addrFromEnvOrDeployment("REWARDS_VAULT", "RewardsVaultProxy", "RewardsVault missing");
+        address stakingManager =
+            _addrFromEnvOrDeployment("STAKING_MANAGER", "StakingManagerProxy", "StakingManager missing");
+        address stakingProviderRegistry = _addrFromEnvOrDeployment(
             "STAKING_PROVIDER_REGISTRY", "StakingProviderRegistryProxy", "StakingProviderRegistry missing"
         );
-        address stAztec = _addrOrDeployment("STAZTEC", "StAztec", "StAztec missing");
-        address safetyModule = _addrOrDeployment("SAFETY_MODULE", "SafetyModule", "SafetyModule missing");
+        address stAztec = _addrFromEnvOrDeployment("STAZTEC", "StAztec", "StAztec missing");
+        address safetyModule = _addrFromEnvOrDeployment("SAFETY_MODULE", "SafetyModule", "SafetyModule missing");
 
         bytes32 adminRole = bytes32(0);
 
@@ -58,5 +63,18 @@ contract TransferAdminToTimelock is BaseScript {
         } catch {
             return false;
         }
+    }
+
+    function _addrFromEnvOrDeployment(string memory envKey, string memory deploymentKey, string memory errorMessage)
+        internal
+        view
+        returns (address)
+    {
+        address fromEnv = vm.envOr(envKey, address(0));
+        if (fromEnv != address(0)) {
+            return fromEnv;
+        }
+
+        return _addrOrDeployment(envKey, deploymentKey, errorMessage);
     }
 }
