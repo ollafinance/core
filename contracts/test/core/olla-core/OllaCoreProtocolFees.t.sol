@@ -372,4 +372,34 @@ contract OllaCoreProtocolFeesTest is Test {
 
         assertEq(contractResult, expectedResult, "convertToAssets matches spec");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                  FUZZ: PROTOCOL FEE CALCULATION
+    //////////////////////////////////////////////////////////////*/
+
+    function testFuzz_CalculateProtocolFees(uint96 grossRewards, uint16 feeBP, uint16 splitBP) external {
+        feeBP = uint16(bound(feeBP, 0, 10_000));
+        splitBP = uint16(bound(splitBP, 0, 10_000));
+        grossRewards = uint96(bound(grossRewards, 0, type(uint96).max));
+
+        // Deposit to establish nonzero supply and totalAssets
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Set fee and split parameters via governance
+        vm.startPrank(governance);
+        vault.setProtocolFeeBP(feeBP);
+        vault.setTreasuryFeeSplitBP(splitBP);
+        vm.stopPrank();
+
+        (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
+            vault.exposedCalculateProtocolFees(grossRewards);
+
+        uint256 expectedFeeAssets = uint256(grossRewards) * feeBP / BP_DIVISOR;
+        assertEq(feeAssets, expectedFeeAssets, "feeAssets == grossRewards * feeBP / 10000");
+
+        // Shares split sums to total
+        uint256 totalShares = vault.convertToShares(expectedFeeAssets);
+        assertEq(treasuryShares + providerShares, totalShares, "treasury + provider == total shares");
+    }
 }

@@ -639,4 +639,36 @@ contract OllaCoreAccountingTest is Test {
         vm.prank(operator);
         vault.updateAccounting();
     }
+
+    /*//////////////////////////////////////////////////////////////
+               FUZZ: SHARE/ASSET CONVERSION ROUNDTRIP
+    //////////////////////////////////////////////////////////////*/
+
+    function testFuzz_ShareAssetConversionRoundtrip(uint96 depositSeed, uint96 rewardsSeed, uint96 assetsSeed)
+        external
+    {
+        uint256 depositAmount = bound(uint256(depositSeed), 1e18, type(uint96).max);
+        uint256 rewards = bound(uint256(rewardsSeed), 1, type(uint96).max / 2);
+
+        // Deposit to establish supply
+        _performDeposit(alice, depositAmount);
+
+        // Add rewards to create a non-trivial exchange rate
+        stakingManager.setClaimableRewards(rewards);
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        // Fuzz the asset amount to convert
+        uint256 assets = bound(uint256(assetsSeed), 1, type(uint96).max);
+
+        // Roundtrip: assets → shares → assets
+        uint256 shares = vault.convertToShares(assets);
+        uint256 assetsBack = vault.convertToAssets(shares);
+
+        // Each floor-division step loses at most (totalAssets+1)/(totalSupply+1) wei.
+        // With two steps the max loss is proportional to the exchange rate.
+        uint256 rate = vault.exchangeRate();
+        uint256 maxRoundingLoss = 2 * rate / 1e18 + 2;
+        assertLe(assets - assetsBack, maxRoundingLoss, "roundtrip rounding loss proportional to rate");
+    }
 }
