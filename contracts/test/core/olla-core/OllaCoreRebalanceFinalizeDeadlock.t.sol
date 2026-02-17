@@ -373,10 +373,13 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         // Pause should stay because pendingUnstakes > 0 at completion
         assertTrue(vault.isRebalancePaused(), "pause should stay when pending unstakes exist");
 
-        // Verify user actions are blocked while pause is active
+        // Verify deposits are still blocked while pause is active
+        asset.mint(alice, 1 * DECIMALS);
+        vm.prank(alice);
+        asset.approve(address(vault), 1 * DECIMALS);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(alice);
-        vault.claimRequestById(0);
+        vault.deposit(1 * DECIMALS, alice);
     }
 
     /*//////////////////////////////////////////////////////////////

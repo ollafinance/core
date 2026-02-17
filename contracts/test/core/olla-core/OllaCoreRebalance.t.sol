@@ -242,30 +242,30 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakingManager.gasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "staking manager threshold set");
     }
 
-    function test_RevertWhen_NonOperatorSetsRebalanceGasThreshold() external {
+    function test_RevertWhen_NonAdminSetsRebalanceGasThreshold() external {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.OPERATOR_ROLE()
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
             )
         );
         vm.prank(alice);
         vault.setRebalanceGasThreshold(200_000);
     }
 
-    function test_RevertWhen_AdminWithoutOperatorSetsRebalanceGasThreshold() external {
-        address otherAdmin = makeAddr("otherAdmin");
-        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
+    function test_RevertWhen_OperatorWithoutAdminSetsRebalanceGasThreshold() external {
+        address otherOperator = makeAddr("otherOperator");
+        bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.prank(governance);
-        vault.grantRole(adminRole, otherAdmin);
+        vault.grantRole(operatorRole, otherOperator);
 
-        assertTrue(vault.hasRole(adminRole, otherAdmin), "test admin role");
+        assertTrue(vault.hasRole(operatorRole, otherOperator), "test operator role");
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, otherAdmin, vault.OPERATOR_ROLE()
+                IAccessControl.AccessControlUnauthorizedAccount.selector, otherOperator, vault.DEFAULT_ADMIN_ROLE()
             )
         );
-        vm.prank(otherAdmin);
+        vm.prank(otherOperator);
         vault.setRebalanceGasThreshold(200_000);
     }
 
@@ -1503,7 +1503,7 @@ contract RevertingSafetyModule is ISafetyModule {
         return false;
     }
 
-    function core() external view override returns (address) {
+    function CORE() external view override returns (address) {
         return CORE_ADDRESS;
     }
 

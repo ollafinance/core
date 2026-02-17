@@ -96,6 +96,16 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    // solhint-disable comprehensive-interface
+    /// @notice Sets the finalized flag on a stored request (test helper).
+    /// @param id The request id.
+    /// @param finalized Whether the request is finalized.
+    function setRequestFinalized(uint256 id, bool finalized) external {
+        _requests[id].finalized = finalized;
+    }
+
+    // solhint-enable comprehensive-interface
+
     /// @notice Returns the request struct for a given id.
     /// @param id The request id.
     /// @return request The request struct.

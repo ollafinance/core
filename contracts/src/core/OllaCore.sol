@@ -276,14 +276,7 @@ contract OllaCore is
     /// @notice Claims a finalized withdrawal request by id.
     /// @param requestId The withdrawal request id.
     /// @return assets The assets claimed for the request.
-    function claimRequestById(uint256 requestId)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 assets)
-    {
+    function claimRequestById(uint256 requestId) external override nonReentrant whenNotPaused returns (uint256 assets) {
         // Trust: withdrawal queue is authoritative for request state and asset amounts.
         assets = _claimWithdrawal(requestId);
         return assets;
@@ -458,13 +451,10 @@ contract OllaCore is
     function setRebalanceGasThreshold(uint256 newThreshold)
         external
         override
-        onlyRole(OPERATOR_ROLE)
+        onlyRole(DEFAULT_ADMIN_ROLE)
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (msg.sender != _modules.governance) {
-            revert OllaCore__UnauthorizedGovernance(msg.sender);
-        }
         uint256 oldThreshold = rebalanceGasThreshold;
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
@@ -964,6 +954,9 @@ contract OllaCore is
         if (recipient == address(0)) {
             revert OllaCore__ZeroAddress("recipient");
         }
+        if (assets == 0) {
+            revert OllaCore__InvalidAmount();
+        }
 
         Modules memory modules = _modules;
 
@@ -1287,7 +1280,6 @@ contract OllaCore is
     /// @return providerShares The shares minted to the provider.
     function _payoutOllaProtocolFees(uint256 grossAssetRewards)
         internal
-        onlyRole(OPERATOR_ROLE)
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
         // Slither: zero guard only; no timestamp usage.
@@ -1708,11 +1700,9 @@ contract OllaCore is
     function _calculateProtocolFees(uint256 grossAssetRewards)
         internal
         view
-        onlyRole(OPERATOR_ROLE)
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
-        ollaProtocolFeeAssets =
-            grossAssetRewards * protocolFeeBP / BP_DIVISOR;
+        ollaProtocolFeeAssets = grossAssetRewards * protocolFeeBP / BP_DIVISOR;
 
         uint256 protocolSharesTotal = _convertToShares(ollaProtocolFeeAssets, Math.Rounding.Floor);
 

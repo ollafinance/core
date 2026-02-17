@@ -165,10 +165,13 @@ contract RebalancePauseIntegrationTest is Test {
         vm.prank(user);
         vault.requestRedeem(1 * DECIMALS, user);
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        // Claims are allowed during rebalance pause, but will revert from the queue
+        // if the request is not yet finalized (rebalance stopped before FinalizeWithdrawals).
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__NotFinalized.selector, requestId));
         vm.prank(user);
         vault.claimRequestById(requestId);
 
+        // Complete the rebalance to finalize the request
         stakingManager.setActivatedAttesterCount(0);
         stakingManager.setTotalStaked(9 * DECIMALS);
         vm.prank(operator);
@@ -185,7 +188,50 @@ contract RebalancePauseIntegrationTest is Test {
         vm.prank(user);
         vault.requestRedeem(1 * DECIMALS, user);
 
+        // Now claim the finalized request (rebalance is not paused here)
         vm.prank(user);
         vault.claimRequestById(requestId);
+    }
+
+    function test_RebalancePause_AllowsClaimOfFinalizedRequest() external {
+        _performDeposit(user, 12 * DECIMALS);
+
+        uint256 shares = vault.convertToShares(3 * DECIMALS);
+        (uint256 requestId, uint256 assetsExpected) = _requestRedeem(user, shares, user);
+
+        // Complete first rebalance to finalize the withdrawal request
+        stakingManager.setActivatedAttesterCount(0);
+        stakingManager.setTotalStaked(9 * DECIMALS);
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertFalse(vault.isRebalancePaused(), "first rebalance completed");
+
+        // Create a new request to make a second rebalance have work to do
+        uint256 newShares = vault.convertToShares(1 * DECIMALS);
+        vm.prank(user);
+        vault.requestRedeem(newShares, user);
+
+        // Start a second rebalance and pause mid-way
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+
+        assertTrue(vault.isRebalancePaused(), "second rebalance pause active");
+
+        // Claim the previously-finalized request while rebalance is paused
+        uint256 userBalanceBefore = asset.balanceOf(user);
+        vm.prank(user);
+        uint256 claimed = vault.claimRequestById(requestId);
+        assertEq(claimed, assetsExpected, "claimed matches expected assets");
+        assertEq(asset.balanceOf(user) - userBalanceBefore, assetsExpected, "user receives claimed assets");
+
+        // Deposits are still blocked
+        asset.mint(user, 1 * DECIMALS);
+        vm.prank(user);
+        asset.approve(address(vault), 1 * DECIMALS);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        vm.prank(user);
+        vault.deposit(1 * DECIMALS, user);
     }
 }

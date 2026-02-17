@@ -50,11 +50,14 @@ contract MockSafetyModule is ISafetyModule {
         return _paused;
     }
 
+    // solhint-disable func-name-mixedcase
     /// @notice Returns the core address.
     /// @return The core contract address.
-    function core() external view override returns (address) {
+    function CORE() external view override returns (address) {
         return CORE_ADDRESS;
     }
+
+    // solhint-enable func-name-mixedcase
 
     /// @notice No-op rate drop check for tests.
     /// @param oldRate The previous exchange rate.
