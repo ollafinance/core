@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
+import {ISafetyModule} from "src/safetymodule/ISafetyModule.sol";
 
 /// @title MockSafetyModule
 /// @notice Test stub that allows all safety checks.
@@ -50,11 +50,14 @@ contract MockSafetyModule is ISafetyModule {
         return _paused;
     }
 
+    // solhint-disable func-name-mixedcase
     /// @notice Returns the core address.
     /// @return The core contract address.
     function CORE() external view override returns (address) {
         return CORE_ADDRESS;
     }
+
+    // solhint-enable func-name-mixedcase
 
     /// @notice No-op rate drop check for tests.
     /// @param oldRate The previous exchange rate.
