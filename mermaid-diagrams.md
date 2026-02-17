@@ -28,7 +28,9 @@ subgraph "Wallets"
     ollaOperatorActor --- ollaOperatorWallet
     governanceActor --- treasury
     governanceActor --- governanceAdminWallet
-    governanceAdminWallet -->|"DEFAULT_ADMIN_ROLE for all contracts"| governanceAdminWallet
+    governanceAdminWallet -->|"DEFAULT_ADMIN_ROLE (pre-timelock)"| governanceAdminWallet
+    timelock[TimelockController]
+    governanceAdminWallet -->|"proposer/executor/admin"| timelock
 end
 
 subgraph "Olla Core"
@@ -54,6 +56,12 @@ guardianWallet -. "GUARDIAN_ROLE" .-> safety
 
 ollaOperatorWallet -. "OPERATOR_ROLE" .-> core
 stakingProviderAdminWallet -. "STAKING_PROVIDER_ADMIN_ROLE" .-> spr
+timelock -. "DEFAULT_ADMIN_ROLE" .-> core
+timelock -. "DEFAULT_ADMIN_ROLE" .-> safety
+timelock -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
+timelock -. "DEFAULT_ADMIN_ROLE" .-> rewards
+timelock -. "DEFAULT_ADMIN_ROLE" .-> stkMan
+timelock -. "DEFAULT_ADMIN_ROLE" .-> spr
 
 %% User flows (asset + call-path)
 userWallet -->|"deposit/requestRedeem/claimActiveRequest"| core
