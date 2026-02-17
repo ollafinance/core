@@ -276,14 +276,7 @@ contract OllaCore is
     /// @notice Claims a finalized withdrawal request by id.
     /// @param requestId The withdrawal request id.
     /// @return assets The assets claimed for the request.
-    function claimRequestById(uint256 requestId)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 assets)
-    {
+    function claimRequestById(uint256 requestId) external override nonReentrant whenNotPaused returns (uint256 assets) {
         // Trust: withdrawal queue is authoritative for request state and asset amounts.
         assets = _claimWithdrawal(requestId);
         return assets;

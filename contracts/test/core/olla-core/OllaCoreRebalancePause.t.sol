@@ -11,6 +11,7 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -359,7 +360,7 @@ contract OllaCoreRebalancePauseTest is Test {
         );
     }
 
-    function test_RebalancePause_BlocksUserActionsIncludingPermit() external {
+    function test_RebalancePause_BlocksUserActionsExceptClaim() external {
         _performDeposit(alice, 10 * DECIMALS);
         _performDeposit(permitOwner, 10 * DECIMALS);
 
@@ -382,9 +383,12 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(alice);
         vault.requestRedeem(1 * DECIMALS, alice);
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        // Claims are allowed during rebalance pause
+        uint256 bobBalanceBefore = asset.balanceOf(bob);
         vm.prank(alice);
-        vault.claimRequestById(requestId);
+        uint256 claimed = vault.claimRequestById(requestId);
+        assertGt(claimed, 0, "claim should return assets");
+        assertEq(asset.balanceOf(bob) - bobBalanceBefore, claimed, "bob receives claimed assets");
 
         uint256 deadline = block.timestamp + 1 days;
         (uint8 v, bytes32 r, bytes32 s) = _signPermit(
@@ -812,5 +816,118 @@ contract OllaCoreRebalancePauseTest is Test {
             uint8(IOllaCore.RebalancePauseReason.GovernanceOverride),
             "pause reason override"
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                  CLAIM DURING REBALANCE PAUSE
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ClaimRequestById_SucceedsDuringRebalancePause() external {
+        _performDeposit(alice, 10 * DECIMALS);
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(3 * DECIMALS, bob);
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "rebalance pause active");
+
+        uint256 bobBalanceBefore = asset.balanceOf(bob);
+        vm.prank(alice);
+        uint256 claimed = vault.claimRequestById(requestId);
+
+        assertGt(claimed, 0, "claim should return assets");
+        assertEq(asset.balanceOf(bob) - bobBalanceBefore, claimed, "bob receives claimed assets");
+        assertEq(vault.requestOwner(requestId), address(0), "request owner cleared");
+    }
+
+    function test_ClaimRequestById_MultipleClaimsDuringRebalancePause() external {
+        _performDeposit(alice, 20 * DECIMALS);
+
+        vm.prank(alice);
+        uint256 requestId1 = vault.requestRedeem(2 * DECIMALS, bob);
+        vm.prank(alice);
+        uint256 requestId2 = vault.requestRedeem(3 * DECIMALS, alice);
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "rebalance pause active");
+
+        uint256 bobBalanceBefore = asset.balanceOf(bob);
+        vm.prank(alice);
+        uint256 claimed1 = vault.claimRequestById(requestId1);
+        assertGt(claimed1, 0, "first claim should return assets");
+        assertEq(asset.balanceOf(bob) - bobBalanceBefore, claimed1, "bob receives first claim");
+
+        uint256 aliceBalanceBefore = asset.balanceOf(alice);
+        vm.prank(alice);
+        uint256 claimed2 = vault.claimRequestById(requestId2);
+        assertGt(claimed2, 0, "second claim should return assets");
+        assertEq(asset.balanceOf(alice) - aliceBalanceBefore, claimed2, "alice receives second claim");
+
+        assertEq(vault.requestOwner(requestId1), address(0), "first request owner cleared");
+        assertEq(vault.requestOwner(requestId2), address(0), "second request owner cleared");
+    }
+
+    function test_ClaimRequestById_TransfersCorrectAssets_DuringRebalancePause() external {
+        _performDeposit(alice, 10 * DECIMALS);
+
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(3 * DECIMALS, bob);
+
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        uint256 assetsExpected = request.assetsExpected;
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "rebalance pause active");
+
+        uint256 vaultBalanceBefore = asset.balanceOf(address(vault));
+        uint256 bobBalanceBefore = asset.balanceOf(bob);
+
+        vm.prank(alice);
+        uint256 claimed = vault.claimRequestById(requestId);
+
+        assertEq(claimed, assetsExpected, "claimed matches expected assets");
+        assertEq(asset.balanceOf(bob) - bobBalanceBefore, assetsExpected, "bob receives expected assets");
+        assertEq(vaultBalanceBefore - asset.balanceOf(address(vault)), assetsExpected, "vault balance decreased");
+    }
+
+    function test_ClaimRequestById_OtherOpsStillRevertDuringRebalancePause() external {
+        _performDeposit(alice, 10 * DECIMALS);
+
+        vm.prank(alice);
+        vault.requestRedeem(2 * DECIMALS, bob);
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "rebalance pause active");
+
+        // Deposit still reverts
+        asset.mint(alice, 1 * DECIMALS);
+        vm.prank(alice);
+        asset.approve(address(vault), 1 * DECIMALS);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        vm.prank(alice);
+        vault.deposit(1 * DECIMALS, alice);
+
+        // RequestRedeem still reverts
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        vm.prank(alice);
+        vault.requestRedeem(1 * DECIMALS, alice);
+
+        // Instant redeem still reverts
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        vm.prank(alice);
+        vault.redeem(1 * DECIMALS, alice);
+
+        // UpdateAccounting still reverts
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        vm.prank(operator);
+        vault.updateAccounting();
     }
 }
