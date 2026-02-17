@@ -36,7 +36,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     // by convention, the other contracts has "core" as non-immutable
     // slither-disable-start immutable-states
     /// @notice The core address allowed to call checks.
-    address public core;
+    address public immutable core;
     // slither-disable-end immutable-states
 
     /// @notice Maximum total assets allowed.

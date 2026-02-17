@@ -52,7 +52,7 @@ contract MockSafetyModule is ISafetyModule {
 
     /// @notice Returns the core address.
     /// @return The core contract address.
-    function core() external view override returns (address) {
+    function CORE() external view override returns (address) {
         return CORE_ADDRESS;
     }
 

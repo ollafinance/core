@@ -129,5 +129,5 @@ interface ISafetyModule {
 
     /// @notice Returns the core address.
     /// @return The core contract address.
-    function core() external view returns (address);
+    function CORE() external view returns (address);
 }
