@@ -187,7 +187,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 shares = 9 ether;
         uint256 totalAssets = vault.totalAssets();
         uint256 supply = stAztec.totalSupply();
-        uint256 expectedAssets = Math.mulDiv(shares, totalAssets, supply, Math.Rounding.Floor);
+        uint256 expectedAssets = Math.mulDiv(shares, totalAssets + 1, supply + 1, Math.Rounding.Floor);
         uint256 rate = vault.exchangeRate();
 
         (uint256 requestId,) = _requestRedeem(alice, shares, alice);

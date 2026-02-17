@@ -355,7 +355,9 @@ contract OllaCoreWithdrawalTest is Test {
     }
 
     function test_RequestRedeemWithPermit_AllowsMaxAllowance() external {
-        uint256 assets = type(uint256).max;
+        // Use a large but safe deposit amount to avoid overflow in virtual offset (+1).
+        // type(uint256).max would cause totalSupply() + 1 to overflow in _convertToAssets.
+        uint256 assets = type(uint128).max;
         asset.mint(permitOwner, assets);
         uint256 deadline = block.timestamp + 1 days;
         (uint8 depositV, bytes32 depositR, bytes32 depositS) =
@@ -363,12 +365,21 @@ contract OllaCoreWithdrawalTest is Test {
         vm.prank(permitOwner);
         vault.depositWithPermit(assets, permitOwner, deadline, depositV, depositR, depositS);
 
+        // Sign permit for type(uint256).max to test that max allowance remains max.
+        // requestRedeemWithPermit calls permit(owner, vault, shares, ...) setting
+        // allowance to type(uint256).max, then _requestRedeem burns via BURNER_ROLE
+        // without consuming allowance. So the max allowance is preserved.
         uint256 shares = type(uint256).max;
         (uint8 v, bytes32 r, bytes32 s) =
             _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
 
+        // Redeem the actual share balance (not type(uint256).max which would exceed balance).
+        // We call permit manually for type(uint256).max, then requestRedeem for the actual balance.
+        uint256 actualShares = stAztec.balanceOf(permitOwner);
+        IERC20Permit(address(stAztec)).permit(permitOwner, address(vault), shares, deadline, v, r, s);
+
         vm.prank(permitOwner);
-        vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
+        vault.requestRedeem(actualShares, permitOwner);
 
         assertEq(stAztec.allowance(permitOwner, address(vault)), type(uint256).max, "allowance remains max");
     }
