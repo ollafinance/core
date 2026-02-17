@@ -1287,7 +1287,6 @@ contract OllaCore is
     /// @return providerShares The shares minted to the provider.
     function _payoutOllaProtocolFees(uint256 grossAssetRewards)
         internal
-        onlyRole(OPERATOR_ROLE)
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
         // Slither: zero guard only; no timestamp usage.
@@ -1708,7 +1707,6 @@ contract OllaCore is
     function _calculateProtocolFees(uint256 grossAssetRewards)
         internal
         view
-        onlyRole(OPERATOR_ROLE)
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
         ollaProtocolFeeAssets =
