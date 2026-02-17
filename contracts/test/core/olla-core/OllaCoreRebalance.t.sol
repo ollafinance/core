@@ -15,6 +15,7 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MaliciousReentrantStakingManager } from "test/mocks/MaliciousReentrantStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -1222,6 +1223,45 @@ contract OllaCoreRebalanceTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__StakeFailed.selector, stakeable + 1));
         vm.prank(operator);
         vault.rebalance();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    REWARDS VAULT SWAP (C3)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_WithNewRewardsVault_AfterSwap() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // First rebalance - stakes everything
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Deploy new rewards vault
+        MockRewardsVault newRewardsVault = new MockRewardsVault(asset, address(vault));
+
+        // Swap rewards vault via governance
+        vm.prank(governance);
+        vault.setRewardsVault(IRewardsVault(address(newRewardsVault)));
+
+        assertEq(vault.rewardsVault(), address(newRewardsVault), "rewards vault should be updated");
+
+        // Configure staking manager to use new rewards vault for harvest
+        stakingManager.setRewardsVault(address(newRewardsVault));
+
+        // Set up harvested rewards
+        uint256 rewardAmount = 3 * DECIMALS;
+        stakingManager.setHarvestedRewards(rewardAmount);
+
+        // Rebalance again - should harvest from new vault
+        vm.prank(operator);
+        (uint256 rewardsDelta,,,) = vault.rebalance();
+
+        assertEq(rewardsDelta, rewardAmount, "rewards should come from new vault");
+
+        // Verify accounting reflects the rewards
+        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        assertEq(accounting.cumulativeRewards, rewardAmount, "cumulative rewards should include new vault rewards");
     }
 
     function test_Rebalance_StakeSurplus_EmitsAfterFinalize() external {

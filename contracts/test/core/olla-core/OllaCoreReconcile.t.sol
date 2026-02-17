@@ -304,4 +304,51 @@ contract OllaCoreReconcileTest is Test {
 
         assertEq(mintedShares, expectedShares, "shares priced after reconciliation");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                DONATION ATTACK MITIGATION (C1)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Documents donation attack mitigation via virtual offset (+1).
+    /// When an attacker deposits 1 wei (getting 1 share) and donates 10_000e18 directly,
+    /// a victim depositing 9_999e18 still receives shares thanks to the virtual offset
+    /// in _convertToShares: assets * (totalSupply + 1) / (totalAssets + 1).
+    function test_ReconcileBufferedAssets_DonationAttack_FirstDepositor() external {
+        address attacker = makeAddr("attacker");
+        address victim = makeAddr("victim");
+
+        // Step 1: Attacker deposits 1 wei -- first depositor
+        uint256 attackerShares = _performDeposit(attacker, 1);
+        assertEq(attackerShares, 1, "attacker should receive 1 share for 1 wei deposit");
+        assertEq(stAztec.totalSupply(), 1, "total supply should be 1 after attacker deposit");
+
+        // Step 2: Attacker sends 10_000e18 directly to vault (donation)
+        uint256 donationAmount = 10_000e18;
+        asset.mint(attacker, donationAmount);
+        vm.prank(attacker);
+        asset.transfer(address(vault), donationAmount);
+
+        // Buffered assets have not been reconciled yet
+        IOllaCore.AccountingState memory accountingPreVictim = vault.accountingState();
+        assertEq(accountingPreVictim.bufferedAssets, 1, "buffered should still be 1 before reconcile");
+
+        // Step 3: Victim deposits 9_999e18
+        // The deposit flow calls _syncBufferedWithBalance first, which reconciles the donation.
+        // After reconciliation: totalAssets = 1 + 10_000e18, totalSupply = 1
+        uint256 victimDeposit = 9_999e18;
+        uint256 victimShares = _performDeposit(victim, victimDeposit);
+
+        // Virtual offset protects the victim: they get shares > 0
+        assertGt(victimShares, 0, "victim should receive shares > 0 due to virtual offset protection");
+
+        // Compute expected shares via the formula: assets * (supply + 1) / (totalAssets + 1)
+        uint256 supplyAtConversion = 1;
+        uint256 totalAssetsAtConversion = 1 + donationAmount;
+        uint256 expectedVictimShares = (victimDeposit * (supplyAtConversion + 1)) / (totalAssetsAtConversion + 1);
+        assertEq(victimShares, expectedVictimShares, "victim shares should match virtual offset formula");
+
+        // Document: attacker still holds disproportionate share value, but victim is not zeroed out
+        uint256 totalSharesAfter = stAztec.totalSupply();
+        assertEq(totalSharesAfter, attackerShares + victimShares, "total supply should equal attacker + victim shares");
+    }
 }
