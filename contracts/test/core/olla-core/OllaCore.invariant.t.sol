@@ -637,8 +637,7 @@ contract OllaCoreLifecycleHandler is Test {
         IOllaCore.RebalanceStep stepAfter = progressAfter.step;
 
         if (uint8(stepAfter) < uint8(stepBefore)) {
-            bool isDoneToRestart = stepBefore == IOllaCore.RebalanceStep.Done
-                && (stepAfter == IOllaCore.RebalanceStep.Harvest || stepAfter == IOllaCore.RebalanceStep.Done);
+            bool isDoneToRestart = stepBefore == IOllaCore.RebalanceStep.Done;
             if (!isDoneToRestart) {
                 ghost_rebalanceMonotonic = false;
             }
