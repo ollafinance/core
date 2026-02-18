@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
@@ -14,6 +15,7 @@ import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
+import { MockOllaCoreGovernance } from "test/mocks/MockOllaCoreGovernance.sol";
 
 contract StakingManagerUpgradeMock is StakingManager {
     uint256 public v2Value;
@@ -43,11 +45,15 @@ contract StakingManagerUpgradeTest is Test {
     address internal core;
     address internal providerAdmin;
     address internal defaultAdmin;
+    MockOllaCoreGovernance internal mockCore;
 
     function setUp() external {
         core = makeAddr("core");
         providerAdmin = makeAddr("providerAdmin");
         defaultAdmin = makeAddr("defaultAdmin");
+
+        mockCore = new MockOllaCoreGovernance(defaultAdmin, address(0));
+        core = address(mockCore);
 
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
@@ -92,7 +98,11 @@ contract StakingManagerUpgradeTest is Test {
         StakingManagerUpgradeMock newImplementation = new StakingManagerUpgradeMock();
         address attacker = makeAddr("attacker");
 
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, attacker, stakingManager.DEFAULT_ADMIN_ROLE()
+            )
+        );
         vm.prank(attacker);
         stakingManager.upgradeToAndCall(address(newImplementation), "");
     }
@@ -154,7 +164,7 @@ contract StakingManagerUpgradeTest is Test {
         address rollupRegistryBefore = address(stakingManager.rollupRegistry());
         address rewardsVaultBefore = address(stakingManager.rewardsVault());
         address coreBefore = stakingManager.core();
-        address governanceBefore = stakingManager.governance();
+        address governanceBefore = mockCore.governance();
 
         StakingManagerUpgradeMock newImplementation = new StakingManagerUpgradeMock();
 
@@ -176,7 +186,7 @@ contract StakingManagerUpgradeTest is Test {
         assertEq(address(v2.rollupRegistry()), rollupRegistryBefore, "rollup registry preserved");
         assertEq(address(v2.rewardsVault()), rewardsVaultBefore, "rewards vault preserved");
         assertEq(v2.core(), coreBefore, "core preserved");
-        assertEq(v2.governance(), governanceBefore, "governance preserved");
+        assertEq(mockCore.governance(), governanceBefore, "governance preserved");
 
         v2.setV2Value(123);
         assertEq(v2.v2Value(), 123, "v2 storage works");

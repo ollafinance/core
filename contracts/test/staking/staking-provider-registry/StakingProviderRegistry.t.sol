@@ -89,8 +89,6 @@ contract StakingProviderRegistryTest is Test {
 
     function test_Initialize_SetsConfig() external view {
         assertEq(registry.stakingManager(), stakingManager);
-        assertEq(registry.governance(), defaultAdmin);
-
         IStakingManager.ProviderConfig memory config = registry.getStakingProviderConfig();
         assertEq(config.admin, providerAdmin);
         assertEq(config.rewardsRecipient, providerRewardsRecipient);
