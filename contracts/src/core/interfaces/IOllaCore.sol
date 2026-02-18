@@ -451,7 +451,21 @@ interface IOllaCore {
     /// @notice Unpauses deposits and withdrawals.
     function unpause() external;
 
-    /// @notice Forces rebalance pause to end once progress is done.
+    /// @notice Forces the rebalance state machine to reset and lifts the rebalance pause.
+    /// @dev This function is safe to call at any rebalance step because accounting state
+    ///      (bufferedAssets, stakedPrincipal, rewardsVaultBalance, _finalizedUnclaimedAssets)
+    ///      is updated atomically within each sub-step. The state machine progress counters
+    ///      (stakeRemaining, unstakeRemaining) only track remaining work — they do not represent
+    ///      in-flight accounting. Resetting them to zero means:
+    ///      - Rewards already harvested are accounted for; unharvested rewards wait for next cycle.
+    ///      - Unstake requests already sent to the rollup are tracked on-chain; PullUnstaked in
+    ///        the next cycle will retrieve exited funds.
+    ///      - Withdrawals already finalized have updated bufferedAssets and _finalizedUnclaimedAssets;
+    ///        unfinalized requests remain in the queue for the next cycle.
+    ///      - Surplus already staked has updated bufferedAssets and stakedPrincipal;
+    ///        remaining surplus stays in the buffer.
+    ///      - Attester state cache may be stale; the next cycle's ComputeAttesterState will refresh it.
+    ///      No protocol invariants are violated by this reset at any step.
     function forceRebalanceUnpause() external;
 
     /// @notice Operator-triggered rebalance hook.
