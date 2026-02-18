@@ -112,7 +112,7 @@ contract ExternalExitIntegrationTest is Test {
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
         // Deploy supporting contracts with vault address
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(IERC20(address(aztec)), address(vault));
         safetyModule = new MockSafetyModule(address(vault));
 
@@ -153,8 +153,6 @@ contract ExternalExitIntegrationTest is Test {
         // Setup roles
         vm.startPrank(governance);
         vault.grantRole(vault.OPERATOR_ROLE(), operator);
-        stAztec.grantRole(stAztec.MINTER_ROLE(), address(vault));
-        stAztec.grantRole(stAztec.BURNER_ROLE(), address(vault));
         vm.stopPrank();
     }
 

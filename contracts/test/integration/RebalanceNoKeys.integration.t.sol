@@ -51,7 +51,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(coreProxy));
 
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(vault));
 

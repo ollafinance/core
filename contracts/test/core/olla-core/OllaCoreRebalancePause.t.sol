@@ -145,7 +145,7 @@ contract OllaCoreRebalancePauseTest is Test {
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(vault));
         operator = makeAddr("operator");
@@ -314,7 +314,7 @@ contract OllaCoreRebalancePauseTest is Test {
         newVault = OllaCore(address(proxy));
 
         newStakingManager = new MockAccountingStakingManager();
-        newStAztec = new StAztec(governance, address(newVault));
+        newStAztec = new StAztec(address(newVault));
         newRewardsVault = new MockRewardsVault(newAsset, address(newVault));
         newWithdrawalQueue = new MockWithdrawalQueue();
         newWithdrawalQueue.initialize(address(newVault), governance);

@@ -204,7 +204,7 @@ contract OllaCoreReentrancyTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         rewardsVault = makeAddr("rewardsVault");
         safetyModule = new MockSafetyModule(address(implementation));
@@ -429,7 +429,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockHarvestStakingManager();
         rewardsVault = new MaliciousRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(implementation));
@@ -525,7 +525,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         rewardsVault = makeAddr("rewardsVault");
         safetyModule = new MaliciousSafetyModule(address(implementation));

@@ -73,7 +73,7 @@ contract OllaCoreProtocolFeesTest is Test {
         vault = OllaCoreHarness(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
