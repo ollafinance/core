@@ -239,8 +239,9 @@ contract OllaCoreAccountingHandler is Test {
     function updateAccounting() external {
         IOllaCore.LatestReport memory report = vault.latestReport();
         lastReportTotalAssets = report.totalAssets;
-        vm.prank(operator);
+        vm.startPrank(operator);
         vault.updateAccounting();
+        vm.stopPrank();
     }
 }
 
