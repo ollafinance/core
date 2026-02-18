@@ -142,10 +142,20 @@ interface IOllaCore {
     /// @param newThreshold The new gas threshold.
     event RebalanceGasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
 
-    /// @notice Emitted when the governance address is updated.
-    /// @param oldGovernance The old governance address.
+    /// @notice Emitted when a new governance address is proposed.
+    /// @param oldGovernance The current governance address.
+    /// @param newGovernance The proposed governance address.
+    event GovernanceProposed(address oldGovernance, address newGovernance);
+
+    /// @notice Emitted when the pending governance accepts and becomes active.
+    /// @param oldGovernance The previous governance address.
     /// @param newGovernance The new governance address.
-    event GovernanceUpdated(address oldGovernance, address newGovernance);
+    event GovernanceAccepted(address oldGovernance, address newGovernance);
+
+    /// @notice Emitted when a pending governance proposal is cancelled.
+    /// @param governance The current governance address.
+    /// @param pendingGovernance The cancelled pending governance address.
+    event GovernanceProposalCancelled(address governance, address pendingGovernance);
 
     /// @notice Emitted when the rewards vault address is updated.
     /// @param oldRewardsVault The old rewards vault address.
@@ -318,6 +328,15 @@ interface IOllaCore {
     /// @notice Thrown when an instant redemption exceeds available liquidity.
     error OllaCore__InsufficientLiquidity(uint256 requested, uint256 available);
 
+    /// @notice Thrown when a governance proposal already exists.
+    error OllaCore__PendingGovernanceAlreadySet(address pendingGovernance);
+
+    /// @notice Thrown when a governance proposal is missing.
+    error OllaCore__NoPendingGovernance();
+
+    /// @notice Thrown when a caller is not the pending governance.
+    error OllaCore__UnauthorizedPendingGovernance(address caller);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -440,9 +459,15 @@ interface IOllaCore {
     /// @param newSplitBP The new split (0-10000).
     function setTreasuryFeeSplitBP(uint256 newSplitBP) external;
 
-    /// @notice Sets the governance address.
-    /// @param newGovernance The new governance address.
-    function setGovernance(address newGovernance) external;
+    /// @notice Proposes a new governance address.
+    /// @param newGovernance The proposed governance address.
+    function proposeGovernance(address newGovernance) external;
+
+    /// @notice Accepts governance by the pending governance address.
+    function acceptGovernance() external;
+
+    /// @notice Cancels a pending governance proposal.
+    function cancelGovernanceProposal() external;
 
     /// @notice Sets the rewards vault address.
     /// @param newRewardsVault The new rewards vault address.
@@ -494,6 +519,10 @@ interface IOllaCore {
     /// @notice Returns the governance address.
     /// @return The governance address.
     function governance() external view returns (address);
+
+    /// @notice Returns the pending governance address.
+    /// @return The pending governance address.
+    function pendingGovernance() external view returns (address);
 
     /// @notice Returns the withdrawal queue module address.
     /// @return The withdrawal queue address.

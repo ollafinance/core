@@ -43,6 +43,12 @@ export const defaultConfig: RunConfig = {
       shouldRun: (_state, tick) => (tick - 2) % 10 === 0 && tick >= 2,
     },
     {
+      type: "governance-change",
+      enabled: true,
+      shouldRun: (_state, tick) => tick === 30,
+      newGovernancePrivateKey: ANVIL_ACCOUNT_1_PRIVATE_KEY,
+    },
+    {
       type: "user-initiate-withdraw",
       enabled: true,
       shouldRun: (_state, tick) => tick === 25,
