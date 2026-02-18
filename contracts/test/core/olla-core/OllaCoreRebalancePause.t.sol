@@ -882,7 +882,7 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(bob);
         asset.approve(address(vault), 2 * DECIMALS);
         vm.prank(bob);
-        uint256 shares = vault.deposit(2 * DECIMALS, bob);
+        uint256 shares = vault.deposit(2 * DECIMALS, bob, 0);
         assertGt(shares, 0, "deposit succeeds after force unpause");
 
         // RequestRedeem now succeeds

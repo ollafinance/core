@@ -742,7 +742,7 @@ contract OllaCoreAccountingTest is Test {
         vm.prank(bob);
         asset.approve(address(vault), secondDeposit);
         vm.prank(bob);
-        vault.deposit(secondDeposit, bob);
+        vault.deposit(secondDeposit, bob, 0);
 
         // After deposit, totalAssets should still clamp to zero because slashingDelta is still massive
         // (buffered increased by secondDeposit, but slashing still exceeds the total)
