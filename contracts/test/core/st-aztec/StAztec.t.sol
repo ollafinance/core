@@ -4,8 +4,8 @@ pragma solidity ^0.8.27;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { StAztec } from "src/core/StAztec.sol";
+import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 
 contract StAztecTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -43,7 +43,7 @@ contract StAztecTest is Test {
         charlie = makeAddr("charlie");
 
         // In this unit test we set `core` as both governance and the authorized core.
-        token = new StAztec(core, core);
+        token = new StAztec(core);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -146,9 +146,7 @@ contract StAztecTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_OnlyAuthorizedCanMint() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, token.MINTER_ROLE())
-        );
+        vm.expectRevert(IStAztec.StAztec__Unauthorized.selector);
         vm.prank(alice);
         token.mint(alice, 1 * DECIMALS);
 
@@ -165,9 +163,7 @@ contract StAztecTest is Test {
         vm.prank(core);
         token.mint(alice, 10 * DECIMALS);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, bob, token.BURNER_ROLE())
-        );
+        vm.expectRevert(IStAztec.StAztec__Unauthorized.selector);
         vm.prank(bob);
         token.burn(alice, 1 * DECIMALS);
 
@@ -260,22 +256,14 @@ contract StAztecTest is Test {
         vm.assume(attacker != core);
         amount = uint96(bound(amount, 1, type(uint96).max));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, attacker, token.MINTER_ROLE()
-            )
-        );
+        vm.expectRevert(IStAztec.StAztec__Unauthorized.selector);
         vm.prank(attacker);
         token.mint(attacker, amount);
 
         vm.prank(core);
         token.mint(alice, amount);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, attacker, token.BURNER_ROLE()
-            )
-        );
+        vm.expectRevert(IStAztec.StAztec__Unauthorized.selector);
         vm.prank(attacker);
         token.burn(alice, amount);
     }

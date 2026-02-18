@@ -61,7 +61,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
         vault = OllaCore(address(coreProxy));
 
         // Deploy supporting modules
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(vault));
         stakingManager = new MockAccountingStakingManager();

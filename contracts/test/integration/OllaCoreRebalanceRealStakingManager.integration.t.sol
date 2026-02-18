@@ -47,7 +47,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         vault = OllaCore(address(coreProxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
 
         // Deploy WithdrawalQueue
         WithdrawalQueue queueImplementation = new WithdrawalQueue();

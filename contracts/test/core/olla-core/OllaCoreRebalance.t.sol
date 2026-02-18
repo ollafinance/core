@@ -180,7 +180,7 @@ contract OllaCoreRebalanceTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
@@ -1336,7 +1336,7 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         rewardsVault = new MockRewardsVault(asset, address(vault));
@@ -1402,7 +1402,7 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         rewardsVault = new MockRewardsVault(asset, address(vault));
@@ -1475,7 +1475,7 @@ contract OllaCoreRebalanceReentrancyTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MaliciousReentrantStakingManager();
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
@@ -1595,7 +1595,7 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
@@ -1851,7 +1851,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
