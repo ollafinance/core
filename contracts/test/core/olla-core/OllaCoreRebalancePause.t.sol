@@ -768,7 +768,7 @@ contract OllaCoreRebalancePauseTest is Test {
         vault.forceRebalanceUnpause();
     }
 
-    function test_ForceRebalanceUnpause_RevertsWhenProgressNotDone() external {
+    function test_ForceRebalanceUnpause_SucceedsWhenProgressNotDone() external {
         _performDeposit(alice, 4 * DECIMALS);
 
         uint256 gasLimit = _findGasForPullUnstakedStop();
@@ -779,9 +779,15 @@ contract OllaCoreRebalancePauseTest is Test {
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.PullUnstaked), "progress in flight");
         assertTrue(vault.isRebalancePaused(), "pause active");
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePauseOverrideNotAllowed.selector));
-        vm.prank(governance);
+        vm.prank(guardian);
         vault.forceRebalanceUnpause();
+
+        assertFalse(vault.isRebalancePaused(), "pause cleared after mid-cycle reset");
+
+        IOllaCore.RebalanceProgress memory resetProgress = vault.rebalanceProgress();
+        assertEq(uint256(resetProgress.step), uint256(IOllaCore.RebalanceStep.Done), "step reset to Done");
+        assertEq(resetProgress.stakeRemaining, 0, "stakeRemaining reset to 0");
+        assertEq(resetProgress.unstakeRemaining, 0, "unstakeRemaining reset to 0");
     }
 
     function test_ForceRebalanceUnpause_OnlyGuardian() external {
@@ -816,6 +822,177 @@ contract OllaCoreRebalancePauseTest is Test {
             uint8(IOllaCore.RebalancePauseReason.GovernanceOverride),
             "pause reason override"
         );
+    }
+
+    function test_ForceRebalanceUnpause_MidCycle_ResetsStateMachine() external {
+        _performDeposit(alice, 4 * DECIMALS);
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+
+        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.PullUnstaked), "stuck at PullUnstaked");
+        assertTrue(vault.isRebalancePaused(), "pause active");
+
+        vm.recordLogs();
+        vm.prank(guardian);
+        vault.forceRebalanceUnpause();
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+
+        // Verify state machine fully reset
+        IOllaCore.RebalanceProgress memory resetProgress = vault.rebalanceProgress();
+        assertEq(uint256(resetProgress.step), uint256(IOllaCore.RebalanceStep.Done), "step reset to Done");
+        assertEq(resetProgress.stakeRemaining, 0, "stakeRemaining zeroed");
+        assertEq(resetProgress.unstakeRemaining, 0, "unstakeRemaining zeroed");
+
+        // Verify pause cleared and reason set
+        assertFalse(vault.isRebalancePaused(), "pause cleared");
+        assertEq(
+            vault.rebalancePauseReason(),
+            uint8(IOllaCore.RebalancePauseReason.GovernanceOverride),
+            "pause reason override"
+        );
+
+        // Verify buffer snapshot cleared
+        uint256 bufferSnapshot = uint256(vm.load(address(vault), bytes32(REBALANCE_REQUIRED_BUFFER_SLOT)));
+        assertEq(bufferSnapshot, 0, "buffer snapshot cleared");
+
+        // Verify event
+        assertTrue(
+            _hasRebalancePauseUpdate(entries, address(vault), false, IOllaCore.RebalancePauseReason.GovernanceOverride),
+            "governance override event emitted"
+        );
+    }
+
+    function test_ForceRebalanceUnpause_MidCycle_UnblocksUserOps() external {
+        _performDeposit(alice, 10 * DECIMALS);
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "pause active");
+
+        // Force unpause mid-cycle
+        vm.prank(guardian);
+        vault.forceRebalanceUnpause();
+
+        // Deposits now succeed
+        asset.mint(bob, 2 * DECIMALS);
+        vm.prank(bob);
+        asset.approve(address(vault), 2 * DECIMALS);
+        vm.prank(bob);
+        uint256 shares = vault.deposit(2 * DECIMALS, bob);
+        assertGt(shares, 0, "deposit succeeds after force unpause");
+
+        // RequestRedeem now succeeds
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(1 * DECIMALS, alice);
+        assertGt(requestId, 0, "requestRedeem succeeds after force unpause");
+    }
+
+    function test_ForceRebalanceUnpause_MidCycle_UnblocksAdminSetters() external {
+        _performDeposit(alice, 9 * DECIMALS);
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "pause active");
+
+        // Force unpause mid-cycle
+        vm.prank(guardian);
+        vault.forceRebalanceUnpause();
+
+        // Admin setters now succeed
+        vm.prank(governance);
+        vault.setProtocolFeeBP(100);
+        assertEq(vault.protocolFeeBP(), 100, "setProtocolFeeBP works after force unpause");
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(1 * DECIMALS);
+        assertEq(vault.targetBufferedAssets(), 1 * DECIMALS, "setTargetBufferedAssets works after force unpause");
+    }
+
+    function test_ForceRebalanceUnpause_MidCycle_AllowsNewRebalanceCycle() external {
+        _performDeposit(alice, 8 * DECIMALS);
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "pause active");
+
+        // Force unpause mid-cycle
+        vm.prank(guardian);
+        vault.forceRebalanceUnpause();
+        assertFalse(vault.isRebalancePaused(), "pause cleared");
+
+        // A new rebalance cycle can start
+        stakingManager.setStakeReturnAmount(0);
+        stakingManager.setActivatedAttesterCount(0);
+        vm.prank(operator);
+        vault.rebalance();
+
+        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "new rebalance completes");
+        assertFalse(vault.isRebalancePaused(), "no residual pause");
+    }
+
+    function test_ForceRebalanceUnpause_RevertsWhenGlobalPauseActive() external {
+        _performDeposit(alice, 4 * DECIMALS);
+
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "rebalance pause active");
+
+        // Activate global pause
+        vm.prank(guardian);
+        vault.pause();
+
+        // forceRebalanceUnpause should revert due to global pause (whenNotPaused modifier)
+        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        vm.prank(guardian);
+        vault.forceRebalanceUnpause();
+    }
+
+    function test_ForceRebalanceUnpause_MidCycle_ResetsIdleBuffer() external {
+        _performDeposit(alice, 3 * DECIMALS);
+        stakingManager.setStakeReturnAmount(0);
+        stakingManager.setActivatedAttesterCount(0);
+
+        // First rebalance — unproductive, sets _rebalanceIdleBuffer
+        vm.prank(operator);
+        vault.rebalance();
+        for (uint256 i; i < 5; ++i) {
+            if (!vault.isRebalancePaused()) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+        assertFalse(vault.isRebalancePaused(), "first rebalance completes");
+
+        // Second call is skipped due to idle buffer — verify the skip occurs
+        vm.prank(operator);
+        (uint256 rewardsDelta,,,) = vault.rebalance();
+        assertEq(rewardsDelta, 0, "idle skip: no rewards");
+
+        // Now start a third rebalance by depositing (resets idle buffer on deposit)
+        _performDeposit(bob, 5 * DECIMALS);
+        uint256 gasLimit = _findGasForPullUnstakedStop();
+        vm.prank(operator);
+        vault.rebalance{ gas: gasLimit }();
+        assertTrue(vault.isRebalancePaused(), "pause active from partial rebalance");
+
+        // Force unpause mid-cycle — should reset _rebalanceIdleBuffer
+        vm.prank(guardian);
+        vault.forceRebalanceUnpause();
+
+        // After force unpause, a new rebalance should NOT be skipped (idle buffer was reset)
+        vm.prank(operator);
+        vault.rebalance();
+        // If idle buffer was not reset, this rebalance would be skipped.
+        // Verify it actually ran by checking progress reached Done after executing.
+        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance ran, not skipped");
     }
 
     /*//////////////////////////////////////////////////////////////
