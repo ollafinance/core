@@ -27,14 +27,17 @@ export async function executeGovernanceChange(
     const coreRead = getOllaCore(addresses, clients.publicClient);
 
     const proposeTx = await adminCore.write.proposeGovernance([newGovernance]);
+    await clients.publicClient.waitForTransactionReceipt({ hash: proposeTx });
     const newGovCore = getOllaCore(addresses, newGovernanceWallet);
     const acceptTx = await newGovCore.write.acceptGovernance([]);
+    await clients.publicClient.waitForTransactionReceipt({ hash: acceptTx });
 
     const operatorAddress = clients.operatorWallet.account?.address;
     let operatorRoleTx: `0x${string}` | undefined;
     if (operatorAddress) {
       const operatorRole = await coreRead.read.OPERATOR_ROLE() as `0x${string}`;
       operatorRoleTx = await newGovCore.write.grantRole([operatorRole, operatorAddress]);
+      await clients.publicClient.waitForTransactionReceipt({ hash: operatorRoleTx });
     }
 
     const currentGovernance = await coreRead.read.governance() as `0x${string}`;

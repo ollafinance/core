@@ -22,7 +22,7 @@ contract SetGovernanceToTimelock is BaseScript {
         }
         address core = _addrOrDeployment("CORE", "OllaCoreProxy", "CORE missing: set CORE or deploy local");
         bytes32 adminRole = bytes32(0);
-        bool scheduledProposal = false;
+        bool proposedViaTimelock = false;
         bytes32 proposalSalt = vm.envOr("TIMELOCK_SALT", bytes32(0));
 
         vm.startBroadcast(pk);
@@ -39,14 +39,16 @@ contract SetGovernanceToTimelock is BaseScript {
             if (delay == 0) {
                 timelockController.execute(core, 0, payload, predecessor, proposalSalt);
             }
-            scheduledProposal = true;
+            proposedViaTimelock = true;
         }
+
+        require(OllaCore(core).pendingGovernance() == timelock, "pending governance must be timelock");
 
         {
             TimelockController timelockController = TimelockController(payable(timelock));
             bytes memory acceptPayload = abi.encodeCall(OllaCore.acceptGovernance, ());
             uint256 delay = timelockController.getMinDelay();
-            bytes32 acceptPredecessor = scheduledProposal
+            bytes32 acceptPredecessor = proposedViaTimelock
                 ? timelockController.hashOperation(
                     core, 0, abi.encodeCall(OllaCore.proposeGovernance, (timelock)), bytes32(0), proposalSalt
                 )

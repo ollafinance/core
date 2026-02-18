@@ -63,9 +63,6 @@ contract OllaCore is
     /// @notice Contract related interfaces and addresses
     IOllaCore.Modules private _modules;
 
-    /// @notice Pending governance address awaiting acceptance.
-    address private _pendingGovernance;
-
     /// @notice Accounting and reporting values
     IOllaCore.AccountingState private _accountingState;
     IOllaCore.FlowCounters private _flowCounters;
@@ -106,7 +103,11 @@ contract OllaCore is
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[46] private __gap;
+    address private _pendingGovernance;
+
+    /// @notice Storage gap for upgradability
+    // slither-disable-next-line unused-state
+    uint256[45] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS

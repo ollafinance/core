@@ -109,7 +109,7 @@ contract OllaCoreRebalancePauseTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     uint256 internal constant DECIMALS = 1e18;
-    uint256 internal constant REBALANCE_REQUIRED_BUFFER_SLOT = 29;
+    uint256 internal constant REBALANCE_REQUIRED_BUFFER_SLOT = 28;
     bytes32 internal constant PERMIT_TYPEHASH =
         keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 

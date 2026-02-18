@@ -364,6 +364,9 @@ contract OllaCoreAccessControlTest is Test {
         vm.prank(governance);
         vault.proposeGovernance(newGovernance);
 
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit GovernanceAccepted(governance, newGovernance);
+
         vm.prank(newGovernance);
         vault.acceptGovernance();
 
