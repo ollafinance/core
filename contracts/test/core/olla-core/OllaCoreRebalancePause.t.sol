@@ -109,7 +109,7 @@ contract OllaCoreRebalancePauseTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     uint256 internal constant DECIMALS = 1e18;
-    uint256 internal constant REBALANCE_REQUIRED_BUFFER_SLOT = 28;
+    uint256 internal constant REBALANCE_REQUIRED_BUFFER_SLOT = 29;
     bytes32 internal constant PERMIT_TYPEHASH =
         keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
@@ -423,7 +423,7 @@ contract OllaCoreRebalancePauseTest is Test {
         vault.setTreasuryFeeSplitBP(1);
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
-        vault.setGovernance(makeAddr("newGov"));
+        vault.proposeGovernance(makeAddr("newGov"));
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vault.setRewardsVault(newRewardsVault);

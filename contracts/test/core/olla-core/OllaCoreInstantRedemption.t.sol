@@ -51,15 +51,15 @@ contract OllaCoreInstantRedemptionTest is Test {
         keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
     /// @dev Storage slot for `_accountingState.bufferedAssets` (from `forge inspect OllaCore storage-layout`).
-    uint256 internal constant BUFFERED_ASSETS_SLOT = 7;
-    /// @dev Storage slot for `_accountingState.stakedPrincipal` (slot 8).
-    uint256 internal constant STAKED_PRINCIPAL_SLOT = 8;
+    uint256 internal constant BUFFERED_ASSETS_SLOT = 8;
+    /// @dev Storage slot for `_accountingState.stakedPrincipal` (slot 9).
+    uint256 internal constant STAKED_PRINCIPAL_SLOT = 9;
     /// @dev Storage slot for `_finalizedUnclaimedAssets` (from `forge inspect OllaCore storage-layout`).
-    uint256 internal constant FINALIZED_UNCLAIMED_SLOT = 33;
+    uint256 internal constant FINALIZED_UNCLAIMED_SLOT = 34;
     /// @dev Storage slot for `_rebalanceIdleBuffer`.
-    uint256 internal constant REBALANCE_IDLE_BUFFER_SLOT = 34;
-    /// @dev Storage slot for `_rebalancePaused` (bool at slot 27, byte 0).
-    uint256 internal constant REBALANCE_PAUSED_SLOT = 27;
+    uint256 internal constant REBALANCE_IDLE_BUFFER_SLOT = 35;
+    /// @dev Storage slot for `_rebalancePaused` (bool at slot 28, byte 0).
+    uint256 internal constant REBALANCE_PAUSED_SLOT = 28;
 
     /*//////////////////////////////////////////////////////////////
                            TEST FIXTURES

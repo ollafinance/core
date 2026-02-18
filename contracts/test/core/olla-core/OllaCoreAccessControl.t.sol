@@ -23,7 +23,9 @@ contract OllaCoreAccessControlTest is Test {
 
     event ProtocolFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
-    event GovernanceUpdated(address oldGovernance, address newGovernance);
+    event GovernanceProposed(address oldGovernance, address newGovernance);
+    event GovernanceAccepted(address oldGovernance, address newGovernance);
+    event GovernanceProposalCancelled(address governance, address pendingGovernance);
     event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
     event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
@@ -106,14 +108,14 @@ contract OllaCoreAccessControlTest is Test {
         vault.setTreasuryFeeSplitBP(100);
     }
 
-    function test_RevertWhen_NonAdminSetsGovernance() external {
+    function test_RevertWhen_NonAdminProposesGovernance() external {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
             )
         );
         vm.prank(alice);
-        vault.setGovernance(alice);
+        vault.proposeGovernance(alice);
     }
 
     function test_RevertWhen_NonAdminSetsRewardsVault() external {
@@ -155,7 +157,7 @@ contract OllaCoreAccessControlTest is Test {
     function test_RevertWhen_GovernanceIsZero() external {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newGovernance"));
         vm.prank(governance);
-        vault.setGovernance(address(0));
+        vault.proposeGovernance(address(0));
     }
 
     function test_RevertWhen_RewardsVaultIsZero() external {
@@ -206,13 +208,16 @@ contract OllaCoreAccessControlTest is Test {
         assertEq(vault.treasuryFeeSplitBP(), newSplitBP, "treasury split updated");
     }
 
-    function test_SetGovernance_UpdatesAndEmits() external {
+    function test_ProposeGovernance_UpdatesAndEmits() external {
         address newGovernance = makeAddr("newGovernance");
 
-        vm.prank(governance);
-        vault.setGovernance(newGovernance);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit GovernanceProposed(governance, newGovernance);
 
-        assertEq(vault.governance(), newGovernance, "governance updated");
+        vm.prank(governance);
+        vault.proposeGovernance(newGovernance);
+
+        assertEq(vault.pendingGovernance(), newGovernance, "pending governance updated");
     }
 
     function test_SetRewardsVault_UpdatesAndEmits() external {
@@ -317,13 +322,13 @@ contract OllaCoreAccessControlTest is Test {
         vault.setTreasuryFeeSplitBP(newSplitBP);
     }
 
-    function testFuzz_SetGovernance_NonZeroAddress(address newGovernance) external {
+    function testFuzz_ProposeGovernance_NonZeroAddress(address newGovernance) external {
         vm.assume(newGovernance != address(0));
 
         vm.prank(governance);
-        vault.setGovernance(newGovernance);
+        vault.proposeGovernance(newGovernance);
 
-        assertEq(vault.governance(), newGovernance, "governance fuzz");
+        assertEq(vault.pendingGovernance(), newGovernance, "governance fuzz");
     }
 
     function testFuzz_SetRewardsVault_NonZeroAddress(address newRewardsVault) external {
@@ -344,7 +349,7 @@ contract OllaCoreAccessControlTest is Test {
                     GOVERNANCE ROLE TRANSFER (C2)
     //////////////////////////////////////////////////////////////*/
 
-    function test_SetGovernance_TransfersAllRoles() external {
+    function test_AcceptGovernance_TransfersAllRoles() external {
         address newGovernance = makeAddr("newGovernance");
 
         bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
@@ -357,7 +362,10 @@ contract OllaCoreAccessControlTest is Test {
         assertTrue(vault.hasRole(operatorRole, governance), "old gov has operator");
 
         vm.prank(governance);
-        vault.setGovernance(newGovernance);
+        vault.proposeGovernance(newGovernance);
+
+        vm.prank(newGovernance);
+        vault.acceptGovernance();
 
         // Verify new governance has all roles
         assertTrue(vault.hasRole(adminRole, newGovernance), "new gov has admin");
@@ -380,5 +388,49 @@ contract OllaCoreAccessControlTest is Test {
         );
         vm.prank(governance);
         vault.setProtocolFeeBP(200);
+    }
+
+    function test_RevertWhen_PendingGovernanceAlreadySet() external {
+        address newGovernance = makeAddr("newGovernance");
+        address secondGovernance = makeAddr("secondGovernance");
+
+        vm.prank(governance);
+        vault.proposeGovernance(newGovernance);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__PendingGovernanceAlreadySet.selector, newGovernance));
+        vm.prank(governance);
+        vault.proposeGovernance(secondGovernance);
+    }
+
+    function test_RevertWhen_NonPendingAcceptsGovernance() external {
+        address newGovernance = makeAddr("newGovernance");
+
+        vm.prank(governance);
+        vault.proposeGovernance(newGovernance);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__UnauthorizedPendingGovernance.selector, governance));
+        vm.prank(governance);
+        vault.acceptGovernance();
+    }
+
+    function test_CancelGovernanceProposal_ClearsPending() external {
+        address newGovernance = makeAddr("newGovernance");
+
+        vm.prank(governance);
+        vault.proposeGovernance(newGovernance);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit GovernanceProposalCancelled(governance, newGovernance);
+
+        vm.prank(governance);
+        vault.cancelGovernanceProposal();
+
+        assertEq(vault.pendingGovernance(), address(0), "pending governance cleared");
+    }
+
+    function test_RevertWhen_CancelWithoutPending() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__NoPendingGovernance.selector));
+        vm.prank(governance);
+        vault.cancelGovernanceProposal();
     }
 }

@@ -803,7 +803,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_FinalizedUnclaimedAssetsLeqBalance() external view {
-        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(33))));
+        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(34))));
         assertLe(finalizedUnclaimed, asset.balanceOf(address(vault)), "finalized unclaimed <= balance");
     }
 

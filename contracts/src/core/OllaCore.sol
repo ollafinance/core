@@ -63,6 +63,9 @@ contract OllaCore is
     /// @notice Contract related interfaces and addresses
     IOllaCore.Modules private _modules;
 
+    /// @notice Pending governance address awaiting acceptance.
+    address private _pendingGovernance;
+
     /// @notice Accounting and reporting values
     IOllaCore.AccountingState private _accountingState;
     IOllaCore.FlowCounters private _flowCounters;
@@ -103,7 +106,7 @@ contract OllaCore is
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[47] private __gap;
+    uint256[46] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -382,9 +385,9 @@ contract OllaCore is
         emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
     }
 
-    /// @notice Sets the governance address.
-    /// @param newGovernance The new governance address.
-    function setGovernance(address newGovernance)
+    /// @notice Proposes a new governance address.
+    /// @param newGovernance The proposed governance address.
+    function proposeGovernance(address newGovernance)
         external
         override
         onlyRole(DEFAULT_ADMIN_ROLE)
@@ -394,8 +397,22 @@ contract OllaCore is
         if (newGovernance == address(0)) {
             revert OllaCore__ZeroAddress("newGovernance");
         }
+        if (_pendingGovernance != address(0)) {
+            revert OllaCore__PendingGovernanceAlreadySet(_pendingGovernance);
+        }
+        _pendingGovernance = newGovernance;
+        emit GovernanceProposed(_modules.governance, newGovernance);
+    }
+
+    /// @notice Accepts governance by the pending governance address.
+    function acceptGovernance() external override whenNotPaused whenNotRebalancePaused {
+        if (msg.sender != _pendingGovernance) {
+            revert OllaCore__UnauthorizedPendingGovernance(msg.sender);
+        }
         address oldGovernance = _modules.governance;
+        address newGovernance = _pendingGovernance;
         _modules.governance = newGovernance;
+        _pendingGovernance = address(0);
 
         // Transfer governance-related roles from the old governance to the new one
         if (newGovernance != oldGovernance) {
@@ -411,7 +428,23 @@ contract OllaCore is
                 _revokeRole(OPERATOR_ROLE, oldGovernance);
             }
         }
-        emit GovernanceUpdated(oldGovernance, newGovernance);
+        emit GovernanceAccepted(oldGovernance, newGovernance);
+    }
+
+    /// @notice Cancels a pending governance proposal.
+    function cancelGovernanceProposal()
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
+        if (_pendingGovernance == address(0)) {
+            revert OllaCore__NoPendingGovernance();
+        }
+        address pending = _pendingGovernance;
+        _pendingGovernance = address(0);
+        emit GovernanceProposalCancelled(_modules.governance, pending);
     }
 
     /// @notice Sets the rewards vault address.
@@ -812,6 +845,12 @@ contract OllaCore is
     /// @return The governance address.
     function governance() external view override returns (address) {
         return _modules.governance;
+    }
+
+    /// @notice Returns the pending governance address.
+    /// @return The pending governance address.
+    function pendingGovernance() external view override returns (address) {
+        return _pendingGovernance;
     }
 
     /// @notice Returns the withdrawal queue module address.

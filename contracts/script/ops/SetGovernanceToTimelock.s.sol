@@ -22,21 +22,40 @@ contract SetGovernanceToTimelock is BaseScript {
         }
         address core = _addrOrDeployment("CORE", "OllaCoreProxy", "CORE missing: set CORE or deploy local");
         bytes32 adminRole = bytes32(0);
+        bool scheduledProposal = false;
+        bytes32 proposalSalt = vm.envOr("TIMELOCK_SALT", bytes32(0));
 
         vm.startBroadcast(pk);
 
         if (AccessControlUpgradeable(core).hasRole(adminRole, caller)) {
-            OllaCore(core).setGovernance(timelock);
+            OllaCore(core).proposeGovernance(timelock);
         } else {
             TimelockController timelockController = TimelockController(payable(timelock));
-            bytes memory payload = abi.encodeCall(OllaCore.setGovernance, (timelock));
+            bytes memory payload = abi.encodeCall(OllaCore.proposeGovernance, (timelock));
             bytes32 predecessor = bytes32(0);
-            bytes32 salt = vm.envOr("TIMELOCK_SALT", bytes32(0));
             uint256 delay = timelockController.getMinDelay();
 
-            timelockController.schedule(core, 0, payload, predecessor, salt, delay);
+            timelockController.schedule(core, 0, payload, predecessor, proposalSalt, delay);
             if (delay == 0) {
-                timelockController.execute(core, 0, payload, predecessor, salt);
+                timelockController.execute(core, 0, payload, predecessor, proposalSalt);
+            }
+            scheduledProposal = true;
+        }
+
+        {
+            TimelockController timelockController = TimelockController(payable(timelock));
+            bytes memory acceptPayload = abi.encodeCall(OllaCore.acceptGovernance, ());
+            uint256 delay = timelockController.getMinDelay();
+            bytes32 acceptPredecessor = scheduledProposal
+                ? timelockController.hashOperation(
+                    core, 0, abi.encodeCall(OllaCore.proposeGovernance, (timelock)), bytes32(0), proposalSalt
+                )
+                : bytes32(0);
+            bytes32 acceptSalt = vm.envOr("TIMELOCK_ACCEPT_SALT", bytes32(0));
+
+            timelockController.schedule(core, 0, acceptPayload, acceptPredecessor, acceptSalt, delay);
+            if (delay == 0) {
+                timelockController.execute(core, 0, acceptPayload, acceptPredecessor, acceptSalt);
             }
         }
 
