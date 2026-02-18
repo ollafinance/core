@@ -105,7 +105,7 @@ contract OllaCoreWithdrawalTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -134,7 +134,7 @@ contract OllaCoreWithdrawalTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -363,7 +363,7 @@ contract OllaCoreWithdrawalTest is Test {
         (uint8 depositV, bytes32 depositR, bytes32 depositS) =
             _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
         vm.prank(permitOwner);
-        vault.depositWithPermit(assets, permitOwner, deadline, depositV, depositR, depositS);
+        vault.depositWithPermit(assets, permitOwner, 0, deadline, depositV, depositR, depositS);
 
         // Sign permit for type(uint256).max to test that max allowance remains max.
         // requestRedeemWithPermit calls permit(owner, vault, shares, ...) setting

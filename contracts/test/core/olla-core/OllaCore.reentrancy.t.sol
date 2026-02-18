@@ -245,7 +245,7 @@ contract OllaCoreReentrancyTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        vault.deposit(assets, owner);
+        vault.deposit(assets, owner, 0);
     }
 
     function _signPermit(address owner, uint256 ownerKey, address spender, uint256 value, uint256 deadline)
@@ -275,11 +275,11 @@ contract OllaCoreReentrancyTest is Test {
 
         asset.mint(address(asset), assets);
         asset.setSelfAllowance(assets);
-        asset.configureReentry(address(vault), abi.encodeCall(vault.deposit, (assets, alice)), true);
+        asset.configureReentry(address(vault), abi.encodeCall(vault.deposit, (assets, alice, 0)), true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
-        vault.deposit(assets, alice);
+        vault.deposit(assets, alice, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -367,11 +367,11 @@ contract OllaCoreReentrancyTest is Test {
 
         // Skip first transfer (net assets to recipient), fire re-entry on second (fee to governance)
         asset.setTransferReentrySkipCount(1);
-        asset.configureTransferReentry(address(vault), abi.encodeCall(vault.redeem, (sharesToRedeem, bob)), true);
+        asset.configureTransferReentry(address(vault), abi.encodeCall(vault.redeem, (sharesToRedeem, bob, 0)), true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
-        vault.redeem(sharesToRedeem, bob);
+        vault.redeem(sharesToRedeem, bob, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -386,11 +386,11 @@ contract OllaCoreReentrancyTest is Test {
         (uint8 v, bytes32 r, bytes32 s) =
             _signPermit(permitOwner, permitOwnerKey, address(vault), sharesToRedeem, deadline);
 
-        asset.configureTransferReentry(address(vault), abi.encodeCall(vault.redeem, (sharesToRedeem, bob)), true);
+        asset.configureTransferReentry(address(vault), abi.encodeCall(vault.redeem, (sharesToRedeem, bob, 0)), true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(permitOwner);
-        vault.redeemWithPermit(sharesToRedeem, bob, deadline, v, r, s);
+        vault.redeemWithPermit(sharesToRedeem, bob, 0, deadline, v, r, s);
     }
 }
 
@@ -471,7 +471,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        vault.deposit(assets, owner);
+        vault.deposit(assets, owner, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -559,7 +559,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        vault.deposit(assets, owner);
+        vault.deposit(assets, owner, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -571,7 +571,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
 
         // Re-entry targets deposit() — user-callable, same nonReentrant guard applies
         asset.mint(address(safetyModule), 1 * DECIMALS);
-        safetyModule.setReentry(address(vault), abi.encodeCall(vault.deposit, (1 * DECIMALS, alice)));
+        safetyModule.setReentry(address(vault), abi.encodeCall(vault.deposit, (1 * DECIMALS, alice, 0)));
         safetyModule.setReenterOnCheckAccountingLiveness(true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);

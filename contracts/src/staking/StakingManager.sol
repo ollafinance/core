@@ -31,6 +31,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Default maximum age (in seconds) for attester state freshness.
     uint256 public constant DEFAULT_ATTESTER_STATE_MAX_AGE = 12 hours;
+    /// @notice Minimum allowed attester state max age: 1 hour.
+    uint256 public constant MIN_ATTESTER_STATE_MAX_AGE = 1 hours;
+    /// @notice Maximum allowed attester state max age: 48 hours.
+    uint256 public constant MAX_ATTESTER_STATE_MAX_AGE = 48 hours;
 
     /*//////////////////////////////////////////////////////////////
                                     STATE
@@ -278,8 +282,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function setAttesterStateMaxAge(uint256 maxAge) external override onlyRole(OPERATOR_ROLE) {
-        if (maxAge == 0) {
-            revert StakingManager__ZeroAmount();
+        if (maxAge < MIN_ATTESTER_STATE_MAX_AGE || maxAge > MAX_ATTESTER_STATE_MAX_AGE) {
+            revert StakingManager__InvalidParameter();
         }
         uint256 oldMaxAge = _attesterStateMaxAge;
         _attesterStateMaxAge = maxAge;

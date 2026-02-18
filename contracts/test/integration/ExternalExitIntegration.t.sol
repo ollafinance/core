@@ -139,8 +139,8 @@ contract ExternalExitIntegrationTest is Test {
             IERC20(address(aztec)),
             stAztec,
             stakingManager,
-            0, // deposit cap
-            0, // withdrawal minimum
+            0, // protocolFeeBP
+            5_000, // treasuryFeeSplitBP
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -204,7 +204,7 @@ contract ExternalExitIntegrationTest is Test {
         aztec.mint(alice, depositAmount);
         vm.startPrank(alice);
         aztec.approve(address(vault), depositAmount);
-        vault.deposit(depositAmount, alice);
+        vault.deposit(depositAmount, alice, 0);
         vm.stopPrank();
 
         // 3. Rebalance to stake all funds (will stake to both attesters)
@@ -309,7 +309,7 @@ contract ExternalExitIntegrationTest is Test {
         aztec.mint(alice, depositAmount);
         vm.startPrank(alice);
         aztec.approve(address(vault), depositAmount);
-        vault.deposit(depositAmount, alice);
+        vault.deposit(depositAmount, alice, 0);
         vm.stopPrank();
 
         vm.prank(defaultAdmin);
@@ -387,7 +387,7 @@ contract ExternalExitIntegrationTest is Test {
         aztec.mint(alice, depositAmount);
         vm.startPrank(alice);
         aztec.approve(address(vault), depositAmount);
-        vault.deposit(depositAmount, alice);
+        vault.deposit(depositAmount, alice, 0);
         vm.stopPrank();
 
         // 2. Rebalance to stake all funds

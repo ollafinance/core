@@ -469,7 +469,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
     }
 
     function test_RevertWhen_SetSlashingDeltaMaxAge_Zero() external {
-        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAmount.selector));
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__InvalidParameter.selector));
         vm.prank(defaultAdmin);
         stakingManager.setAttesterStateMaxAge(0);
     }

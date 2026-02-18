@@ -65,7 +65,7 @@ contract OllaCoreRecoverStAztecTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -84,7 +84,7 @@ contract OllaCoreRecoverStAztecTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -139,17 +139,31 @@ contract OllaCoreRecoverStAztecTest is Test {
         vm.prank(alice);
         stAztec.transfer(address(vault), recoverAmount);
 
-        // Set gas threshold extremely high so PullUnstaked step returns early,
-        // keeping the rebalance mid-cycle with _rebalancePaused = true.
-        vm.prank(governance);
-        vault.setRebalanceGasThreshold(type(uint256).max);
-
-        // Grant operator role and trigger rebalance — it will pause at PullUnstaked
+        // Grant operator role and trigger rebalance with limited gas so it
+        // stops mid-cycle at PullUnstaked, leaving _rebalancePaused = true.
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.prank(governance);
         vault.grantRole(operatorRole, address(this));
 
-        vault.rebalance();
+        // Try a range of gas stipends to find one that stops at PullUnstaked
+        uint256 selectedGas;
+        uint256 snapshotId = vm.snapshotState();
+        uint256[6] memory gasOptions = [uint256(120_000), 140_000, 160_000, 180_000, 200_000, 220_000];
+        for (uint256 i; i < gasOptions.length; ++i) {
+            vm.revertToState(snapshotId);
+            (bool success,) = address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+            if (!success) continue;
+            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
+                selectedGas = gasOptions[i];
+                break;
+            }
+        }
+        vm.revertToState(snapshotId);
+        assertGt(selectedGas, 0, "should find gas stipend that stops at PullUnstaked");
+
+        (bool ok,) = address(vault).call{ gas: selectedGas }(abi.encodeCall(vault.rebalance, ()));
+        assertTrue(ok, "rebalance call should succeed");
 
         // Verify rebalance is paused (stuck mid-cycle)
         assertTrue(vault.isRebalancePaused(), "rebalance should be paused mid-cycle");

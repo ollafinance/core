@@ -193,7 +193,7 @@ contract OllaCoreReconcileTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -219,7 +219,7 @@ contract OllaCoreReconcileTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -269,7 +269,7 @@ contract OllaCoreReconcileTest is Test {
         emit Deposit(bob, bob, secondDeposit, expectedShares);
 
         vm.prank(bob);
-        uint256 mintedShares = vault.deposit(secondDeposit, bob);
+        uint256 mintedShares = vault.deposit(secondDeposit, bob, 0);
 
         assertEq(mintedShares, expectedShares, "deposit shares after reconcile");
         assertEq(stAztec.balanceOf(bob), expectedShares, "shares minted to bob");
@@ -300,7 +300,7 @@ contract OllaCoreReconcileTest is Test {
         emit Deposit(bob, bob, secondDeposit, expectedShares);
 
         vm.prank(bob);
-        uint256 mintedShares = vault.deposit(secondDeposit, bob);
+        uint256 mintedShares = vault.deposit(secondDeposit, bob, 0);
 
         assertEq(mintedShares, expectedShares, "shares priced after reconciliation");
     }

@@ -58,6 +58,9 @@ interface ISafetyModule {
     /// @notice Thrown when caller is not authorized core.
     error SafetyModule__UnauthorizedCore(address caller);
 
+    /// @notice Thrown when a configuration parameter is out of bounds.
+    error SafetyModule__InvalidParameter();
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/

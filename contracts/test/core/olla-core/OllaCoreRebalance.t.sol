@@ -200,7 +200,7 @@ contract OllaCoreRebalanceTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -224,7 +224,7 @@ contract OllaCoreRebalanceTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -1353,7 +1353,7 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -1419,7 +1419,7 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -1494,7 +1494,7 @@ contract OllaCoreRebalanceReentrancyTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -1614,7 +1614,7 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -1861,7 +1861,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -1879,7 +1879,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 

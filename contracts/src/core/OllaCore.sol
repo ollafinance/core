@@ -56,6 +56,19 @@ contract OllaCore is
     /// @notice Basis points divisor.
     uint256 public constant BP_DIVISOR = 10_000;
 
+    /// @notice Maximum protocol fee: 50%.
+    uint256 public constant MAX_PROTOCOL_FEE_BP = 5_000;
+    /// @notice Maximum instant redemption fee: 20%.
+    uint256 public constant MAX_INSTANT_REDEMPTION_FEE_BP = 2_000;
+    /// @notice Minimum treasury fee split: 10%.
+    uint256 public constant MIN_TREASURY_SPLIT_BP = 1_000;
+    /// @notice Maximum treasury fee split: 90%.
+    uint256 public constant MAX_TREASURY_SPLIT_BP = 9_000;
+    /// @notice Minimum rebalance gas threshold.
+    uint256 public constant MIN_REBALANCE_GAS_THRESHOLD = 20_000;
+    /// @notice Maximum rebalance gas threshold.
+    uint256 public constant MAX_REBALANCE_GAS_THRESHOLD = 1_000_000;
+
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
@@ -202,8 +215,9 @@ contract OllaCore is
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
+    /// @param minSharesOut The minimum shares the caller expects; set 0 to skip the check.
     /// @return shares The shares minted to the recipient.
-    function deposit(uint256 assets, address recipient)
+    function deposit(uint256 assets, address recipient, uint256 minSharesOut)
         external
         override
         nonReentrant
@@ -212,29 +226,37 @@ contract OllaCore is
         returns (uint256 shares)
     {
         shares = _deposit(msg.sender, assets, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (shares < minSharesOut) revert OllaCore__SlippageExceeded(shares, minSharesOut);
         return shares;
     }
 
     /// @notice Deposits assets with a permit signature and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
+    /// @param minSharesOut The minimum shares the caller expects; set 0 to skip the check.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return shares The shares minted to the recipient.
-    function depositWithPermit(uint256 assets, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 shares)
-    {
+    function depositWithPermit(
+        uint256 assets,
+        address recipient,
+        uint256 minSharesOut,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override nonReentrant whenNotPaused whenNotRebalancePaused returns (uint256 shares) {
         // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
         // slither-disable-next-line reentrancy-benign
         IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
         shares = _deposit(msg.sender, assets, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (shares < minSharesOut) revert OllaCore__SlippageExceeded(shares, minSharesOut);
         return shares;
     }
 
@@ -288,8 +310,9 @@ contract OllaCore is
     /// @notice Instantly redeems stAztec shares for AZTEC assets, charging an instant redemption fee.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the net assets.
+    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
     /// @return assetsAfterFee The net assets transferred to the recipient.
-    function redeem(uint256 shares, address recipient)
+    function redeem(uint256 shares, address recipient, uint256 minAssetsOut)
         external
         override
         nonReentrant
@@ -298,29 +321,37 @@ contract OllaCore is
         returns (uint256 assetsAfterFee)
     {
         assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (assetsAfterFee < minAssetsOut) revert OllaCore__SlippageExceeded(assetsAfterFee, minAssetsOut);
         return assetsAfterFee;
     }
 
     /// @notice Instantly redeems stAztec shares for AZTEC assets with a permit signature.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the net assets.
+    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return assetsAfterFee The net assets transferred to the recipient.
-    function redeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 assetsAfterFee)
-    {
+    function redeemWithPermit(
+        uint256 shares,
+        address recipient,
+        uint256 minAssetsOut,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override nonReentrant whenNotPaused whenNotRebalancePaused returns (uint256 assetsAfterFee) {
         // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
         assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (assetsAfterFee < minAssetsOut) revert OllaCore__SlippageExceeded(assetsAfterFee, minAssetsOut);
         return assetsAfterFee;
     }
 
@@ -359,7 +390,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the protocol fee in basis points.
-    /// @param newFeeBP The new fee (0-10000).
+    /// @param newFeeBP The new fee (0-5000).
     function setProtocolFeeBP(uint256 newFeeBP)
         external
         override
@@ -367,7 +398,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newFeeBP > BP_DIVISOR) {
+        if (newFeeBP > MAX_PROTOCOL_FEE_BP) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
         uint256 oldFeeBP = protocolFeeBP;
@@ -376,7 +407,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the treasury fee split in basis points.
-    /// @param newSplitBP The new split (0-10000).
+    /// @param newSplitBP The new split (1000-9000).
     function setTreasuryFeeSplitBP(uint256 newSplitBP)
         external
         override
@@ -384,7 +415,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newSplitBP > BP_DIVISOR) {
+        if (newSplitBP < MIN_TREASURY_SPLIT_BP || newSplitBP > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(newSplitBP);
         }
         uint256 oldSplitBP = treasuryFeeSplitBP;
@@ -487,7 +518,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the gas threshold used for rebalance step gating.
-    /// @param newThreshold The new gas threshold.
+    /// @param newThreshold The new gas threshold (20000-1000000).
     function setRebalanceGasThreshold(uint256 newThreshold)
         external
         override
@@ -495,6 +526,9 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
+        if (newThreshold < MIN_REBALANCE_GAS_THRESHOLD || newThreshold > MAX_REBALANCE_GAS_THRESHOLD) {
+            revert OllaCore__InvalidGasThreshold(newThreshold);
+        }
         uint256 oldThreshold = rebalanceGasThreshold;
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
@@ -502,7 +536,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the instant redemption fee in basis points.
-    /// @param newFeeBP The new fee (0-10000).
+    /// @param newFeeBP The new fee (0-2000).
     function setInstantRedemptionFeeBP(uint256 newFeeBP)
         external
         override
@@ -510,7 +544,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newFeeBP > BP_DIVISOR) {
+        if (newFeeBP > MAX_INSTANT_REDEMPTION_FEE_BP) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
         uint256 oldFeeBP = instantRedemptionFeeBP;
@@ -945,6 +979,16 @@ contract OllaCore is
     /// @return shares The shares that would be minted.
     function previewDeposit(uint256 assets) external view override returns (uint256 shares) {
         return _convertToSharesForDeposit(assets);
+    }
+
+    /// @notice Returns the net assets previewed for an instant redemption.
+    /// @param shares The share amount being redeemed.
+    /// @return assetsAfterFee The net assets after the instant redemption fee.
+    function previewRedeem(uint256 shares) external view override returns (uint256 assetsAfterFee) {
+        uint256 grossAssets = _convertToAssets(shares);
+        uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
+        assetsAfterFee = grossAssets - fee;
+        return assetsAfterFee;
     }
 
     /// @notice Returns the maximum assets currently available for instant redemptions.
@@ -1808,10 +1852,10 @@ contract OllaCore is
         if (address(stakingManager_) == address(0)) {
             revert OllaCore__ZeroAddress("stakingManager_");
         }
-        if (protocolFeeBP_ > BP_DIVISOR) {
+        if (protocolFeeBP_ > MAX_PROTOCOL_FEE_BP) {
             revert OllaCore__InvalidFeeBP(protocolFeeBP_);
         }
-        if (treasuryFeeSplitBP_ > BP_DIVISOR) {
+        if (treasuryFeeSplitBP_ < MIN_TREASURY_SPLIT_BP || treasuryFeeSplitBP_ > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(treasuryFeeSplitBP_);
         }
         if (governance_ == address(0)) {

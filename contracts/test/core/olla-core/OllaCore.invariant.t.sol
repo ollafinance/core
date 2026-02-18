@@ -67,7 +67,7 @@ contract OllaCoreHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
     }
 }
@@ -130,7 +130,7 @@ contract OllaCoreDepositHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
 
         latestExchangeRate = vault.exchangeRate();
@@ -202,7 +202,7 @@ contract OllaCoreAccountingHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
     }
 
@@ -286,7 +286,7 @@ contract OllaCoreInvariantTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),
@@ -473,7 +473,7 @@ contract OllaCoreDepositInvariantTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             IRewardsVault(rewardsVault),
@@ -588,7 +588,7 @@ contract OllaCoreLifecycleHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
 
         ghost_totalDeposited += assets;
@@ -751,7 +751,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),

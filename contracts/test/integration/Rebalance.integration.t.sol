@@ -80,7 +80,7 @@ contract RebalanceIntegrationTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -103,7 +103,7 @@ contract RebalanceIntegrationTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), amount);
         vm.prank(owner);
-        shares = vault.deposit(amount, owner);
+        shares = vault.deposit(amount, owner, 0);
         return shares;
     }
 

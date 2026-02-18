@@ -98,7 +98,7 @@ contract OllaCoreSafetyModuleTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),
@@ -121,7 +121,7 @@ contract OllaCoreSafetyModuleTest is Test {
         vm.prank(depositor);
         asset.approve(address(vault), amount);
         vm.prank(depositor);
-        shares = vault.deposit(amount, depositor);
+        shares = vault.deposit(amount, depositor, 0);
         return shares;
     }
 
@@ -150,7 +150,7 @@ contract OllaCoreSafetyModuleTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__DepositCapExceeded.selector, depositAmount, 0));
         vm.prank(alice);
-        vault.deposit(depositAmount, alice);
+        vault.deposit(depositAmount, alice, 0);
     }
 
     function test_DepositAtCap_Succeeds() external {
@@ -181,7 +181,7 @@ contract OllaCoreSafetyModuleTest is Test {
             abi.encodeWithSelector(IOllaCore.OllaCore__DepositCapExceeded.selector, depositAmount, 60 * DECIMALS)
         );
         vm.prank(alice);
-        vault.deposit(depositAmount, alice);
+        vault.deposit(depositAmount, alice, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -272,7 +272,7 @@ contract OllaCoreSafetyModuleTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__SafetyModulePaused.selector));
         vm.prank(alice);
-        vault.deposit(10 * DECIMALS, alice);
+        vault.deposit(10 * DECIMALS, alice, 0);
     }
 
     function test_RevertWhen_RequestRedeemWhilePaused() external {

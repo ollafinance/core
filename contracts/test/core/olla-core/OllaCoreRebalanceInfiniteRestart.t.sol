@@ -68,7 +68,7 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -88,7 +88,7 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
     }
 
     function test_RebalanceDoesNotInfinitelyRestart_WithWithdrawalQueue() external {

@@ -161,7 +161,7 @@ contract OllaCoreRebalancePauseTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -190,7 +190,7 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -327,7 +327,7 @@ contract OllaCoreRebalancePauseTest is Test {
             newStAztec,
             newStakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(newWithdrawalQueue),
             newRewardsVault,
@@ -377,7 +377,7 @@ contract OllaCoreRebalancePauseTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(bob);
-        vault.deposit(2 * DECIMALS, bob);
+        vault.deposit(2 * DECIMALS, bob, 0);
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(alice);
@@ -396,7 +396,7 @@ contract OllaCoreRebalancePauseTest is Test {
         );
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(permitOwner);
-        vault.depositWithPermit(2 * DECIMALS, permitOwner, deadline, v, r, s);
+        vault.depositWithPermit(2 * DECIMALS, permitOwner, 0, deadline, v, r, s);
 
         (uint8 redeemV, bytes32 redeemR, bytes32 redeemS) = _signPermit(
             IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), 1 * DECIMALS, deadline
@@ -664,7 +664,7 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(alice);
         revertingAsset.approve(address(revertingVault), 7 * DECIMALS);
         vm.prank(alice);
-        revertingVault.deposit(7 * DECIMALS, alice);
+        revertingVault.deposit(7 * DECIMALS, alice, 0);
 
         revertingStakingManager.setStakeReturnAmount(0);
 
@@ -882,7 +882,7 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(bob);
         asset.approve(address(vault), 2 * DECIMALS);
         vm.prank(bob);
-        uint256 shares = vault.deposit(2 * DECIMALS, bob);
+        uint256 shares = vault.deposit(2 * DECIMALS, bob, 0);
         assertGt(shares, 0, "deposit succeeds after force unpause");
 
         // RequestRedeem now succeeds
@@ -1090,7 +1090,7 @@ contract OllaCoreRebalancePauseTest is Test {
         asset.approve(address(vault), 1 * DECIMALS);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(alice);
-        vault.deposit(1 * DECIMALS, alice);
+        vault.deposit(1 * DECIMALS, alice, 0);
 
         // RequestRedeem still reverts
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
@@ -1100,7 +1100,7 @@ contract OllaCoreRebalancePauseTest is Test {
         // Instant redeem still reverts
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(alice);
-        vault.redeem(1 * DECIMALS, alice);
+        vault.redeem(1 * DECIMALS, alice, 0);
 
         // UpdateAccounting still reverts
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
