@@ -106,7 +106,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
         vm.prank(user);
         asset.approve(address(vault), assets);
         vm.prank(user);
-        shares = vault.deposit(assets, user);
+        shares = vault.deposit(assets, user, 0);
         return shares;
     }
 

@@ -337,6 +337,9 @@ interface IOllaCore {
     /// @notice Thrown when a caller is not the pending governance.
     error OllaCore__UnauthorizedPendingGovernance(address caller);
 
+    /// @notice Thrown when output is less than the caller's minimum.
+    error OllaCore__SlippageExceeded(uint256 actual, uint256 minimum);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -366,20 +369,28 @@ interface IOllaCore {
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
+    /// @param minSharesOut The minimum shares the caller expects; set 0 to skip the check.
     /// @return shares The shares minted to the recipient.
-    function deposit(uint256 assets, address recipient) external returns (uint256 shares);
+    function deposit(uint256 assets, address recipient, uint256 minSharesOut) external returns (uint256 shares);
 
     /// @notice Deposits assets with a permit signature and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
+    /// @param minSharesOut The minimum shares the caller expects; set 0 to skip the check.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return shares The shares minted to the recipient.
-    function depositWithPermit(uint256 assets, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        returns (uint256 shares);
+    function depositWithPermit(
+        uint256 assets,
+        address recipient,
+        uint256 minSharesOut,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external returns (uint256 shares);
 
     /// @notice Requests a redemption in shares.
     /// @param shares The number of shares to redeem.
@@ -404,23 +415,31 @@ interface IOllaCore {
     /// @return assets The assets claimed for the request.
     function claimRequestById(uint256 requestId) external returns (uint256 assets);
 
-    /// @notice Instantly redeems stAztec shares for AZTEC assets.
+    /// @notice Instantly redeems stAztec shares for AZTEC assets, charging an instant redemption fee.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the net assets.
+    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
     /// @return assetsAfterFee The net assets transferred to the recipient.
-    function redeem(uint256 shares, address recipient) external returns (uint256 assetsAfterFee);
+    function redeem(uint256 shares, address recipient, uint256 minAssetsOut) external returns (uint256 assetsAfterFee);
 
     /// @notice Instantly redeems stAztec shares for AZTEC assets with a permit signature.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the net assets.
+    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return assetsAfterFee The net assets transferred to the recipient.
-    function redeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        returns (uint256 assetsAfterFee);
+    function redeemWithPermit(
+        uint256 shares,
+        address recipient,
+        uint256 minAssetsOut,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external returns (uint256 assetsAfterFee);
 
     /*//////////////////////////////////////////////////////////////
                       PROVIDER ADMIN FUNCTIONS
@@ -604,6 +623,11 @@ interface IOllaCore {
     /// @param assets The asset amount being deposited.
     /// @return shares The shares that would be minted.
     function previewDeposit(uint256 assets) external view returns (uint256 shares);
+
+    /// @notice Returns the net assets previewed for an instant redemption.
+    /// @param shares The share amount being redeemed.
+    /// @return assetsAfterFee The net assets after the instant redemption fee.
+    function previewRedeem(uint256 shares) external view returns (uint256 assetsAfterFee);
 
     /// @notice Returns the maximum assets currently available for instant redemptions.
     /// @return The unencumbered buffered assets available for instant redemptions.

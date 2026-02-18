@@ -26,7 +26,7 @@ contract UserDeposit is BaseScript {
 
         vm.startBroadcast(pk);
         IERC20(asset).approve(core, amount);
-        OllaCore(core).deposit(amount, recipient);
+        OllaCore(core).deposit(amount, recipient, 0);
         vm.stopBroadcast();
     }
 }

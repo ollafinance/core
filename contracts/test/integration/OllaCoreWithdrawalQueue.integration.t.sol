@@ -309,7 +309,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -574,7 +574,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         vm.prank(alice);
         asset.approve(address(vault), depositAmount);
         vm.prank(alice);
-        vault.deposit(depositAmount, alice);
+        vault.deposit(depositAmount, alice, 0);
 
         // Verify initial state: funds are buffered in vault
         assertEq(asset.balanceOf(address(vault)), depositAmount, "funds should be in vault");
@@ -642,7 +642,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         vm.prank(alice);
         asset.approve(address(vault), depositAmount);
         vm.prank(alice);
-        vault.deposit(depositAmount, alice);
+        vault.deposit(depositAmount, alice, 0);
 
         vault.rebalance();
 

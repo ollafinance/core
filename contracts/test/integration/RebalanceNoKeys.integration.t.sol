@@ -106,7 +106,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
         vm.prank(user);
         asset.approve(address(vault), depositAmount);
         vm.prank(user);
-        vault.deposit(depositAmount, user);
+        vault.deposit(depositAmount, user, 0);
 
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);
