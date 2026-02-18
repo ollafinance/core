@@ -157,6 +157,9 @@ interface IStakingManager {
     /// @notice Thrown when caller is not authorized (core or operator).
     error StakingManager__Unauthorized(address caller);
 
+    /// @notice Thrown when a configuration parameter is out of bounds.
+    error StakingManager__InvalidParameter();
+
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
     //////////////////////////////////////////////////////////////*/

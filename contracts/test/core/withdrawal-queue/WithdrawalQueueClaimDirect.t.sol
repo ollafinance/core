@@ -80,7 +80,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
             stAztec,
             stakingManager,
             0, // protocolFeeBP
-            0, // treasuryFeeSplitBP
+            5_000, // treasuryFeeSplitBP
             governance,
             address(withdrawalQueue),
             rewardsVault,

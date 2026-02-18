@@ -310,6 +310,9 @@ interface IOllaCore {
     /// @notice Thrown when a split basis points value exceeds maximum.
     error OllaCore__InvalidSplitBP(uint256 splitBP);
 
+    /// @notice Thrown when a gas threshold value is out of bounds.
+    error OllaCore__InvalidGasThreshold(uint256 threshold);
+
     /// @notice Thrown when stake operation fails.
     error OllaCore__StakeFailed(uint256 amount);
 

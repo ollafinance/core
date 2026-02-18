@@ -139,8 +139,8 @@ contract ExternalExitIntegrationTest is Test {
             IERC20(address(aztec)),
             stAztec,
             stakingManager,
-            0, // deposit cap
-            0, // withdrawal minimum
+            0, // protocolFeeBP
+            5_000, // treasuryFeeSplitBP
             governance,
             address(withdrawalQueue),
             rewardsVault,

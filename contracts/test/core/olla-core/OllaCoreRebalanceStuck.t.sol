@@ -64,7 +64,7 @@ contract OllaCoreRebalanceStuck is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,

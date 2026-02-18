@@ -96,7 +96,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         queue = WithdrawalQueue(address(queueProxy));
 
         vault.initialize(
-            asset, stAztec, stakingManager, 0, 0, governance, address(queue), rewardsVault, address(safetyModule)
+            asset, stAztec, stakingManager, 0, 5_000, governance, address(queue), rewardsVault, address(safetyModule)
         );
         queue.initialize(address(vault), governance);
 
@@ -532,7 +532,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         queue = WithdrawalQueue(address(queueProxy));
 
         vault.initialize(
-            asset, stAztec, stakingManager, 0, 0, governance, address(queue), rewardsVault, address(safetyModule)
+            asset, stAztec, stakingManager, 0, 5_000, governance, address(queue), rewardsVault, address(safetyModule)
         );
         queue.initialize(address(vault), governance);
 

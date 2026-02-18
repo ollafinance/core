@@ -56,6 +56,19 @@ contract OllaCore is
     /// @notice Basis points divisor.
     uint256 public constant BP_DIVISOR = 10_000;
 
+    /// @notice Maximum protocol fee: 50%.
+    uint256 public constant MAX_PROTOCOL_FEE_BP = 5_000;
+    /// @notice Maximum instant redemption fee: 20%.
+    uint256 public constant MAX_INSTANT_REDEMPTION_FEE_BP = 2_000;
+    /// @notice Minimum treasury fee split: 10%.
+    uint256 public constant MIN_TREASURY_SPLIT_BP = 1_000;
+    /// @notice Maximum treasury fee split: 90%.
+    uint256 public constant MAX_TREASURY_SPLIT_BP = 9_000;
+    /// @notice Minimum rebalance gas threshold.
+    uint256 public constant MIN_REBALANCE_GAS_THRESHOLD = 20_000;
+    /// @notice Maximum rebalance gas threshold.
+    uint256 public constant MAX_REBALANCE_GAS_THRESHOLD = 1_000_000;
+
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
@@ -377,7 +390,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the protocol fee in basis points.
-    /// @param newFeeBP The new fee (0-10000).
+    /// @param newFeeBP The new fee (0-5000).
     function setProtocolFeeBP(uint256 newFeeBP)
         external
         override
@@ -385,7 +398,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newFeeBP > BP_DIVISOR) {
+        if (newFeeBP > MAX_PROTOCOL_FEE_BP) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
         uint256 oldFeeBP = protocolFeeBP;
@@ -394,7 +407,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the treasury fee split in basis points.
-    /// @param newSplitBP The new split (0-10000).
+    /// @param newSplitBP The new split (1000-9000).
     function setTreasuryFeeSplitBP(uint256 newSplitBP)
         external
         override
@@ -402,7 +415,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newSplitBP > BP_DIVISOR) {
+        if (newSplitBP < MIN_TREASURY_SPLIT_BP || newSplitBP > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(newSplitBP);
         }
         uint256 oldSplitBP = treasuryFeeSplitBP;
@@ -505,7 +518,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the gas threshold used for rebalance step gating.
-    /// @param newThreshold The new gas threshold.
+    /// @param newThreshold The new gas threshold (20000-1000000).
     function setRebalanceGasThreshold(uint256 newThreshold)
         external
         override
@@ -513,6 +526,9 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
+        if (newThreshold < MIN_REBALANCE_GAS_THRESHOLD || newThreshold > MAX_REBALANCE_GAS_THRESHOLD) {
+            revert OllaCore__InvalidGasThreshold(newThreshold);
+        }
         uint256 oldThreshold = rebalanceGasThreshold;
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
@@ -520,7 +536,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the instant redemption fee in basis points.
-    /// @param newFeeBP The new fee (0-10000).
+    /// @param newFeeBP The new fee (0-2000).
     function setInstantRedemptionFeeBP(uint256 newFeeBP)
         external
         override
@@ -528,7 +544,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newFeeBP > BP_DIVISOR) {
+        if (newFeeBP > MAX_INSTANT_REDEMPTION_FEE_BP) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
         uint256 oldFeeBP = instantRedemptionFeeBP;
@@ -1836,10 +1852,10 @@ contract OllaCore is
         if (address(stakingManager_) == address(0)) {
             revert OllaCore__ZeroAddress("stakingManager_");
         }
-        if (protocolFeeBP_ > BP_DIVISOR) {
+        if (protocolFeeBP_ > MAX_PROTOCOL_FEE_BP) {
             revert OllaCore__InvalidFeeBP(protocolFeeBP_);
         }
-        if (treasuryFeeSplitBP_ > BP_DIVISOR) {
+        if (treasuryFeeSplitBP_ < MIN_TREASURY_SPLIT_BP || treasuryFeeSplitBP_ > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(treasuryFeeSplitBP_);
         }
         if (governance_ == address(0)) {
