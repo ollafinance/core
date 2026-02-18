@@ -192,7 +192,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         rewardsVault = new MockRewardsVault(asset, address(vault));

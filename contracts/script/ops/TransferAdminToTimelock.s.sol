@@ -28,7 +28,6 @@ contract TransferAdminToTimelock is BaseScript {
         address stakingProviderRegistry = _addrFromEnvOrDeployment(
             "STAKING_PROVIDER_REGISTRY", "StakingProviderRegistryProxy", "StakingProviderRegistry missing"
         );
-        address stAztec = _addrFromEnvOrDeployment("STAZTEC", "StAztec", "StAztec missing");
         address safetyModule = _addrFromEnvOrDeployment("SAFETY_MODULE", "SafetyModule", "SafetyModule missing");
 
         bytes32 adminRole = bytes32(0);
@@ -40,7 +39,6 @@ contract TransferAdminToTimelock is BaseScript {
         _grantAndRevoke(rewardsVault, adminRole, timelock, caller);
         _grantAndRevoke(stakingManager, adminRole, timelock, caller);
         _grantAndRevoke(stakingProviderRegistry, adminRole, timelock, caller);
-        _grantAndRevoke(stAztec, adminRole, timelock, caller);
         if (_boolOr("SKIP_SAFETY_MODULE", false)) {
             _logDeployment("Skip SafetyModule migration", safetyModule);
         } else if (_supportsAccessControl(safetyModule, adminRole)) {

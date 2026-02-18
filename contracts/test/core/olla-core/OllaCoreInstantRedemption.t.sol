@@ -92,7 +92,7 @@ contract OllaCoreInstantRedemptionTest is Test {
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         withdrawalQueue = new MockWithdrawalQueue();
@@ -825,7 +825,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         OllaCoreHarness malVault = OllaCoreHarness(address(malProxy));
 
         MockAccountingStakingManager malStakingManager = new MockAccountingStakingManager();
-        StAztec malStAztec = new StAztec(governance, address(malVault));
+        StAztec malStAztec = new StAztec(address(malVault));
         MockRewardsVault malRewardsVault = new MockRewardsVault(IERC20(address(malAsset)), address(malVault));
         MockSafetyModule malSafetyModule = new MockSafetyModule(address(malCoreImpl));
         MockWithdrawalQueue malWithdrawalQueue = new MockWithdrawalQueue();

@@ -287,7 +287,7 @@ contract OllaCoreInvariantTest is Test {
         vault = OllaCore(address(proxy));
 
         address governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         rewardsVault = new MockRewardsVault(asset, address(vault));
@@ -469,7 +469,7 @@ contract OllaCoreDepositInvariantTest is Test {
         vault = OllaCore(address(proxy));
 
         address governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         address rewardsVault = makeAddr("rewardsVault");
@@ -737,7 +737,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
         vault = OllaCore(address(coreProxy));
 
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(vault));

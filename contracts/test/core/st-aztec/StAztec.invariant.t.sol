@@ -100,7 +100,7 @@ contract StAztecInvariantTest is Test {
 
     function setUp() external {
         core = new StAztecCoreHarness();
-        token = new StAztec(address(core), address(core));
+        token = new StAztec(address(core));
         core.setToken(token);
 
         handler = new StAztecHandler(token, core);

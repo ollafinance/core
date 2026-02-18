@@ -49,7 +49,7 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
