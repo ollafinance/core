@@ -7,6 +7,7 @@ import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
@@ -46,9 +47,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice The OllaCore contract address.
     address public core;
-
-    /// @notice Address authorized to perform upgrades.
-    address public governance;
 
     /// @notice The StakingProviderRegistry contract.
     IStakingProviderRegistry public stakingProviderRegistry;
@@ -93,7 +91,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -175,7 +173,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         rollupRegistry = IAztecRollupRegistry(rollupRegistry_);
         rewardsVault = rewardsVault_;
         core = core_;
-        governance = defaultAdmin_;
         stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
         gasThreshold = 50_000;
         _attesterStateMaxAge = DEFAULT_ATTESTER_STATE_MAX_AGE;
@@ -951,7 +948,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != governance) {
+        if (msg.sender != IOllaCore(core).governance()) {
             revert StakingManager__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {

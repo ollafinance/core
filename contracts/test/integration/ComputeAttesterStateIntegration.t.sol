@@ -27,23 +27,23 @@ contract ComputeAttesterStateIntegration is Test {
     uint256 internal constant DECIMALS = 1e18;
 
     // ── StakingManager storage slot constants (from `forge inspect StakingManager storageLayout`) ──
-    uint256 internal constant SLOT_ATTESTERS_ARRAY = 6; // _attesters (dynamic array length)
-    uint256 internal constant SLOT_ACTIVE_COUNT = 8;
-    uint256 internal constant SLOT_EXITING_COUNT = 9;
-    uint256 internal constant SLOT_LAST_ATTESTER_STATE_TS = 10;
-    uint256 internal constant SLOT_ATTESTER_STATE_MAX_AGE = 11;
-    uint256 internal constant SLOT_ATTESTER_STATE_CURSOR = 14;
-    // _accumulator occupies slots 15-18 (StakingState: slashingDelta, stakedAmount, pendingUnstakeAmount, withdrawableAmount)
-    uint256 internal constant SLOT_ACCUMULATOR_SLASHING = 15;
-    uint256 internal constant SLOT_ACCUMULATOR_STAKED = 16;
-    uint256 internal constant SLOT_ACCUMULATOR_PENDING = 17;
-    uint256 internal constant SLOT_ACCUMULATOR_WITHDRAWABLE = 18;
-    // _cachedState occupies slots 19-22
-    uint256 internal constant SLOT_CACHED_SLASHING = 19;
-    uint256 internal constant SLOT_CACHED_STAKED = 20;
-    uint256 internal constant SLOT_CACHED_PENDING = 21;
-    uint256 internal constant SLOT_CACHED_WITHDRAWABLE = 22;
-    uint256 internal constant SLOT_GAS_THRESHOLD = 23;
+    uint256 internal constant SLOT_ATTESTERS_ARRAY = 5; // _attesters (dynamic array length)
+    uint256 internal constant SLOT_ACTIVE_COUNT = 7;
+    uint256 internal constant SLOT_EXITING_COUNT = 8;
+    uint256 internal constant SLOT_LAST_ATTESTER_STATE_TS = 9;
+    uint256 internal constant SLOT_ATTESTER_STATE_MAX_AGE = 10;
+    uint256 internal constant SLOT_ATTESTER_STATE_CURSOR = 13;
+    // _accumulator occupies slots 14-17 (StakingState: slashingDelta, stakedAmount, pendingUnstakeAmount, withdrawableAmount)
+    uint256 internal constant SLOT_ACCUMULATOR_SLASHING = 14;
+    uint256 internal constant SLOT_ACCUMULATOR_STAKED = 15;
+    uint256 internal constant SLOT_ACCUMULATOR_PENDING = 16;
+    uint256 internal constant SLOT_ACCUMULATOR_WITHDRAWABLE = 17;
+    // _cachedState occupies slots 18-21
+    uint256 internal constant SLOT_CACHED_SLASHING = 18;
+    uint256 internal constant SLOT_CACHED_STAKED = 19;
+    uint256 internal constant SLOT_CACHED_PENDING = 20;
+    uint256 internal constant SLOT_CACHED_WITHDRAWABLE = 21;
+    uint256 internal constant SLOT_GAS_THRESHOLD = 22;
 
     // ── Debug events ──
     event DebugAttesterArray(uint256 length);

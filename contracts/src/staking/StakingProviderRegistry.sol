@@ -4,9 +4,8 @@ pragma solidity ^0.8.27;
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
@@ -46,9 +45,6 @@ contract StakingProviderRegistry is
     /// @notice The StakingManager contract address.
     address public stakingManager;
 
-    /// @notice Address authorized to perform upgrades.
-    address public governance;
-
     /// @dev Provider configuration.
     IStakingManager.ProviderConfig private _provider;
 
@@ -57,7 +53,7 @@ contract StakingProviderRegistry is
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   MODIFIERS
@@ -105,8 +101,6 @@ contract StakingProviderRegistry is
         __AccessControl_init();
 
         stakingManager = stakingManager_;
-        governance = defaultAdmin_;
-
         _provider =
             IStakingManager.ProviderConfig({ admin: providerAdmin_, rewardsRecipient: providerRewardsRecipient_ });
 
@@ -204,7 +198,8 @@ contract StakingProviderRegistry is
     //////////////////////////////////////////////////////////////*/
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != governance) {
+        address core = IStakingManager(stakingManager).core();
+        if (msg.sender != IOllaCore(core).governance()) {
             revert StakingProviderRegistry__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {

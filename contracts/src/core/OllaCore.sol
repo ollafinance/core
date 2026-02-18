@@ -101,13 +101,12 @@ contract OllaCore is
     /// @notice The instant redemption fee in basis points (0-10000).
     uint256 public instantRedemptionFeeBP;
 
-    /// @notice Storage gap for upgradability
-    // slither-disable-next-line unused-state
+    /// @notice Pending governance address for two-step transfer
     address private _pendingGovernance;
 
     /// @notice Storage gap for upgradability
     // slither-disable-next-line unused-state
-    uint256[45] private __gap;
+    uint256[46] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS

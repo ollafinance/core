@@ -4,11 +4,15 @@ pragma solidity >=0.8.27 <0.9.0;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
+import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { MockOllaCoreGovernance } from "test/mocks/MockOllaCoreGovernance.sol";
 
 contract StakingProviderRegistryUpgradeMock is StakingProviderRegistry {
     uint256 public v2Value;
@@ -29,6 +33,8 @@ contract StakingProviderRegistryUpgradeTest is Test {
     bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
 
     StakingProviderRegistry internal registry;
+    MockStakingManager internal mockStakingManager;
+    MockOllaCoreGovernance internal mockCore;
 
     address internal stakingManager;
     address internal providerAdmin;
@@ -42,6 +48,13 @@ contract StakingProviderRegistryUpgradeTest is Test {
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         defaultAdmin = makeAddr("defaultAdmin");
         attacker = makeAddr("attacker");
+
+        mockCore = new MockOllaCoreGovernance(defaultAdmin, address(0));
+        mockStakingManager = new MockStakingManager();
+        mockStakingManager.initialize(
+            IERC20(address(0)), address(0), address(0), address(mockCore), address(0), address(0)
+        );
+        stakingManager = address(mockStakingManager);
 
         StakingProviderRegistry implementation = new StakingProviderRegistry();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
@@ -72,7 +85,11 @@ contract StakingProviderRegistryUpgradeTest is Test {
     function test_RevertWhen_UnauthorizedUpgrade() external {
         StakingProviderRegistryUpgradeMock newImplementation = new StakingProviderRegistryUpgradeMock();
 
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, attacker, DEFAULT_ADMIN_ROLE
+            )
+        );
         vm.prank(attacker);
         registry.upgradeToAndCall(address(newImplementation), "");
     }
@@ -128,7 +145,7 @@ contract StakingProviderRegistryUpgradeTest is Test {
         uint256 queueLengthBefore = registry.getQueueLength();
         IStakingManager.ProviderConfig memory providerBefore = registry.getStakingProviderConfig();
         address stakingManagerBefore = registry.stakingManager();
-        address governanceBefore = registry.governance();
+        address governanceBefore = mockCore.governance();
 
         // Perform upgrade
         StakingProviderRegistryUpgradeMock newImplementation = new StakingProviderRegistryUpgradeMock();
@@ -144,7 +161,7 @@ contract StakingProviderRegistryUpgradeTest is Test {
         assertEq(v2.version(), 2, "upgrade applied");
         assertEq(v2.getQueueLength(), queueLengthBefore, "queue length preserved");
         assertEq(v2.stakingManager(), stakingManagerBefore, "staking manager preserved");
-        assertEq(v2.governance(), governanceBefore, "governance preserved");
+        assertEq(mockCore.governance(), governanceBefore, "governance preserved");
 
         IStakingManager.ProviderConfig memory providerAfter = v2.getStakingProviderConfig();
         assertEq(providerAfter.admin, providerBefore.admin, "provider admin preserved");
