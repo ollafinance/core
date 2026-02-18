@@ -82,7 +82,7 @@ contract OllaCoreSafetyModuleTest is Test {
         stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         rewardsVault = new MockRewardsVault(asset, address(vault));

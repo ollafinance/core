@@ -77,7 +77,7 @@ contract OllaCoreAccountingTest is Test {
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");

@@ -89,7 +89,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         operator = makeAddr("operator");
@@ -367,7 +367,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         // Sign permit for type(uint256).max to test that max allowance remains max.
         // requestRedeemWithPermit calls permit(owner, vault, shares, ...) setting
-        // allowance to type(uint256).max, then _requestRedeem burns via BURNER_ROLE
+        // allowance to type(uint256).max, then _requestRedeem burns via OllaCore
         // without consuming allowance. So the max allowance is preserved.
         uint256 shares = type(uint256).max;
         (uint8 v, bytes32 r, bytes32 s) =

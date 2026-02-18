@@ -1,45 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { AccessControl } from "@oz/access/AccessControl.sol";
 import { ERC20 } from "@oz/token/ERC20/ERC20.sol";
 import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
 import { IERC20Metadata } from "@oz/token/ERC20/extensions/IERC20Metadata.sol";
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { RolesLib } from "src/shared/RolesLib.sol";
 
 /// @title StAztec
 /// @notice ERC-20 token representing staked Aztec shares in OllaCore.
 /// @author Olla Core contributors
-contract StAztec is ERC20Permit, AccessControl, IStAztec {
+contract StAztec is ERC20Permit, IStAztec {
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
     uint8 private constant _DECIMALS = 18;
 
-    /// @notice Role for minting stAztec shares.
-    bytes32 public constant MINTER_ROLE = RolesLib.MINTER_ROLE;
-    /// @notice Role for burning stAztec shares.
-    bytes32 public constant BURNER_ROLE = RolesLib.BURNER_ROLE;
+    /*//////////////////////////////////////////////////////////////
+                               IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The immutable OllaCore address authorized to mint and burn.
+    address public immutable OLLA_CORE;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets governance admin and configures the initial core roles.
-    /// @param governance Address granted DEFAULT_ADMIN_ROLE to manage roles.
-    /// @param ollaCore Address granted MINTER_ROLE and BURNER_ROLE.
-    constructor(address governance, address ollaCore) ERC20("stAztec", "stAZTEC") ERC20Permit("stAztec") {
-        if (governance == address(0) || ollaCore == address(0)) {
+    /// @notice Sets the immutable OllaCore address.
+    /// @param ollaCore_ The OllaCore proxy address authorized to mint and burn.
+    constructor(address ollaCore_) ERC20("stAztec", "stAZTEC") ERC20Permit("stAztec") {
+        if (ollaCore_ == address(0)) {
             revert StAztecZeroAddress();
         }
-
-        _grantRole(DEFAULT_ADMIN_ROLE, governance);
-        _grantRole(MINTER_ROLE, ollaCore);
-        _grantRole(BURNER_ROLE, ollaCore);
+        OLLA_CORE = ollaCore_;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -49,18 +45,16 @@ contract StAztec is ERC20Permit, AccessControl, IStAztec {
     /// @notice Mints stAztec shares to an account.
     /// @param to The recipient address.
     /// @param amount The amount of shares to mint.
-    function mint(address to, uint256 amount) external override onlyRole(MINTER_ROLE) {
+    function mint(address to, uint256 amount) external override {
+        if (msg.sender != OLLA_CORE) revert StAztec__Unauthorized();
         _mint(to, amount);
     }
 
     /// @notice Burns stAztec shares from an account.
-    /// @dev This function bypasses ERC-20 allowance checks by design. Only the holder of
-    ///      BURNER_ROLE (expected to be OllaCore exclusively) can call it. If BURNER_ROLE is
-    ///      ever granted to another address, that address can burn any user's shares without
-    ///      approval — treat BURNER_ROLE as a critical, god-mode permission.
     /// @param from The account to burn shares from.
     /// @param amount The amount of shares to burn.
-    function burn(address from, uint256 amount) external override onlyRole(BURNER_ROLE) {
+    function burn(address from, uint256 amount) external override {
+        if (msg.sender != OLLA_CORE) revert StAztec__Unauthorized();
         _burn(from, amount);
     }
 

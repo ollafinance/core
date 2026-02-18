@@ -61,7 +61,7 @@ contract OllaCoreAccessControlTest is Test {
         vault = OllaCore(address(proxy));
 
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
         safetyModule = new MockSafetyModule(address(coreImplementation));

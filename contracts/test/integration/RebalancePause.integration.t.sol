@@ -52,7 +52,7 @@ contract RebalancePauseIntegrationTest is Test {
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");

@@ -62,7 +62,7 @@ contract OllaCoreInitTest is Test {
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
-        stAztec = new StAztec(governance, address(vault));
+        stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
         withdrawalQueue = new MockWithdrawalQueue();
@@ -164,7 +164,7 @@ contract OllaCoreInitTest is Test {
         MockAccountingStakingManager newStakingManager = new MockAccountingStakingManager();
 
         address newGovernance = makeAddr("governance");
-        StAztec newStAztec = new StAztec(newGovernance, address(newVault));
+        StAztec newStAztec = new StAztec(address(newVault));
 
         address newWithdrawalQueue = makeAddr("withdrawalQueue");
         MockRewardsVault newRewardsVault = new MockRewardsVault(asset, address(coreImplementation));
