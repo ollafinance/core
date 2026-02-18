@@ -45,7 +45,9 @@ contract StakingProviderRegistry is
     /// @notice The StakingManager contract address.
     address public stakingManager;
 
-    /// @notice Deprecated governance storage (kept for upgrade-safe layout).
+    /// @notice DEPRECATED: legacy governance storage, kept only for upgrade-safe layout.
+    /// @dev This value is not updated after initialization and MUST NOT be used
+    ///      to determine the current governance. Governance is managed by OllaCore.
     address public governance;
 
     /// @dev Provider configuration.

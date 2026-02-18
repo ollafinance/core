@@ -48,7 +48,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice The OllaCore contract address.
     address public core;
 
-    /// @notice Deprecated governance storage (kept for upgrade-safe layout).
+    /// @notice DEPRECATED: legacy governance storage, kept only for upgrade-safe layout.
+    /// @dev The auto-generated governance() getter returns this stale value and MUST NOT be used
+    ///      to determine the current governance. Use the governance information from `core`
+    ///      (IOllaCore) instead.
     address public governance;
 
     /// @notice The StakingProviderRegistry contract.
