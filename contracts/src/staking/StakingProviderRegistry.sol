@@ -45,11 +45,6 @@ contract StakingProviderRegistry is
     /// @notice The StakingManager contract address.
     address public stakingManager;
 
-    /// @notice DEPRECATED: legacy governance storage, kept only for upgrade-safe layout.
-    /// @dev This value is not updated after initialization and MUST NOT be used
-    ///      to determine the current governance. Governance is managed by OllaCore.
-    address public governance;
-
     /// @dev Provider configuration.
     IStakingManager.ProviderConfig private _provider;
 
@@ -58,7 +53,7 @@ contract StakingProviderRegistry is
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   MODIFIERS
@@ -106,8 +101,6 @@ contract StakingProviderRegistry is
         __AccessControl_init();
 
         stakingManager = stakingManager_;
-        governance = defaultAdmin_;
-
         _provider =
             IStakingManager.ProviderConfig({ admin: providerAdmin_, rewardsRecipient: providerRewardsRecipient_ });
 

@@ -258,14 +258,12 @@ contract StakingManagerInvariantTest is Test {
 
     address internal core;
     address internal providerAdmin;
-    address internal governance;
     address internal defaultAdmin;
 
     function setUp() external {
         // Setup addresses
         core = makeAddr("core");
         providerAdmin = makeAddr("providerAdmin");
-        governance = makeAddr("governance");
         defaultAdmin = makeAddr("defaultAdmin");
 
         // Setup mock contracts

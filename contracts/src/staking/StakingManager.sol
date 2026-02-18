@@ -48,12 +48,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice The OllaCore contract address.
     address public core;
 
-    /// @notice DEPRECATED: legacy governance storage, kept only for upgrade-safe layout.
-    /// @dev The auto-generated governance() getter returns this stale value and MUST NOT be used
-    ///      to determine the current governance. Use the governance information from `core`
-    ///      (IOllaCore) instead.
-    address public governance;
-
     /// @notice The StakingProviderRegistry contract.
     IStakingProviderRegistry public stakingProviderRegistry;
 
@@ -97,7 +91,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -179,7 +173,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         rollupRegistry = IAztecRollupRegistry(rollupRegistry_);
         rewardsVault = rewardsVault_;
         core = core_;
-        governance = defaultAdmin_;
         stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
         gasThreshold = 50_000;
         _attesterStateMaxAge = DEFAULT_ATTESTER_STATE_MAX_AGE;
