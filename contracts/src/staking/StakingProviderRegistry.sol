@@ -8,6 +8,7 @@ import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { RolesLib } from "src/shared/RolesLib.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { Queue, QueueLib } from "src/staking/libraries/QueueLib.sol";
@@ -46,7 +47,7 @@ contract StakingProviderRegistry is
     /// @notice The StakingManager contract address.
     address public stakingManager;
 
-    /// @notice Address authorized to perform upgrades.
+    /// @notice Deprecated governance storage (kept for upgrade-safe layout).
     address public governance;
 
     /// @dev Provider configuration.
@@ -204,7 +205,8 @@ contract StakingProviderRegistry is
     //////////////////////////////////////////////////////////////*/
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != governance) {
+        address core = IStakingManager(stakingManager).core();
+        if (msg.sender != IOllaCore(core).governance()) {
             revert StakingProviderRegistry__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {
