@@ -986,9 +986,12 @@ contract OllaCore is
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
-        IOllaCore.AccountingState storage buckets = _accountingState;
-        return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.claimableRewards
-            - buckets.slashingDelta;
+        IOllaCore.AccountingState memory buckets = _accountingState;
+        uint256 total =
+            buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.claimableRewards;
+        // Slither: false positive — comparing asset amounts, not timestamps.
+        // slither-disable-next-line timestamp
+        return buckets.slashingDelta >= total ? 0 : total - buckets.slashingDelta;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1276,6 +1279,8 @@ contract OllaCore is
         modules.stAztec.burn(owner, shares);
 
         requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
+        // Slither: false positive — comparing request IDs, not timestamps.
+        // slither-disable-next-line timestamp
         if (requestId != expectedRequestId) {
             revert OllaCore__UnexpectedRequestId(expectedRequestId, requestId);
         }
@@ -1856,9 +1861,12 @@ contract OllaCore is
         pure
         returns (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
     {
+        // Slither: false positive — comparing cumulative flow counters, not timestamps.
+        // slither-disable-next-line timestamp
         netDeposits = flows.cumulativeDeposits > flows.latestReportCumulativeDeposits
             ? flows.cumulativeDeposits - flows.latestReportCumulativeDeposits
             : 0;
+        // slither-disable-next-line timestamp
         netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
             ? flows.cumulativeWithdrawals - flows.latestReportCumulativeWithdrawals
             : 0;
@@ -1871,8 +1879,11 @@ contract OllaCore is
         pure
         returns (uint256 totalAssets_)
     {
-        totalAssets_ = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
-            + buckets.claimableRewards - buckets.slashingDelta;
+        uint256 total = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
+            + buckets.claimableRewards;
+        // Slither: false positive — comparing asset amounts, not timestamps.
+        // slither-disable-next-line timestamp
+        totalAssets_ = buckets.slashingDelta >= total ? 0 : total - buckets.slashingDelta;
         return totalAssets_;
     }
 
