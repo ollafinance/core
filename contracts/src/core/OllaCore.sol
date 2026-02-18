@@ -337,14 +337,21 @@ contract OllaCore is
         emit Unpaused();
     }
 
-    /// @notice Forces rebalance pause to end once progress is done.
+    /// @inheritdoc IOllaCore
     function forceRebalanceUnpause() external override onlyRole(GUARDIAN_ROLE) whenNotPaused {
-        if (!_rebalancePaused || _rebalanceProgress.step != IOllaCore.RebalanceStep.Done) {
+        if (!_rebalancePaused) {
             revert OllaCore__RebalancePauseOverrideNotAllowed();
         }
+
+        // Reset state machine to Done
+        _rebalanceProgress =
+            IOllaCore.RebalanceProgress({ step: IOllaCore.RebalanceStep.Done, stakeRemaining: 0, unstakeRemaining: 0 });
+
         _rebalancePaused = false;
         _rebalancePauseReason = uint8(IOllaCore.RebalancePauseReason.GovernanceOverride);
         _rebalanceRequiredBufferSnapshot = 0;
+        _rebalanceIdleBuffer = 0;
+
         emit RebalancePauseUpdated(false, IOllaCore.RebalancePauseReason.GovernanceOverride);
     }
 
