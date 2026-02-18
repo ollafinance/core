@@ -4,9 +4,11 @@ pragma solidity >=0.8.27 <0.9.0;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { MockOllaCoreGovernance } from "test/mocks/MockOllaCoreGovernance.sol";
 
 interface IUpgradeTo {
     function upgradeTo(address newImplementation) external;
@@ -38,14 +40,17 @@ contract WithdrawalQueueUpgradeTest is Test {
     WithdrawalQueue internal queue;
     address internal core;
     address internal admin;
+    MockOllaCoreGovernance internal mockCore;
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP
     //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
-        core = makeAddr("core");
         admin = makeAddr("admin");
+
+        mockCore = new MockOllaCoreGovernance(admin, address(0));
+        core = address(mockCore);
 
         WithdrawalQueue implementation = new WithdrawalQueue();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
@@ -61,8 +66,27 @@ contract WithdrawalQueueUpgradeTest is Test {
         WithdrawalQueueUpgradeMock newImplementation = new WithdrawalQueueUpgradeMock();
         address attacker = makeAddr("attacker");
 
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, attacker, queue.DEFAULT_ADMIN_ROLE()
+            )
+        );
         vm.prank(attacker);
+        queue.upgradeToAndCall(address(newImplementation), "");
+    }
+
+    function test_RevertWhen_DefaultAdminButNotGovernance_Upgrade() external {
+        WithdrawalQueueUpgradeMock newImplementation = new WithdrawalQueueUpgradeMock();
+        address otherAdmin = makeAddr("otherAdmin");
+
+        bytes32 defaultAdminRole = queue.DEFAULT_ADMIN_ROLE();
+        vm.prank(admin);
+        queue.grantRole(defaultAdminRole, otherAdmin);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(WithdrawalQueue.WithdrawalQueue__UnauthorizedGovernance.selector, otherAdmin)
+        );
+        vm.prank(otherAdmin);
         queue.upgradeToAndCall(address(newImplementation), "");
     }
 
