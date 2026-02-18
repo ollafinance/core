@@ -137,4 +137,29 @@ contract StakingManagerReentrancyTest is Test {
         );
         stakingManager.getUnstakedFunds();
     }
+
+    function test_RevertWhen_ComputeAttesterState_ReenteredFromRollupDeposit() external {
+        // Give rollup OPERATOR_ROLE so onlyCoreOrOperator passes during reentry
+        bytes32 operatorRole = stakingManager.OPERATOR_ROLE();
+        vm.prank(defaultAdmin);
+        stakingManager.grantRole(operatorRole, address(rollup));
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+        vm.prank(providerAdmin);
+        stakingProviderRegistry.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD * 2);
+
+        // First stake to set up an attester
+        vm.prank(core);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+
+        // Configure rollup to re-enter computeAttesterState during second deposit
+        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.computeAttesterState, ()));
+        rollup.setReenterOnDeposit(true);
+
+        vm.prank(core);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        stakingManager.stake(ACTIVATION_THRESHOLD);
+    }
 }

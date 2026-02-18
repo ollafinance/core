@@ -242,6 +242,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         external
         override
         onlyCoreOrOperator
+        nonReentrant
         returns (uint256 slashingDelta, bool completed)
     {
         (, IAztecRollup rollup) = _getRollup();
