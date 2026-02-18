@@ -73,7 +73,7 @@ contract RebalancePauseIntegrationTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -82,7 +82,7 @@ contract RebalancePauseIntegrationTest is Test {
         withdrawalQueue.initialize(address(vault), governance);
 
         vm.startPrank(admin);
-        safetyModule.setMinRateDropBps(type(uint256).max);
+        safetyModule.setMinRateDropBps(safetyModule.MAX_RATE_DROP_BPS());
         vm.stopPrank();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
