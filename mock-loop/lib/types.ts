@@ -50,6 +50,13 @@ export interface UserClaimScenario {
   privateKey: string;
 }
 
+export interface GovernanceChangeScenario {
+  type: "governance-change";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  newGovernancePrivateKey: string;
+}
+
 export type ScenarioConfig =
   | ProviderKeysScenario
   | MockRewardsScenario
@@ -57,7 +64,8 @@ export type ScenarioConfig =
   | RebalanceScenario
   | AccountingScenario
   | UserInitiateWithdrawScenario
-  | UserClaimScenario;
+  | UserClaimScenario
+  | GovernanceChangeScenario;
 
 // Contract state types
 export interface AccountingState {

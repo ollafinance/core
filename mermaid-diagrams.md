@@ -125,6 +125,28 @@ style governanceActor stroke:#050,stroke-width:2px
 
 ## Activity diagrams
 
+### Governance transfer (two-step)
+
+```mermaid
+sequenceDiagram
+    participant GOV as Current Governance
+    participant CORE as OllaCore
+    participant NEW as New Governance
+
+    GOV->>CORE: proposeGovernance(newGov)
+    CORE-->>GOV: GovernanceProposed(oldGov, newGov)
+
+    NEW->>CORE: acceptGovernance()
+    CORE->>CORE: grant roles to newGov
+    CORE->>CORE: revoke roles from oldGov
+    CORE-->>NEW: GovernanceAccepted(oldGov, newGov)
+
+    opt cancel before accept
+        GOV->>CORE: cancelGovernanceProposal()
+        CORE-->>GOV: GovernanceProposalCancelled(governance, pendingGovernance)
+    end
+```
+
 ### Deposit
 
 ```mermaid

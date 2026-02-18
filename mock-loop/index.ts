@@ -22,6 +22,7 @@ import { executeRebalance } from "./lib/scenarios/rebalance.js";
 import { executeAccounting } from "./lib/scenarios/accounting.js";
 import { executeUserInitiateWithdraw } from "./lib/scenarios/user-initiate-withdraw.js";
 import { executeUserClaim } from "./lib/scenarios/user-claim.js";
+import { executeGovernanceChange } from "./lib/scenarios/governance-change.js";
 
 function parseCliArgs(): CliArgs {
   const { values } = parseArgs({
@@ -85,6 +86,8 @@ async function executeScenario(
       return executeUserInitiateWithdraw(scenario, tick, clients, addresses);
     case "user-claim":
       return executeUserClaim(scenario, tick, clients, addresses);
+    case "governance-change":
+      return executeGovernanceChange(scenario, tick, clients, addresses);
     default:
       return {
         scenario: (scenario as ScenarioConfig).type,
