@@ -118,7 +118,7 @@ contract OllaCoreAccountingTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -670,5 +670,121 @@ contract OllaCoreAccountingTest is Test {
         uint256 rate = vault.exchangeRate();
         uint256 maxRoundingLoss = 2 * rate / 1e18 + 2;
         assertLe(assets - assetsBack, maxRoundingLoss, "roundtrip rounding loss proportional to rate");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        SLASHING DELTA UNDERFLOW
+    //////////////////////////////////////////////////////////////*/
+
+    function test_TotalAssets_ClampsToZero_WhenSlashingDeltaExceedsSum() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Set slashing delta to more than the deposited amount
+        uint256 excessiveSlashing = depositAmount + 5 * DECIMALS;
+        stakingManager.setSlashingDelta(excessiveSlashing);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        // totalAssets should clamp to zero rather than reverting with underflow
+        assertEq(vault.totalAssets(), 0, "totalAssets should clamp to zero when slashing exceeds sum");
+    }
+
+    function test_TotalAssets_ClampsToZero_WhenSlashingDeltaEqualsSum() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Set slashing delta exactly equal to the deposit amount
+        stakingManager.setSlashingDelta(depositAmount);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        // totalAssets should clamp to zero when slashing equals the sum
+        assertEq(vault.totalAssets(), 0, "totalAssets should clamp to zero when slashing equals sum");
+    }
+
+    function test_ComputeTotalAssets_ClampsToZero_WhenSlashingDeltaExceedsSum() external view {
+        IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
+            bufferedAssets: 3 * DECIMALS,
+            stakedPrincipal: 4 * DECIMALS,
+            rewardsVaultBalance: 2 * DECIMALS,
+            claimableRewards: 1 * DECIMALS,
+            rewardsDelta: 0,
+            slashingDelta: 20 * DECIMALS,
+            cumulativeRewards: 0
+        });
+
+        uint256 result = vault.exposedComputeTotalAssets(buckets);
+
+        // slashingDelta (20e18) > sum of other buckets (10e18), so result should be 0
+        assertEq(result, 0, "computeTotalAssets should return zero when slashing exceeds sum");
+    }
+
+    function test_DepositStillWorks_AfterSlashingClampsToZero() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Set massive slashing to force totalAssets to zero
+        uint256 massiveSlashing = depositAmount + 100 * DECIMALS;
+        stakingManager.setSlashingDelta(massiveSlashing);
+
+        vm.prank(operator);
+        vault.updateAccounting();
+
+        assertEq(vault.totalAssets(), 0, "totalAssets should be zero after massive slashing");
+
+        // A subsequent deposit should succeed without reverting
+        address bob = makeAddr("bob");
+        uint256 secondDeposit = 5 * DECIMALS;
+        asset.mint(bob, secondDeposit);
+        vm.prank(bob);
+        asset.approve(address(vault), secondDeposit);
+        vm.prank(bob);
+        vault.deposit(secondDeposit, bob, 0);
+
+        // After deposit, totalAssets should still clamp to zero because slashingDelta is still massive
+        // (buffered increased by secondDeposit, but slashing still exceeds the total)
+        assertEq(
+            vault.totalAssets(), 0, "totalAssets should still clamp to zero after deposit when slashing is massive"
+        );
+    }
+
+    function testFuzz_TotalAssets_NeverRevertsOnSlashing(
+        uint96 buffered,
+        uint96 staked,
+        uint96 rvBalance,
+        uint96 claimable,
+        uint96 slashingSeed
+    ) external view {
+        buffered = uint96(bound(buffered, 0, type(uint96).max));
+        staked = uint96(bound(staked, 0, type(uint96).max));
+        rvBalance = uint96(bound(rvBalance, 0, type(uint96).max));
+        claimable = uint96(bound(claimable, 0, type(uint96).max));
+
+        uint256 positiveTotal = uint256(buffered) + uint256(staked) + uint256(rvBalance) + uint256(claimable);
+
+        // Allow slashing to exceed the positive total
+        uint256 slashing = bound(uint256(slashingSeed), 0, positiveTotal + 100 * DECIMALS);
+
+        IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
+            bufferedAssets: buffered,
+            stakedPrincipal: staked,
+            rewardsVaultBalance: rvBalance,
+            claimableRewards: claimable,
+            rewardsDelta: 0,
+            slashingDelta: slashing,
+            cumulativeRewards: 0
+        });
+
+        uint256 result = vault.exposedComputeTotalAssets(buckets);
+
+        // Result should be clamped: zero when slashing >= sum, otherwise sum - slashing
+        if (slashing >= positiveTotal) {
+            assertEq(result, 0, "should clamp to zero when slashing >= sum");
+        } else {
+            assertEq(result, positiveTotal - slashing, "should return sum minus slashing");
+        }
     }
 }

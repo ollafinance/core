@@ -215,8 +215,9 @@ contract OllaCore is
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
+    /// @param minSharesOut The minimum shares the caller expects; set 0 to skip the check.
     /// @return shares The shares minted to the recipient.
-    function deposit(uint256 assets, address recipient)
+    function deposit(uint256 assets, address recipient, uint256 minSharesOut)
         external
         override
         nonReentrant
@@ -225,29 +226,37 @@ contract OllaCore is
         returns (uint256 shares)
     {
         shares = _deposit(msg.sender, assets, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (shares < minSharesOut) revert OllaCore__SlippageExceeded(shares, minSharesOut);
         return shares;
     }
 
     /// @notice Deposits assets with a permit signature and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
+    /// @param minSharesOut The minimum shares the caller expects; set 0 to skip the check.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return shares The shares minted to the recipient.
-    function depositWithPermit(uint256 assets, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 shares)
-    {
+    function depositWithPermit(
+        uint256 assets,
+        address recipient,
+        uint256 minSharesOut,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override nonReentrant whenNotPaused whenNotRebalancePaused returns (uint256 shares) {
         // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
         // slither-disable-next-line reentrancy-benign
         IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
         shares = _deposit(msg.sender, assets, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (shares < minSharesOut) revert OllaCore__SlippageExceeded(shares, minSharesOut);
         return shares;
     }
 
@@ -301,8 +310,9 @@ contract OllaCore is
     /// @notice Instantly redeems stAztec shares for AZTEC assets, charging an instant redemption fee.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the net assets.
+    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
     /// @return assetsAfterFee The net assets transferred to the recipient.
-    function redeem(uint256 shares, address recipient)
+    function redeem(uint256 shares, address recipient, uint256 minAssetsOut)
         external
         override
         nonReentrant
@@ -311,29 +321,37 @@ contract OllaCore is
         returns (uint256 assetsAfterFee)
     {
         assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (assetsAfterFee < minAssetsOut) revert OllaCore__SlippageExceeded(assetsAfterFee, minAssetsOut);
         return assetsAfterFee;
     }
 
     /// @notice Instantly redeems stAztec shares for AZTEC assets with a permit signature.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the net assets.
+    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return assetsAfterFee The net assets transferred to the recipient.
-    function redeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 assetsAfterFee)
-    {
+    function redeemWithPermit(
+        uint256 shares,
+        address recipient,
+        uint256 minAssetsOut,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override nonReentrant whenNotPaused whenNotRebalancePaused returns (uint256 assetsAfterFee) {
         // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
         assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (assetsAfterFee < minAssetsOut) revert OllaCore__SlippageExceeded(assetsAfterFee, minAssetsOut);
         return assetsAfterFee;
     }
 
@@ -963,6 +981,16 @@ contract OllaCore is
         return _convertToSharesForDeposit(assets);
     }
 
+    /// @notice Returns the net assets previewed for an instant redemption.
+    /// @param shares The share amount being redeemed.
+    /// @return assetsAfterFee The net assets after the instant redemption fee.
+    function previewRedeem(uint256 shares) external view override returns (uint256 assetsAfterFee) {
+        uint256 grossAssets = _convertToAssets(shares);
+        uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
+        assetsAfterFee = grossAssets - fee;
+        return assetsAfterFee;
+    }
+
     /// @notice Returns the maximum assets currently available for instant redemptions.
     /// @dev After reconciliation, `bufferedAssets` already equals `balance - _finalizedUnclaimedAssets`,
     ///      so it directly represents unencumbered liquid assets.
@@ -974,9 +1002,12 @@ contract OllaCore is
     /// @notice Returns the current total assets held by the vault.
     /// @return The total assets held by the vault.
     function totalAssets() public view override returns (uint256) {
-        IOllaCore.AccountingState storage buckets = _accountingState;
-        return buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.claimableRewards
-            - buckets.slashingDelta;
+        IOllaCore.AccountingState memory buckets = _accountingState;
+        uint256 total =
+            buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.claimableRewards;
+        // Slither: false positive — comparing asset amounts, not timestamps.
+        // slither-disable-next-line timestamp
+        return buckets.slashingDelta >= total ? 0 : total - buckets.slashingDelta;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1264,6 +1295,8 @@ contract OllaCore is
         modules.stAztec.burn(owner, shares);
 
         requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
+        // Slither: false positive — comparing request IDs, not timestamps.
+        // slither-disable-next-line timestamp
         if (requestId != expectedRequestId) {
             revert OllaCore__UnexpectedRequestId(expectedRequestId, requestId);
         }
@@ -1844,9 +1877,12 @@ contract OllaCore is
         pure
         returns (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
     {
+        // Slither: false positive — comparing cumulative flow counters, not timestamps.
+        // slither-disable-next-line timestamp
         netDeposits = flows.cumulativeDeposits > flows.latestReportCumulativeDeposits
             ? flows.cumulativeDeposits - flows.latestReportCumulativeDeposits
             : 0;
+        // slither-disable-next-line timestamp
         netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
             ? flows.cumulativeWithdrawals - flows.latestReportCumulativeWithdrawals
             : 0;
@@ -1859,8 +1895,11 @@ contract OllaCore is
         pure
         returns (uint256 totalAssets_)
     {
-        totalAssets_ = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
-            + buckets.claimableRewards - buckets.slashingDelta;
+        uint256 total = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
+            + buckets.claimableRewards;
+        // Slither: false positive — comparing asset amounts, not timestamps.
+        // slither-disable-next-line timestamp
+        totalAssets_ = buckets.slashingDelta >= total ? 0 : total - buckets.slashingDelta;
         return totalAssets_;
     }
 

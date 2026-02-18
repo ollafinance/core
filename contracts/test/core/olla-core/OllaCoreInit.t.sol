@@ -150,7 +150,7 @@ contract OllaCoreInitTest is Test {
 
         vm.expectRevert();
         vm.prank(alice);
-        vault.deposit(5 * DECIMALS, alice);
+        vault.deposit(5 * DECIMALS, alice, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -293,7 +293,7 @@ contract OllaCoreInitTest is Test {
         emit Deposit(alice, alice, assets, assets);
 
         vm.prank(alice);
-        vault.deposit(assets, alice);
+        vault.deposit(assets, alice, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -312,7 +312,7 @@ contract OllaCoreInitTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 }

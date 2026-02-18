@@ -78,7 +78,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
     }
 
     /// @notice Tests that after an unproductive rebalance cycle completes (step=Done, pause=false),

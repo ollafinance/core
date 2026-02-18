@@ -149,7 +149,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
 
         // First nonReentrant call — must not revert
         vm.prank(alice);
-        uint256 shares = vault.deposit(amount, alice);
+        uint256 shares = vault.deposit(amount, alice, 0);
 
         assertGt(shares, 0, "shares should be > 0");
         assertEq(stAztec.balanceOf(alice), shares, "alice should hold minted shares");
@@ -179,11 +179,11 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         // deposit (transferFrom hook calls deposit before completing)
         asset.mint(address(asset), amount);
         asset.setSelfAllowance(amount);
-        asset.configureReentry(address(vault), abi.encodeCall(vault.deposit, (amount, alice)), true);
+        asset.configureReentry(address(vault), abi.encodeCall(vault.deposit, (amount, alice, 0)), true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
-        vault.deposit(amount, alice);
+        vault.deposit(amount, alice, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -224,7 +224,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         vm.prank(alice);
         asset.approve(address(vault), amount);
         vm.prank(alice);
-        vault.deposit(amount, alice);
+        vault.deposit(amount, alice, 0);
 
         // After first call: slot is 1
         assertEq(
@@ -238,7 +238,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         vm.prank(alice);
         asset.approve(address(vault), amount);
         vm.prank(alice);
-        uint256 shares = vault.deposit(amount, alice);
+        uint256 shares = vault.deposit(amount, alice, 0);
         assertGt(shares, 0, "second deposit should succeed");
 
         // Slot remains NOT_ENTERED after the second call

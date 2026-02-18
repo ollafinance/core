@@ -67,7 +67,7 @@ contract OllaCoreHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
     }
 }
@@ -130,7 +130,7 @@ contract OllaCoreDepositHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
 
         latestExchangeRate = vault.exchangeRate();
@@ -202,7 +202,7 @@ contract OllaCoreAccountingHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
     }
 
@@ -226,21 +226,7 @@ contract OllaCoreAccountingHandler is Test {
 
     function increaseSlashingDelta(uint96 delta) external {
         uint256 increase = uint256(bound(delta, 0, type(uint96).max));
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
-        uint256 totalPositive = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance;
         uint256 next = lastSlashingDelta + increase;
-        if (totalPositive == 0) {
-            next = 0;
-        } else if (stAztec.totalSupply() > 0 && totalPositive > 0) {
-            uint256 supply = stAztec.totalSupply();
-            uint256 minAssets = (supply + 1e18 - 1) / 1e18;
-            uint256 maxAllowed = totalPositive > minAssets ? totalPositive - minAssets : 0;
-            if (next > maxAllowed) {
-                next = maxAllowed;
-            }
-        } else if (next > totalPositive) {
-            next = totalPositive;
-        }
         lastSlashingDelta = next;
         stakingManager.setSlashingDelta(next);
     }
@@ -253,8 +239,9 @@ contract OllaCoreAccountingHandler is Test {
     function updateAccounting() external {
         IOllaCore.LatestReport memory report = vault.latestReport();
         lastReportTotalAssets = report.totalAssets;
-        vm.prank(operator);
+        vm.startPrank(operator);
         vault.updateAccounting();
+        vm.stopPrank();
     }
 }
 
@@ -323,10 +310,17 @@ contract OllaCoreInvariantTest is Test {
 
     function invariant_TotalAssetsEqualBuckets() external view {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
-        uint256 expectedTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
-            + accounting.claimableRewards - accounting.slashingDelta;
+        uint256 positiveTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
+            + accounting.claimableRewards;
+        uint256 expectedTotal = accounting.slashingDelta >= positiveTotal ? 0 : positiveTotal - accounting.slashingDelta;
 
         assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
+    }
+
+    function invariant_TotalAssetsNeverReverts() external view {
+        // totalAssets() must always be callable regardless of slashing state
+        uint256 total = vault.totalAssets();
+        assertGe(total, 0, "totalAssets should never revert");
     }
 
     function invariant_ExchangeRateMatchesTotals() external view {
@@ -594,7 +588,7 @@ contract OllaCoreLifecycleHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
 
         ghost_totalDeposited += assets;

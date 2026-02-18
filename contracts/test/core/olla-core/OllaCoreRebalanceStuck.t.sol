@@ -84,7 +84,7 @@ contract OllaCoreRebalanceStuck is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
     }
 
     /// @notice Reproduces the bug: rebalance gets stuck when staking manager
