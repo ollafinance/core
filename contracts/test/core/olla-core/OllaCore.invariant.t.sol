@@ -67,7 +67,7 @@ contract OllaCoreHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
     }
 }
@@ -130,7 +130,7 @@ contract OllaCoreDepositHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
 
         latestExchangeRate = vault.exchangeRate();
@@ -202,7 +202,7 @@ contract OllaCoreAccountingHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
     }
 
@@ -594,7 +594,7 @@ contract OllaCoreLifecycleHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor);
+        vault.deposit(assets, actor, 0);
         vm.stopPrank();
 
         ghost_totalDeposited += assets;

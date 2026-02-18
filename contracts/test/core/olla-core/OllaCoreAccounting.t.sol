@@ -118,7 +118,7 @@ contract OllaCoreAccountingTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 

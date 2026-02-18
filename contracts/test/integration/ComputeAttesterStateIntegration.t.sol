@@ -162,7 +162,7 @@ contract ComputeAttesterStateIntegration is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
     }
 
     uint256 internal _keyOffset;
