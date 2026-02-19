@@ -1101,8 +1101,8 @@ contract OllaCore is
         }
 
         shares = _convertToSharesForDeposit(assets);
-        _increaseBuffered(assets);
         modules.asset.safeTransferFrom(caller, address(this), assets);
+        _increaseBuffered(assets);
         _syncBufferedWithBalance();
         _increaseCumulativeDeposits(assets);
 
