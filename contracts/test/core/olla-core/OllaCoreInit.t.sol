@@ -82,6 +82,9 @@ contract OllaCoreInitTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         alice = makeAddr("alice");
     }
 
@@ -121,6 +124,27 @@ contract OllaCoreInitTest is Test {
     /*//////////////////////////////////////////////////////////////
                             PAUSE CONTROL
     //////////////////////////////////////////////////////////////*/
+
+    function test_InitializeStartsPaused() external {
+        OllaCoreHarness coreImpl = new OllaCoreHarness();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImpl), "");
+        OllaCoreHarness freshVault = OllaCoreHarness(address(proxy));
+        StAztec freshStAztec = new StAztec(address(freshVault));
+
+        freshVault.initialize(
+            asset,
+            freshStAztec,
+            stakingManager,
+            0,
+            5_000,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        assertTrue(freshVault.paused(), "vault should be paused after initialize");
+    }
 
     function test_GuardianCanPauseAndUnpause() external {
         vm.expectEmit(true, true, true, true, address(vault));

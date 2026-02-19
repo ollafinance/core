@@ -22,6 +22,10 @@ script/
 - Env vars always override the deployment file.
 - Broadcast scripts default to the Anvil account-0 private key ONLY when `chainid == 31337`.
 
+## Post-deploy: unpause
+
+OllaCore starts **paused** after `initialize()`. Local dev deploys (`deployMocks`) auto-unpause during the deploy script. Production deploys remain paused — governance must call `unpause()` (requires `GUARDIAN_ROLE`) when ready to accept deposits.
+
 ## Docs
 
 - [Local chain](./docs/local.md)

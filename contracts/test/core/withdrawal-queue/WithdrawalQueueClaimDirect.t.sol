@@ -86,6 +86,8 @@ contract WithdrawalQueueClaimDirectTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         // Initialize WithdrawalQueue with OllaCore as the core address
         withdrawalQueue.initialize(address(vault), governance);

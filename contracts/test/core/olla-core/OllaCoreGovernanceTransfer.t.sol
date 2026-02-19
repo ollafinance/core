@@ -124,6 +124,9 @@ contract OllaCoreGovernanceTransferTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        ollaCore.unpause();
+
         // 12. Grant DEFAULT_ADMIN_ROLE to OllaCore proxy on all 4 satellites
         //     (governance is the admin on each satellite after initialize)
         vm.startPrank(governance);
