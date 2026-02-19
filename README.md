@@ -7,6 +7,7 @@ to grow into an open-source, auditable codebase.
 ## Repository layout
 
 - `contracts/` Foundry project for the core contracts.
+- `docs/` Protocol overview and action references.
 - `contracts/src/core/` Protocol core contracts.
 - `contracts/src/core/interfaces/` Core module interfaces.
 - `contracts/src/core/mocks/` Core module mocks and mock interfaces.
