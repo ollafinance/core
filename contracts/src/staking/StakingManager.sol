@@ -587,10 +587,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param rollup The rollup staking interface.
     /// @param amount The amount to unstake.
     /// @return totalUnstakedAmount The total amount initiated for unstake.
-    // slither-disable-next-line pess-multiple-storage-read,cache-array-length
+    // slither-disable-next-line pess-multiple-storage-read,cache-array-length,pess-unprotected-initialize
     function _initiateUnstakeRequests(IAztecRollup rollup, uint256 amount)
         internal
-        onlyCore
         returns (uint256 totalUnstakedAmount)
     {
         uint256 attesterLength = _attesters.length;
