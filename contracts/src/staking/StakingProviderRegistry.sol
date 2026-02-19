@@ -52,6 +52,8 @@ contract StakingProviderRegistry is
     Queue private _providerQueue;
 
     /// @notice Storage gap for future upgrades.
+    /// @dev State variables occupy 4 slots (including struct members). When adding new state
+    ///      variables, append them above this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
 

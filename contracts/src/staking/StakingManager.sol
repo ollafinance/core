@@ -94,6 +94,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     uint256 private gasThreshold;
 
     /// @notice Storage gap for future upgrades.
+    /// @dev State variables occupy 23 slots (including struct members). When adding new state
+    ///      variables, append them above this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
 

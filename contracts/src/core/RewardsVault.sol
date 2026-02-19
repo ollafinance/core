@@ -30,6 +30,8 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     uint256 public latestRecordedRewardsAmount;
 
     /// @notice Storage gap for future upgrades.
+    /// @dev State variables occupy 3 slots. When adding new state variables, append them above
+    ///      this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
 
