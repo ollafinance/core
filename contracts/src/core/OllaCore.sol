@@ -114,7 +114,10 @@ contract OllaCore is
     /// @notice The instant redemption fee in basis points (0-10000).
     uint256 public instantRedemptionFeeBP;
 
-    /// @notice Pending governance address for two-step transfer
+    /// @notice Pending governance address for two-step transfer.
+    /// @dev This variable persists across UUPS proxy upgrades. A pending governance proposal set before
+    ///      an upgrade will remain active after the upgrade. This is expected behavior — callers should
+    ///      either accept or cancel any pending proposal before upgrading.
     address private _pendingGovernance;
 
     /// @notice Storage gap for upgradability
@@ -194,6 +197,10 @@ contract OllaCore is
 
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
+
+        // targetBufferedAssets defaults to zero intentionally. Early in the protocol lifecycle
+        // there is no need for a liquidity buffer; governance can increase it via setTargetBufferedAssets()
+        // once withdrawal volume justifies reserving idle capital.
         targetBufferedAssets = 0;
         rebalanceGasThreshold = _REBALANCE_GAS_THRESHOLD;
         _rebalanceProgress.step = IOllaCore.RebalanceStep.Done;
@@ -207,6 +214,9 @@ contract OllaCore is
 
         instantRedemptionFeeBP = 500; // 5% default instant redemption fee
 
+        // Governance receives all three roles (DEFAULT_ADMIN_ROLE,
+        // GUARDIAN_ROLE, OPERATOR_ROLE) at init; the deployer is expected to be a trusted governance
+        // address. Role separation is available immediately after deployment.
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governance_);
         _grantRole(GUARDIAN_ROLE, governance_);
         _grantRole(OPERATOR_ROLE, governance_);
@@ -299,6 +309,10 @@ contract OllaCore is
     }
 
     /// @notice Claims a finalized withdrawal request by id.
+    /// @dev This function is intentionally permissionless — any address can trigger a claim.
+    ///      Assets are always sent to the original request recipient, not msg.sender, so there is
+    ///      no theft vector. This allows third-party relayers or keepers to process claims on behalf
+    ///      of users.
     /// @param requestId The withdrawal request id.
     /// @return assets The assets claimed for the request.
     function claimRequestById(uint256 requestId) external override nonReentrant whenNotPaused returns (uint256 assets) {
@@ -1806,6 +1820,13 @@ contract OllaCore is
 
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
+
+    /// @dev I-05: All share/asset conversion functions use a virtual offset of +1 on both totalAssets and
+    ///      totalSupply. This prevents the first-depositor inflation attack (ERC-4626 "donation" attack)
+    ///      where an attacker deposits 1 wei, donates a large amount, and exploits rounding to steal from
+    ///      the next depositor. The +1 offset ensures the exchange rate is well-defined even when supply
+    ///      or assets are zero, and makes the cost of the attack proportional to the offset value.
+    ///      See: https://docs.openzeppelin.com/contracts/5.x/erc4626#inflation-attack
 
     function _exchangeRate() internal view returns (uint256) {
         return (totalAssets() + 1).mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + 1, Math.Rounding.Floor);
