@@ -99,7 +99,7 @@ contract OllaCoreRebalanceFuzzHandler is Test {
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
 
-        try vault.deposit(assets, actor) {
+        try vault.deposit(assets, actor, 0) {
             ghost_depositCallCount += 1;
         } catch { }
         vm.stopPrank();
@@ -208,12 +208,14 @@ contract OllaCoreRebalanceFuzzTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         operator = makeAddr("operator");
         bytes32 operatorRole = vault.OPERATOR_ROLE();

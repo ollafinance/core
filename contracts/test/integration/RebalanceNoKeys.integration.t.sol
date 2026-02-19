@@ -85,12 +85,14 @@ contract RebalanceNoKeysIntegrationTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
         withdrawalQueue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
@@ -106,7 +108,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
         vm.prank(user);
         asset.approve(address(vault), depositAmount);
         vm.prank(user);
-        vault.deposit(depositAmount, user);
+        vault.deposit(depositAmount, user, 0);
 
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);

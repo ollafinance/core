@@ -58,12 +58,14 @@ contract OllaCoreRebalanceIdleGuard is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
 
@@ -78,7 +80,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
     }
 
     /// @notice Tests that after an unproductive rebalance cycle completes (step=Done, pause=false),

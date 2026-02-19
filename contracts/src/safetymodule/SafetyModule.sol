@@ -29,6 +29,21 @@ contract SafetyModule is AccessControl, ISafetyModule {
     /// @notice Basis points denominator.
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
+    /// @notice Minimum rate drop threshold: 1 bps.
+    uint256 public constant MIN_RATE_DROP_BPS = 1;
+    /// @notice Maximum rate drop threshold: 50%.
+    uint256 public constant MAX_RATE_DROP_BPS = 5_000;
+    /// @notice Minimum queue ratio threshold: 1%.
+    uint256 public constant MIN_QUEUE_RATIO_BPS = 100;
+    /// @notice Maximum queue ratio threshold: 90%.
+    uint256 public constant MAX_QUEUE_RATIO_BPS = 9_000;
+    /// @notice Minimum accounting delay: 1 hour.
+    uint256 public constant MIN_ACCOUNTING_DELAY = 1 hours;
+    /// @notice Maximum accounting delay: 7 days.
+    uint256 public constant MAX_ACCOUNTING_DELAY = 7 days;
+    /// @notice Maximum withdrawal minimum in shares.
+    uint256 public constant MAX_WITHDRAWAL_MINIMUM = 1_000e18;
+
     /*//////////////////////////////////////////////////////////////
                                    STATE
     //////////////////////////////////////////////////////////////*/
@@ -100,6 +115,18 @@ contract SafetyModule is AccessControl, ISafetyModule {
         }
         if (core_ == address(0)) {
             revert SafetyModule__ZeroAddress("core");
+        }
+        if (depositCap_ == 0) {
+            revert SafetyModule__InvalidParameter();
+        }
+        if (minRateDropBps_ < MIN_RATE_DROP_BPS || minRateDropBps_ > MAX_RATE_DROP_BPS) {
+            revert SafetyModule__InvalidParameter();
+        }
+        if (maxQueueRatioBps_ < MIN_QUEUE_RATIO_BPS || maxQueueRatioBps_ > MAX_QUEUE_RATIO_BPS) {
+            revert SafetyModule__InvalidParameter();
+        }
+        if (maxAccountingDelay_ < MIN_ACCOUNTING_DELAY || maxAccountingDelay_ > MAX_ACCOUNTING_DELAY) {
+            revert SafetyModule__InvalidParameter();
         }
 
         depositCap = depositCap_;
@@ -181,30 +208,45 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
     /// @inheritdoc ISafetyModule
     function setDepositCap(uint256 cap) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (cap == 0) {
+            revert SafetyModule__InvalidParameter();
+        }
         depositCap = cap;
         emit DepositCapUpdated(cap);
     }
 
     /// @inheritdoc ISafetyModule
     function setWithdrawalMinimum(uint256 minimumShares) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (minimumShares > MAX_WITHDRAWAL_MINIMUM) {
+            revert SafetyModule__InvalidParameter();
+        }
         withdrawalMinimum = minimumShares;
         emit WithdrawalMinimumUpdated(minimumShares);
     }
 
     /// @inheritdoc ISafetyModule
     function setMinRateDropBps(uint256 minRateDropBps_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (minRateDropBps_ < MIN_RATE_DROP_BPS || minRateDropBps_ > MAX_RATE_DROP_BPS) {
+            revert SafetyModule__InvalidParameter();
+        }
         minRateDropBps = minRateDropBps_;
         emit RateDropLimitUpdated(minRateDropBps_);
     }
 
     /// @inheritdoc ISafetyModule
     function setMaxQueueRatioBps(uint256 maxQueueRatioBps_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (maxQueueRatioBps_ < MIN_QUEUE_RATIO_BPS || maxQueueRatioBps_ > MAX_QUEUE_RATIO_BPS) {
+            revert SafetyModule__InvalidParameter();
+        }
         maxQueueRatioBps = maxQueueRatioBps_;
         emit QueueRatioLimitUpdated(maxQueueRatioBps_);
     }
 
     /// @inheritdoc ISafetyModule
     function setMaxAccountingDelay(uint256 maxAccountingDelay_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (maxAccountingDelay_ < MIN_ACCOUNTING_DELAY || maxAccountingDelay_ > MAX_ACCOUNTING_DELAY) {
+            revert SafetyModule__InvalidParameter();
+        }
         maxAccountingDelay = maxAccountingDelay_;
         emit AccountingDelayUpdated(maxAccountingDelay_);
     }

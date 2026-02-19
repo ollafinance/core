@@ -6,6 +6,7 @@ import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 
 /// @title WithdrawalQueue
@@ -49,8 +50,16 @@ contract WithdrawalQueue is
     uint256 public override totalPendingAssets;
 
     /// @notice Storage gap for upgradability.
+    /// @dev State variables occupy 5 slots. When adding new state variables, append them above
+    ///      this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[45] private __gap;
+
+    /*//////////////////////////////////////////////////////////////
+                                  ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    error WithdrawalQueue__UnauthorizedGovernance(address caller);
 
     /*//////////////////////////////////////////////////////////////
                                  MODIFIERS
@@ -235,6 +244,9 @@ contract WithdrawalQueue is
     //////////////////////////////////////////////////////////////*/
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (msg.sender != IOllaCore(core).governance()) {
+            revert WithdrawalQueue__UnauthorizedGovernance(msg.sender);
+        }
         if (newImplementation == address(0)) {
             revert WithdrawalQueue__ZeroAddress("newImplementation");
         }

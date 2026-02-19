@@ -94,6 +94,9 @@ contract OllaCoreProtocolFeesTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         alice = makeAddr("alice");
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
@@ -112,7 +115,7 @@ contract OllaCoreProtocolFeesTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -378,8 +381,8 @@ contract OllaCoreProtocolFeesTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function testFuzz_CalculateProtocolFees(uint96 grossRewards, uint16 feeBP, uint16 splitBP) external {
-        feeBP = uint16(bound(feeBP, 0, 10_000));
-        splitBP = uint16(bound(splitBP, 0, 10_000));
+        feeBP = uint16(bound(feeBP, 0, 5_000));
+        splitBP = uint16(bound(splitBP, 1_000, 9_000));
         grossRewards = uint96(bound(grossRewards, 0, type(uint96).max));
 
         // Deposit to establish nonzero supply and totalAssets

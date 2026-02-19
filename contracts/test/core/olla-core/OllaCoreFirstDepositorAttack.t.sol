@@ -65,12 +65,15 @@ contract OllaCoreFirstDepositorAttackTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+
+        vm.prank(governance);
+        vault.unpause();
 
         attacker = makeAddr("attacker");
         victim = makeAddr("victim");
@@ -85,7 +88,7 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 

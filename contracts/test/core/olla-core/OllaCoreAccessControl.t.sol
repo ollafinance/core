@@ -81,6 +81,9 @@ contract OllaCoreAccessControlTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         alice = makeAddr("alice");
     }
 
@@ -143,15 +146,24 @@ contract OllaCoreAccessControlTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_ProtocolFeeBPExceedsMax() external {
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, BP_DIVISOR + 1));
+        uint256 aboveMax = vault.MAX_PROTOCOL_FEE_BP() + 1;
         vm.prank(governance);
-        vault.setProtocolFeeBP(BP_DIVISOR + 1);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, aboveMax));
+        vault.setProtocolFeeBP(aboveMax);
     }
 
     function test_RevertWhen_TreasuryFeeSplitBPExceedsMax() external {
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, BP_DIVISOR + 1));
+        uint256 aboveMax = vault.MAX_TREASURY_SPLIT_BP() + 1;
         vm.prank(governance);
-        vault.setTreasuryFeeSplitBP(BP_DIVISOR + 1);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, aboveMax));
+        vault.setTreasuryFeeSplitBP(aboveMax);
+    }
+
+    function test_RevertWhen_TreasuryFeeSplitBPBelowMin() external {
+        uint256 belowMin = vault.MIN_TREASURY_SPLIT_BP() - 1;
+        vm.prank(governance);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, belowMin));
+        vault.setTreasuryFeeSplitBP(belowMin);
     }
 
     function test_RevertWhen_GovernanceIsZero() external {
@@ -257,21 +269,24 @@ contract OllaCoreAccessControlTest is Test {
     }
 
     function test_SetProtocolFeeBP_AllowsMax() external {
+        uint256 maxFee = vault.MAX_PROTOCOL_FEE_BP();
         vm.prank(governance);
-        vault.setProtocolFeeBP(BP_DIVISOR);
-        assertEq(vault.protocolFeeBP(), BP_DIVISOR, "protocol fee set to max");
+        vault.setProtocolFeeBP(maxFee);
+        assertEq(vault.protocolFeeBP(), maxFee, "protocol fee set to max");
     }
 
-    function test_SetTreasuryFeeSplitBP_AllowsZero() external {
+    function test_SetTreasuryFeeSplitBP_AllowsMin() external {
+        uint256 minSplit = vault.MIN_TREASURY_SPLIT_BP();
         vm.prank(governance);
-        vault.setTreasuryFeeSplitBP(0);
-        assertEq(vault.treasuryFeeSplitBP(), 0, "treasury split set to zero");
+        vault.setTreasuryFeeSplitBP(minSplit);
+        assertEq(vault.treasuryFeeSplitBP(), minSplit, "treasury split set to min");
     }
 
     function test_SetTreasuryFeeSplitBP_AllowsMax() external {
+        uint256 maxSplit = vault.MAX_TREASURY_SPLIT_BP();
         vm.prank(governance);
-        vault.setTreasuryFeeSplitBP(BP_DIVISOR);
-        assertEq(vault.treasuryFeeSplitBP(), BP_DIVISOR, "treasury split set to max");
+        vault.setTreasuryFeeSplitBP(maxSplit);
+        assertEq(vault.treasuryFeeSplitBP(), maxSplit, "treasury split set to max");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -279,7 +294,8 @@ contract OllaCoreAccessControlTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function testFuzz_SetProtocolFeeBP_ValidRange(uint256 newFeeBP) external {
-        newFeeBP = bound(newFeeBP, 0, BP_DIVISOR);
+        uint256 maxProtocolFee = vault.MAX_PROTOCOL_FEE_BP();
+        newFeeBP = bound(newFeeBP, 0, maxProtocolFee);
 
         uint256 oldFeeBP = vault.protocolFeeBP();
 
@@ -293,15 +309,18 @@ contract OllaCoreAccessControlTest is Test {
     }
 
     function testFuzz_SetProtocolFeeBP_InvalidRange(uint256 newFeeBP) external {
-        newFeeBP = bound(newFeeBP, BP_DIVISOR + 1, type(uint256).max);
+        uint256 maxProtocolFee = vault.MAX_PROTOCOL_FEE_BP();
+        newFeeBP = bound(newFeeBP, maxProtocolFee + 1, type(uint256).max);
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, newFeeBP));
         vm.prank(governance);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, newFeeBP));
         vault.setProtocolFeeBP(newFeeBP);
     }
 
     function testFuzz_SetTreasuryFeeSplitBP_ValidRange(uint256 newSplitBP) external {
-        newSplitBP = bound(newSplitBP, 0, BP_DIVISOR);
+        uint256 minSplit = vault.MIN_TREASURY_SPLIT_BP();
+        uint256 maxSplit = vault.MAX_TREASURY_SPLIT_BP();
+        newSplitBP = bound(newSplitBP, minSplit, maxSplit);
 
         uint256 oldSplitBP = vault.treasuryFeeSplitBP();
 
@@ -314,11 +333,21 @@ contract OllaCoreAccessControlTest is Test {
         assertEq(vault.treasuryFeeSplitBP(), newSplitBP, "treasury split fuzz");
     }
 
-    function testFuzz_SetTreasuryFeeSplitBP_InvalidRange(uint256 newSplitBP) external {
-        newSplitBP = bound(newSplitBP, BP_DIVISOR + 1, type(uint256).max);
+    function testFuzz_SetTreasuryFeeSplitBP_InvalidRange_AboveMax(uint256 newSplitBP) external {
+        uint256 maxSplit = vault.MAX_TREASURY_SPLIT_BP();
+        newSplitBP = bound(newSplitBP, maxSplit + 1, type(uint256).max);
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, newSplitBP));
         vm.prank(governance);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, newSplitBP));
+        vault.setTreasuryFeeSplitBP(newSplitBP);
+    }
+
+    function testFuzz_SetTreasuryFeeSplitBP_InvalidRange_BelowMin(uint256 newSplitBP) external {
+        uint256 minSplit = vault.MIN_TREASURY_SPLIT_BP();
+        newSplitBP = bound(newSplitBP, 0, minSplit - 1);
+
+        vm.prank(governance);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, newSplitBP));
         vault.setTreasuryFeeSplitBP(newSplitBP);
     }
 
@@ -349,49 +378,8 @@ contract OllaCoreAccessControlTest is Test {
                     GOVERNANCE ROLE TRANSFER (C2)
     //////////////////////////////////////////////////////////////*/
 
-    function test_AcceptGovernance_TransfersAllRoles() external {
-        address newGovernance = makeAddr("newGovernance");
-
-        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
-        bytes32 guardianRole = vault.GUARDIAN_ROLE();
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
-
-        // Verify old governance has all roles
-        assertTrue(vault.hasRole(adminRole, governance), "old gov has admin");
-        assertTrue(vault.hasRole(guardianRole, governance), "old gov has guardian");
-        assertTrue(vault.hasRole(operatorRole, governance), "old gov has operator");
-
-        vm.prank(governance);
-        vault.proposeGovernance(newGovernance);
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit GovernanceAccepted(governance, newGovernance);
-
-        vm.prank(newGovernance);
-        vault.acceptGovernance();
-
-        // Verify new governance has all roles
-        assertTrue(vault.hasRole(adminRole, newGovernance), "new gov has admin");
-        assertTrue(vault.hasRole(guardianRole, newGovernance), "new gov has guardian");
-        assertTrue(vault.hasRole(operatorRole, newGovernance), "new gov has operator");
-
-        // Verify old governance lost all roles
-        assertFalse(vault.hasRole(adminRole, governance), "old gov lost admin");
-        assertFalse(vault.hasRole(guardianRole, governance), "old gov lost guardian");
-        assertFalse(vault.hasRole(operatorRole, governance), "old gov lost operator");
-
-        // Verify new governance can call admin-only functions
-        vm.prank(newGovernance);
-        vault.setProtocolFeeBP(100);
-        assertEq(vault.protocolFeeBP(), 100, "new gov can set protocol fee");
-
-        // Verify old governance cannot call admin-only functions
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, governance, adminRole)
-        );
-        vm.prank(governance);
-        vault.setProtocolFeeBP(200);
-    }
+    // NOTE: test_AcceptGovernance_TransfersAllRoles moved to OllaCoreGovernanceTransfer.t.sol
+    // which uses real satellite contracts (AccessControlUpgradeable) instead of lightweight mocks.
 
     function test_RevertWhen_PendingGovernanceAlreadySet() external {
         address newGovernance = makeAddr("newGovernance");

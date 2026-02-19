@@ -79,12 +79,15 @@ contract OllaCoreDepositTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
@@ -102,7 +105,7 @@ contract OllaCoreDepositTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -171,7 +174,7 @@ contract OllaCoreDepositTest is Test {
         asset.approve(address(vault), assets);
 
         vm.prank(alice);
-        uint256 shares = vault.deposit(assets, alice);
+        uint256 shares = vault.deposit(assets, alice, 0);
 
         assertEq(shares, assets, "deposit shares");
         assertEq(stAztec.balanceOf(alice), assets, "shares minted");
@@ -193,7 +196,7 @@ contract OllaCoreDepositTest is Test {
         emit Deposit(permitOwner, permitOwner, assets, assets);
 
         vm.prank(permitOwner);
-        uint256 shares = vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+        uint256 shares = vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
 
         assertEq(shares, assets, "shares minted");
         assertEq(stAztec.balanceOf(permitOwner), assets, "shares balance");
@@ -210,7 +213,7 @@ contract OllaCoreDepositTest is Test {
             _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
 
         vm.prank(permitOwner);
-        uint256 shares = vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+        uint256 shares = vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
 
         assertEq(shares, assets, "shares minted");
         assertEq(asset.allowance(permitOwner, address(vault)), type(uint256).max, "allowance remains max");
@@ -226,7 +229,7 @@ contract OllaCoreDepositTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
         vm.prank(permitOwner);
-        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+        vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
     }
 
     function test_RevertWhen_DepositWithPermit_InvalidSignature() external {
@@ -241,7 +244,7 @@ contract OllaCoreDepositTest is Test {
             abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner)
         );
         vm.prank(permitOwner);
-        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+        vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
     }
 
     function test_RevertWhen_DepositWithPermit_ReplayedNonce() external {
@@ -253,7 +256,7 @@ contract OllaCoreDepositTest is Test {
             _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
 
         vm.prank(permitOwner);
-        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+        vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
 
         uint256 nonce = IERC20Permit(address(asset)).nonces(permitOwner);
         bytes32 digest =
@@ -261,7 +264,7 @@ contract OllaCoreDepositTest is Test {
         address signer = ECDSA.recover(digest, v, r, s);
         vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner));
         vm.prank(permitOwner);
-        vault.depositWithPermit(assets, permitOwner, deadline, v, r, s);
+        vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
     }
 
     /*//////////////////////////////////////////////////////////////

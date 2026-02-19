@@ -119,6 +119,8 @@ contract OllaCoreUpgradeTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
@@ -244,7 +246,7 @@ contract OllaCoreUpgradeTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 }

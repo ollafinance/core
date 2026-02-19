@@ -80,12 +80,14 @@ contract RebalanceIntegrationTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
         withdrawalQueue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
@@ -103,7 +105,7 @@ contract RebalanceIntegrationTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), amount);
         vm.prank(owner);
-        shares = vault.deposit(amount, owner);
+        shares = vault.deposit(amount, owner, 0);
         return shares;
     }
 

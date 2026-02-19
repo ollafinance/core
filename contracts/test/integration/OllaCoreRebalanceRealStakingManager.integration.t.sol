@@ -103,12 +103,14 @@ contract OllaCoreRebalanceRealStakingManager is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         operator = makeAddr("operator");
         alice = makeAddr("alice");
@@ -125,7 +127,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
     }
 
     uint256 internal _keyOffset;

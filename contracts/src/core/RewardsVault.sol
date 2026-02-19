@@ -7,6 +7,7 @@ import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 
 /// @title RewardsVault
@@ -29,8 +30,16 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     uint256 public latestRecordedRewardsAmount;
 
     /// @notice Storage gap for future upgrades.
+    /// @dev State variables occupy 3 slots. When adding new state variables, append them above
+    ///      this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
+
+    /*//////////////////////////////////////////////////////////////
+                                  ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    error RewardsVault__UnauthorizedGovernance(address caller);
 
     /*//////////////////////////////////////////////////////////////
                                  MODIFIERS
@@ -129,6 +138,9 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     /// @notice Authorizes upgrade to new implementation.
     /// @param newImplementation The new implementation address.
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (msg.sender != IOllaCore(core).governance()) {
+            revert RewardsVault__UnauthorizedGovernance(msg.sender);
+        }
         if (newImplementation == address(0)) {
             revert RewardsVault__ZeroAddress("newImplementation");
         }

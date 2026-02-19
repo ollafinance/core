@@ -73,16 +73,18 @@ contract RebalancePauseIntegrationTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
         withdrawalQueue.initialize(address(vault), governance);
 
         vm.startPrank(admin);
-        safetyModule.setMinRateDropBps(type(uint256).max);
+        safetyModule.setMinRateDropBps(safetyModule.MAX_RATE_DROP_BPS());
         vm.stopPrank();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
@@ -100,7 +102,7 @@ contract RebalancePauseIntegrationTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), amount);
         vm.prank(owner);
-        shares = vault.deposit(amount, owner);
+        shares = vault.deposit(amount, owner, 0);
         return shares;
     }
 
@@ -159,7 +161,7 @@ contract RebalancePauseIntegrationTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(user);
-        vault.deposit(2 * DECIMALS, user);
+        vault.deposit(2 * DECIMALS, user, 0);
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(user);
@@ -183,7 +185,7 @@ contract RebalancePauseIntegrationTest is Test {
         vm.prank(user);
         asset.approve(address(vault), 1 * DECIMALS);
         vm.prank(user);
-        vault.deposit(1 * DECIMALS, user);
+        vault.deposit(1 * DECIMALS, user, 0);
 
         vm.prank(user);
         vault.requestRedeem(1 * DECIMALS, user);
@@ -232,6 +234,6 @@ contract RebalancePauseIntegrationTest is Test {
         asset.approve(address(vault), 1 * DECIMALS);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(user);
-        vault.deposit(1 * DECIMALS, user);
+        vault.deposit(1 * DECIMALS, user, 0);
     }
 }

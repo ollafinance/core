@@ -56,6 +56,19 @@ contract OllaCore is
     /// @notice Basis points divisor.
     uint256 public constant BP_DIVISOR = 10_000;
 
+    /// @notice Maximum protocol fee: 50%.
+    uint256 public constant MAX_PROTOCOL_FEE_BP = 5_000;
+    /// @notice Maximum instant redemption fee: 20%.
+    uint256 public constant MAX_INSTANT_REDEMPTION_FEE_BP = 2_000;
+    /// @notice Minimum treasury fee split: 10%.
+    uint256 public constant MIN_TREASURY_SPLIT_BP = 1_000;
+    /// @notice Maximum treasury fee split: 90%.
+    uint256 public constant MAX_TREASURY_SPLIT_BP = 9_000;
+    /// @notice Minimum rebalance gas threshold.
+    uint256 public constant MIN_REBALANCE_GAS_THRESHOLD = 20_000;
+    /// @notice Maximum rebalance gas threshold.
+    uint256 public constant MAX_REBALANCE_GAS_THRESHOLD = 1_000_000;
+
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
@@ -101,10 +114,15 @@ contract OllaCore is
     /// @notice The instant redemption fee in basis points (0-10000).
     uint256 public instantRedemptionFeeBP;
 
-    /// @notice Pending governance address for two-step transfer
+    /// @notice Pending governance address for two-step transfer.
+    /// @dev This variable persists across UUPS proxy upgrades. A pending governance proposal set before
+    ///      an upgrade will remain active after the upgrade. This is expected behavior — callers should
+    ///      either accept or cancel any pending proposal before upgrading.
     address private _pendingGovernance;
 
-    /// @notice Storage gap for upgradability
+    /// @notice Storage gap for upgradability.
+    /// @dev State variables occupy 40 slots (including struct members). When adding new state
+    ///      variables, append them above this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[46] private __gap;
 
@@ -168,6 +186,7 @@ contract OllaCore is
         );
         __AccessControl_init();
         __Pausable_init();
+        _pause();
 
         _modules = IOllaCore.Modules({
             asset: asset_,
@@ -181,6 +200,10 @@ contract OllaCore is
 
         protocolFeeBP = protocolFeeBP_;
         treasuryFeeSplitBP = treasuryFeeSplitBP_;
+
+        // targetBufferedAssets defaults to zero intentionally. Early in the protocol lifecycle
+        // there is no need for a liquidity buffer; governance can increase it via setTargetBufferedAssets()
+        // once withdrawal volume justifies reserving idle capital.
         targetBufferedAssets = 0;
         rebalanceGasThreshold = _REBALANCE_GAS_THRESHOLD;
         _rebalanceProgress.step = IOllaCore.RebalanceStep.Done;
@@ -194,6 +217,9 @@ contract OllaCore is
 
         instantRedemptionFeeBP = 500; // 5% default instant redemption fee
 
+        // Governance receives all three roles (DEFAULT_ADMIN_ROLE,
+        // GUARDIAN_ROLE, OPERATOR_ROLE) at init; the deployer is expected to be a trusted governance
+        // address. Role separation is available immediately after deployment.
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governance_);
         _grantRole(GUARDIAN_ROLE, governance_);
         _grantRole(OPERATOR_ROLE, governance_);
@@ -202,8 +228,9 @@ contract OllaCore is
     /// @notice Deposits assets and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
+    /// @param minSharesOut The minimum shares the caller expects; set 0 to skip the check.
     /// @return shares The shares minted to the recipient.
-    function deposit(uint256 assets, address recipient)
+    function deposit(uint256 assets, address recipient, uint256 minSharesOut)
         external
         override
         nonReentrant
@@ -212,29 +239,37 @@ contract OllaCore is
         returns (uint256 shares)
     {
         shares = _deposit(msg.sender, assets, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (shares < minSharesOut) revert OllaCore__SlippageExceeded(shares, minSharesOut);
         return shares;
     }
 
     /// @notice Deposits assets with a permit signature and mints stAztec shares.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
+    /// @param minSharesOut The minimum shares the caller expects; set 0 to skip the check.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return shares The shares minted to the recipient.
-    function depositWithPermit(uint256 assets, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 shares)
-    {
+    function depositWithPermit(
+        uint256 assets,
+        address recipient,
+        uint256 minSharesOut,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override nonReentrant whenNotPaused whenNotRebalancePaused returns (uint256 shares) {
         // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
         // slither-disable-next-line reentrancy-benign
         IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
         shares = _deposit(msg.sender, assets, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (shares < minSharesOut) revert OllaCore__SlippageExceeded(shares, minSharesOut);
         return shares;
     }
 
@@ -277,6 +312,10 @@ contract OllaCore is
     }
 
     /// @notice Claims a finalized withdrawal request by id.
+    /// @dev This function is intentionally permissionless — any address can trigger a claim.
+    ///      Assets are always sent to the original request recipient, not msg.sender, so there is
+    ///      no theft vector. This allows third-party relayers or keepers to process claims on behalf
+    ///      of users.
     /// @param requestId The withdrawal request id.
     /// @return assets The assets claimed for the request.
     function claimRequestById(uint256 requestId) external override nonReentrant whenNotPaused returns (uint256 assets) {
@@ -288,8 +327,9 @@ contract OllaCore is
     /// @notice Instantly redeems stAztec shares for AZTEC assets, charging an instant redemption fee.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the net assets.
+    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
     /// @return assetsAfterFee The net assets transferred to the recipient.
-    function redeem(uint256 shares, address recipient)
+    function redeem(uint256 shares, address recipient, uint256 minAssetsOut)
         external
         override
         nonReentrant
@@ -298,29 +338,37 @@ contract OllaCore is
         returns (uint256 assetsAfterFee)
     {
         assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (assetsAfterFee < minAssetsOut) revert OllaCore__SlippageExceeded(assetsAfterFee, minAssetsOut);
         return assetsAfterFee;
     }
 
     /// @notice Instantly redeems stAztec shares for AZTEC assets with a permit signature.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the net assets.
+    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return assetsAfterFee The net assets transferred to the recipient.
-    function redeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 assetsAfterFee)
-    {
+    function redeemWithPermit(
+        uint256 shares,
+        address recipient,
+        uint256 minAssetsOut,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override nonReentrant whenNotPaused whenNotRebalancePaused returns (uint256 assetsAfterFee) {
         // Slither: permit is a signature validation with no state side effects; function is nonReentrant.
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
         assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        // Slither: slippage guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
+        if (assetsAfterFee < minAssetsOut) revert OllaCore__SlippageExceeded(assetsAfterFee, minAssetsOut);
         return assetsAfterFee;
     }
 
@@ -359,7 +407,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the protocol fee in basis points.
-    /// @param newFeeBP The new fee (0-10000).
+    /// @param newFeeBP The new fee (0-5000).
     function setProtocolFeeBP(uint256 newFeeBP)
         external
         override
@@ -367,7 +415,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newFeeBP > BP_DIVISOR) {
+        if (newFeeBP > MAX_PROTOCOL_FEE_BP) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
         uint256 oldFeeBP = protocolFeeBP;
@@ -376,7 +424,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the treasury fee split in basis points.
-    /// @param newSplitBP The new split (0-10000).
+    /// @param newSplitBP The new split (1000-9000).
     function setTreasuryFeeSplitBP(uint256 newSplitBP)
         external
         override
@@ -384,7 +432,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newSplitBP > BP_DIVISOR) {
+        if (newSplitBP < MIN_TREASURY_SPLIT_BP || newSplitBP > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(newSplitBP);
         }
         uint256 oldSplitBP = treasuryFeeSplitBP;
@@ -412,6 +460,9 @@ contract OllaCore is
     }
 
     /// @notice Accepts governance by the pending governance address.
+    // Slither: satellite contracts are trusted protocol-owned modules; external grantRole/revokeRole
+    // calls do not introduce reentrancy risk. Multiple _modules reads are acceptable for clarity.
+    // slither-disable-next-line reentrancy-events,pess-multiple-storage-read
     function acceptGovernance() external override whenNotPaused whenNotRebalancePaused {
         if (msg.sender != _pendingGovernance) {
             revert OllaCore__UnauthorizedPendingGovernance(msg.sender);
@@ -423,16 +474,33 @@ contract OllaCore is
 
         // Transfer governance-related roles from the old governance to the new one
         if (newGovernance != oldGovernance) {
+            // Cache the staking provider registry address to avoid two external calls
+            // slither-disable-next-line unused-return
+            address stakingProviderRegistryAddr = address(_modules.stakingManager.stakingProviderRegistry());
+
             // Grant roles to the new governance address first (before revoking from old)
             _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, newGovernance);
             _grantRole(GUARDIAN_ROLE, newGovernance);
             _grantRole(OPERATOR_ROLE, newGovernance);
+
+            // Propagate DEFAULT_ADMIN_ROLE grant to satellite contracts
+            AccessControlUpgradeable(address(_modules.withdrawalQueue)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            AccessControlUpgradeable(address(_modules.rewardsVault)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            AccessControlUpgradeable(address(_modules.stakingManager)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            AccessControlUpgradeable(stakingProviderRegistryAddr).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
 
             // Revoke roles from the old governance address
             if (oldGovernance != address(0)) {
                 _revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
                 _revokeRole(GUARDIAN_ROLE, oldGovernance);
                 _revokeRole(OPERATOR_ROLE, oldGovernance);
+
+                // Propagate DEFAULT_ADMIN_ROLE revoke from satellite contracts
+                AccessControlUpgradeable(address(_modules.withdrawalQueue))
+                    .revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+                AccessControlUpgradeable(address(_modules.rewardsVault)).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+                AccessControlUpgradeable(address(_modules.stakingManager)).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+                AccessControlUpgradeable(stakingProviderRegistryAddr).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
             }
         }
         emit GovernanceAccepted(oldGovernance, newGovernance);
@@ -487,7 +555,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the gas threshold used for rebalance step gating.
-    /// @param newThreshold The new gas threshold.
+    /// @param newThreshold The new gas threshold (20000-1000000).
     function setRebalanceGasThreshold(uint256 newThreshold)
         external
         override
@@ -495,6 +563,9 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
+        if (newThreshold < MIN_REBALANCE_GAS_THRESHOLD || newThreshold > MAX_REBALANCE_GAS_THRESHOLD) {
+            revert OllaCore__InvalidGasThreshold(newThreshold);
+        }
         uint256 oldThreshold = rebalanceGasThreshold;
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
@@ -502,7 +573,7 @@ contract OllaCore is
     }
 
     /// @notice Sets the instant redemption fee in basis points.
-    /// @param newFeeBP The new fee (0-10000).
+    /// @param newFeeBP The new fee (0-2000).
     function setInstantRedemptionFeeBP(uint256 newFeeBP)
         external
         override
@@ -510,7 +581,7 @@ contract OllaCore is
         whenNotPaused
         whenNotRebalancePaused
     {
-        if (newFeeBP > BP_DIVISOR) {
+        if (newFeeBP > MAX_INSTANT_REDEMPTION_FEE_BP) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
         uint256 oldFeeBP = instantRedemptionFeeBP;
@@ -947,6 +1018,16 @@ contract OllaCore is
         return _convertToSharesForDeposit(assets);
     }
 
+    /// @notice Returns the net assets previewed for an instant redemption.
+    /// @param shares The share amount being redeemed.
+    /// @return assetsAfterFee The net assets after the instant redemption fee.
+    function previewRedeem(uint256 shares) external view override returns (uint256 assetsAfterFee) {
+        uint256 grossAssets = _convertToAssets(shares);
+        uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
+        assetsAfterFee = grossAssets - fee;
+        return assetsAfterFee;
+    }
+
     /// @notice Returns the maximum assets currently available for instant redemptions.
     /// @dev After reconciliation, `bufferedAssets` already equals `balance - _finalizedUnclaimedAssets`,
     ///      so it directly represents unencumbered liquid assets.
@@ -1021,8 +1102,8 @@ contract OllaCore is
         }
 
         shares = _convertToSharesForDeposit(assets);
-        _increaseBuffered(assets);
         modules.asset.safeTransferFrom(caller, address(this), assets);
+        _increaseBuffered(assets);
         _syncBufferedWithBalance();
         _increaseCumulativeDeposits(assets);
 
@@ -1565,6 +1646,10 @@ contract OllaCore is
         );
     }
 
+    /// @dev Tokens sent directly to OllaCore are absorbed as donations benefiting all stAztec holders
+    ///      proportionally. Any surplus (actual balance minus bufferedAssets minus finalizedUnclaimed) is
+    ///      added to bufferedAssets. This is intentional and irreversible — the virtual offset (+1) pattern
+    ///      in the conversion functions prevents this from being exploitable for share price manipulation.
     function _reconcileBufferedAssets(address recipient) internal returns (uint256 delta) {
         uint256 buffered = _accountingState.bufferedAssets;
         uint256 actual = _modules.asset.balanceOf(address(this));
@@ -1763,6 +1848,13 @@ contract OllaCore is
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
 
+    /// @dev All share/asset conversion functions use a virtual offset of +1 on both totalAssets and
+    ///      totalSupply. This prevents the first-depositor inflation attack (ERC-4626 "donation" attack)
+    ///      where an attacker deposits 1 wei, donates a large amount, and exploits rounding to steal from
+    ///      the next depositor. The +1 offset ensures the exchange rate is well-defined even when supply
+    ///      or assets are zero, and makes the cost of the attack proportional to the offset value.
+    ///      See: https://docs.openzeppelin.com/contracts/5.x/erc4626#inflation-attack
+
     function _exchangeRate() internal view returns (uint256) {
         return (totalAssets() + 1).mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + 1, Math.Rounding.Floor);
     }
@@ -1808,10 +1900,10 @@ contract OllaCore is
         if (address(stakingManager_) == address(0)) {
             revert OllaCore__ZeroAddress("stakingManager_");
         }
-        if (protocolFeeBP_ > BP_DIVISOR) {
+        if (protocolFeeBP_ > MAX_PROTOCOL_FEE_BP) {
             revert OllaCore__InvalidFeeBP(protocolFeeBP_);
         }
-        if (treasuryFeeSplitBP_ > BP_DIVISOR) {
+        if (treasuryFeeSplitBP_ < MIN_TREASURY_SPLIT_BP || treasuryFeeSplitBP_ > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(treasuryFeeSplitBP_);
         }
         if (governance_ == address(0)) {

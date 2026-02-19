@@ -80,12 +80,14 @@ contract WithdrawalQueueClaimDirectTest is Test {
             stAztec,
             stakingManager,
             0, // protocolFeeBP
-            0, // treasuryFeeSplitBP
+            5_000, // treasuryFeeSplitBP
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         // Initialize WithdrawalQueue with OllaCore as the core address
         withdrawalQueue.initialize(address(vault), governance);
@@ -106,7 +108,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
         vm.prank(user);
         asset.approve(address(vault), assets);
         vm.prank(user);
-        shares = vault.deposit(assets, user);
+        shares = vault.deposit(assets, user, 0);
         return shares;
     }
 

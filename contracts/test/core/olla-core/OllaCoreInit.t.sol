@@ -75,12 +75,15 @@ contract OllaCoreInitTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
     }
@@ -110,7 +113,7 @@ contract OllaCoreInitTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
@@ -121,6 +124,27 @@ contract OllaCoreInitTest is Test {
     /*//////////////////////////////////////////////////////////////
                             PAUSE CONTROL
     //////////////////////////////////////////////////////////////*/
+
+    function test_InitializeStartsPaused() external {
+        OllaCoreHarness coreImpl = new OllaCoreHarness();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImpl), "");
+        OllaCoreHarness freshVault = OllaCoreHarness(address(proxy));
+        StAztec freshStAztec = new StAztec(address(freshVault));
+
+        freshVault.initialize(
+            asset,
+            freshStAztec,
+            stakingManager,
+            0,
+            5_000,
+            governance,
+            address(withdrawalQueue),
+            rewardsVault,
+            address(safetyModule)
+        );
+
+        assertTrue(freshVault.paused(), "vault should be paused after initialize");
+    }
 
     function test_GuardianCanPauseAndUnpause() external {
         vm.expectEmit(true, true, true, true, address(vault));
@@ -150,7 +174,7 @@ contract OllaCoreInitTest is Test {
 
         vm.expectRevert();
         vm.prank(alice);
-        vault.deposit(5 * DECIMALS, alice);
+        vault.deposit(5 * DECIMALS, alice, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -176,7 +200,7 @@ contract OllaCoreInitTest is Test {
             newStAztec,
             newStakingManager,
             0,
-            0,
+            5_000,
             newGovernance,
             newWithdrawalQueue,
             newRewardsVault,
@@ -189,7 +213,7 @@ contract OllaCoreInitTest is Test {
             IStAztec(address(0)),
             newStakingManager,
             0,
-            0,
+            5_000,
             newGovernance,
             newWithdrawalQueue,
             newRewardsVault,
@@ -202,7 +226,7 @@ contract OllaCoreInitTest is Test {
             newStAztec,
             IStakingManager(address(0)),
             0,
-            0,
+            5_000,
             newGovernance,
             newWithdrawalQueue,
             newRewardsVault,
@@ -211,12 +235,20 @@ contract OllaCoreInitTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "governance_"));
         newVault.initialize(
-            asset, newStAztec, newStakingManager, 0, 0, address(0), newWithdrawalQueue, newRewardsVault, newSafetyModule
+            asset,
+            newStAztec,
+            newStakingManager,
+            0,
+            5_000,
+            address(0),
+            newWithdrawalQueue,
+            newRewardsVault,
+            newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "withdrawalQueue_"));
         newVault.initialize(
-            asset, newStAztec, newStakingManager, 0, 0, newGovernance, address(0), newRewardsVault, newSafetyModule
+            asset, newStAztec, newStakingManager, 0, 5_000, newGovernance, address(0), newRewardsVault, newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "rewardsVault_"));
@@ -225,7 +257,7 @@ contract OllaCoreInitTest is Test {
             newStAztec,
             newStakingManager,
             0,
-            0,
+            5_000,
             newGovernance,
             newWithdrawalQueue,
             IRewardsVault(address(0)),
@@ -234,7 +266,15 @@ contract OllaCoreInitTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "safetyModule_"));
         newVault.initialize(
-            asset, newStAztec, newStakingManager, 0, 0, newGovernance, newWithdrawalQueue, newRewardsVault, address(0)
+            asset,
+            newStAztec,
+            newStakingManager,
+            0,
+            5_000,
+            newGovernance,
+            newWithdrawalQueue,
+            newRewardsVault,
+            address(0)
         );
     }
 
@@ -277,7 +317,7 @@ contract OllaCoreInitTest is Test {
         emit Deposit(alice, alice, assets, assets);
 
         vm.prank(alice);
-        vault.deposit(assets, alice);
+        vault.deposit(assets, alice, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -296,7 +336,7 @@ contract OllaCoreInitTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 }

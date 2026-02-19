@@ -81,12 +81,15 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
 
@@ -105,7 +108,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -379,7 +382,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         asset.approve(address(vault), 1 * DECIMALS);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(alice);
-        vault.deposit(1 * DECIMALS, alice);
+        vault.deposit(1 * DECIMALS, alice, 0);
     }
 
     /*//////////////////////////////////////////////////////////////

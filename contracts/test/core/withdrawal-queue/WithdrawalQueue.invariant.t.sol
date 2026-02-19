@@ -130,6 +130,17 @@ contract WithdrawalQueueInvariantTest is Test {
         }
     }
 
+    /// @notice All requests with id < nextPendingId must be finalized (FIFO ordering).
+    function invariant_FIFOQueueOrdering() external view {
+        uint256 nextPending = queue.nextPendingId();
+        uint256 nextRequestId = queue.nextRequestId();
+
+        for (uint256 id = 1; id < nextPending && id < nextRequestId; id++) {
+            IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(id);
+            assertTrue(request.finalized, "all requests with id < nextPendingId must be finalized");
+        }
+    }
+
     function invariant_NextPendingIsUnfinalized() external view {
         uint256 nextPendingId = queue.nextPendingId();
         uint256 nextRequestId = queue.nextRequestId();

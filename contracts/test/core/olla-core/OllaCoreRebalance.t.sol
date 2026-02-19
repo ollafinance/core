@@ -200,12 +200,14 @@ contract OllaCoreRebalanceTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
 
@@ -224,7 +226,7 @@ contract OllaCoreRebalanceTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 
@@ -1353,12 +1355,14 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1419,12 +1423,14 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1494,12 +1500,14 @@ contract OllaCoreRebalanceReentrancyTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1614,12 +1622,14 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1861,12 +1871,14 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
             stAztec,
             stakingManager,
             0,
-            0,
+            5_000,
             governance,
             address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1879,7 +1891,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         vm.prank(owner);
         asset.approve(address(vault), assets);
         vm.prank(owner);
-        shares = vault.deposit(assets, owner);
+        shares = vault.deposit(assets, owner, 0);
         return shares;
     }
 

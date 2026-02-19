@@ -31,6 +31,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Default maximum age (in seconds) for attester state freshness.
     uint256 public constant DEFAULT_ATTESTER_STATE_MAX_AGE = 12 hours;
+    /// @notice Minimum allowed attester state max age: 1 hour.
+    uint256 public constant MIN_ATTESTER_STATE_MAX_AGE = 1 hours;
+    /// @notice Maximum allowed attester state max age: 48 hours.
+    uint256 public constant MAX_ATTESTER_STATE_MAX_AGE = 48 hours;
 
     /*//////////////////////////////////////////////////////////////
                                     STATE
@@ -90,6 +94,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     uint256 private gasThreshold;
 
     /// @notice Storage gap for future upgrades.
+    /// @dev State variables occupy 23 slots (including struct members). When adding new state
+    ///      variables, append them above this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
 
@@ -238,6 +244,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         external
         override
         onlyCoreOrOperator
+        nonReentrant
         returns (uint256 slashingDelta, bool completed)
     {
         (, IAztecRollup rollup) = _getRollup();
@@ -277,8 +284,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function setAttesterStateMaxAge(uint256 maxAge) external override onlyRole(OPERATOR_ROLE) {
-        if (maxAge == 0) {
-            revert StakingManager__ZeroAmount();
+        if (maxAge < MIN_ATTESTER_STATE_MAX_AGE || maxAge > MAX_ATTESTER_STATE_MAX_AGE) {
+            revert StakingManager__InvalidParameter();
         }
         uint256 oldMaxAge = _attesterStateMaxAge;
         _attesterStateMaxAge = maxAge;
@@ -580,10 +587,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param rollup The rollup staking interface.
     /// @param amount The amount to unstake.
     /// @return totalUnstakedAmount The total amount initiated for unstake.
-    // slither-disable-next-line pess-multiple-storage-read,cache-array-length
+    // slither-disable-next-line pess-multiple-storage-read,cache-array-length,pess-unprotected-initialize
     function _initiateUnstakeRequests(IAztecRollup rollup, uint256 amount)
         internal
-        onlyCore
         returns (uint256 totalUnstakedAmount)
     {
         uint256 attesterLength = _attesters.length;
