@@ -109,6 +109,8 @@ contract OllaCoreRebalanceRealStakingManager is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         operator = makeAddr("operator");
         alice = makeAddr("alice");

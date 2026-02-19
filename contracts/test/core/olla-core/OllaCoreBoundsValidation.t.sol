@@ -70,6 +70,9 @@ contract OllaCoreBoundsValidationTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+
+        vm.prank(governance);
+        vault.unpause();
     }
 
     /*//////////////////////////////////////////////////////////////

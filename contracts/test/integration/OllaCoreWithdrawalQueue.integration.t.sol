@@ -98,6 +98,8 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vault.initialize(
             asset, stAztec, stakingManager, 0, 5_000, governance, address(queue), rewardsVault, address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
         queue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
@@ -534,6 +536,8 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         vault.initialize(
             asset, stAztec, stakingManager, 0, 5_000, governance, address(queue), rewardsVault, address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
         queue.initialize(address(vault), governance);
 
         // Initialize staking manager with asset

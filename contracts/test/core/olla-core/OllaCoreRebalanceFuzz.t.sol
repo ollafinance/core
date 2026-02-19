@@ -214,6 +214,8 @@ contract OllaCoreRebalanceFuzzTest is Test {
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         operator = makeAddr("operator");
         bytes32 operatorRole = vault.OPERATOR_ROLE();

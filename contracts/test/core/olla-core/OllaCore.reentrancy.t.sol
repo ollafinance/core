@@ -224,6 +224,8 @@ contract OllaCoreReentrancyTest is Test {
             IRewardsVault(rewardsVault),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
         withdrawalQueue.initialize(address(vault), governance);
 
         vm.startPrank(governance);
@@ -453,6 +455,8 @@ contract OllaCoreHarvestReentrancyTest is Test {
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         vm.startPrank(governance);
         vault.grantRole(vault.OPERATOR_ROLE(), governance);
@@ -542,6 +546,8 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
             IRewardsVault(rewardsVault),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         vm.startPrank(governance);
         vault.grantRole(vault.OPERATOR_ROLE(), governance);

@@ -186,6 +186,7 @@ contract OllaCore is
         );
         __AccessControl_init();
         __Pausable_init();
+        _pause();
 
         _modules = IOllaCore.Modules({
             asset: asset_,

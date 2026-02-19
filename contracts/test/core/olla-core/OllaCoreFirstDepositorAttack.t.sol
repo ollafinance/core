@@ -72,6 +72,9 @@ contract OllaCoreFirstDepositorAttackTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         attacker = makeAddr("attacker");
         victim = makeAddr("victim");
     }

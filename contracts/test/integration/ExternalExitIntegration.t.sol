@@ -146,6 +146,8 @@ contract ExternalExitIntegrationTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         // Initialize withdrawalQueue
         withdrawalQueue.initialize(address(vault), governance);

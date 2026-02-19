@@ -79,6 +79,8 @@ contract RebalancePauseIntegrationTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
         withdrawalQueue.initialize(address(vault), governance);
 
         vm.startPrank(admin);

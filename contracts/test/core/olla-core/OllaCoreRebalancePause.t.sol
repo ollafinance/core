@@ -167,6 +167,8 @@ contract OllaCoreRebalancePauseTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
@@ -333,6 +335,8 @@ contract OllaCoreRebalancePauseTest is Test {
             newRewardsVault,
             safetyModuleAddress
         );
+        vm.prank(governance);
+        newVault.unpause();
 
         bytes32 operatorRole = newVault.OPERATOR_ROLE();
         vm.startPrank(governance);

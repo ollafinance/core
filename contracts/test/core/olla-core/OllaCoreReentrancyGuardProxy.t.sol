@@ -102,6 +102,10 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+
+        vm.prank(governance);
+        vault.unpause();
+
         withdrawalQueue.initialize(address(vault), governance);
     }
 

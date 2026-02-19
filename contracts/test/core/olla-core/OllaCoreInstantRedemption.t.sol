@@ -112,6 +112,9 @@ contract OllaCoreInstantRedemptionTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         alice = makeAddr("alice");
         bob = makeAddr("bob");
         permitOwnerKey = 0xA11CE;
@@ -845,6 +848,9 @@ contract OllaCoreInstantRedemptionTest is Test {
             malRewardsVault,
             address(malSafetyModule)
         );
+
+        vm.prank(governance);
+        malVault.unpause();
 
         // Deposit so alice has shares and the vault has balance
         uint256 depositAmount = 100 * DECIMALS;

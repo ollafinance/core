@@ -206,6 +206,8 @@ contract OllaCoreRebalanceTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
 
@@ -1359,6 +1361,8 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1425,6 +1429,8 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1500,6 +1506,8 @@ contract OllaCoreRebalanceReentrancyTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1620,6 +1628,8 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1867,6 +1877,8 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);

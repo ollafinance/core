@@ -292,6 +292,8 @@ contract OllaCoreInvariantTest is Test {
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         operator = makeAddr("operator");
@@ -479,6 +481,8 @@ contract OllaCoreDepositInvariantTest is Test {
             IRewardsVault(rewardsVault),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.prank(governance);
@@ -757,6 +761,8 @@ contract OllaCoreLifecycleInvariantTest is Test {
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         withdrawalQueue.initialize(address(vault), governance);
 
@@ -1271,6 +1277,8 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         withdrawalQueue.initialize(address(vault), governance);
 

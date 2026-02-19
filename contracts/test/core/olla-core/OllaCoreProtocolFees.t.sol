@@ -94,6 +94,9 @@ contract OllaCoreProtocolFeesTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         alice = makeAddr("alice");
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();

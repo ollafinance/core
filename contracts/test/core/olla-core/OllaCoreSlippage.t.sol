@@ -78,6 +78,9 @@ contract OllaCoreSlippageTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         alice = makeAddr("alice");
         bob = makeAddr("bob");
         permitOwnerKey = 0xA11CE;
