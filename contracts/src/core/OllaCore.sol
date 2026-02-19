@@ -1317,6 +1317,9 @@ contract OllaCore is
         if (recipient == address(0)) {
             revert OllaCore__ZeroAddress("recipient");
         }
+        if (shares == 0) {
+            revert OllaCore__InvalidAmount();
+        }
 
         Modules memory modules = _modules;
 
