@@ -1457,7 +1457,7 @@ contract OllaCore is
     function _removeOwnerRequest(address owner, uint256 requestId) internal {
         uint256 index = _ownerRequestIndex[requestId];
         if (index == 0) {
-            return;
+            revert OllaCore__RequestNotFound(requestId);
         }
 
         uint256[] storage requestIds = _ownerRequestIds[owner];
