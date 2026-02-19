@@ -1821,7 +1821,7 @@ contract OllaCore is
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
 
-    /// @dev I-05: All share/asset conversion functions use a virtual offset of +1 on both totalAssets and
+    /// @dev All share/asset conversion functions use a virtual offset of +1 on both totalAssets and
     ///      totalSupply. This prevents the first-depositor inflation attack (ERC-4626 "donation" attack)
     ///      where an attacker deposits 1 wei, donates a large amount, and exploits rounding to steal from
     ///      the next depositor. The +1 offset ensures the exchange rate is well-defined even when supply
