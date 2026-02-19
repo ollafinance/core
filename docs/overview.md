@@ -129,6 +129,220 @@ style guardianActor stroke:#050,stroke-width:2px
 style governanceActor stroke:#050,stroke-width:2px
 ```
 
+## Contract architecture
+
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart LR
+
+subgraph "Olla Core"
+    core[OllaCore]
+    safety[SafetyModule]
+    withdrawQ[WithdrawalQueue]
+end
+
+subgraph "Olla Staking Components"
+    rewards[RewardsVault]
+    stkMan[StakingManager]
+    spr[StakingProviderRegistry]
+end
+
+subgraph "Aztec Contracts"
+    rollupRegistry[AztecRollupRegistry]
+    rollup["AztecRollup (canonical)"]
+end
+
+%% OllaCore <-> WithdrawalQueue
+core -->|"request-,claim-,finalize-withdrawal"| withdrawQ
+
+%% OllaCore <-> SafetyModule
+core -->|"checkDepositAllowed / checkWithdrawalMinimum / checkQueueRatio / checkAccountingLiveness"| safety
+
+%% Staking: stake flow
+core -->|"stake >Aztec< transferFrom(core, StakingManager, stakeAmount)"| stkMan
+stkMan -->|"getAttesterKeystore()"| spr
+stkMan -->|"deposit >Aztec< transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
+
+%% Staking: unstake flow
+core -->|"unstake(amount)"| stkMan
+stkMan -->|"initiateWithdraw"| rollup
+
+%% Staking: claim unstaked funds
+core -->|"claimUnstakedFunds >Aztec< transferFrom(StakingManager, core, unstakedAmount)"| stkMan
+stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, unstakedAmount)"| rollup
+
+%% Rewards harvesting
+core -->|"harvestRewards()"| stkMan
+stkMan -->|"getCanonicalRollup()"| rollupRegistry
+rollupRegistry -->|"canonical rollup"| rollup
+stkMan -->|"claimSequencerRewards(coinbase=rewardsVault)"| rollup
+rollup -->|"rewards >Aztec< transferFrom(rollup, rewardsVault, amount)"| rewards
+core -->|"recordBalance(expectedRewards)"| rewards
+core -->|"balance()"| rewards
+
+%% Finalize withdrawals
+core -->|"finalizeWithdrawals(available)"| withdrawQ
+
+style core stroke:#090,stroke-width:4px
+style safety stroke:#090,stroke-width:3px
+style rewards stroke:#090,stroke-width:3px
+style stkMan stroke:#090,stroke-width:3px
+style spr stroke:#090,stroke-width:3px
+style withdrawQ stroke:#090,stroke-width:3px
+style rollup stroke:#ff6,stroke-width:2px
+style rollupRegistry stroke:#ff6,stroke-width:2px
+```
+
+## User
+
+No special role required. Any address can call these functions.
+
+```mermaid
+flowchart LR
+
+userWallet[User Wallet]
+
+subgraph "Olla Core"
+    core[OllaCore]
+end
+
+userWallet -->|"deposit()"| core
+userWallet -->|"requestRedeem()"| core
+userWallet -->|"claimActiveRequest()"| core
+
+style userWallet fill:#900
+style core stroke:#090,stroke-width:4px
+```
+
+## Olla Protocol Operator
+
+Requires `OPERATOR_ROLE` on OllaCore and StakingManager. `harvestRewards()` and `finalizeWithdrawals()` are permissionless but are called by the operator as part of the orchestration cycle.
+
+```mermaid
+flowchart LR
+
+ollaOperatorWallet[Operator Wallet]
+
+subgraph "Olla Core"
+    core[OllaCore]
+end
+subgraph "Olla Staking Components"
+    stkMan[StakingManager]
+end
+
+ollaOperatorWallet -->|"rebalance()"| core
+ollaOperatorWallet -->|"updateAccounting()"| core
+ollaOperatorWallet -->|"reconcileBufferedAssets()"| core
+ollaOperatorWallet -->|"harvestRewards()"| core
+ollaOperatorWallet -->|"finalizeWithdrawals(available)"| core
+ollaOperatorWallet -->|"computeAttesterState()"| stkMan
+ollaOperatorWallet -->|"setAttesterStateMaxAge()"| stkMan
+
+style ollaOperatorWallet stroke:#050,stroke-width:2px
+style core stroke:#090,stroke-width:4px
+style stkMan stroke:#090,stroke-width:3px
+```
+
+## Guardian
+
+Requires `GUARDIAN_ROLE` on OllaCore and SafetyModule.
+
+```mermaid
+flowchart LR
+
+guardianWallet[Guardian Wallet]
+
+subgraph "Olla Core"
+    core[OllaCore]
+    safety[SafetyModule]
+end
+
+guardianWallet -->|"pause()"| core
+guardianWallet -->|"unpause()"| core
+guardianWallet -->|"forceRebalanceUnpause()"| core
+guardianWallet -->|"pause()"| safety
+guardianWallet -->|"unpause()"| safety
+
+style guardianWallet stroke:#050,stroke-width:2px
+style core stroke:#090,stroke-width:4px
+style safety stroke:#090,stroke-width:3px
+```
+
+## Staking Provider Admin
+
+Requires `STAKING_PROVIDER_ADMIN_ROLE` on StakingProviderRegistry.
+
+```mermaid
+flowchart LR
+
+stakingProviderAdminWallet[Staking Provider Admin Wallet]
+stakingProviderRewardsWallet[Staking Provider Rewards Wallet]
+
+subgraph "Olla Staking Components"
+    spr[StakingProviderRegistry]
+end
+subgraph "Olla Core"
+    core[OllaCore]
+end
+
+stakingProviderAdminWallet -->|"addKeysToProvider()"| spr
+stakingProviderAdminWallet -->|"dripQueue()"| spr
+stakingProviderAdminWallet -->|"setProviderRewardsRecipient()"| spr
+
+core -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
+
+style stakingProviderAdminWallet fill:#009
+style stakingProviderRewardsWallet fill:#009
+style core stroke:#090,stroke-width:4px
+style spr stroke:#090,stroke-width:3px
+```
+
+## Governance
+
+Requires `DEFAULT_ADMIN_ROLE` on all contracts (granted via TimelockController). The governance admin wallet holds `DEFAULT_ADMIN_ROLE` directly during the initial deployment phase (pre-timelock), then transfers it to the timelock where it acts as proposer, executor, and admin.
+
+```mermaid
+flowchart LR
+
+governanceAdminWallet[Governance Admin Wallet]
+treasury[Governance Treasury]
+timelock[TimelockController]
+
+governanceAdminWallet -->|"proposer/executor/admin"| timelock
+
+subgraph "Olla Core"
+    core[OllaCore]
+    safety[SafetyModule]
+    withdrawQ[WithdrawalQueue]
+end
+subgraph "Olla Staking Components"
+    rewards[RewardsVault]
+    stkMan[StakingManager]
+    spr[StakingProviderRegistry]
+end
+
+timelock -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, proposeGovernance, cancelGovernanceProposal, setRewardsVault, setTargetBufferedAssets, setRebalanceGasThreshold, setInstantRedemptionFeeBP, recoverStAztec, _authorizeUpgrade"| core
+timelock -->|"setDepositCap, setWithdrawalMinimum, setMinRateDropBps, setMaxQueueRatioBps, setMaxAccountingDelay"| safety
+timelock -->|"_authorizeUpgrade"| withdrawQ
+timelock -->|"_authorizeUpgrade"| rewards
+timelock -->|"_authorizeUpgrade"| stkMan
+timelock -->|"_authorizeUpgrade"| spr
+
+core -->|"pay staking fees >StAztec< mint(governance, treasuryShares)"| treasury
+
+style governanceAdminWallet stroke:#050,stroke-width:2px
+style timelock stroke:#f90,stroke-width:2px
+style core stroke:#090,stroke-width:4px
+style safety stroke:#090,stroke-width:3px
+style rewards stroke:#090,stroke-width:3px
+style stkMan stroke:#090,stroke-width:3px
+style spr stroke:#090,stroke-width:3px
+style withdrawQ stroke:#090,stroke-width:3px
+```
+
 ## Action references
 
 - User flows: [docs/user-actions.md](docs/user-actions.md)
