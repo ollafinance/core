@@ -91,7 +91,7 @@ contract WithdrawalQueueInvariantTest is Test {
         WithdrawalQueue implementation = new WithdrawalQueue();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         queue = WithdrawalQueue(address(proxy));
-        queue.initialize(core, admin);
+        queue.initialize(core, admin, 50_000);
 
         handler = new WithdrawalQueueHandler(queue, core);
         targetContract(address(handler));

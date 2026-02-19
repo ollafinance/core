@@ -49,7 +49,8 @@ contract OllaCoreRebalanceStuck is Test {
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation), abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance))
+            address(queueImplementation),
+            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
         rewardsVault = new MockRewardsVault(asset, address(vault));

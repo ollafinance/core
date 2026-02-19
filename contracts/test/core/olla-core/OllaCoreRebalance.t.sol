@@ -29,8 +29,14 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
         _totalPendingAssets = amount;
     }
 
-    function initialize(address core_, address) external override {
+    function initialize(address core_, address, uint256) external override {
         _core = core_;
+    }
+
+    function setGasThreshold(uint256) external override { }
+
+    function gasThreshold() external pure override returns (uint256) {
+        return 50_000;
     }
 
     function requestWithdrawal(address, uint256, uint256, uint256) external pure override returns (uint256) {
@@ -84,8 +90,14 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
         _totalPendingAssets = amount;
     }
 
-    function initialize(address core_, address) external override {
+    function initialize(address core_, address, uint256) external override {
         _core = core_;
+    }
+
+    function setGasThreshold(uint256) external override { }
+
+    function gasThreshold() external pure override returns (uint256) {
+        return 50_000;
     }
 
     function requestWithdrawal(address, uint256, uint256, uint256) external pure override returns (uint256) {
@@ -185,7 +197,8 @@ contract OllaCoreRebalanceTest is Test {
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation), abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance))
+            address(queueImplementation),
+            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
         rewardsVault = new MockRewardsVault(asset, address(vault));
@@ -1345,7 +1358,7 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         safetyModule = new MockSafetyModule(address(vault));
 
         withdrawalQueue = new InconsistentWithdrawalQueue();
-        withdrawalQueue.initialize(address(vault), governance);
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
@@ -1413,7 +1426,7 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
         safetyModule = new MockSafetyModule(address(vault));
 
         withdrawalQueue = new MismatchWithdrawalQueue();
-        withdrawalQueue.initialize(address(vault), governance);
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
@@ -1486,7 +1499,8 @@ contract OllaCoreRebalanceReentrancyTest is Test {
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation), abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance))
+            address(queueImplementation),
+            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
         rewardsVault = new MockRewardsVault(asset, address(vault));
@@ -1608,7 +1622,8 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation), abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance))
+            address(queueImplementation),
+            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
         rewardsVault = new MockRewardsVault(asset, address(vault));

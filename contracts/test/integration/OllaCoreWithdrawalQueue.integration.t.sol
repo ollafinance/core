@@ -95,12 +95,13 @@ contract OllaCoreWithdrawalQueueTest is Test {
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
         queue = WithdrawalQueue(address(queueProxy));
 
+        queue.initialize(address(vault), governance, 180_000);
+
         vault.initialize(
             asset, stAztec, stakingManager, 0, 5_000, governance, address(queue), rewardsVault, address(safetyModule)
         );
         vm.prank(governance);
         vault.unpause();
-        queue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -533,12 +534,13 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
         queue = WithdrawalQueue(address(queueProxy));
 
+        queue.initialize(address(vault), governance, 180_000);
+
         vault.initialize(
             asset, stAztec, stakingManager, 0, 5_000, governance, address(queue), rewardsVault, address(safetyModule)
         );
         vm.prank(governance);
         vault.unpause();
-        queue.initialize(address(vault), governance);
 
         // Initialize staking manager with asset
         stakingManager.initialize(asset, address(0), address(0), address(vault), address(0), address(0));

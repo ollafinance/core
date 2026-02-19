@@ -25,12 +25,6 @@ contract WithdrawalQueue is
     IWithdrawalQueue
 {
     /*//////////////////////////////////////////////////////////////
-                               CONSTANTS
-    //////////////////////////////////////////////////////////////*/
-
-    uint256 internal constant _FINALIZE_GAS_THRESHOLD = 50_000;
-
-    /*//////////////////////////////////////////////////////////////
                                    STATE
      //////////////////////////////////////////////////////////////*/
 
@@ -49,11 +43,14 @@ contract WithdrawalQueue is
     /// @notice Total assets outstanding across unfinalized requests.
     uint256 public override totalPendingAssets;
 
+    /// @notice Gas threshold used to gate the finalization loop.
+    uint256 private _gasThreshold;
+
     /// @notice Storage gap for upgradability.
-    /// @dev State variables occupy 5 slots. When adding new state variables, append them above
+    /// @dev State variables occupy 6 slots. When adding new state variables, append them above
     ///      this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
-    uint256[45] private __gap;
+    uint256[44] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   ERRORS
@@ -87,12 +84,16 @@ contract WithdrawalQueue is
     /// @notice Initializes the queue and roles.
     /// @param core_ OllaCore address.
     /// @param admin_ Default admin role address.
-    function initialize(address core_, address admin_) external override initializer {
+    /// @param gasThreshold_ Initial gas threshold for the finalization loop.
+    function initialize(address core_, address admin_, uint256 gasThreshold_) external override initializer {
         if (core_ == address(0)) {
             revert WithdrawalQueue__ZeroAddress("core_");
         }
         if (admin_ == address(0)) {
             revert WithdrawalQueue__ZeroAddress("admin_");
+        }
+        if (gasThreshold_ == 0) {
+            revert WithdrawalQueue__InvalidParameter();
         }
 
         __AccessControl_init();
@@ -100,8 +101,20 @@ contract WithdrawalQueue is
         core = core_;
         nextRequestId = 1;
         nextPendingId = 1;
+        _gasThreshold = gasThreshold_;
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, admin_);
+    }
+
+    /// @notice Sets the gas threshold used for the finalization loop.
+    /// @param threshold The new gas threshold.
+    function setGasThreshold(uint256 threshold) external override onlyCore {
+        if (threshold == 0) {
+            revert WithdrawalQueue__InvalidParameter();
+        }
+        uint256 oldThreshold = _gasThreshold;
+        _gasThreshold = threshold;
+        emit GasThresholdUpdated(oldThreshold, threshold);
     }
 
     /// @notice Enqueues a new withdrawal request.
@@ -165,7 +178,7 @@ contract WithdrawalQueue is
         uint256 pendingAssets = totalPendingAssets;
 
         while (currentId < upperBound) {
-            if (gasleft() < _FINALIZE_GAS_THRESHOLD) {
+            if (gasleft() < _gasThreshold) {
                 break;
             }
 
@@ -238,6 +251,12 @@ contract WithdrawalQueue is
     /// @return requestId The next unfinalized request id.
     function nextUnfinalized() external view override returns (uint256 requestId) {
         return nextPendingId;
+    }
+
+    /// @notice Returns the gas threshold for the finalization loop.
+    /// @return The gas threshold.
+    function gasThreshold() external view override returns (uint256) {
+        return _gasThreshold;
     }
 
     /*//////////////////////////////////////////////////////////////

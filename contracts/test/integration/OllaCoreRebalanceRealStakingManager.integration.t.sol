@@ -53,7 +53,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), governance);
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         // Deploy RewardsVault
         RewardsVault rewardsImplementation = new RewardsVault();

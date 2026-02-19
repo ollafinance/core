@@ -750,6 +750,8 @@ contract OllaCoreLifecycleInvariantTest is Test {
         address providerRewardsRecipient = makeAddr("lifecycle_providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
+
         vault.initialize(
             asset,
             stAztec,
@@ -763,8 +765,6 @@ contract OllaCoreLifecycleInvariantTest is Test {
         );
         vm.prank(governance);
         vault.unpause();
-
-        withdrawalQueue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);
@@ -1266,6 +1266,8 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         address providerRewardsRecipient = makeAddr("protprop_providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
+
         vault.initialize(
             asset,
             stAztec,
@@ -1279,8 +1281,6 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         );
         vm.prank(governance);
         vault.unpause();
-
-        withdrawalQueue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);

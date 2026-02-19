@@ -95,7 +95,7 @@ contract DeployScript is BaseDeployer {
         // 3.1 Deploy WithdrawalQueue (linked to OllaCore proxy)
 
         (withdrawalQueueImpl, withdrawalQueue) =
-            _withdrawalQueueDeployer.deploy(config, ollaCoreProxy, config.governance);
+            _withdrawalQueueDeployer.deploy(config, ollaCoreProxy, config.governance, 50_000);
         json = _addAddressToJson(json, "WithdrawalQueueImplementation", withdrawalQueueImpl, false);
         json = _addAddressToJson(json, "WithdrawalQueueProxy", withdrawalQueue, false);
 

@@ -209,6 +209,7 @@ contract OllaCore is
         _rebalanceProgress.step = IOllaCore.RebalanceStep.Done;
 
         _modules.stakingManager.setGasThreshold(rebalanceGasThreshold);
+        _modules.withdrawalQueue.setGasThreshold(rebalanceGasThreshold);
 
         _latestReport.exchangeRate = _EXCHANGE_RATE_SCALE;
         // Timestamp is used only for reporting/accounting liveness.
@@ -570,6 +571,7 @@ contract OllaCore is
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
         _modules.stakingManager.setGasThreshold(newThreshold);
+        _modules.withdrawalQueue.setGasThreshold(newThreshold);
     }
 
     /// @notice Sets the instant redemption fee in basis points.
