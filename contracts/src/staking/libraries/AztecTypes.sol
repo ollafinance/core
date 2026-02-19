@@ -35,16 +35,16 @@ struct Exit {
     bool exists;
 }
 
-// TODO: proper comments
-// Struct to store configuration of an attester (checkpoint producer)
-// Keep track of the actor who can initiate and control withdraws for the attester.
-// Keep track of the public key in G1 of BN254 that has registered on the instance
+// Configuration of an attester (checkpoint producer).
+// Stores the BN254 G1 public key registered on the instance and the
+// withdrawer address that can initiate and control withdrawals for the attester.
 struct AttesterConfig {
     G1Point publicKey;
     address withdrawer;
 }
 
-// TODO: comments
+// Read-only view of an attester's full state: current status, effective stake
+// balance, pending exit details, and configuration.
 struct AttesterView {
     Status status;
     uint256 effectiveBalance;
