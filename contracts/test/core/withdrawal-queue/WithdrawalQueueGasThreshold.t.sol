@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity ^0.8.27;
+
+import { Test } from "@forge-std/Test.sol";
+
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+
+import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+
+contract WithdrawalQueueGasThresholdTest is Test {
+    /*//////////////////////////////////////////////////////////////
+                              EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    event GasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
+
+    /*//////////////////////////////////////////////////////////////
+                          TEST FIXTURES
+    //////////////////////////////////////////////////////////////*/
+
+    WithdrawalQueue internal queue;
+    address internal core;
+    address internal admin;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() public {
+        core = makeAddr("core");
+        admin = makeAddr("admin");
+
+        WithdrawalQueue implementation = new WithdrawalQueue();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        queue = WithdrawalQueue(address(proxy));
+        queue.initialize(core, admin, 50_000);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    INITIALIZE GAS THRESHOLD
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Initialize_SetsGasThreshold() public view {
+        assertEq(queue.gasThreshold(), 50_000, "gas threshold should be set during init");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       SET GAS THRESHOLD
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetGasThreshold_UpdatesValue() public {
+        vm.expectEmit(false, false, false, true, address(queue));
+        emit GasThresholdUpdated(50_000, 100_000);
+
+        vm.prank(core);
+        queue.setGasThreshold(100_000);
+
+        assertEq(queue.gasThreshold(), 100_000, "gas threshold should be updated");
+    }
+
+    function test_RevertWhen_SetGasThreshold_NotCore() public {
+        address notCore = makeAddr("notCore");
+
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, notCore));
+        vm.prank(notCore);
+        queue.setGasThreshold(100_000);
+    }
+
+    function test_RevertWhen_SetGasThreshold_ZeroThreshold() public {
+        vm.expectRevert(IWithdrawalQueue.WithdrawalQueue__InvalidParameter.selector);
+        vm.prank(core);
+        queue.setGasThreshold(0);
+    }
+
+    function test_RevertWhen_Initialize_ZeroGasThreshold() public {
+        WithdrawalQueue implementation = new WithdrawalQueue();
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
+        WithdrawalQueue q = WithdrawalQueue(address(proxy));
+
+        vm.expectRevert(IWithdrawalQueue.WithdrawalQueue__InvalidParameter.selector);
+        q.initialize(core, admin, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         VIEW FUNCTION
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GasThreshold_ReturnsValue() public {
+        vm.prank(core);
+        queue.setGasThreshold(200_000);
+
+        assertEq(queue.gasThreshold(), 200_000, "gasThreshold() should return updated value");
+    }
+}

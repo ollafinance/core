@@ -13,9 +13,10 @@ contract WithdrawalQueueDeployer is BaseDeployer {
     /// @param config The deployment configuration.
     /// @param core The OllaCore proxy address.
     /// @param admin The DEFAULT_ADMIN_ROLE address.
+    /// @param gasThreshold The initial gas threshold for finalize loop.
     /// @return implementation The WithdrawalQueue implementation address.
     /// @return proxy The WithdrawalQueue proxy address.
-    function deploy(DeployConfig memory config, address core, address admin)
+    function deploy(DeployConfig memory config, address core, address admin, uint256 gasThreshold)
         external
         returns (address implementation, address proxy)
     {
@@ -24,7 +25,7 @@ contract WithdrawalQueueDeployer is BaseDeployer {
         WithdrawalQueue queueImpl = new WithdrawalQueue();
         _logDeployment("WithdrawalQueue Implementation", address(queueImpl));
 
-        bytes memory initData = abi.encodeCall(WithdrawalQueue.initialize, (core, admin));
+        bytes memory initData = abi.encodeCall(WithdrawalQueue.initialize, (core, admin, gasThreshold));
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), initData);
         _logDeployment("WithdrawalQueue Proxy", address(queueProxy));
 

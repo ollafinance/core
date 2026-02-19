@@ -43,6 +43,11 @@ interface IWithdrawalQueue {
     /// @param recipient The request owner.
     /// @param assetsExpected The assets claimed for the request.
     event WithdrawalClaimed(uint256 indexed id, address indexed recipient, uint256 assetsExpected);
+
+    /// @notice Emitted when the gas threshold is updated.
+    /// @param oldThreshold The previous gas threshold.
+    /// @param newThreshold The new gas threshold.
+    event GasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
@@ -67,6 +72,9 @@ interface IWithdrawalQueue {
     /// @notice Thrown when a request id is invalid.
     error WithdrawalQueue__InvalidRequest(uint256 id);
 
+    /// @notice Thrown when a configuration parameter is invalid.
+    error WithdrawalQueue__InvalidParameter();
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -74,7 +82,12 @@ interface IWithdrawalQueue {
     /// @notice Initializes the queue.
     /// @param core_ OllaCore address.
     /// @param admin_ Default admin role address.
-    function initialize(address core_, address admin_) external;
+    /// @param gasThreshold_ Initial gas threshold for finalization loop.
+    function initialize(address core_, address admin_, uint256 gasThreshold_) external;
+
+    /// @notice Sets the gas threshold used for the finalization loop.
+    /// @param threshold The new gas threshold.
+    function setGasThreshold(uint256 threshold) external;
 
     /// @notice Enqueues a new withdrawal request.
     /// @param recipient The request owner.
@@ -125,6 +138,10 @@ interface IWithdrawalQueue {
     /// @notice Returns the next unfinalized request id.
     /// @return requestId The next unfinalized request id.
     function nextUnfinalized() external view returns (uint256 requestId);
+
+    /// @notice Returns the gas threshold for the finalization loop.
+    /// @return The gas threshold.
+    function gasThreshold() external view returns (uint256);
 
     /// @notice Returns the core address.
     /// @return The core contract address.

@@ -106,7 +106,7 @@ contract OllaCoreGovernanceTransferTest is Test {
         );
 
         // 9. Initialize WithdrawalQueue
-        withdrawalQueue.initialize(address(ollaCore), governance);
+        withdrawalQueue.initialize(address(ollaCore), governance, 180_000);
 
         // 10. Initialize RewardsVault
         rewardsVault.initialize(IERC20(address(asset)), address(ollaCore), governance);

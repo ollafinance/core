@@ -65,7 +65,8 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation), abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance))
+            address(queueImplementation),
+            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 

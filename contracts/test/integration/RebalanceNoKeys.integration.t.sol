@@ -80,6 +80,8 @@ contract RebalanceNoKeysIntegrationTest is Test {
             defaultAdmin
         );
 
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
+
         vault.initialize(
             asset,
             stAztec,
@@ -93,7 +95,6 @@ contract RebalanceNoKeysIntegrationTest is Test {
         );
         vm.prank(governance);
         vault.unpause();
-        withdrawalQueue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);

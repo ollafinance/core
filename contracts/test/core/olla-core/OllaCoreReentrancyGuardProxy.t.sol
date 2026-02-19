@@ -106,7 +106,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        withdrawalQueue.initialize(address(vault), governance);
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
     }
 
     /*//////////////////////////////////////////////////////////////

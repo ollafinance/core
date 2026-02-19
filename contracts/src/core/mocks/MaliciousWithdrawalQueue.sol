@@ -42,12 +42,23 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Gas threshold value.
+    uint256 private _gasThresholdValue;
+
     /// @notice Initializes the mock with a core address.
     /// @param core_ OllaCore address.
     /// @param admin_ Unused admin address.
-    function initialize(address core_, address admin_) external override {
+    /// @param gasThreshold_ Initial gas threshold.
+    function initialize(address core_, address admin_, uint256 gasThreshold_) external override {
         core = core_;
+        _gasThresholdValue = gasThreshold_;
         admin_;
+    }
+
+    /// @notice Sets the gas threshold.
+    /// @param threshold The new gas threshold.
+    function setGasThreshold(uint256 threshold) external override {
+        _gasThresholdValue = threshold;
     }
 
     /// @notice Configure the call to perform during a reentrancy attempt.
@@ -159,5 +170,11 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
     /// @return requestId The next pending request id.
     function nextUnfinalized() external view override returns (uint256 requestId) {
         return nextPendingId;
+    }
+
+    /// @notice Returns the gas threshold.
+    /// @return The gas threshold.
+    function gasThreshold() external view override returns (uint256) {
+        return _gasThresholdValue;
     }
 }

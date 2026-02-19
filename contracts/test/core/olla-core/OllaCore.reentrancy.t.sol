@@ -226,7 +226,7 @@ contract OllaCoreReentrancyTest is Test {
         );
         vm.prank(governance);
         vault.unpause();
-        withdrawalQueue.initialize(address(vault), governance);
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         vm.startPrank(governance);
         vault.grantRole(vault.OPERATOR_ROLE(), address(withdrawalQueue));

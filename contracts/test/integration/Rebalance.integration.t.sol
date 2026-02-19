@@ -75,6 +75,8 @@ contract RebalanceIntegrationTest is Test {
         stakingManager.setRewardsVault(address(rewardsVault));
         stakingManager.setUnstakedToken(asset);
 
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
+
         vault.initialize(
             asset,
             stAztec,
@@ -88,7 +90,6 @@ contract RebalanceIntegrationTest is Test {
         );
         vm.prank(governance);
         vault.unpause();
-        withdrawalQueue.initialize(address(vault), governance);
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);

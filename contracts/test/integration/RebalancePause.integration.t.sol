@@ -68,6 +68,8 @@ contract RebalancePauseIntegrationTest is Test {
         stakingManager.setRewardsVault(address(rewardsVault));
         stakingManager.setUnstakedToken(asset);
 
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
+
         vault.initialize(
             asset,
             stAztec,
@@ -81,7 +83,6 @@ contract RebalancePauseIntegrationTest is Test {
         );
         vm.prank(governance);
         vault.unpause();
-        withdrawalQueue.initialize(address(vault), governance);
 
         vm.startPrank(admin);
         safetyModule.setMinRateDropBps(safetyModule.MAX_RATE_DROP_BPS());

@@ -134,6 +134,9 @@ contract ExternalExitIntegrationTest is Test {
             defaultAdmin
         );
 
+        // Initialize withdrawalQueue (must happen before vault.initialize which calls setGasThreshold on WQ)
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
+
         // Initialize vault
         vault.initialize(
             IERC20(address(aztec)),
@@ -148,9 +151,6 @@ contract ExternalExitIntegrationTest is Test {
         );
         vm.prank(governance);
         vault.unpause();
-
-        // Initialize withdrawalQueue
-        withdrawalQueue.initialize(address(vault), governance);
 
         // Setup roles
         vm.startPrank(governance);

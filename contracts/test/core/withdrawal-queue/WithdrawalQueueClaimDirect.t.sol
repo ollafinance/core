@@ -74,6 +74,10 @@ contract WithdrawalQueueClaimDirectTest is Test {
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
+        // Initialize WithdrawalQueue with OllaCore as the core address
+        // (must happen before vault.initialize which calls setGasThreshold on WQ)
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
+
         // Initialize OllaCore
         vault.initialize(
             asset,
@@ -88,9 +92,6 @@ contract WithdrawalQueueClaimDirectTest is Test {
         );
         vm.prank(governance);
         vault.unpause();
-
-        // Initialize WithdrawalQueue with OllaCore as the core address
-        withdrawalQueue.initialize(address(vault), governance);
 
         // Grant operator role
         vm.startPrank(governance);
