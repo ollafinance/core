@@ -1478,7 +1478,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         // in convertToShares would overflow uint256, which is an arithmetic artefact of
         // the mock-driven slashing scenario, not a protocol vulnerability.
         uint256 testAmount = 1e18;
-        if (total == 0 && supply > 0 && supply > type(uint256).max / testAmount) {
+        if (total == 0 && supply > 0 && supply >= type(uint256).max / testAmount) {
             return;
         }
 

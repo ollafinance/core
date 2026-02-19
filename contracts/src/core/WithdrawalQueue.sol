@@ -114,6 +114,7 @@ contract WithdrawalQueue is
         external
         override
         onlyCore
+        nonReentrant
         returns (uint256 requestId)
     {
         if (recipient == address(0)) {

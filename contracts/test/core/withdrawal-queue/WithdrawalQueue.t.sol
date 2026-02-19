@@ -158,7 +158,7 @@ contract WithdrawalQueueTest is Test {
         uint256 selectedGas;
         uint256 probedUsed;
         uint256 probedFinalizedCount;
-        uint256[5] memory gasOptions = [uint256(120_000), 160_000, 200_000, 240_000, 280_000];
+        uint256[5] memory gasOptions = [uint256(80_000), 100_000, 120_000, 160_000, 200_000];
 
         for (uint256 i = 0; i < gasOptions.length; i++) {
             vm.revertToState(snapshotId);
