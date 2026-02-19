@@ -250,7 +250,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vm.prank(alice);
         vault.claimRequestById(requestId);
 
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__AlreadyClaimed.selector, requestId));
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RequestNotFound.selector, requestId));
         vm.prank(alice);
         vault.claimRequestById(requestId);
     }

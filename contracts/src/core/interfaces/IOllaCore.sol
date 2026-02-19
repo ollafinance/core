@@ -323,6 +323,9 @@ interface IOllaCore {
     /// @notice Thrown when output is less than the caller's minimum.
     error OllaCore__SlippageExceeded(uint256 actual, uint256 minimum);
 
+    /// @notice Thrown when a request is not found in the owner's index.
+    error OllaCore__RequestNotFound(uint256 requestId);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
