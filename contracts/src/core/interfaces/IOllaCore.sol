@@ -86,16 +86,6 @@ interface IOllaCore {
     /// @param shares The shares minted.
     event Deposit(address indexed caller, address indexed recipient, uint256 assets, uint256 shares);
 
-    /// @notice Emitted when a withdrawal is completed.
-    /// @param caller The address that initiated the withdrawal.
-    /// @param recipient The address receiving the assets.
-    /// @param owner The share owner.
-    /// @param assets The assets withdrawn.
-    /// @param shares The shares burned.
-    event Withdraw(
-        address indexed caller, address indexed recipient, address indexed owner, uint256 assets, uint256 shares
-    );
-
     /// @notice Emitted when a withdrawal request is created.
     /// @param requestId The withdrawal request id.
     /// @param owner The share owner that initiated the request.
@@ -111,16 +101,6 @@ interface IOllaCore {
         uint256 assetsExpected,
         uint256 exchangeRate
     );
-
-    /// @notice Emitted when a stake message is sent to the staking manager.
-    /// @param messageId Monotonic message id.
-    /// @param amount The amount requested to stake.
-    event StakeRequested(uint256 indexed messageId, uint256 amount);
-
-    /// @notice Emitted when an unstake message is sent to the staking manager.
-    /// @param messageId Monotonic message id.
-    /// @param amount The amount requested to unstake.
-    event UnstakeRequested(uint256 indexed messageId, uint256 amount);
 
     /// @notice Emitted when the protocol fee is updated.
     /// @param oldFeeBP The old fee in basis points.

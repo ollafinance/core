@@ -23,14 +23,8 @@ interface IRewardsVault {
                                   ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when caller is not authorized.
-    error RewardsVault__Unauthorized(address caller);
-
     /// @notice Thrown when address is zero.
     error RewardsVault__ZeroAddress(string param);
-
-    /// @notice Thrown when insufficient balance for withdrawal.
-    error RewardsVault__InsufficientBalance(uint256 requested, uint256 available);
 
     /// @notice Thrown when amount is zero.
     error RewardsVault__ZeroAmount();
@@ -60,7 +54,6 @@ interface IRewardsVault {
     /// @dev Only callable by the configured core address.
     function withdrawToCore() external;
 
-    // TODO: evaluate to replace with ERC-balance?
     /// @notice Returns the current available funds.
     /// @return The balance of funds held in the vault.
     function balance() external view returns (uint256);
