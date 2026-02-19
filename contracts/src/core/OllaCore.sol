@@ -443,6 +443,9 @@ contract OllaCore is
     }
 
     /// @notice Accepts governance by the pending governance address.
+    // Slither: satellite contracts are trusted protocol-owned modules; external grantRole/revokeRole
+    // calls do not introduce reentrancy risk. Multiple _modules reads are acceptable for clarity.
+    // slither-disable-next-line reentrancy-events,pess-multiple-storage-read
     function acceptGovernance() external override whenNotPaused whenNotRebalancePaused {
         if (msg.sender != _pendingGovernance) {
             revert OllaCore__UnauthorizedPendingGovernance(msg.sender);
@@ -454,16 +457,33 @@ contract OllaCore is
 
         // Transfer governance-related roles from the old governance to the new one
         if (newGovernance != oldGovernance) {
+            // Cache the staking provider registry address to avoid two external calls
+            // slither-disable-next-line unused-return
+            address stakingProviderRegistryAddr = address(_modules.stakingManager.stakingProviderRegistry());
+
             // Grant roles to the new governance address first (before revoking from old)
             _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, newGovernance);
             _grantRole(GUARDIAN_ROLE, newGovernance);
             _grantRole(OPERATOR_ROLE, newGovernance);
+
+            // Propagate DEFAULT_ADMIN_ROLE grant to satellite contracts
+            AccessControlUpgradeable(address(_modules.withdrawalQueue)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            AccessControlUpgradeable(address(_modules.rewardsVault)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            AccessControlUpgradeable(address(_modules.stakingManager)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+            AccessControlUpgradeable(stakingProviderRegistryAddr).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
 
             // Revoke roles from the old governance address
             if (oldGovernance != address(0)) {
                 _revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
                 _revokeRole(GUARDIAN_ROLE, oldGovernance);
                 _revokeRole(OPERATOR_ROLE, oldGovernance);
+
+                // Propagate DEFAULT_ADMIN_ROLE revoke from satellite contracts
+                AccessControlUpgradeable(address(_modules.withdrawalQueue))
+                    .revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+                AccessControlUpgradeable(address(_modules.rewardsVault)).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+                AccessControlUpgradeable(address(_modules.stakingManager)).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+                AccessControlUpgradeable(stakingProviderRegistryAddr).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
             }
         }
         emit GovernanceAccepted(oldGovernance, newGovernance);
