@@ -17,15 +17,6 @@ contract SafetyModule is AccessControl, ISafetyModule {
     /// @notice Role for guardian pause/unpause actions.
     bytes32 public constant GUARDIAN_ROLE = RolesLib.GUARDIAN_ROLE;
 
-    /// @notice Circuit breaker reason: rate drop.
-    bytes32 public constant RATE_DROP = keccak256("RATE_DROP");
-
-    /// @notice Circuit breaker reason: queue ratio exceeded.
-    bytes32 public constant QUEUE_RATIO = keccak256("QUEUE_RATIO");
-
-    /// @notice Circuit breaker reason: accounting stale.
-    bytes32 public constant ACCOUNTING_STALE = keccak256("ACCOUNTING_STALE");
-
     /// @notice Basis points denominator.
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
@@ -160,14 +151,14 @@ contract SafetyModule is AccessControl, ISafetyModule {
         }
 
         if (oldRate == 0) {
-            _triggerBreaker(RATE_DROP);
+            _triggerBreaker(ISafetyModule.BreakerReason.RateDrop);
             return;
         }
 
         uint256 dropBps = (oldRate - nextRate) * BPS_DENOMINATOR / oldRate;
         // solhint-disable-next-line gas-strict-inequalities
         if (dropBps >= minRateDropBps) {
-            _triggerBreaker(RATE_DROP);
+            _triggerBreaker(ISafetyModule.BreakerReason.RateDrop);
         }
     }
 
@@ -175,7 +166,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     function checkQueueRatio(uint256 queued, uint256 total) external override onlyCore {
         if (total == 0) {
             if (queued > 0) {
-                _triggerBreaker(QUEUE_RATIO);
+                _triggerBreaker(ISafetyModule.BreakerReason.QueueRatio);
             }
             return;
         }
@@ -183,7 +174,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         uint256 ratioBps = (queued * BPS_DENOMINATOR) / total;
         // solhint-disable-next-line gas-strict-inequalities
         if (ratioBps >= maxQueueRatioBps) {
-            _triggerBreaker(QUEUE_RATIO);
+            _triggerBreaker(ISafetyModule.BreakerReason.QueueRatio);
         }
     }
 
@@ -198,7 +189,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         uint256 elapsed = block.timestamp - lastAccountingTimestamp;
         // slither-disable-next-line timestamp
         if (elapsed > maxAccountingDelay) {
-            _triggerBreaker(ACCOUNTING_STALE);
+            _triggerBreaker(ISafetyModule.BreakerReason.AccountingStale);
         }
     }
 
@@ -309,7 +300,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function _triggerBreaker(bytes32 reason) internal {
+    function _triggerBreaker(ISafetyModule.BreakerReason reason) internal {
         emit CircuitBreakerTriggered(reason);
         if (!paused) {
             paused = true;

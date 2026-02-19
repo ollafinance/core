@@ -17,7 +17,7 @@ contract SafetyModuleTest is Test {
     event Unpaused();
     event DepositCapUpdated(uint256 cap);
     event WithdrawalMinimumUpdated(uint256 minimum);
-    event CircuitBreakerTriggered(bytes32 reason);
+    event CircuitBreakerTriggered(ISafetyModule.BreakerReason reason);
     event RateDropLimitUpdated(uint256 minRateDropBps);
     event QueueRatioLimitUpdated(uint256 maxQueueRatioBps);
     event AccountingDelayUpdated(uint256 maxAccountingDelay);
@@ -211,7 +211,7 @@ contract SafetyModuleTest is Test {
 
     function test_CheckRateDrop_TriggersBreaker() public {
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.RATE_DROP());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.RateDrop);
 
         vm.prank(core);
         safetyModule.checkRateDrop(1e18, 9e17);
@@ -221,7 +221,7 @@ contract SafetyModuleTest is Test {
 
     function test_CheckQueueRatio_TriggersBreaker() public {
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
 
         vm.prank(core);
         safetyModule.checkQueueRatio(600, 1_000);
@@ -233,7 +233,7 @@ contract SafetyModuleTest is Test {
         vm.warp(block.timestamp + 2 days);
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.ACCOUNTING_STALE());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.AccountingStale);
 
         vm.prank(core);
         safetyModule.checkAccountingLiveness();
@@ -278,7 +278,7 @@ contract SafetyModuleTest is Test {
         uint256 nextRate = 9_500;
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.RATE_DROP());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.RateDrop);
 
         vm.prank(core);
         safetyModule.checkRateDrop(oldRate, nextRate);
@@ -305,7 +305,7 @@ contract SafetyModuleTest is Test {
         uint256 total = 10_000;
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
 
         vm.prank(core);
         safetyModule.checkQueueRatio(queued, total);
@@ -331,7 +331,7 @@ contract SafetyModuleTest is Test {
         vm.warp(block.timestamp + 1 days + 1);
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.ACCOUNTING_STALE());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.AccountingStale);
 
         vm.prank(core);
         safetyModule.checkAccountingLiveness();

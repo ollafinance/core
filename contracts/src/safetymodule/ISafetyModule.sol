@@ -6,6 +6,17 @@ pragma solidity ^0.8.27;
 /// @author Olla Core contributors
 interface ISafetyModule {
     /*//////////////////////////////////////////////////////////////
+                                ENUMS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Circuit breaker reason identifiers.
+    enum BreakerReason {
+        RateDrop,
+        QueueRatio,
+        AccountingStale
+    }
+
+    /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
@@ -26,7 +37,7 @@ interface ISafetyModule {
 
     /// @notice Emitted when a circuit breaker condition is triggered.
     /// @param reason The breaker reason identifier.
-    event CircuitBreakerTriggered(bytes32 reason);
+    event CircuitBreakerTriggered(BreakerReason reason);
 
     /// @notice Emitted when the rate-drop threshold is updated.
     /// @param minRateDropBps The new rate-drop threshold in basis points.

@@ -42,7 +42,7 @@ contract OllaCoreSafetyModuleTest is Test {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event CircuitBreakerTriggered(bytes32 reason);
+    event CircuitBreakerTriggered(ISafetyModule.BreakerReason reason);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -194,7 +194,7 @@ contract OllaCoreSafetyModuleTest is Test {
         stakingManager.setSlashingDelta(10 * DECIMALS);
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.RATE_DROP());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.RateDrop);
 
         vault.updateAccounting();
 
@@ -208,7 +208,7 @@ contract OllaCoreSafetyModuleTest is Test {
         _performRequestRedeem(alice, 80 * DECIMALS, alice);
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.QUEUE_RATIO());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
 
         vault.updateAccounting();
 
@@ -219,7 +219,7 @@ contract OllaCoreSafetyModuleTest is Test {
         vm.warp(block.timestamp + 2 days);
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit CircuitBreakerTriggered(safetyModule.ACCOUNTING_STALE());
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.AccountingStale);
 
         vault.updateAccounting();
 
