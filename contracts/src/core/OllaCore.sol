@@ -120,7 +120,9 @@ contract OllaCore is
     ///      either accept or cancel any pending proposal before upgrading.
     address private _pendingGovernance;
 
-    /// @notice Storage gap for upgradability
+    /// @notice Storage gap for upgradability.
+    /// @dev State variables occupy 40 slots (including struct members). When adding new state
+    ///      variables, append them above this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[46] private __gap;
 
@@ -1623,6 +1625,10 @@ contract OllaCore is
         );
     }
 
+    /// @dev Tokens sent directly to OllaCore are absorbed as donations benefiting all stAztec holders
+    ///      proportionally. Any surplus (actual balance minus bufferedAssets minus finalizedUnclaimed) is
+    ///      added to bufferedAssets. This is intentional and irreversible — the virtual offset (+1) pattern
+    ///      in the conversion functions prevents this from being exploitable for share price manipulation.
     function _reconcileBufferedAssets(address recipient) internal returns (uint256 delta) {
         uint256 buffered = _accountingState.bufferedAssets;
         uint256 actual = _modules.asset.balanceOf(address(this));

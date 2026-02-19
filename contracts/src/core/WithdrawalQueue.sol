@@ -50,6 +50,8 @@ contract WithdrawalQueue is
     uint256 public override totalPendingAssets;
 
     /// @notice Storage gap for upgradability.
+    /// @dev State variables occupy 5 slots. When adding new state variables, append them above
+    ///      this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
     uint256[45] private __gap;
 
