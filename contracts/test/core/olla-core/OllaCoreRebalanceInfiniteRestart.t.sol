@@ -74,6 +74,8 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
             rewardsVault,
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         alice = makeAddr("alice");
 

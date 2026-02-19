@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from "util";
 import { defaultConfig } from "./config.js";
-import { createClients, loadDeployments } from "./lib/client.js";
+import { createClients, loadDeployments, getOllaCore } from "./lib/client.js";
 import { readFullState } from "./lib/state.js";
 import { OutputWriter } from "./lib/output.js";
 import { Logger } from "./lib/logger.js";
@@ -238,6 +238,11 @@ async function main() {
     startTime: new Date().toISOString(),
     cliArgs: args,
   });
+
+  // Unpause protocol (core is paused on initialization)
+  const ollaCore = getOllaCore(addresses, clients.operatorWallet);
+  await ollaCore.write.unpause();
+  console.log("Protocol unpaused");
 
   // Read initial state (tick 0)
   let currentState = await readFullState(

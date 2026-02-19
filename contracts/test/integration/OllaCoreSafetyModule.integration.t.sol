@@ -104,6 +104,8 @@ contract OllaCoreSafetyModuleTest is Test {
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vm.prank(governance);
+        vault.unpause();
 
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.startPrank(governance);

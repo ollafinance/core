@@ -200,6 +200,9 @@ contract OllaCoreReconcileTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         alice = makeAddr("alice");
         bob = makeAddr("bob");
 

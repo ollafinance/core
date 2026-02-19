@@ -186,6 +186,7 @@ contract OllaCore is
         );
         __AccessControl_init();
         __Pausable_init();
+        _pause();
 
         _modules = IOllaCore.Modules({
             asset: asset_,
@@ -1101,8 +1102,8 @@ contract OllaCore is
         }
 
         shares = _convertToSharesForDeposit(assets);
-        _increaseBuffered(assets);
         modules.asset.safeTransferFrom(caller, address(this), assets);
+        _increaseBuffered(assets);
         _syncBufferedWithBalance();
         _increaseCumulativeDeposits(assets);
 

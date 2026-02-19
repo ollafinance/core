@@ -81,6 +81,9 @@ contract OllaCoreAccessControlTest is Test {
             address(safetyModule)
         );
 
+        vm.prank(governance);
+        vault.unpause();
+
         alice = makeAddr("alice");
     }
 

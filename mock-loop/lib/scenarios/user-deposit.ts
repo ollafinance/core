@@ -32,7 +32,7 @@ export async function executeUserDeposit(
     const approveTx = await asset.write.approve([addresses.OllaCoreProxy, amount]);
 
     // Step 2: Deposit
-    const depositTx = await ollaCore.write.deposit([amount, userAddress], { gas: 500_000n });
+    const depositTx = await ollaCore.write.deposit([amount, userAddress, 0n], { gas: 500_000n });
 
     return {
       scenario: "user-deposit",
