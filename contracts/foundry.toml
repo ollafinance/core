@@ -61,7 +61,7 @@ exclude_lints = ["mixed-case-variable"]
 "@openzeppelin-contracts" = "5.5.0"
 "@openzeppelin-contracts-upgradeable" = "5.5.0"
 forge-std = "1.11.0"
-aztec-contracts = { version = "3.0.1", git = "https://github.com/AztecProtocol/l1-contracts.git", rev = "d5b51f36ea9efed08e81026dfccf4d7f4625b4cb" }
+aztec-contracts = { version = "4.0.0", git = "https://github.com/AztecProtocol/l1-contracts.git", branch = "rc" }
 
 [soldeer]
 remappings_generate = false
