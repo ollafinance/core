@@ -222,9 +222,8 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.computeAttesterState, ())
-            );
+            (bool success, bytes memory data) = address(stakingManager)
+            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
             if (!success) {
                 continue;
             }
@@ -321,9 +320,8 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.computeAttesterState, ())
-            );
+            (bool success, bytes memory data) = address(stakingManager)
+            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
             if (!success) {
                 continue;
             }
@@ -713,9 +711,8 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.computeAttesterState, ())
-            );
+            (bool success, bytes memory data) = address(stakingManager)
+            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
             if (!success) {
                 continue;
             }
@@ -845,9 +842,8 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.computeAttesterState, ())
-            );
+            (bool success, bytes memory data) = address(stakingManager)
+            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
             if (!success) continue;
             (, bool completed) = abi.decode(data, (uint256, bool));
             uint256 cursorAfter = _getAttesterStateCursor();
