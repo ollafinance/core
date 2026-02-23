@@ -25,6 +25,13 @@ contract WithdrawalQueue is
     IWithdrawalQueue
 {
     /*//////////////////////////////////////////////////////////////
+                                 CONSTANTS
+     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Maximum allowed gas threshold (30 million).
+    uint256 private constant _MAX_GAS_THRESHOLD = 30_000_000;
+
+    /*//////////////////////////////////////////////////////////////
                                    STATE
      //////////////////////////////////////////////////////////////*/
 
@@ -110,6 +117,9 @@ contract WithdrawalQueue is
     /// @param threshold The new gas threshold.
     function setGasThreshold(uint256 threshold) external override onlyCore {
         if (threshold == 0) {
+            revert WithdrawalQueue__InvalidParameter();
+        }
+        if (threshold > _MAX_GAS_THRESHOLD) {
             revert WithdrawalQueue__InvalidParameter();
         }
         uint256 oldThreshold = _gasThreshold;

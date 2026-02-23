@@ -49,4 +49,21 @@ contract StakingManagerGasThresholdTest is StakingManagerBaseTest {
         vm.prank(alice);
         stakingManager.setGasThreshold(100_000);
     }
+
+    function test_RevertWhen_SetGasThreshold_ExceedsMax() external {
+        vm.expectRevert(IStakingManager.StakingManager__InvalidParameter.selector);
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(30_000_001);
+    }
+
+    function test_SetGasThreshold_AtMax() external {
+        uint256 maxThreshold = 30_000_000;
+
+        vm.expectEmit(true, true, false, true);
+        emit GasThresholdUpdated(50_000, maxThreshold);
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(maxThreshold);
+    }
 }
