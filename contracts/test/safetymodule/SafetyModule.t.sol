@@ -252,6 +252,27 @@ contract SafetyModuleTest is Test {
         assertFalse(allowed, "deposit should be blocked when cap exceeded");
     }
 
+    function test_CheckDepositAllowed_OverflowReturnsFalse() public {
+        vm.prank(core);
+        bool allowed = safetyModule.checkDepositAllowed(type(uint256).max, type(uint256).max);
+
+        assertFalse(allowed, "overflow inputs should return false, not revert");
+    }
+
+    function test_CheckDepositAllowed_AtCapReturnsTrue() public {
+        vm.prank(core);
+        bool allowed = safetyModule.checkDepositAllowed(500 ether, 500 ether);
+
+        assertTrue(allowed, "deposit exactly at cap should be allowed");
+    }
+
+    function test_CheckDepositAllowed_AboveCapReturnsFalse() public {
+        vm.prank(core);
+        bool allowed = safetyModule.checkDepositAllowed(500 ether, 501 ether);
+
+        assertFalse(allowed, "deposit above cap should be blocked");
+    }
+
     /*//////////////////////////////////////////////////////////////
                         WITHDRAWAL MINIMUM CHECK
     //////////////////////////////////////////////////////////////*/

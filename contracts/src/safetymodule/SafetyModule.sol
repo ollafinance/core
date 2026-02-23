@@ -283,7 +283,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         onlyCore
         returns (bool allowed)
     {
-        if (deposit + total > depositCap) {
+        if (deposit > depositCap || total > depositCap - deposit) {
             return false;
         }
         return true;
