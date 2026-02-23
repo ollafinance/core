@@ -330,6 +330,9 @@ interface IOllaCore {
     /// @notice Thrown when a request is not found in the owner's index.
     error OllaCore__RequestNotFound(uint256 requestId);
 
+    /// @notice Thrown when the new safety module's CORE does not match this contract.
+    error OllaCore__InvalidSafetyModule(address safetyModule);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/

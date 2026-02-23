@@ -535,6 +535,9 @@ contract OllaCore is
         if (newSafetyModule == address(0)) {
             revert OllaCore__ZeroAddress("newSafetyModule");
         }
+        if (ISafetyModule(newSafetyModule).CORE() != address(this)) {
+            revert OllaCore__InvalidSafetyModule(newSafetyModule);
+        }
         address oldSafetyModule = _modules.safetyModule;
         _modules.safetyModule = newSafetyModule;
         emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
