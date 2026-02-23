@@ -426,7 +426,7 @@ contract StakingManagerInvariantTest is Test {
         );
     }
 
-    /// @notice Inactive entries are not counted as staked
+    /// @notice Registry only contains Active/Exiting entries; removed attesters are not counted as staked
     function invariant_InactiveEntriesNotStaked() external {
         _refreshAttesterState();
         IStakingManager.StakingState memory state = stakingManager.getStakingState();

@@ -55,6 +55,7 @@ abstract contract StakingManagerBaseTest is Test {
     event QueueDripped(address indexed attester);
     event AttesterRewardsClaimed(address indexed attester, uint256 indexed amount);
     event RewardClaimFailed(address indexed attester, string reason);
+    event AttesterRemoved(address indexed attester);
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP

@@ -292,15 +292,17 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         assertEq(_getAttesterStateCursor(), 0, "cursor should reset when length is zero");
     }
 
-    function test_GetSlashingDelta_SkipsInactiveAttestersAndAdvancesCursor() external {
+    function test_GetSlashingDelta_ComputesCorrectlyAfterAttesterRemoval() external {
         uint256 attesterCount = 4;
         IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(attesterCount);
 
+        // Exit and finalize attester 0 — it gets removed from the registry
         vm.startPrank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
         stakingManager.getUnstakedFunds();
         vm.stopPrank();
 
+        // Set external exits with slashing for the remaining 3 attesters
         for (uint256 i = 1; i < attesterCount; ++i) {
             rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD - 2 ether, block.timestamp);
         }
@@ -338,7 +340,7 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
             vm.prank(defaultAdmin);
             (uint256 deltaFull, bool completed) = stakingManager.computeAttesterState();
             assertTrue(completed, "slashing delta should complete in one call");
-            assertEq(deltaFull, expectedDelta, "slashing delta should skip inactive attester");
+            assertEq(deltaFull, expectedDelta, "slashing delta should match remaining attesters");
             return;
         }
 
@@ -349,13 +351,13 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
 
         assertEq(first, 0, "partial pass should return prior cumulative");
         assertFalse(completedFirst, "partial pass should not complete");
-        assertGt(cursorAfterFirst, 0, "cursor should advance after skipping inactive attester");
+        assertGt(cursorAfterFirst, 0, "cursor should advance after partial pass");
 
         vm.prank(defaultAdmin);
         (uint256 second, bool completedSecond) = stakingManager.computeAttesterState();
         assertTrue(completedSecond, "slashing delta should complete");
 
-        assertEq(second, expectedDelta, "slashing delta should skip inactive attester");
+        assertEq(second, expectedDelta, "slashing delta should match remaining attesters");
     }
 
     function test_GetSlashingDelta_AccumulatorResetsAfterCompletion() external {

@@ -286,8 +286,8 @@ contract StakingManagerSyncAttestersTest is StakingManagerBaseTest {
 
     /// @notice When an exit is finalized externally on the rollup (funds returned to StakingManager),
     ///         the attester has no balance and no exit on the rollup. computeAttesterState() should
-    ///         move it from Active to Inactive without counting slashing delta (funds are in-contract).
-    function test_ComputeAttesterState_ExternallyFinalized_MovesToInactive() external {
+    ///         remove it from the registry without counting slashing delta (funds are in-contract).
+    function test_ComputeAttesterState_ExternallyFinalized_RemovesFromRegistry() external {
         uint256 total = 3;
         _setupMultipleStakedAttesters(total);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
@@ -303,10 +303,10 @@ contract StakingManagerSyncAttestersTest is StakingManagerBaseTest {
 
         _computeAttesterState();
 
-        // Attester 0 should now be Inactive (not Exiting, not Active)
+        // Attester 0 should now be removed from the registry (not Exiting, not Active)
         assertEq(stakingManager.getActivatedAttesterCount(), total - 1, "active count should decrease by 1");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "no pending unstakes - exit already finalized");
-        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester should not be exiting");
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester should be removed");
 
         // The remaining 2 attesters are still active and counted in totalStaked
         assertEq(
@@ -321,7 +321,7 @@ contract StakingManagerSyncAttestersTest is StakingManagerBaseTest {
         assertEq(delta, 0, "no slashing delta - funds returned to contract");
     }
 
-    /// @notice Mixed scenario: one attester externally finalized (Inactive), one externally exiting
+    /// @notice Mixed scenario: one attester externally finalized (removed), one externally exiting
     ///         (Exiting), one still active — all handled in a single computeAttesterState() pass.
     function test_ComputeAttesterState_MixedSyncScenarios() external {
         uint256 total = 3;
@@ -341,7 +341,7 @@ contract StakingManagerSyncAttestersTest is StakingManagerBaseTest {
 
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "only attester 2 should remain active");
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "only attester 1 should be exiting");
-        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester 0 should be inactive");
+        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester 0 should be removed");
         assertTrue(stakingManager.isUnstakePending(keys[1].attester), "attester 1 should be exiting");
         assertFalse(stakingManager.isUnstakePending(keys[2].attester), "attester 2 should still be active");
     }

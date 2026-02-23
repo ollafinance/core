@@ -123,6 +123,10 @@ interface IStakingManager {
     /// @param newMaxAge The new maximum age.
     event AttesterStateMaxAgeUpdated(uint256 indexed oldMaxAge, uint256 indexed newMaxAge);
 
+    /// @notice Emitted when an attester is removed from the registry.
+    /// @param attester The removed attester address.
+    event AttesterRemoved(address indexed attester);
+
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
     //////////////////////////////////////////////////////////////*/
