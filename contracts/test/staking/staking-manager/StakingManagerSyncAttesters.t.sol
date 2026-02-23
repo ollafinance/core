@@ -85,9 +85,8 @@ contract StakingManagerSyncAttestersTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.computeAttesterState, ())
-            );
+            (bool success,) = address(stakingManager)
+            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
             if (!success) {
                 continue;
             }
@@ -147,9 +146,8 @@ contract StakingManagerSyncAttestersTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success,) = address(stakingManager).call{ gas: gasOptions[i] }(
-                abi.encodeCall(stakingManager.computeAttesterState, ())
-            );
+            (bool success,) = address(stakingManager)
+            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
             if (!success) {
                 continue;
             }

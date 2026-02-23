@@ -298,14 +298,14 @@ contract OllaCore is
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return requestId The withdrawal request id.
-    function requestRedeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        whenNotRebalancePaused
-        returns (uint256 requestId)
-    {
+    function requestRedeemWithPermit(
+        uint256 shares,
+        address recipient,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override nonReentrant whenNotPaused whenNotRebalancePaused returns (uint256 requestId) {
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
         requestId = _requestRedeem(msg.sender, shares, recipient);
@@ -1956,8 +1956,8 @@ contract OllaCore is
         pure
         returns (uint256 totalAssets_)
     {
-        uint256 total = buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
-            + buckets.claimableRewards;
+        uint256 total =
+            buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.claimableRewards;
         // Slither: false positive — comparing asset amounts, not timestamps.
         // slither-disable-next-line timestamp
         totalAssets_ = buckets.slashingDelta >= total ? 0 : total - buckets.slashingDelta;
