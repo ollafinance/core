@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity >=0.8.27 <0.9.0;
+pragma solidity 0.8.27;
 
 import { G1Point } from "src/staking/libraries/BN254Lib.sol";
 

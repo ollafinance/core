@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.27;
+pragma solidity 0.8.27;
 
 import { AccessControl } from "@oz/access/AccessControl.sol";
 
@@ -256,6 +256,8 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
     /// @inheritdoc ISafetyModule
     function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp_) external override onlyCore {
+        // slither-disable-next-line timestamp
+        if (latestAccountingTimestamp_ > block.timestamp) revert SafetyModule__InvalidParameter();
         lastAccountingTimestamp = latestAccountingTimestamp_;
         emit AccountingTimestampUpdated(latestAccountingTimestamp_);
     }
@@ -295,7 +297,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         onlyCore
         returns (bool allowed)
     {
-        if (deposit + total > depositCap) {
+        if (deposit > depositCap || total > depositCap - deposit) {
             return false;
         }
         return true;

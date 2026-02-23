@@ -82,6 +82,22 @@ contract WithdrawalQueueGasThresholdTest is Test {
         q.initialize(core, admin, 0);
     }
 
+    function test_RevertWhen_SetGasThreshold_ExceedsMax() public {
+        vm.expectRevert(IWithdrawalQueue.WithdrawalQueue__InvalidParameter.selector);
+        vm.prank(core);
+        queue.setGasThreshold(30_000_001);
+    }
+
+    function test_SetGasThreshold_AtMax() public {
+        vm.expectEmit(false, false, false, true, address(queue));
+        emit GasThresholdUpdated(50_000, 30_000_000);
+
+        vm.prank(core);
+        queue.setGasThreshold(30_000_000);
+
+        assertEq(queue.gasThreshold(), 30_000_000, "gas threshold should be set to max");
+    }
+
     /*//////////////////////////////////////////////////////////////
                          VIEW FUNCTION
     //////////////////////////////////////////////////////////////*/

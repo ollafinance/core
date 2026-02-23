@@ -16,7 +16,6 @@ sequenceDiagram
     GOV->>C: setTargetBufferedAssets(newBuffer)
     GOV->>C: setRebalanceGasThreshold(newThreshold)
     C->>SM: setGasThreshold(newThreshold)
-    GOV->>C: setRewardsVault(newRewardsVault)
 ```
 
 ## Roles and safety

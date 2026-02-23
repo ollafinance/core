@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity >=0.8.27 <0.9.0;
+pragma solidity 0.8.27;
 
 /// @title IMaliciousAztec
 /// @notice Interface for MaliciousAztec test helper.

@@ -324,7 +324,7 @@ subgraph "Olla Staking Components"
     spr[StakingProviderRegistry]
 end
 
-timelock -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, proposeGovernance, cancelGovernanceProposal, setRewardsVault, setTargetBufferedAssets, setRebalanceGasThreshold, setInstantRedemptionFeeBP, recoverStAztec, _authorizeUpgrade"| core
+timelock -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, proposeGovernance, cancelGovernanceProposal, setTargetBufferedAssets, setRebalanceGasThreshold, setInstantRedemptionFeeBP, recoverStAztec, _authorizeUpgrade"| core
 timelock -->|"setDepositCap, setWithdrawalMinimum, setMinRateDropBps, setMaxQueueRatioBps, setMaxAccountingDelay"| safety
 timelock -->|"_authorizeUpgrade"| withdrawQ
 timelock -->|"_authorizeUpgrade"| rewards

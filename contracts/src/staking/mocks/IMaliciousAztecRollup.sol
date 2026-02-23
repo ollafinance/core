@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity >=0.8.27 <0.9.0;
+pragma solidity 0.8.27;
 
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 

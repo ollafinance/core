@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.27;
+pragma solidity 0.8.27;
 
 /// @title RolesLib
 /// @notice Shared role identifiers used across protocol modules.

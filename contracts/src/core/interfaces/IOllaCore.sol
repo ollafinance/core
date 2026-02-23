@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.27;
+pragma solidity 0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
@@ -137,11 +137,6 @@ interface IOllaCore {
     /// @param pendingGovernance The cancelled pending governance address.
     event GovernanceProposalCancelled(address governance, address pendingGovernance);
 
-    /// @notice Emitted when the rewards vault address is updated.
-    /// @param oldRewardsVault The old rewards vault address.
-    /// @param newRewardsVault The new rewards vault address.
-    event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
-
     /// @notice Emitted when the safety module address is updated.
     /// @param oldSafetyModule The old safety module address.
     /// @param newSafetyModule The new safety module address.
@@ -209,6 +204,10 @@ interface IOllaCore {
     /// @param recipient Recipient address.
     /// @param assets Assets claimed.
     event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
+
+    /// @notice Emitted when a negative gross rewards period is detected during accounting.
+    /// @param grossRewardsSigned The signed gross rewards value (negative).
+    event NegativeRewardsPeriod(int256 grossRewardsSigned);
 
     /// @notice Emitted when rewards delta is updated.
     /// @param delta The rewards delta amount.
@@ -488,14 +487,23 @@ interface IOllaCore {
     function proposeGovernance(address newGovernance) external;
 
     /// @notice Accepts governance by the pending governance address.
+    /// @dev Propagates DEFAULT_ADMIN_ROLE to all satellite contracts (WithdrawalQueue,
+    ///      RewardsVault, StakingManager, StakingProviderRegistry) and transfers
+    ///      GUARDIAN_ROLE + OPERATOR_ROLE on OllaCore itself.
+    ///
+    ///      IMPORTANT: OPERATOR_ROLE on StakingManager is NOT propagated automatically.
+    ///      The new governance must self-grant OPERATOR_ROLE on StakingManager via its
+    ///      DEFAULT_ADMIN_ROLE after the transfer completes. Without this step, operational
+    ///      functions gated by OPERATOR_ROLE on StakingManager (e.g. setAttesterStateMaxAge)
+    ///      will be inaccessible to the new governance.
+    ///
+    ///      Note: STAKING_PROVIDER_ADMIN_ROLE on StakingProviderRegistry belongs to the
+    ///      staking provider, not governance. It is intentionally not touched during
+    ///      governance transfer.
     function acceptGovernance() external;
 
     /// @notice Cancels a pending governance proposal.
     function cancelGovernanceProposal() external;
-
-    /// @notice Sets the rewards vault address.
-    /// @param newRewardsVault The new rewards vault address.
-    function setRewardsVault(IRewardsVault newRewardsVault) external;
 
     /// @notice Sets the safety module address.
     /// @param newSafetyModule The new safety module address.

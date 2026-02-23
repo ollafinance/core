@@ -48,7 +48,7 @@ contract OllaCoreHarness is OllaCore {
     function exposedComputeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, int256 netFlows)
         external
         pure
-        returns (uint256 grossRewards)
+        returns (uint256 grossRewards, int256 grossRewardsSigned)
     {
         return _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
     }
