@@ -137,11 +137,6 @@ interface IOllaCore {
     /// @param pendingGovernance The cancelled pending governance address.
     event GovernanceProposalCancelled(address governance, address pendingGovernance);
 
-    /// @notice Emitted when the rewards vault address is updated.
-    /// @param oldRewardsVault The old rewards vault address.
-    /// @param newRewardsVault The new rewards vault address.
-    event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
-
     /// @notice Emitted when protocol fees are paid.
     /// @param protocolFeeAssets Protocol fee amount in assets.
     /// @param treasuryShares Treasury fee shares minted.
@@ -487,10 +482,6 @@ interface IOllaCore {
 
     /// @notice Cancels a pending governance proposal.
     function cancelGovernanceProposal() external;
-
-    /// @notice Sets the rewards vault address.
-    /// @param newRewardsVault The new rewards vault address.
-    function setRewardsVault(IRewardsVault newRewardsVault) external;
 
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.

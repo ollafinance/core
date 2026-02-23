@@ -417,8 +417,6 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(operator);
         vault.rebalance{ gas: gasLimit }();
 
-        MockRewardsVault newRewardsVault = new MockRewardsVault(asset, address(vault));
-
         vm.startPrank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vault.setProtocolFeeBP(1);
@@ -428,9 +426,6 @@ contract OllaCoreRebalancePauseTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vault.proposeGovernance(makeAddr("newGov"));
-
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
-        vault.setRewardsVault(newRewardsVault);
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vault.setTargetBufferedAssets(1);

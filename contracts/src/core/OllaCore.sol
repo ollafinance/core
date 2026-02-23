@@ -523,23 +523,6 @@ contract OllaCore is
         emit GovernanceProposalCancelled(_modules.governance, pending);
     }
 
-    /// @notice Sets the rewards vault address.
-    /// @param newRewardsVault The new rewards vault address.
-    function setRewardsVault(IRewardsVault newRewardsVault)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenNotRebalancePaused
-    {
-        if (address(newRewardsVault) == address(0)) {
-            revert OllaCore__ZeroAddress("newRewardsVault");
-        }
-        IRewardsVault oldRewardsVault = _modules.rewardsVault;
-        _modules.rewardsVault = newRewardsVault;
-        emit RewardsVaultUpdated(address(oldRewardsVault), address(newRewardsVault));
-    }
-
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.
     function setTargetBufferedAssets(uint256 newBuffer)
