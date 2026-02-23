@@ -57,6 +57,29 @@ export interface GovernanceChangeScenario {
   newGovernancePrivateKey: string;
 }
 
+export interface SlashingScenario {
+  type: "slashing";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  slashAmountBps: number; // basis points of staked amount to slash
+  targetAttesterIndex?: number; // which attester to slash (default: 0)
+}
+
+export interface ExternalExitScenario {
+  type: "external-exit";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  exitAttesterIndex?: number; // which attester to exit (default: last one)
+}
+
+export interface SafetyModuleScenario {
+  type: "safety-module";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  action: "configure" | "read-state" | "verify-breaker" | "unpause" | "warp-time";
+  warpSeconds?: number; // for warp-time action
+}
+
 export type ScenarioConfig =
   | ProviderKeysScenario
   | MockRewardsScenario
@@ -65,7 +88,10 @@ export type ScenarioConfig =
   | AccountingScenario
   | UserInitiateWithdrawScenario
   | UserClaimScenario
-  | GovernanceChangeScenario;
+  | GovernanceChangeScenario
+  | SlashingScenario
+  | ExternalExitScenario
+  | SafetyModuleScenario;
 
 // Contract state types
 export interface AccountingState {

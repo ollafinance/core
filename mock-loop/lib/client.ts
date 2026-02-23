@@ -228,3 +228,14 @@ export function getRewardsVault(
     client
   );
 }
+
+export function getSafetyModule(
+  addresses: DeploymentAddresses,
+  client: PublicClient | WalletClient
+) {
+  return getContractInstance(
+    "SafetyModule",
+    addresses.SafetyModule as Address,
+    client
+  );
+}

@@ -65,5 +65,23 @@ export const defaultConfig: RunConfig = {
       },
       privateKey: ANVIL_ACCOUNT_1_PRIVATE_KEY,
     },
+    // Phase 1: Core protocol scenarios (disabled by default)
+    {
+      type: "slashing",
+      enabled: false,
+      shouldRun: (_state, tick) => tick === 20,
+      slashAmountBps: 100, // 1% slash
+    },
+    {
+      type: "external-exit",
+      enabled: false,
+      shouldRun: (_state, tick) => tick === 15,
+    },
+    {
+      type: "safety-module",
+      enabled: false,
+      shouldRun: (_state, tick) => tick === 5,
+      action: "configure",
+    },
   ],
 };

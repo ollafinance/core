@@ -23,6 +23,9 @@ import { executeAccounting } from "./lib/scenarios/accounting.js";
 import { executeUserInitiateWithdraw } from "./lib/scenarios/user-initiate-withdraw.js";
 import { executeUserClaim } from "./lib/scenarios/user-claim.js";
 import { executeGovernanceChange } from "./lib/scenarios/governance-change.js";
+import { executeSlashing } from "./lib/scenarios/slashing.js";
+import { executeExternalExit } from "./lib/scenarios/external-exit.js";
+import { executeSafetyModule } from "./lib/scenarios/safety-module.js";
 
 function parseCliArgs(): CliArgs {
   const { values } = parseArgs({
@@ -88,6 +91,12 @@ async function executeScenario(
       return executeUserClaim(scenario, tick, clients, addresses);
     case "governance-change":
       return executeGovernanceChange(scenario, tick, clients, addresses);
+    case "slashing":
+      return executeSlashing(scenario, tick, clients, addresses, scenarioState, runState);
+    case "external-exit":
+      return executeExternalExit(scenario, tick, clients, addresses, scenarioState, runState);
+    case "safety-module":
+      return executeSafetyModule(scenario, tick, clients, addresses, scenarioState, runState);
     default:
       return {
         scenario: (scenario as ScenarioConfig).type,
