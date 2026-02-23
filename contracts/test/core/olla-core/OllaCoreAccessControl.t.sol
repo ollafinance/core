@@ -233,15 +233,23 @@ contract OllaCoreAccessControlTest is Test {
 
     function test_SetSafetyModule_UpdatesAndEmits() external {
         address oldSafetyModule = vault.safetyModule();
-        address newSafetyModule = makeAddr("newSafetyModule");
+        MockSafetyModule newSafetyModule = new MockSafetyModule(address(vault));
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
+        emit SafetyModuleUpdated(oldSafetyModule, address(newSafetyModule));
 
         vm.prank(governance);
-        vault.setSafetyModule(newSafetyModule);
+        vault.setSafetyModule(address(newSafetyModule));
 
-        assertEq(vault.safetyModule(), newSafetyModule, "safety module updated");
+        assertEq(vault.safetyModule(), address(newSafetyModule), "safety module updated");
+    }
+
+    function test_RevertWhen_SafetyModuleCoreDoesNotMatch() external {
+        MockSafetyModule wrongModule = new MockSafetyModule(makeAddr("wrongCore"));
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSafetyModule.selector, address(wrongModule)));
+        vm.prank(governance);
+        vault.setSafetyModule(address(wrongModule));
     }
 
     function test_SetTargetBufferedAssets_UpdatesAndEmits() external {
@@ -359,18 +367,19 @@ contract OllaCoreAccessControlTest is Test {
         assertEq(vault.pendingGovernance(), newGovernance, "governance fuzz");
     }
 
-    function testFuzz_SetSafetyModule_NonZeroAddress(address newSafetyModule) external {
-        vm.assume(newSafetyModule != address(0));
+    function testFuzz_SetSafetyModule_AcceptsValidModule(uint256 salt) external {
+        // Deploy a fresh MockSafetyModule with the correct CORE for each fuzz run.
+        MockSafetyModule newModule = new MockSafetyModule{ salt: bytes32(salt) }(address(vault));
 
         address oldSafetyModule = vault.safetyModule();
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
+        emit SafetyModuleUpdated(oldSafetyModule, address(newModule));
 
         vm.prank(governance);
-        vault.setSafetyModule(newSafetyModule);
+        vault.setSafetyModule(address(newModule));
 
-        assertEq(vault.safetyModule(), newSafetyModule, "safety module fuzz");
+        assertEq(vault.safetyModule(), address(newModule), "safety module fuzz");
     }
 
     /*//////////////////////////////////////////////////////////////
