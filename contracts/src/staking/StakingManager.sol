@@ -512,6 +512,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     ///      pops the array, cleans up the index mapping, and resets all cursors since
     ///      swap-and-pop invalidates positional references.
     /// @param index The index of the attester to remove.
+    // slither-disable-next-line pess-multiple-storage-read
     function _removeAttester(uint256 index) internal {
         uint256 lastIndex = _attesters.length - 1;
         address removedAttester = _attesters[index].attester;
