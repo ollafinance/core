@@ -120,7 +120,11 @@ interface ISafetyModule {
     /// @notice Pauses the safety module.
     function pause() external;
 
-    /// @notice Unpauses the safety module.
+    /// @notice Unpauses the protocol after a circuit breaker trigger or manual pause.
+    /// @dev Intentionally has no cooldown or condition re-check. The GUARDIAN_ROLE is trusted
+    ///      to verify the triggering condition is resolved before unpausing. A mandatory cooldown
+    ///      was considered but rejected because it would block quick recovery from false positive
+    ///      circuit breaker trips (e.g., transient rate fluctuations during large rebalances).
     function unpause() external;
 
     /*//////////////////////////////////////////////////////////////
