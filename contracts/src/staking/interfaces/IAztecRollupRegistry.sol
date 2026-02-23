@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity >=0.8.27 <0.9.0;
+pragma solidity 0.8.27;
 
 /// @title IAztecRollupRegistry
 /// @notice Minimal interface for the Aztec Rollup Registry contract.

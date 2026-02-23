@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.27;
+pragma solidity 0.8.27;
 
 /// @title IERC20Mintable
 /// @notice Interface for mintable ERC-20 tokens.
