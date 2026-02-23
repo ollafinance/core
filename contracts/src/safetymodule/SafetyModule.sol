@@ -244,6 +244,8 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
     /// @inheritdoc ISafetyModule
     function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp_) external override onlyCore {
+        // slither-disable-next-line timestamp
+        if (latestAccountingTimestamp_ > block.timestamp) revert SafetyModule__InvalidParameter();
         lastAccountingTimestamp = latestAccountingTimestamp_;
         emit AccountingTimestampUpdated(latestAccountingTimestamp_);
     }
