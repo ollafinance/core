@@ -197,12 +197,18 @@ contract SafetyModuleTest is Test {
 
     function test_SetLastAccountingTimestamp_EmitsEvent() public {
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit AccountingTimestampUpdated(555);
+        emit AccountingTimestampUpdated(block.timestamp);
 
         vm.prank(core);
-        safetyModule.setLatestAccountingTimestamp(555);
+        safetyModule.setLatestAccountingTimestamp(block.timestamp);
 
-        assertEq(safetyModule.lastAccountingTimestamp(), 555, "last accounting timestamp should update");
+        assertEq(safetyModule.lastAccountingTimestamp(), block.timestamp, "last accounting timestamp should update");
+    }
+
+    function test_RevertWhen_SetLastAccountingTimestampFutureValue() public {
+        vm.expectRevert(abi.encodeWithSelector(ISafetyModule.SafetyModule__InvalidParameter.selector));
+        vm.prank(core);
+        safetyModule.setLatestAccountingTimestamp(block.timestamp + 1);
     }
 
     /*//////////////////////////////////////////////////////////////
