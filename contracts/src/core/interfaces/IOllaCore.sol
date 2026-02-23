@@ -205,6 +205,10 @@ interface IOllaCore {
     /// @param assets Assets claimed.
     event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
 
+    /// @notice Emitted when a negative gross rewards period is detected during accounting.
+    /// @param grossRewardsSigned The signed gross rewards value (negative).
+    event NegativeRewardsPeriod(int256 grossRewardsSigned);
+
     /// @notice Emitted when rewards delta is updated.
     /// @param delta The rewards delta amount.
     event RewardsDelta(uint256 delta);
