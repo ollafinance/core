@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.27;
+pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
@@ -521,23 +521,6 @@ contract OllaCore is
         address pending = _pendingGovernance;
         _pendingGovernance = address(0);
         emit GovernanceProposalCancelled(_modules.governance, pending);
-    }
-
-    /// @notice Sets the rewards vault address.
-    /// @param newRewardsVault The new rewards vault address.
-    function setRewardsVault(IRewardsVault newRewardsVault)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenNotRebalancePaused
-    {
-        if (address(newRewardsVault) == address(0)) {
-            revert OllaCore__ZeroAddress("newRewardsVault");
-        }
-        IRewardsVault oldRewardsVault = _modules.rewardsVault;
-        _modules.rewardsVault = newRewardsVault;
-        emit RewardsVaultUpdated(address(oldRewardsVault), address(newRewardsVault));
     }
 
     /// @notice Sets the target buffer used to reserve liquid assets.
@@ -1612,7 +1595,12 @@ contract OllaCore is
     {
         updatedBuckets = _accountingState;
         newTotalAssets = _computeTotalAssets(updatedBuckets);
-        grossRewards = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        int256 grossRewardsSigned;
+        (grossRewards, grossRewardsSigned) = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        // slither-disable-next-line timestamp
+        if (grossRewardsSigned < 0) {
+            emit NegativeRewardsPeriod(grossRewardsSigned);
+        }
         (protocolFeeAssets, treasuryShares, providerShares) = _payoutOllaProtocolFees(grossRewards);
         rate = _exchangeRate();
         return (updatedBuckets, newTotalAssets, grossRewards, protocolFeeAssets, treasuryShares, providerShares, rate);
@@ -1959,17 +1947,16 @@ contract OllaCore is
     function _computeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, int256 netFlows)
         internal
         pure
-        returns (uint256 grossRewards)
+        returns (uint256 grossRewards, int256 grossRewardsSigned)
     {
         int256 changeInAssets = SafeCast.toInt256(newTotalAssets) - SafeCast.toInt256(oldTotalAssets);
         // Clamp signed delta; no timestamp-based control flow.
         // slither-disable-next-line timestamp
-        // slither-disable-next-line timestamp
-        int256 grossRewardsSigned = changeInAssets - netFlows;
+        grossRewardsSigned = changeInAssets - netFlows;
         // slither-disable-next-line timestamp
         if (grossRewardsSigned > 0) {
             grossRewards = SafeCast.toUint256(grossRewardsSigned);
         }
-        return grossRewards;
+        return (grossRewards, grossRewardsSigned);
     }
 }

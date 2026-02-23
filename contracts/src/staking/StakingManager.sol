@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.27;
+pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
@@ -35,6 +35,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     uint256 public constant MIN_ATTESTER_STATE_MAX_AGE = 1 hours;
     /// @notice Maximum allowed attester state max age: 48 hours.
     uint256 public constant MAX_ATTESTER_STATE_MAX_AGE = 48 hours;
+
+    /// @notice Maximum allowed gas threshold (30 million).
+    uint256 private constant _MAX_GAS_THRESHOLD = 30_000_000;
 
     /*//////////////////////////////////////////////////////////////
                                     STATE
@@ -202,6 +205,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @inheritdoc IStakingManager
     function setGasThreshold(uint256 threshold) external override onlyCore {
         if (threshold == 0) revert StakingManager__ZeroAmount();
+        if (threshold > _MAX_GAS_THRESHOLD) revert StakingManager__InvalidParameter();
         uint256 previousThreshold = gasThreshold;
         gasThreshold = threshold;
         emit GasThresholdUpdated(previousThreshold, threshold);

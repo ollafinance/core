@@ -40,6 +40,7 @@ contract OllaCoreAccountingTest is Test {
     event Rebalanced(
         uint256 bufferedAssets, uint256 stakedPrincipal, uint256 rewardsVaultBalance, uint256 rewardsDelta
     );
+    event NegativeRewardsPeriod(int256 grossRewardsSigned);
     event RewardsDelta(uint256 delta);
 
     /*//////////////////////////////////////////////////////////////
@@ -190,9 +191,19 @@ contract OllaCoreAccountingTest is Test {
     }
 
     function test_ComputeGrossRewards() external view {
-        uint256 grossRewards = vault.exposedComputeGrossRewards(100 * DECIMALS, 130 * DECIMALS, int256(20 * DECIMALS));
+        (uint256 grossRewards, int256 grossRewardsSigned) =
+            vault.exposedComputeGrossRewards(100 * DECIMALS, 130 * DECIMALS, int256(20 * DECIMALS));
 
         assertEq(grossRewards, 10 * DECIMALS, "gross rewards computed");
+        assertEq(grossRewardsSigned, int256(10 * DECIMALS), "gross rewards signed positive");
+    }
+
+    function test_ComputeGrossRewards_Negative() external view {
+        (uint256 grossRewards, int256 grossRewardsSigned) =
+            vault.exposedComputeGrossRewards(100 * DECIMALS, 90 * DECIMALS, int256(5 * DECIMALS));
+
+        assertEq(grossRewards, 0, "gross rewards clamped to zero");
+        assertEq(grossRewardsSigned, -int256(15 * DECIMALS), "gross rewards signed negative");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -324,7 +335,7 @@ contract OllaCoreAccountingTest is Test {
             accountingAfterRebalance.bufferedAssets + stakedPrincipal + rvBalance + claimableRewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
         (int256 expectedNetFlows,,) = vault.exposedComputeNetFlows(flowsBefore);
-        uint256 expectedGrossRewards =
+        (uint256 expectedGrossRewards,) =
             vault.exposedComputeGrossRewards(reportBefore.totalAssets, expectedTotalAssets, expectedNetFlows);
 
         uint256 expectedTimestamp = block.timestamp;
@@ -574,12 +585,14 @@ contract OllaCoreAccountingTest is Test {
     }
 
     function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, int96 netFlows) external view {
-        uint256 grossRewards = vault.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        (uint256 grossRewards, int256 grossRewardsSigned) =
+            vault.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         int256 changeInAssets = int256(uint256(newTotalAssets)) - int256(uint256(oldTotalAssets));
         int256 expectedGrossSigned = changeInAssets - int256(netFlows);
         uint256 expectedGross = expectedGrossSigned > 0 ? uint256(expectedGrossSigned) : 0;
 
         assertEq(grossRewards, expectedGross, "gross rewards fuzz");
+        assertEq(grossRewardsSigned, expectedGrossSigned, "gross rewards signed fuzz");
     }
 
     /*//////////////////////////////////////////////////////////////

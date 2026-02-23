@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.27;
+pragma solidity 0.8.27;
 
 import { ERC20 } from "@oz/token/ERC20/ERC20.sol";
 import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";

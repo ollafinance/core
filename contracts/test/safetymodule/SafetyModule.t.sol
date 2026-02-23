@@ -197,12 +197,18 @@ contract SafetyModuleTest is Test {
 
     function test_SetLastAccountingTimestamp_EmitsEvent() public {
         vm.expectEmit(false, false, false, true, address(safetyModule));
-        emit AccountingTimestampUpdated(555);
+        emit AccountingTimestampUpdated(block.timestamp);
 
         vm.prank(core);
-        safetyModule.setLatestAccountingTimestamp(555);
+        safetyModule.setLatestAccountingTimestamp(block.timestamp);
 
-        assertEq(safetyModule.lastAccountingTimestamp(), 555, "last accounting timestamp should update");
+        assertEq(safetyModule.lastAccountingTimestamp(), block.timestamp, "last accounting timestamp should update");
+    }
+
+    function test_RevertWhen_SetLastAccountingTimestampFutureValue() public {
+        vm.expectRevert(abi.encodeWithSelector(ISafetyModule.SafetyModule__InvalidParameter.selector));
+        vm.prank(core);
+        safetyModule.setLatestAccountingTimestamp(block.timestamp + 1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -250,6 +256,27 @@ contract SafetyModuleTest is Test {
         bool allowed = safetyModule.checkDepositAllowed(600 ether, 500 ether);
 
         assertFalse(allowed, "deposit should be blocked when cap exceeded");
+    }
+
+    function test_CheckDepositAllowed_OverflowReturnsFalse() public {
+        vm.prank(core);
+        bool allowed = safetyModule.checkDepositAllowed(type(uint256).max, type(uint256).max);
+
+        assertFalse(allowed, "overflow inputs should return false, not revert");
+    }
+
+    function test_CheckDepositAllowed_AtCapReturnsTrue() public {
+        vm.prank(core);
+        bool allowed = safetyModule.checkDepositAllowed(500 ether, 500 ether);
+
+        assertTrue(allowed, "deposit exactly at cap should be allowed");
+    }
+
+    function test_CheckDepositAllowed_AboveCapReturnsFalse() public {
+        vm.prank(core);
+        bool allowed = safetyModule.checkDepositAllowed(500 ether, 501 ether);
+
+        assertFalse(allowed, "deposit above cap should be blocked");
     }
 
     /*//////////////////////////////////////////////////////////////

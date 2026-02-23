@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity >=0.8.27 <0.9.0;
+pragma solidity 0.8.27;
 
 import { Address } from "@oz/utils/Address.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
