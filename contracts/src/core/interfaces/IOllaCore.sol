@@ -478,6 +478,19 @@ interface IOllaCore {
     function proposeGovernance(address newGovernance) external;
 
     /// @notice Accepts governance by the pending governance address.
+    /// @dev Propagates DEFAULT_ADMIN_ROLE to all satellite contracts (WithdrawalQueue,
+    ///      RewardsVault, StakingManager, StakingProviderRegistry) and transfers
+    ///      GUARDIAN_ROLE + OPERATOR_ROLE on OllaCore itself.
+    ///
+    ///      IMPORTANT: OPERATOR_ROLE on StakingManager is NOT propagated automatically.
+    ///      The new governance must self-grant OPERATOR_ROLE on StakingManager via its
+    ///      DEFAULT_ADMIN_ROLE after the transfer completes. Without this step, operational
+    ///      functions gated by OPERATOR_ROLE on StakingManager (e.g. setAttesterStateMaxAge)
+    ///      will be inaccessible to the new governance.
+    ///
+    ///      Note: STAKING_PROVIDER_ADMIN_ROLE on StakingProviderRegistry belongs to the
+    ///      staking provider, not governance. It is intentionally not touched during
+    ///      governance transfer.
     function acceptGovernance() external;
 
     /// @notice Cancels a pending governance proposal.
