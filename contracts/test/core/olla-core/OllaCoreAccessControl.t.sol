@@ -8,7 +8,6 @@ import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
@@ -26,7 +25,6 @@ contract OllaCoreAccessControlTest is Test {
     event GovernanceProposed(address oldGovernance, address newGovernance);
     event GovernanceAccepted(address oldGovernance, address newGovernance);
     event GovernanceProposalCancelled(address governance, address pendingGovernance);
-    event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
     event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
     /*//////////////////////////////////////////////////////////////
@@ -121,16 +119,6 @@ contract OllaCoreAccessControlTest is Test {
         vault.proposeGovernance(alice);
     }
 
-    function test_RevertWhen_NonAdminSetsRewardsVault() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
-        vm.prank(alice);
-        vault.setRewardsVault(IRewardsVault(alice));
-    }
-
     function test_RevertWhen_NonAdminSetsTargetBufferedAssets() external {
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -170,12 +158,6 @@ contract OllaCoreAccessControlTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newGovernance"));
         vm.prank(governance);
         vault.proposeGovernance(address(0));
-    }
-
-    function test_RevertWhen_RewardsVaultIsZero() external {
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newRewardsVault"));
-        vm.prank(governance);
-        vault.setRewardsVault(IRewardsVault(address(0)));
     }
 
     function test_SetTargetBufferedAssets_AllowsZero() external {
@@ -230,19 +212,6 @@ contract OllaCoreAccessControlTest is Test {
         vault.proposeGovernance(newGovernance);
 
         assertEq(vault.pendingGovernance(), newGovernance, "pending governance updated");
-    }
-
-    function test_SetRewardsVault_UpdatesAndEmits() external {
-        address oldRewardsVault = vault.rewardsVault();
-        address newRewardsVault = makeAddr("newRewardsVault");
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit RewardsVaultUpdated(oldRewardsVault, newRewardsVault);
-
-        vm.prank(governance);
-        vault.setRewardsVault(IRewardsVault(newRewardsVault));
-
-        assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault updated");
     }
 
     function test_SetTargetBufferedAssets_UpdatesAndEmits() external {
@@ -358,20 +327,6 @@ contract OllaCoreAccessControlTest is Test {
         vault.proposeGovernance(newGovernance);
 
         assertEq(vault.pendingGovernance(), newGovernance, "governance fuzz");
-    }
-
-    function testFuzz_SetRewardsVault_NonZeroAddress(address newRewardsVault) external {
-        vm.assume(newRewardsVault != address(0));
-
-        address oldRewardsVault = vault.rewardsVault();
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit RewardsVaultUpdated(oldRewardsVault, newRewardsVault);
-
-        vm.prank(governance);
-        vault.setRewardsVault(IRewardsVault(newRewardsVault));
-
-        assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault fuzz");
     }
 
     /*//////////////////////////////////////////////////////////////
