@@ -20,6 +20,17 @@ This serves two purposes:
 | T-7 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
 | T-8 | `GUARDIAN_ROLE` can pause/unpause and force-unpause a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-unpausing mid-rebalance leaves state machine inconsistent |
 
+## Design Decisions
+
+### SafetyModule is intentionally non-UUPS
+
+SafetyModule uses plain `AccessControl` (not upgradeable) with an `immutable CORE`. This is deliberate:
+
+1. **Trust anchor**: SafetyModule is the protocol's circuit breaker / pause mechanism. Making it silently upgradeable would undermine its purpose — users must be able to reason about what can pause the protocol without worrying about implementation swaps.
+2. **Simple logic, small attack surface**: Its functionality (deposit caps, rate-drop breakers, queue-ratio breakers, accounting liveness) is straightforward and unlikely to need in-place patching.
+3. **Setter escape hatch**: `OllaCore.setSafetyModule()` (admin-only, requires unpaused + no active rebalance) allows replacing the module without a full UUPS upgrade of the core proxy.
+4. **No funds, no cross-contract references**: SafetyModule holds no assets and is only referenced by OllaCore, so swapping it carries no consistency risk (contrast with RewardsVault, which holds funds and is referenced by StakingManager).
+
 ## Mitigations
 
 - **T-1 through T-6** are governance-controlled risks. The primary mitigation is a **timelocked multisig** for all admin and role-grant operations, giving the community a window to react to malicious proposals.

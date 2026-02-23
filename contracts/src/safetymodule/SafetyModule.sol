@@ -9,6 +9,18 @@ import { RolesLib } from "src/shared/RolesLib.sol";
 /// @title SafetyModule
 /// @notice Enforces deposit caps and circuit breaker checks.
 /// @author Olla Core contributors
+/// @dev SafetyModule is intentionally **not** UUPS-upgradeable:
+///  1. It is the protocol's safety/pause mechanism (circuit breaker). Making
+///     it silently upgradeable would undermine its purpose as a trust anchor —
+///     users must be able to reason about what can pause the protocol.
+///  2. Its logic is simple (circuit breakers + pause) with minimal attack
+///     surface, so the upgrade complexity/risk outweighs the benefit.
+///  3. OllaCore exposes a `setSafetyModule()` setter (admin-only) that allows
+///     replacing the module without upgrading the core proxy, providing an
+///     escape hatch if a bug is discovered.
+///  4. SafetyModule holds no user funds and has no cross-contract references
+///     outside OllaCore, so swapping it carries no asset-safety or
+///     consistency risk.
 contract SafetyModule is AccessControl, ISafetyModule {
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS

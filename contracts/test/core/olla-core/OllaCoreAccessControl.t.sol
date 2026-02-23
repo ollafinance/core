@@ -27,6 +27,7 @@ contract OllaCoreAccessControlTest is Test {
     event GovernanceAccepted(address oldGovernance, address newGovernance);
     event GovernanceProposalCancelled(address governance, address pendingGovernance);
     event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
+    event SafetyModuleUpdated(address oldSafetyModule, address newSafetyModule);
     event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
     /*//////////////////////////////////////////////////////////////
@@ -131,6 +132,16 @@ contract OllaCoreAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(alice));
     }
 
+    function test_RevertWhen_NonAdminSetsSafetyModule() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(alice);
+        vault.setSafetyModule(alice);
+    }
+
     function test_RevertWhen_NonAdminSetsTargetBufferedAssets() external {
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -176,6 +187,12 @@ contract OllaCoreAccessControlTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newRewardsVault"));
         vm.prank(governance);
         vault.setRewardsVault(IRewardsVault(address(0)));
+    }
+
+    function test_RevertWhen_SafetyModuleIsZero() external {
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newSafetyModule"));
+        vm.prank(governance);
+        vault.setSafetyModule(address(0));
     }
 
     function test_SetTargetBufferedAssets_AllowsZero() external {
@@ -243,6 +260,19 @@ contract OllaCoreAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(newRewardsVault));
 
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault updated");
+    }
+
+    function test_SetSafetyModule_UpdatesAndEmits() external {
+        address oldSafetyModule = vault.safetyModule();
+        address newSafetyModule = makeAddr("newSafetyModule");
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
+
+        vm.prank(governance);
+        vault.setSafetyModule(newSafetyModule);
+
+        assertEq(vault.safetyModule(), newSafetyModule, "safety module updated");
     }
 
     function test_SetTargetBufferedAssets_UpdatesAndEmits() external {
@@ -372,6 +402,20 @@ contract OllaCoreAccessControlTest is Test {
         vault.setRewardsVault(IRewardsVault(newRewardsVault));
 
         assertEq(vault.rewardsVault(), newRewardsVault, "rewards vault fuzz");
+    }
+
+    function testFuzz_SetSafetyModule_NonZeroAddress(address newSafetyModule) external {
+        vm.assume(newSafetyModule != address(0));
+
+        address oldSafetyModule = vault.safetyModule();
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
+
+        vm.prank(governance);
+        vault.setSafetyModule(newSafetyModule);
+
+        assertEq(vault.safetyModule(), newSafetyModule, "safety module fuzz");
     }
 
     /*//////////////////////////////////////////////////////////////

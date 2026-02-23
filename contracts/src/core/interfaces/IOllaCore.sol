@@ -142,6 +142,11 @@ interface IOllaCore {
     /// @param newRewardsVault The new rewards vault address.
     event RewardsVaultUpdated(address oldRewardsVault, address newRewardsVault);
 
+    /// @notice Emitted when the safety module address is updated.
+    /// @param oldSafetyModule The old safety module address.
+    /// @param newSafetyModule The new safety module address.
+    event SafetyModuleUpdated(address oldSafetyModule, address newSafetyModule);
+
     /// @notice Emitted when protocol fees are paid.
     /// @param protocolFeeAssets Protocol fee amount in assets.
     /// @param treasuryShares Treasury fee shares minted.
@@ -491,6 +496,10 @@ interface IOllaCore {
     /// @notice Sets the rewards vault address.
     /// @param newRewardsVault The new rewards vault address.
     function setRewardsVault(IRewardsVault newRewardsVault) external;
+
+    /// @notice Sets the safety module address.
+    /// @param newSafetyModule The new safety module address.
+    function setSafetyModule(address newSafetyModule) external;
 
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.
