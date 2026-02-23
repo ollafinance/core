@@ -137,6 +137,11 @@ interface IOllaCore {
     /// @param pendingGovernance The cancelled pending governance address.
     event GovernanceProposalCancelled(address governance, address pendingGovernance);
 
+    /// @notice Emitted when the safety module address is updated.
+    /// @param oldSafetyModule The old safety module address.
+    /// @param newSafetyModule The new safety module address.
+    event SafetyModuleUpdated(address oldSafetyModule, address newSafetyModule);
+
     /// @notice Emitted when protocol fees are paid.
     /// @param protocolFeeAssets Protocol fee amount in assets.
     /// @param treasuryShares Treasury fee shares minted.
@@ -499,6 +504,10 @@ interface IOllaCore {
 
     /// @notice Cancels a pending governance proposal.
     function cancelGovernanceProposal() external;
+
+    /// @notice Sets the safety module address.
+    /// @param newSafetyModule The new safety module address.
+    function setSafetyModule(address newSafetyModule) external;
 
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.

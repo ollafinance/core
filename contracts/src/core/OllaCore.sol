@@ -523,6 +523,23 @@ contract OllaCore is
         emit GovernanceProposalCancelled(_modules.governance, pending);
     }
 
+    /// @notice Sets the safety module address.
+    /// @param newSafetyModule The new safety module address.
+    function setSafetyModule(address newSafetyModule)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        whenNotPaused
+        whenNotRebalancePaused
+    {
+        if (newSafetyModule == address(0)) {
+            revert OllaCore__ZeroAddress("newSafetyModule");
+        }
+        address oldSafetyModule = _modules.safetyModule;
+        _modules.safetyModule = newSafetyModule;
+        emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
+    }
+
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.
     function setTargetBufferedAssets(uint256 newBuffer)
