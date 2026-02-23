@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { StAztec } from "src/core/StAztec.sol";
@@ -159,6 +160,17 @@ contract DeployScript is BaseDeployer {
         config.rewardsVault = rewardsVault;
         config.safetyModule = safetyModule;
         _ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager, safetyModule);
+
+        // 4.1 Grant DEFAULT_ADMIN_ROLE to OllaCore proxy on satellite contracts
+        //     so that acceptGovernance() can propagate role changes.
+        if (config.deployMocks) {
+            vm.startBroadcast(config.deployerPrivateKey);
+            IAccessControl(withdrawalQueue).grantRole(bytes32(0), ollaCoreProxy);
+            IAccessControl(rewardsVault).grantRole(bytes32(0), ollaCoreProxy);
+            IAccessControl(stakingManager).grantRole(bytes32(0), ollaCoreProxy);
+            IAccessControl(stakingProviderRegistry).grantRole(bytes32(0), ollaCoreProxy);
+            vm.stopBroadcast();
+        }
 
         // 5. Write deployment JSON
         json = _closeAddressesJson(json);

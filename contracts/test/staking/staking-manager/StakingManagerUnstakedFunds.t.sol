@@ -281,7 +281,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         assertFalse(stakingManager.isUnstakePending(keys[1].attester), "internally finalized attester inactive");
     }
 
-    function test_GetUnstakedFunds_RestakeAfterExit_ReusesEntry() external {
+    function test_GetUnstakedFunds_RestakeAfterExit_CreatesNewEntry() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(keys);
@@ -294,7 +294,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         stakingManager.getUnstakedFunds();
         vm.stopPrank();
 
-        assertEq(stakingManager.getActivatedAttesterCount(), 0, "attester should be inactive after exit");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "attester should be removed after exit");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after exit");
 
         vm.prank(providerAdmin);

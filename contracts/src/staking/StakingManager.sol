@@ -511,6 +511,45 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         _attesters[index].status = newStatus;
     }
 
+    /// @notice Removes an attester from the registry via swap-and-pop.
+    /// @dev Decrements the appropriate counter, swaps the last element into the removed slot,
+    ///      pops the array, cleans up the index mapping, and resets all cursors since
+    ///      swap-and-pop invalidates positional references.
+    /// @param index The index of the attester to remove.
+    // slither-disable-next-line pess-multiple-storage-read
+    function _removeAttester(uint256 index) internal {
+        uint256 lastIndex = _attesters.length - 1;
+        address removedAttester = _attesters[index].attester;
+        IStakingManager.InternalAttesterStatus status = _attesters[index].status;
+
+        // Decrement counter based on current status
+        if (status == IStakingManager.InternalAttesterStatus.Active) {
+            --_activeCount;
+        } else if (status == IStakingManager.InternalAttesterStatus.Exiting) {
+            --_exitingCount;
+        }
+
+        // Swap the last element into the removed slot (skip if already last)
+        if (index != lastIndex) {
+            IStakingManager.AttesterInfo storage lastAttester = _attesters[lastIndex];
+            _attesters[index] = lastAttester;
+            _attesterIndex[lastAttester.attester] = index + 1;
+        }
+
+        _attesters.pop();
+        delete _attesterIndex[removedAttester];
+
+        // Reset all cursors — swap-and-pop changes array positions, so existing
+        // cursor values no longer reference the intended elements. Each loop's
+        // bounds check (`if (i > length - 1) i = 0`) handles empty-array safety;
+        // resetting to 0 ensures the next iteration starts from the beginning.
+        _unstakeCursor = 0;
+        _finalizeCursor = 0;
+        _attesterStateCursor = 0;
+
+        emit AttesterRemoved(removedAttester);
+    }
+
     /// @notice Marks an attester as active in the registry.
     /// @param attester The attester address.
     /// @param stakedAmount The amount staked for this attester.
@@ -727,8 +766,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             // slither-disable-next-line calls-loop -- trusted rollup, bounded by attester set size
             AttesterView memory view_ = rollup.getAttesterView(attester);
             if (!view_.exit.exists) {
-                _setStatus(i, IStakingManager.InternalAttesterStatus.Inactive);
-                ++i;
+                _removeAttester(i);
+                // Don't increment — swapped element needs processing
                 continue;
             }
             if (!_isExitExitable(view_)) {
@@ -736,10 +775,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 continue;
             }
             sumOfExitAmounts += view_.exit.amount;
-            _setStatus(i, IStakingManager.InternalAttesterStatus.Inactive);
+            _removeAttester(i);
             // slither-disable-next-line reentrancy-no-eth
             _finalizeExit(rollup, attester, view_.exit.amount);
-            ++i;
+            // Don't increment — swapped element needs processing
         }
 
         uint256 currentLength = _attesters.length;
@@ -827,7 +866,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         uint256 startIndex = i;
 
         // Bounded by gasThreshold and cursor.
-        bool skip;
+        bool removed;
         for (; i < length;) {
             if (gasleft() < gasThreshold) {
                 break;
@@ -849,9 +888,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             AttesterView memory view_ = rollup.getAttesterView(attesterInfo.attester);
 
             // Sync local status with rollup for Active attesters.
-            (status, skip) = _syncAttesterWithRollup(i, status, view_);
-            if (skip) {
-                ++i;
+            (status, removed) = _syncAttesterWithRollup(i, status, view_);
+            if (removed) {
+                length = _attesters.length;
+                // Don't increment — swapped element needs processing
                 continue;
             }
 
@@ -876,17 +916,17 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @notice Syncs local attester status with the rollup for Active attesters.
-    /// @dev Transitions Active → Exiting when exit.exists, or Active → Inactive when externally finalized.
+    /// @dev Transitions Active → Exiting when exit.exists, or removes from registry when externally finalized.
     /// @param index The attester index in the unified registry.
     /// @param status The current local attester status.
     /// @param view_ The pre-fetched rollup AttesterView.
     /// @return updatedStatus The (possibly updated) attester status.
-    /// @return skip True if the attester should be skipped for accumulation (transitioned to Inactive).
+    /// @return removed True if the attester was removed from the registry (externally finalized).
     function _syncAttesterWithRollup(
         uint256 index,
         IStakingManager.InternalAttesterStatus status,
         AttesterView memory view_
-    ) internal returns (IStakingManager.InternalAttesterStatus updatedStatus, bool skip) {
+    ) internal returns (IStakingManager.InternalAttesterStatus updatedStatus, bool removed) {
         if (status != IStakingManager.InternalAttesterStatus.Active) {
             return (status, false);
         }
@@ -895,10 +935,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             _setStatus(index, IStakingManager.InternalAttesterStatus.Exiting);
             return (IStakingManager.InternalAttesterStatus.Exiting, false);
         }
-        // no balance & no exit → transition to Inactive (exit was finalized externally;
+        // no balance & no exit → remove from registry (exit was finalized externally;
         // funds were returned to StakingManager by the rollup so no slashing delta)
         if (view_.effectiveBalance == 0) {
-            _setStatus(index, IStakingManager.InternalAttesterStatus.Inactive);
+            _removeAttester(index);
             return (status, true);
         }
         return (status, false);
