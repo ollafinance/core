@@ -624,7 +624,7 @@ contract OllaCore is
     {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         // Trust: rebalance assumes safety module, staking manager, rewards vault, and withdrawal queue are trusted.
-        // Slither: SafetyModule is a trusted dependency; rebalance is nonReentrant and role-gated.
+        // Slither: SafetyModule is a trusted dependency; rebalance is nonReentrant.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
         safetyModuleRef.checkAccountingLiveness();
         IOllaCore.RebalanceProgress memory progress = _rebalanceProgress;
@@ -1759,12 +1759,6 @@ contract OllaCore is
         return false;
     }
 
-    function _rebalanceCompletionSatisfied(IOllaCore.RebalanceProgress memory progress) internal pure returns (bool) {
-        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
-        // slither-disable-next-line incorrect-equality,timestamp
-        return progress.step == IOllaCore.RebalanceStep.Done;
-    }
-
     function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {
         pendingWithdrawals = _modules.withdrawalQueue.totalPendingAssets();
         uint256 targetBuffered = targetBufferedAssets;
@@ -1866,6 +1860,12 @@ contract OllaCore is
         if (newImplementation == address(0)) {
             revert OllaCore__ZeroAddress("newImplementation");
         }
+    }
+
+    function _rebalanceCompletionSatisfied(IOllaCore.RebalanceProgress memory progress) internal pure returns (bool) {
+        // Slither: enum state machine uses explicit equality checks; no timestamp usage.
+        // slither-disable-next-line incorrect-equality,timestamp
+        return progress.step == IOllaCore.RebalanceStep.Done;
     }
 
     function _validateInitialParams(

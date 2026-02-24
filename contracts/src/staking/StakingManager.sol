@@ -239,6 +239,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
         received = balance;
         hasRemainingExits = _exitingCount > 0;
+        return (received, exitAmount, hasRemainingExits);
     }
 
     /// @inheritdoc IStakingManager
@@ -455,28 +456,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         (, IAztecRollup rollup) = _getRollup();
         unstakedAmount = _initiateUnstakeRequests(rollup, amount);
         return unstakedAmount;
-    }
-
-    // slither-disable-end reentrancy-no-eth
-    // slither-disable-end reentrancy-benign
-    // slither-disable-end calls-loop
-
-    /// @dev Internal claim unstaked funds implementation.
-    /// @dev Validates that sumOfExitAmounts matches the actual claimed amount.
-    /// @return claimed The amount claimed.
-    // slither-disable-start calls-loop
-    // slither-disable-start reentrancy-benign
-    // Reentrancy safe: caller (claimUnstakedFunds) has nonReentrant modifier
-    //   also the called contract is trusted Aztec protocol contract
-    // slither-disable-start reentrancy-no-eth
-    function _claimUnstakedFunds() internal returns (uint256 claimed) {
-        (, IAztecRollup rollup) = _getRollup();
-
-        uint256 balanceBefore = stakingAsset.balanceOf(address(this));
-        uint256 sumOfExitAmounts = _finalizeUnstakes(rollup);
-        claimed = _finalizeClaim(balanceBefore, sumOfExitAmounts);
-
-        return claimed;
     }
 
     // slither-disable-end reentrancy-no-eth
@@ -735,15 +714,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
-    /// @notice Finalizes pending unstake requests that are exitable.
-    /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
-    /// @param rollup The rollup staking interface.
-    /// @return sumOfExitAmounts The total amount finalized.
-    function _finalizeUnstakes(IAztecRollup rollup) internal returns (uint256 sumOfExitAmounts) {
-        sumOfExitAmounts = _finalizeExits(rollup);
-        return sumOfExitAmounts;
-    }
-
     /// @notice Finalizes exiting attesters that are exitable.
     /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
     /// @param rollup The rollup staking interface.
@@ -805,31 +775,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // slither-disable-end pess-multiple-storage-read,cache-array-length
     // slither-disable-end reentrancy-benign
-
-    /// @notice Finalizes a claim by validating and transferring unstaked funds.
-    /// @dev This function intentionally sweeps the **entire** staking asset balance held by this
-    ///      contract to `core`, not just the `newlyFinalized` amount. This serves as a recovery
-    ///      mechanism: any tokens accidentally sent directly to the StakingManager are forwarded to
-    ///      `core` alongside the legitimately finalized funds. The `sumOfExitAmounts != newlyFinalized`
-    ///      check guarantees the newly finalized amount is correct before the full-balance sweep occurs.
-    /// @param balanceBefore The token balance before finalization.
-    /// @param sumOfExitAmounts The sum of finalized exit amounts.
-    /// @return claimed The amount claimed and transferred (entire balance, not just newly finalized).
-    function _finalizeClaim(uint256 balanceBefore, uint256 sumOfExitAmounts) internal returns (uint256 claimed) {
-        uint256 balanceAfter = stakingAsset.balanceOf(address(this));
-        uint256 newlyFinalized = balanceAfter - balanceBefore;
-        if (sumOfExitAmounts != newlyFinalized) {
-            revert StakingManager__ClaimAmountMismatch();
-        }
-
-        // Intentional full-balance sweep: transfers newlyFinalized + any tokens previously stuck in this contract.
-        claimed = balanceAfter;
-        if (claimed > 0) {
-            stakingAsset.safeTransfer(core, claimed);
-            emit UnstakedFundsClaimed(claimed);
-        }
-        return claimed;
-    }
 
     function _computeAttesterStateInternal(IAztecRollup rollup)
         internal
