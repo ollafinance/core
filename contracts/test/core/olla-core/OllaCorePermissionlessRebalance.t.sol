@@ -185,9 +185,7 @@ contract OllaCorePermissionlessRebalance is Test {
 
         IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
         assertEq(
-            uint256(progress1.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "Should be in StakeSurplus step"
+            uint256(progress1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus step"
         );
         assertGt(progress1.stakeRemaining, 0, "Should have stakeRemaining > 0");
 
@@ -355,11 +353,7 @@ contract OllaCorePermissionlessRebalance is Test {
         vault.rebalance();
 
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
-        assertEq(
-            uint256(progress.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "Should be in StakeSurplus"
-        );
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
 
         // Deposit from bob should succeed during in-progress rebalance
         uint256 bobShares = _performDeposit(bob, 5 * DECIMALS);
@@ -391,11 +385,7 @@ contract OllaCorePermissionlessRebalance is Test {
         vault.rebalance();
 
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
-        assertEq(
-            uint256(progress.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "Should be in StakeSurplus"
-        );
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
 
         // setRebalanceCooldown should revert because rebalance is in progress
         vm.prank(governance);
@@ -448,11 +438,7 @@ contract OllaCorePermissionlessRebalance is Test {
         vault.rebalance();
 
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
-        assertEq(
-            uint256(progress.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "Should be in StakeSurplus"
-        );
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
         vault.updateAccounting();
@@ -475,11 +461,7 @@ contract OllaCorePermissionlessRebalance is Test {
         vault.rebalance();
 
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
-        assertEq(
-            uint256(progress.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "Should be in StakeSurplus"
-        );
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
 
         // Non-guardian cannot force reset
         address randomCaller = makeAddr("randomCaller");
@@ -528,11 +510,7 @@ contract OllaCorePermissionlessRebalance is Test {
         vault.rebalance();
 
         IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
-        assertEq(
-            uint256(progress1.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "Should be in StakeSurplus"
-        );
+        assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
         assertEq(progress1.stakeRemaining, 5 * DECIMALS, "Should have 5 ETH remaining to stake");
 
         // Concurrent deposit: bob deposits 10 more ETH while rebalance is in progress
@@ -547,7 +525,7 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Second rebalance: continues with existing stakeRemaining = 5 ETH
         // The cycle finishes staking the original 5 and completes.
-        (, , uint256 stakedAmount2, uint256 resultingBuffer) = vault.rebalance();
+        (,, uint256 stakedAmount2, uint256 resultingBuffer) = vault.rebalance();
 
         // The staked amount is the remaining 5 from the original calculation
         assertEq(stakedAmount2, 5 * DECIMALS, "Should stake the remaining 5 ETH");
@@ -561,7 +539,7 @@ contract OllaCorePermissionlessRebalance is Test {
         // The next cycle (after cooldown) can stake the remaining buffered assets
         _performDeposit(bob, 1 * DECIMALS); // small deposit to ensure work available
         vm.warp(block.timestamp + 1 hours + 1);
-        (, , uint256 stakedAmount3,) = vault.rebalance();
+        (,, uint256 stakedAmount3,) = vault.rebalance();
         assertGt(stakedAmount3, 0, "Next cycle should stake the buffered assets from concurrent deposit");
     }
 }

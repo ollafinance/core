@@ -87,9 +87,7 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         (, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
 
         assertEq(
-            exitAmount,
-            ACTIVATION_THRESHOLD * 2,
-            "exitAmount should accumulate across multiple finalizeExits calls"
+            exitAmount, ACTIVATION_THRESHOLD * 2, "exitAmount should accumulate across multiple finalizeExits calls"
         );
     }
 
@@ -129,11 +127,7 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         vm.prank(alice);
         aztec.transfer(address(stakingManager), donationAmount);
 
-        assertEq(
-            aztec.balanceOf(address(stakingManager)),
-            donationAmount,
-            "manager should hold donated tokens"
-        );
+        assertEq(aztec.balanceOf(address(stakingManager)), donationAmount, "manager should hold donated tokens");
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
@@ -144,15 +138,7 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         assertEq(received, donationAmount, "received should include donated tokens");
         assertEq(exitAmount, 0, "exitAmount should be 0 since no exits were finalized");
         assertFalse(hasRemainingExits, "no remaining exits");
-        assertEq(
-            aztec.balanceOf(core),
-            coreBalanceBefore + donationAmount,
-            "core should receive donated tokens"
-        );
-        assertEq(
-            aztec.balanceOf(address(stakingManager)),
-            0,
-            "manager should have zero balance after sweep"
-        );
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + donationAmount, "core should receive donated tokens");
+        assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should have zero balance after sweep");
     }
 }
