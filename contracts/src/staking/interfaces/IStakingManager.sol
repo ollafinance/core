@@ -204,8 +204,14 @@ interface IStakingManager {
 
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.
+    /// @return exitAmount The amount of finalized exit funds included in received.
     /// @return hasRemainingExits True if there are still attesters in exiting state after finalization.
-    function getUnstakedFunds() external returns (uint256 received, bool hasRemainingExits);
+    function getUnstakedFunds() external returns (uint256 received, uint256 exitAmount, bool hasRemainingExits);
+
+    /// @notice Finalizes exitable attesters on the rollup. Permissionless.
+    /// Tokens move from rollup to StakingManager. Attesters removed from registry.
+    /// @return finalized The amount of assets finalized.
+    function finalizeExits() external returns (uint256 finalized);
 
     /// @notice Claims sequencer rewards to RewardsVault.
     /// @return harvested The amount of rewards harvested.

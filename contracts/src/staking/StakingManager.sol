@@ -92,6 +92,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cached attester state from last completed computation pass.
     StakingState private _cachedState;
 
+    /// @dev Tracks finalized but unclaimed exit amounts for correct accounting.
+    uint256 private _pendingClaimAmount;
+
     /// @dev Gas threshold for bounded rebalance work.
     // solhint-disable-next-line private-vars-leading-underscore
     uint256 private gasThreshold;
@@ -224,11 +227,26 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         override
         onlyCore
         nonReentrant
-        returns (uint256 received, bool hasRemainingExits)
+        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
     {
-        received = _claimUnstakedFunds();
+        exitAmount = _pendingClaimAmount;
+        _pendingClaimAmount = 0;
+
+        uint256 balance = stakingAsset.balanceOf(address(this));
+        if (balance > 0) {
+            stakingAsset.safeTransfer(core, balance);
+            emit UnstakedFundsClaimed(balance);
+        }
+        received = balance;
         hasRemainingExits = _exitingCount > 0;
-        return (received, hasRemainingExits);
+    }
+
+    /// @inheritdoc IStakingManager
+    function finalizeExits() external override nonReentrant returns (uint256 finalized) {
+        (, IAztecRollup rollup) = _getRollup();
+        finalized = _finalizeExits(rollup);
+        _pendingClaimAmount += finalized;
+        return finalized;
     }
 
     /// @inheritdoc IStakingManager
@@ -244,13 +262,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
-    function computeAttesterState()
-        external
-        override
-        onlyCoreOrOperator
-        nonReentrant
-        returns (uint256 slashingDelta, bool completed)
-    {
+    function computeAttesterState() external override nonReentrant returns (uint256 slashingDelta, bool completed) {
         (, IAztecRollup rollup) = _getRollup();
         uint256 lastUpdated = _lastAttesterStateTimestamp;
         bool wasStale = _isAttesterStateStale();
