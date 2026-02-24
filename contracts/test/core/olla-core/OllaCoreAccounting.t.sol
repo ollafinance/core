@@ -111,6 +111,8 @@ contract OllaCoreAccountingTest is Test {
         vault.grantRole(operatorRole, operator);
         vault.grantRole(operatorRole, address(this));
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -373,6 +375,7 @@ contract OllaCoreAccountingTest is Test {
         assertEq(firstReport.rewardsSnapshot, 7 * DECIMALS, "first rewards snapshot stored");
 
         stakingManager.setHarvestedRewards(2 * DECIMALS);
+        vm.warp(block.timestamp + 1 hours);
         vm.prank(operator);
         vault.rebalance();
         stakingManager.setClaimableRewards(9 * DECIMALS);
@@ -571,8 +574,7 @@ contract OllaCoreAccountingTest is Test {
 
         (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = vault.exposedComputeNetFlows(flows);
 
-        uint256 expectedNetDeposits =
-            cumulativeDeposits > latestReportCumulativeDeposits
+        uint256 expectedNetDeposits = cumulativeDeposits > latestReportCumulativeDeposits
             ? cumulativeDeposits - latestReportCumulativeDeposits
             : 0;
         uint256 expectedNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals

@@ -95,6 +95,9 @@ contract RebalanceIntegrationTest is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -173,6 +176,7 @@ contract RebalanceIntegrationTest is Test {
         vm.prank(operator);
         (uint256 h1, uint256 f1, uint256 s1, uint256 b1) = vault.rebalance();
 
+        vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(operator);
         (uint256 h2, uint256 f2, uint256 s2, uint256 b2) = vault.rebalance();
 
@@ -232,11 +236,19 @@ contract RebalanceIntegrationTest is Test {
         vm.prank(governance);
         vault.setTargetBufferedAssets(targetBufferAmount);
 
+        // Set staked principal in accounting to cover the unstaked funds that will be pulled.
+        // getUnstakedFunds() returns exitAmount which is subtracted from stakedPrincipal,
+        // so stakedPrincipal must be >= exitAmount to avoid underflow.
+        stakingManager.setTotalStaked(unstakedAmount);
+        vm.prank(operator);
+        vault.updateAccounting();
+
         stakingManager.setHarvestedRewards(harvestAmount);
         stakingManager.setUnstakedAmount(unstakedAmount);
         asset.mint(address(stakingManager), unstakedAmount);
         stakingManager.setStakeReturnAmount(32 * DECIMALS);
 
+        vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(operator);
         (uint256 harvested, uint256 finalized, uint256 staked, uint256 buffer) = vault.rebalance();
 
@@ -389,6 +401,7 @@ contract RebalanceIntegrationTest is Test {
         assertEq(accounting.claimableRewards, claimable, "claimable rewards persisted");
 
         // 3. Rebalance should succeed — harvest step pulls rewards into buffer
+        vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(operator);
         (uint256 rewardsDelta,,,) = vault.rebalance();
         assertEq(rewardsDelta, rewards, "rebalance should harvest rewards");
@@ -397,11 +410,17 @@ contract RebalanceIntegrationTest is Test {
         assertEq(accountingAfterRebalance.cumulativeRewards, rewards, "cumulative rewards updated after rebalance");
 
         // 4. Set a short max age and warp past it to make state stale
+        //    Also ensure we advance past the rebalance cooldown (1 hour)
         uint256 shortMaxAge = 30;
         stakingManager.setAttesterStateMaxAge(shortMaxAge);
         (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
 
-        vm.warp(lastUpdated + shortMaxAge + 1);
+        {
+            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            uint256 minWarp = rpt.timestamp + 1 hours + 1;
+            uint256 staleWarp = lastUpdated + shortMaxAge + 1;
+            vm.warp(minWarp > staleWarp ? minWarp : staleWarp);
+        }
 
         // 5. Verify updateAccounting() reverts with stale data
         vm.expectRevert(

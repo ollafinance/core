@@ -153,6 +153,9 @@ contract ComputeAttesterStateIntegration is Test {
         vault.grantRole(vault.OPERATOR_ROLE(), operator);
         stakingManager.grantRole(stakingManager.OPERATOR_ROLE(), operator);
         vm.stopPrank();
+
+        // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -329,8 +332,8 @@ contract ComputeAttesterStateIntegration is Test {
         emit log_named_uint("bufferedAssets after rebalance 1", stateAfterRebalance1.bufferedAssets);
         emit log_named_uint("stakedPrincipal after rebalance 1", stateAfterRebalance1.stakedPrincipal);
 
-        // If rebalance is still in progress (paused mid-cycle), call again
-        if (vault.isRebalancePaused()) {
+        // If rebalance is still in progress, call again
+        if (vault.rebalanceProgress().step != IOllaCore.RebalanceStep.Done) {
             vm.prank(operator);
             vault.rebalance();
         }
@@ -394,7 +397,7 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Complete rebalance if multi-step
         for (uint256 i; i < 5; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }
@@ -472,12 +475,14 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Complete rebalance if multi-step
         for (uint256 i; i < 10; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }
 
-        assertFalse(vault.isRebalancePaused(), "rebalance should complete and unpause");
+        assertEq(
+            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+        );
 
         // ── Verify totalStaked on StakingManager is correct ──
         uint256 totalStaked = stakingManager.totalStaked();
@@ -513,7 +518,7 @@ contract ComputeAttesterStateIntegration is Test {
         vault.rebalance();
 
         for (uint256 i; i < 10; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }
@@ -574,7 +579,7 @@ contract ComputeAttesterStateIntegration is Test {
         uint256 callsMade = 1;
         uint256 pausedAtComputeCount;
         for (uint256 i; i < maxCalls; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
                 pausedAtComputeCount++;
@@ -585,7 +590,11 @@ contract ComputeAttesterStateIntegration is Test {
         }
 
         // Verify rebalance completed
-        assertFalse(vault.isRebalancePaused(), "rebalance should complete after multi-pass compute");
+        assertEq(
+            uint256(vault.rebalanceProgress().step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should complete after multi-pass compute"
+        );
         IOllaCore.RebalanceProgress memory finalProgress = vault.rebalanceProgress();
         assertEq(uint256(finalProgress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should reach Done step");
 
@@ -635,10 +644,12 @@ contract ComputeAttesterStateIntegration is Test {
                 emittedAccounting = true;
             }
 
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
         }
 
-        assertFalse(vault.isRebalancePaused(), "rebalance should complete");
+        assertEq(
+            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+        );
         assertTrue(emittedAccounting, "AccountingUpdated event must be emitted on the completion call");
     }
 
@@ -667,12 +678,16 @@ contract ComputeAttesterStateIntegration is Test {
         vault.rebalance();
 
         for (uint256 i; i < 10; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }
 
-        assertFalse(vault.isRebalancePaused(), "first rebalance should complete");
+        assertEq(
+            uint256(vault.rebalanceProgress().step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "first rebalance should complete"
+        );
         assertGt(_readAttestersLength(), 0, "should have at least 1 attester");
 
         // Phase 2: Set extremely high gasThreshold so computeAttesterState loop
@@ -682,6 +697,9 @@ contract ComputeAttesterStateIntegration is Test {
 
         // New deposit to clear idle buffer guard and trigger a new rebalance cycle
         _performDeposit(alice, activationThreshold);
+
+        // Advance past rebalance cooldown so a new cycle can start
+        vm.warp(block.timestamp + 1 hours);
 
         // Call rebalance repeatedly with limited gas. The staking step will also be affected
         // by the high threshold (no new staking), but that's fine — the key point is that
@@ -696,11 +714,15 @@ contract ComputeAttesterStateIntegration is Test {
                 stallCount++;
             }
 
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
         }
 
         // The rebalance should still be paused (stalled at ComputeAttesterState)
-        assertTrue(vault.isRebalancePaused(), "rebalance should remain paused (stalled)");
+        assertNotEq(
+            uint256(vault.rebalanceProgress().step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should remain in progress (stalled)"
+        );
 
         IOllaCore.RebalanceProgress memory finalProgress = vault.rebalanceProgress();
         assertEq(
@@ -740,13 +762,17 @@ contract ComputeAttesterStateIntegration is Test {
         // With no attesters, computeAttesterState completes immediately (empty array → progressed=true)
         // So rebalance should reach Done
         for (uint256 i; i < 5; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }
 
         // Verify rebalance completed and pause is cleared
-        assertFalse(vault.isRebalancePaused(), "rebalance should complete with empty attester array");
+        assertEq(
+            uint256(vault.rebalanceProgress().step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should complete with empty attester array"
+        );
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should reach Done");
 
@@ -783,12 +809,14 @@ contract ComputeAttesterStateIntegration is Test {
         vault.rebalance();
 
         for (uint256 i; i < 10; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }
 
-        assertFalse(vault.isRebalancePaused(), "rebalance should complete");
+        assertEq(
+            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+        );
 
         // Verify stakedPrincipal after rebalance
         IOllaCore.AccountingState memory stateAfterRebalance = vault.accountingState();
@@ -848,7 +876,7 @@ contract ComputeAttesterStateIntegration is Test {
         // Keep calling, checking that step saves progress correctly
         uint256 computeCallCount;
         for (uint256 i; i < 15; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
                 computeCallCount++;
@@ -858,7 +886,11 @@ contract ComputeAttesterStateIntegration is Test {
         }
 
         // Verify rebalance eventually completes
-        assertFalse(vault.isRebalancePaused(), "rebalance should eventually complete");
+        assertEq(
+            uint256(vault.rebalanceProgress().step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should eventually complete"
+        );
 
         // Verify no data corruption — stakedPrincipal and totalStaked should match
         IOllaCore.AccountingState memory state = vault.accountingState();
@@ -890,7 +922,7 @@ contract ComputeAttesterStateIntegration is Test {
         vault.rebalance();
 
         for (uint256 i; i < 5; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }

@@ -126,6 +126,9 @@ contract WithdrawalQueueClaimDirectTest is Test {
         vm.prank(user);
         requestId = vault.requestRedeem(redeemShares, user);
 
+        // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
+        vm.warp(block.timestamp + 1 hours);
+
         // Rebalance to finalize the withdrawal (the queue has pending assets and core has buffer)
         vm.prank(operator);
         vault.rebalance();

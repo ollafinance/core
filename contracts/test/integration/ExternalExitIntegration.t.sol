@@ -156,6 +156,9 @@ contract ExternalExitIntegrationTest is Test {
         vm.startPrank(governance);
         vault.grantRole(vault.OPERATOR_ROLE(), operator);
         vm.stopPrank();
+
+        // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -231,6 +234,7 @@ contract ExternalExitIntegrationTest is Test {
         uint256 requestId = vault.requestRedeem(withdrawShares, alice);
 
         // 5. Rebalance #1 - initiates unstake for 1 attester
+        vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
@@ -270,6 +274,11 @@ contract ExternalExitIntegrationTest is Test {
         // Single rebalance call: claims exits AND completes the full cycle
         // because getUnstakedFunds() returns hasRemainingExits=false (via _exitingCount)
         // after all exiting attesters have been finalized.
+        {
+            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            vm.warp(rpt.timestamp + 1 hours + 1);
+        }
+        stakingManager.finalizeExits();
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
@@ -326,6 +335,7 @@ contract ExternalExitIntegrationTest is Test {
         vm.prank(governance);
         vault.setTargetBufferedAssets(depositAmount);
 
+        vm.warp(block.timestamp + 1 hours);
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
@@ -346,6 +356,11 @@ contract ExternalExitIntegrationTest is Test {
 
         uint256 coreBalanceBefore = aztec.balanceOf(address(vault));
 
+        {
+            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            vm.warp(rpt.timestamp + 1 hours + 1);
+        }
+        stakingManager.finalizeExits();
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
@@ -423,6 +438,7 @@ contract ExternalExitIntegrationTest is Test {
         // But StakingManager will unstake 2 full attesters (200 ether)
         // progress.unstakeRemaining should clamp to 0 instead of underflowing
 
+        vm.warp(block.timestamp + 1 hours);
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
