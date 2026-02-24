@@ -13,6 +13,7 @@ flowchart LR
 
 subgraph "Actors"
     user[User]
+    anyone[Anyone]
     governanceActor[Governance]
     guardianActor[Guardian]
     ollaOperatorActor[Olla Protocol Operator]
@@ -60,7 +61,6 @@ end
 guardianWallet -. "GUARDIAN_ROLE" .-> core
 guardianWallet -. "GUARDIAN_ROLE" .-> safety
 
-ollaOperatorWallet -. "OPERATOR_ROLE" .-> core
 stakingProviderAdminWallet -. "STAKING_PROVIDER_ADMIN_ROLE" .-> spr
 timelock -. "DEFAULT_ADMIN_ROLE" .-> core
 timelock -. "DEFAULT_ADMIN_ROLE" .-> safety
@@ -76,16 +76,18 @@ core -->|"request-,claim-,finalize-withdrawal"| withdrawQ
 
 core -->|"checkDepositAllowed / checkWithdrawalMinimum / checkQueueRatio / checkAccountingLiveness"| safety
 
-%% Operator cycle (end-state orchestration)
-ollaOperatorWallet -->|"computeAttesterState()"| stkMan
-ollaOperatorWallet -->|"rebalance()"| core
+%% Permissionless operations (anyone can call)
+anyone -->|"finalizeExits()"| stkMan
+anyone -->|"computeAttesterState()"| stkMan
+anyone -->|"rebalance() (cooldown-gated)"| core
+anyone -->|"updateAccounting()"| core
+
+%% Operator-only
 ollaOperatorWallet -->|"setRebalanceGasThreshold()"| core
-ollaOperatorWallet -->|"harvestRewards()"| core
-ollaOperatorWallet -->|"finalizeWithdrawals(available)"| core
-ollaOperatorWallet -->|"updateAccounting()"| core
+ollaOperatorWallet -->|"setAttesterStateMaxAge()"| stkMan
 
 %% Guardian control
-guardianWallet -->|"forceRebalanceUnpause()"| core
+guardianWallet -->|"forceRebalanceReset()"| core
 
 %% Staking principal (AZTEC token) movements
 core -->|"stake >Aztec< transferFrom(core, StakingManager, stakeAmount)"| stkMan
@@ -115,6 +117,7 @@ core -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShar
 %% Staking provider admin (control-plane)
 
 style user fill:#900
+style anyone fill:#555
 style ollaOperatorActor stroke:#050,stroke-width:2px
 style stakingProviderActor fill:#009
 style rollup stroke:#ff6,stroke-width:2px
@@ -170,9 +173,11 @@ stkMan -->|"deposit >Aztec< transferFrom(StakingManager, AztecRollup, stakeAmoun
 core -->|"unstake(amount)"| stkMan
 stkMan -->|"initiateWithdraw"| rollup
 
-%% Staking: claim unstaked funds
-core -->|"claimUnstakedFunds >Aztec< transferFrom(StakingManager, core, unstakedAmount)"| stkMan
-stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, unstakedAmount)"| rollup
+%% Finalize exits (permissionless, separate from rebalance)
+stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, exitAmount)"| rollup
+
+%% Sweep unstaked funds during rebalance
+core -->|"getUnstakedFunds >Aztec< transferFrom(StakingManager, core, balance)"| stkMan
 
 %% Rewards harvesting
 core -->|"harvestRewards()"| stkMan
@@ -217,14 +222,14 @@ style userWallet fill:#900
 style core stroke:#090,stroke-width:4px
 ```
 
-## Olla Protocol Operator
+## Permissionless Operations
 
-Requires `OPERATOR_ROLE` on OllaCore and StakingManager. `harvestRewards()` and `finalizeWithdrawals()` are permissionless but are called by the operator as part of the orchestration cycle.
+No special role required. Anyone can call these functions (rebalance is cooldown-gated).
 
 ```mermaid
 flowchart LR
 
-ollaOperatorWallet[Operator Wallet]
+anyoneWallet[Anyone]
 
 subgraph "Olla Core"
     core[OllaCore]
@@ -233,16 +238,32 @@ subgraph "Olla Staking Components"
     stkMan[StakingManager]
 end
 
-ollaOperatorWallet -->|"rebalance()"| core
-ollaOperatorWallet -->|"updateAccounting()"| core
-ollaOperatorWallet -->|"reconcileBufferedAssets()"| core
-ollaOperatorWallet -->|"harvestRewards()"| core
-ollaOperatorWallet -->|"finalizeWithdrawals(available)"| core
-ollaOperatorWallet -->|"computeAttesterState()"| stkMan
+anyoneWallet -->|"rebalance() (cooldown-gated)"| core
+anyoneWallet -->|"updateAccounting()"| core
+anyoneWallet -->|"finalizeExits()"| stkMan
+anyoneWallet -->|"computeAttesterState()"| stkMan
+
+style anyoneWallet fill:#555
+style core stroke:#090,stroke-width:4px
+style stkMan stroke:#090,stroke-width:3px
+```
+
+## Olla Protocol Operator
+
+Requires `OPERATOR_ROLE` on StakingManager for operational configuration.
+
+```mermaid
+flowchart LR
+
+ollaOperatorWallet[Operator Wallet]
+
+subgraph "Olla Staking Components"
+    stkMan[StakingManager]
+end
+
 ollaOperatorWallet -->|"setAttesterStateMaxAge()"| stkMan
 
 style ollaOperatorWallet stroke:#050,stroke-width:2px
-style core stroke:#090,stroke-width:4px
 style stkMan stroke:#090,stroke-width:3px
 ```
 
@@ -262,7 +283,7 @@ end
 
 guardianWallet -->|"pause()"| core
 guardianWallet -->|"unpause()"| core
-guardianWallet -->|"forceRebalanceUnpause()"| core
+guardianWallet -->|"forceRebalanceReset()"| core
 guardianWallet -->|"pause()"| safety
 guardianWallet -->|"unpause()"| safety
 
@@ -324,7 +345,7 @@ subgraph "Olla Staking Components"
     spr[StakingProviderRegistry]
 end
 
-timelock -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, proposeGovernance, cancelGovernanceProposal, setTargetBufferedAssets, setRebalanceGasThreshold, setInstantRedemptionFeeBP, recoverStAztec, _authorizeUpgrade"| core
+timelock -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, proposeGovernance, cancelGovernanceProposal, setTargetBufferedAssets, setRebalanceGasThreshold, setRebalanceCooldown, setInstantRedemptionFeeBP, reconcileBufferedAssets, recoverStAztec, _authorizeUpgrade"| core
 timelock -->|"setDepositCap, setWithdrawalMinimum, setMinRateDropBps, setMaxQueueRatioBps, setMaxAccountingDelay"| safety
 timelock -->|"_authorizeUpgrade"| withdrawQ
 timelock -->|"_authorizeUpgrade"| rewards
