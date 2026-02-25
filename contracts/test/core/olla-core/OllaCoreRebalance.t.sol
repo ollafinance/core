@@ -421,6 +421,49 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered assets unchanged");
     }
 
+    function test_Rebalance_PullUnstakedFunds_CapsExitAmountToStakedPrincipal() external {
+        uint256 stakedAmount = 5 * DECIMALS;
+        uint256 unstakedAmount = 8 * DECIMALS; // exitAmount > stakedPrincipal
+
+        // Deposit and stake to establish stakedPrincipal
+        _performDeposit(alice, stakedAmount);
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(stakedAmount);
+        stakingManager.setTotalStaked(stakedAmount);
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(vault.accountingState().stakedPrincipal, stakedAmount, "stakedPrincipal after stake");
+
+        // Advance past cooldown
+        vm.warp(block.timestamp + 1 hours);
+
+        // Configure unstaked funds where exitAmount > stakedPrincipal.
+        // This simulates a scenario where the rollup returns more than tracked
+        // (e.g. rollup upgrade or accounting drift after slashing).
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        stakingManager.setUnstakedExitAmountOverride(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+        stakingManager.setStakeReturnAmount(0);
+        // After exits, nothing remains staked on the rollup
+        stakingManager.setTotalStaked(0);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(unstakedAmount);
+
+        // Without the cap, this would revert with arithmetic underflow
+        // because exitAmount (8e18) > stakedPrincipal (5e18).
+        vm.prank(operator);
+        vault.rebalance();
+
+        // _updateAccountingInternal runs at end and resets stakedPrincipal
+        // from totalStaked() (now 0). The key assertion is that we didn't revert.
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(accountingAfter.stakedPrincipal, 0, "stakedPrincipal zeroed");
+    }
+
     function test_Rebalance_FinalizeWithdrawals_ConsumesBuffer() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 withdrawalShares = 6 * DECIMALS;

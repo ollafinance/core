@@ -24,6 +24,8 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public harvestedRewards;
     IERC20 public unstakedToken;
     uint256 public unstakedAmount;
+    uint256 public unstakedExitAmountOverride;
+    bool public useUnstakedExitAmountOverride;
     uint256 public pendingUnstakeAmount;
     uint256 public withdrawableUnstakeAmount;
     uint256 public activatedAttesterCount;
@@ -77,6 +79,11 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setUnstakedAmount(uint256 value) external {
         unstakedAmount = value;
+    }
+
+    function setUnstakedExitAmountOverride(uint256 value) external {
+        unstakedExitAmountOverride = value;
+        useUnstakedExitAmountOverride = true;
     }
 
     function setGasBurnTarget(uint256 target) external {
@@ -235,7 +242,8 @@ contract MockAccountingStakingManager is IStakingManager {
 
         unstakedAmount = 0;
         token.safeTransfer(msg.sender, amount);
-        return (amount, amount, _hasRemainingExits);
+        uint256 reportedExit = useUnstakedExitAmountOverride ? unstakedExitAmountOverride : amount;
+        return (amount, reportedExit, _hasRemainingExits);
     }
 
     function harvestRewards() external override returns (uint256 harvested) {

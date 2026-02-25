@@ -1177,7 +1177,12 @@ contract OllaCore is
         // exitAmount only reflects real finalized exits (from _pendingClaimAmount),
         // not donations. Donations increase bufferedAssets without incorrectly
         // reducing stakedPrincipal.
+        // Cap to stakedPrincipal to prevent underflow if rollup exit amounts
+        // ever diverge from tracked principal (e.g. after slashing).
         if (exitAmount > 0) {
+            if (exitAmount > _accountingState.stakedPrincipal) {
+                exitAmount = _accountingState.stakedPrincipal;
+            }
             _accountingState.stakedPrincipal -= exitAmount;
         }
 
