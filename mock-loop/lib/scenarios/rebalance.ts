@@ -1,8 +1,9 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { RebalanceScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { getOllaCore, loadAbi, createUserWallet } from "../client.js";
+import { getOllaCore, getStakingManager, loadAbi, createUserWallet } from "../client.js";
 
 const REBALANCE_STEP_DONE = 6; // RebalanceStep.Done
+const REBALANCE_STEP_PULL_UNSTAKED = 1; // RebalanceStep.PullUnstaked
 const STAKE_FAILED_SELECTOR = "0xd101596a"; // Stake failed error selector
 const REBALANCE_STEP_NAMES = ["Harvest", "PullUnstaked", "FinalizeWithdrawals", "InitiateUnstake", "StakeSurplus", "ComputeAttesterState", "Done"];
 
@@ -25,6 +26,8 @@ export async function executeRebalance(
   const stepHistory: { iter: number; step: number; stepName: string; stakeRemaining: string; unstakeRemaining: string }[] = [];
   let lastProgress: { step: number; stakeRemaining: bigint; unstakeRemaining: bigint } | null = null;
   let gasLimit: bigint | undefined;
+  let finalizeExitsRetries = 0;
+  const MAX_FINALIZE_RETRIES = 3;
 
   try {
     let iteration = 0;
@@ -97,12 +100,37 @@ export async function executeRebalance(
         stakeRemaining: progress.stakeRemaining.toString(),
         unstakeRemaining: progress.unstakeRemaining.toString()
       });
+      // Detect stuck state: no progress between iterations
       if (
         lastProgress &&
         progress.step === lastProgress.step &&
         progress.stakeRemaining === lastProgress.stakeRemaining &&
         progress.unstakeRemaining === lastProgress.unstakeRemaining
       ) {
+        // When stuck at PullUnstaked, call finalizeExits() to move exiting attesters
+        // through the exit queue, then retry the rebalance.
+        if (progress.step === REBALANCE_STEP_PULL_UNSTAKED && finalizeExitsRetries < MAX_FINALIZE_RETRIES) {
+          finalizeExitsRetries++;
+          const stakingManager = getStakingManager(addresses, callerWallet);
+          const stakingManagerRead = getStakingManager(addresses, clients.publicClient);
+          const exitCountBefore = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
+          // Use explicit gas limit — see finalize-exits.ts for rationale.
+          const finalizeTx = await stakingManager.write.finalizeExits([], { gas: 1_000_000n });
+          await clients.publicClient.waitForTransactionReceipt({ hash: finalizeTx });
+          const exitCountAfter = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
+          iterations.push(finalizeTx);
+          stepHistory.push({
+            iter: iteration,
+            step: progress.step,
+            stepName: `FinalizeExits (inline) exits:${exitCountBefore}->${exitCountAfter}`,
+            stakeRemaining: progress.stakeRemaining.toString(),
+            unstakeRemaining: progress.unstakeRemaining.toString(),
+          });
+          // Reset lastProgress so the next rebalance call can make progress
+          lastProgress = null;
+          continue;
+        }
+
         return {
           scenario: "rebalance",
           success: true,

@@ -1,30 +1,45 @@
 /**
  * Permissionless Rebalance Test Config
  *
- * Tests that rebalance, updateAccounting, computeAttesterState, and finalizeExits
- * are fully permissionless (callable by any address) and that:
+ * Exercises the FULL rebalance lifecycle with permissionless callers:
+ *   stake → unstake → finalizeExits → pullUnstaked → finalizeWithdrawals → claim
  *
- * 1. Non-operator accounts can execute the full rebalance cycle
- * 2. The exchange rate is non-decreasing across rebalances (no gaming)
- * 3. The cooldown mechanism correctly blocks premature rebalance attempts
- * 4. Concurrent user deposits/withdrawals during rebalance don't break invariants
- * 5. Different callers across cycles produce identical protocol behavior
+ * Key design choices:
+ * - rateBps=1 (0.01%/sec) so rewards don't flood the buffer, forcing unstaking
+ * - seedCount=20 so enough keys exist to stake all deposits
+ * - Two 200k deposits to create two attesters
+ * - Full withdrawal to force unstaking (buffer too small to cover)
+ * - Explicit finalize-exits between rebalance cycles
+ *
+ * What this config tests:
+ * 1. Permissionless rebalance — rotating non-operator callers (accounts 2/3/4)
+ * 2. Permissionless accounting — different caller from rebalance each cycle
+ * 3. Permissionless computeAttesterState — called by rebalance/accounting callers
+ * 4. Permissionless finalizeExits — called standalone by account 2
+ * 5. Exchange rate monotonically non-decreasing
+ * 6. Cooldown enforcement blocks premature rebalance
+ * 7. Full unstake flow: InitiateUnstake → finalizeExits → PullUnstaked → FinalizeWithdrawals
  *
  * Timeline:
- *  Tick  1: Setup - provider keys, mock rewards, user deposit (account 1: 200k)
- *  Tick  2: Time advance + rebalance from ACCOUNT 2 (random non-operator)
- *  Tick  3: Cooldown check - verify early rebalance is blocked
- *  Tick  5: Second user deposit (account 3: 100k) - concurrent user activity
- *  Tick 12: Time advance + rebalance from ACCOUNT 3 (different caller)
- *  Tick 13: Cooldown check again
- *  Tick 15: Permissionless finalize-exits (account 4)
- *  Tick 22: Time advance + rebalance from ACCOUNT 4 (yet another caller)
- *  Tick 25: User initiates withdrawal (account 1)
- *  Tick 32: Time advance + rebalance from ACCOUNT 2 (first caller returns)
- *  Tick 42: Time advance + rebalance from ACCOUNT 3 (should finalize withdrawal)
- *  Tick 43: User claims withdrawal (account 1)
- *
- * Exchange rate is checked after every rebalance + accounting cycle.
+ *  Tick  1: Setup — provider keys, mock rewards, user deposit (acct 1: 200k)
+ *  Tick  2: Time-advance + rebalance (acct 2) → stakes 200k (1 attester)
+ *  Tick  3: Cooldown check — verify early rebalance blocked
+ *  Tick  5: Second deposit (acct 3: 200k) — sits in buffer
+ *  Tick 12: Time-advance + rebalance (acct 3) → stakes 200k more (2 attesters)
+ *           Buffer now near-empty (~200 AZTEC from tiny rewards)
+ *  Tick 13: Cooldown check
+ *  Tick 14: User initiates withdrawal (acct 1) — full share balance (~200k+)
+ *           Creates pending withdrawal that exceeds buffer
+ *  Tick 22: Time-advance + rebalance (acct 4) — the critical cycle:
+ *           Harvest: ~72k rewards from time-advanced accrual
+ *           PullUnstaked: nothing yet
+ *           FinalizeWithdrawals: buffer (~72k) < pending (~200k) → can't cover
+ *           InitiateUnstake: unstakes 1 attester on rollup
+ *  Tick 23: Permissionless finalize-exits (acct 2) — moves 200k from rollup to StakingManager
+ *  Tick 32: Time-advance + rebalance (acct 3) — completes the flow:
+ *           PullUnstaked: pulls 200k from StakingManager into buffer
+ *           FinalizeWithdrawals: covers the pending withdrawal
+ *  Tick 33: User claims withdrawal (acct 1)
  */
 import type { RunConfig } from "./lib/types.js";
 
@@ -34,29 +49,27 @@ const ANVIL_ACCOUNT_2_PK = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3f
 const ANVIL_ACCOUNT_3_PK = "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"; // 0x90F7...
 const ANVIL_ACCOUNT_4_PK = "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"; // 0x15d3...
 
-const REBALANCE_TICKS = [2, 12, 22, 32, 42];
+const REBALANCE_TICKS = [2, 12, 22, 32];
 const isRebalanceTick = (_state: any, tick: number) => REBALANCE_TICKS.includes(tick);
 
 const everyNTick = (n: number): ((state: any, tick: number) => boolean) => {
   return (_state, tick) => tick % n === 0;
 };
 
-// Rotate callers across rebalance cycles to prove any account works
+// Rotate callers across rebalance cycles — each cycle uses a different non-operator
 const REBALANCE_CALLERS: Record<number, string> = {
   2: ANVIL_ACCOUNT_2_PK,
   12: ANVIL_ACCOUNT_3_PK,
   22: ANVIL_ACCOUNT_4_PK,
-  32: ANVIL_ACCOUNT_2_PK,
-  42: ANVIL_ACCOUNT_3_PK,
+  32: ANVIL_ACCOUNT_3_PK,
 };
 
-// Rotate callers for accounting too
+// Accounting callers intentionally differ from rebalance callers
 const ACCOUNTING_CALLERS: Record<number, string> = {
-  2: ANVIL_ACCOUNT_3_PK,   // Different from rebalance caller
+  2: ANVIL_ACCOUNT_3_PK,
   12: ANVIL_ACCOUNT_4_PK,
   22: ANVIL_ACCOUNT_2_PK,
-  32: ANVIL_ACCOUNT_3_PK,
-  42: ANVIL_ACCOUNT_4_PK,
+  32: ANVIL_ACCOUNT_4_PK,
 };
 
 const config: RunConfig = {
@@ -69,14 +82,14 @@ const config: RunConfig = {
       type: "provider-keys",
       enabled: true,
       shouldRun: everyNTick(1),
-      minKeys: 3,
-      seedCount: 5,
+      minKeys: 5,
+      seedCount: 20,
     },
     {
       type: "mock-rewards",
       enabled: true,
       shouldRun: everyNTick(1),
-      rateBps: 50,
+      rateBps: 1, // Low rewards so buffer stays small — forces unstaking
     },
 
     // --- User deposits ---
@@ -88,11 +101,10 @@ const config: RunConfig = {
       privateKey: ANVIL_ACCOUNT_1_PK,
     },
     {
-      // Second deposit from a different user mid-simulation
       type: "user-deposit",
       enabled: true,
       shouldRun: (_state, tick) => tick === 5,
-      amount: "100000000000000000000000", // 100k AZTEC
+      amount: "200000000000000000000000", // 200k AZTEC
       privateKey: ANVIL_ACCOUNT_3_PK,
     },
 
@@ -104,12 +116,12 @@ const config: RunConfig = {
       seconds: 3601, // 1 hour + 1 second
     },
 
-    // --- Permissionless finalize-exits (standalone call) ---
+    // --- Permissionless finalize-exits (between unstake and pull cycles) ---
     {
       type: "finalize-exits",
       enabled: true,
-      shouldRun: (_state, tick) => tick === 15,
-      privateKey: ANVIL_ACCOUNT_4_PK,
+      shouldRun: (_state, tick) => tick === 23,
+      privateKey: ANVIL_ACCOUNT_2_PK,
     },
 
     // --- Permissionless rebalance (rotating non-operator callers) ---
@@ -137,14 +149,8 @@ const config: RunConfig = {
       shouldRun: (_state, tick) => tick === 32,
       privateKey: REBALANCE_CALLERS[32],
     },
-    {
-      type: "rebalance",
-      enabled: true,
-      shouldRun: (_state, tick) => tick === 42,
-      privateKey: REBALANCE_CALLERS[42],
-    },
 
-    // --- Permissionless accounting (rotating different callers) ---
+    // --- Permissionless accounting (different callers from rebalance) ---
     {
       type: "accounting",
       enabled: true,
@@ -169,12 +175,6 @@ const config: RunConfig = {
       shouldRun: (_state, tick) => tick === 32,
       privateKey: ACCOUNTING_CALLERS[32],
     },
-    {
-      type: "accounting",
-      enabled: true,
-      shouldRun: (_state, tick) => tick === 42,
-      privateKey: ACCOUNTING_CALLERS[42],
-    },
 
     // --- Exchange rate invariant check (after each rebalance+accounting) ---
     {
@@ -183,7 +183,7 @@ const config: RunConfig = {
       shouldRun: isRebalanceTick,
     },
 
-    // --- Cooldown enforcement (attempt rebalance shortly after one completes) ---
+    // --- Cooldown enforcement ---
     {
       type: "cooldown-check",
       enabled: true,
@@ -191,11 +191,11 @@ const config: RunConfig = {
       privateKey: ANVIL_ACCOUNT_4_PK,
     },
 
-    // --- Withdrawal flow (same as default config) ---
+    // --- Withdrawal flow (forces unstaking) ---
     {
       type: "user-initiate-withdraw",
       enabled: true,
-      shouldRun: (_state, tick) => tick === 25,
+      shouldRun: (_state, tick) => tick === 14,
       privateKey: ANVIL_ACCOUNT_1_PK,
     },
     {
@@ -203,7 +203,7 @@ const config: RunConfig = {
       enabled: true,
       shouldRun: (state, tick) => {
         if (state?.completed === true) return false;
-        return tick >= 43;
+        return tick >= 33;
       },
       privateKey: ANVIL_ACCOUNT_1_PK,
     },

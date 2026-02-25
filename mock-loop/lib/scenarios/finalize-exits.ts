@@ -14,9 +14,16 @@ export async function executeFinalizeExits(
       : clients.operatorWallet;
 
     const stakingManager = getStakingManager(addresses, wallet);
-    const txHash = await stakingManager.write.finalizeExits([]);
+    const stakingManagerRead = getStakingManager(addresses, clients.publicClient);
 
+    const exitCountBefore = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
+    // Use explicit gas limit to avoid gas estimation undercount.
+    // StakingManager._finalizeExits has a gas-bounded loop (gasleft < gasThreshold)
+    // that breaks early without reverting, causing eth_estimateGas to return a
+    // value too low for the loop to actually reach the exiting attester.
+    const txHash = await stakingManager.write.finalizeExits([], { gas: 1_000_000n });
     const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: txHash });
+    const exitCountAfter = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
 
     return {
       scenario: "finalize-exits",
@@ -25,6 +32,9 @@ export async function executeFinalizeExits(
       data: {
         caller: wallet.account?.address,
         permissionless: !!scenario.privateKey,
+        exitCountBefore: exitCountBefore.toString(),
+        exitCountAfter: exitCountAfter.toString(),
+        exitsFinalized: (exitCountBefore - exitCountAfter).toString(),
       },
     };
   } catch (error) {
