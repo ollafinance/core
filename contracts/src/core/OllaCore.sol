@@ -1033,15 +1033,21 @@ contract OllaCore is
         return _accountingState.bufferedAssets;
     }
 
-    /// @notice Returns the current total assets held by the vault.
-    /// @return The total assets held by the vault.
+    /// @notice Returns the current total assets attributable to shareholders.
+    /// @dev Pending withdrawal assets are excluded because their corresponding shares have
+    ///      already been burned at request time. Including them would inflate the exchange rate
+    ///      during the period between withdrawal request and finalization.
+    /// @return The total assets attributable to shareholders.
     function totalAssets() public view override returns (uint256) {
         IOllaCore.AccountingState memory buckets = _accountingState;
         uint256 total =
             buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.claimableRewards;
         // Slither: false positive — comparing asset amounts, not timestamps.
         // slither-disable-next-line timestamp
-        return buckets.slashingDelta >= total ? 0 : total - buckets.slashingDelta;
+        if (buckets.slashingDelta >= total) return 0;
+        total -= buckets.slashingDelta;
+        uint256 pendingWithdrawals = _modules.withdrawalQueue.totalPendingAssets();
+        return pendingWithdrawals >= total ? 0 : total - pendingWithdrawals;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1578,8 +1584,9 @@ contract OllaCore is
 
         IOllaCore.Modules memory modules = _modules;
         uint256 queued = modules.withdrawalQueue.totalPendingAssets();
+
         // slither-disable-next-line reentrancy-no-eth
-        safetyModuleRef.checkQueueRatio(queued, newTotalAssets);
+        safetyModuleRef.checkQueueRatio(queued, totalAssets());
         _validateRateDrop(safetyModuleRef, oldRate, rate);
         _updateReportingSnapshots(
             newTotalAssets,

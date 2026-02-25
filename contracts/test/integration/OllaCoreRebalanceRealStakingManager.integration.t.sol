@@ -227,4 +227,104 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
         assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "Final step should be Done");
     }
+
+    /// @notice Reproduces the mock-loop bug: after unstake, finalizeExits fails to finalize.
+    ///         Steps: deposit → stake → request withdrawal → unstake → finalizeExits → pullUnstaked
+    function test_FinalizeExitsAfterUnstake() external {
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+
+        uint256 activationThreshold = 200_000 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        // Add provider keys
+        _addKeys(20);
+
+        // Deposit 400k (enough for 2 attesters)
+        uint256 depositAmount = 400_000 * DECIMALS;
+        uint256 shares = _performDeposit(alice, depositAmount);
+        emit log_named_uint("Shares received", shares);
+
+        // --- First rebalance: stake all ---
+        vm.prank(operator);
+        vault.rebalance();
+        // Complete the cycle
+        for (uint256 i; i < 10; ++i) {
+            IOllaCore.RebalanceProgress memory p = vault.rebalanceProgress();
+            if (p.step == IOllaCore.RebalanceStep.Done) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+        IOllaCore.RebalanceProgress memory p1 = vault.rebalanceProgress();
+        assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.Done), "first cycle should reach Done");
+
+        IOllaCore.AccountingState memory stateAfterStake = vault.accountingState();
+        emit log_named_uint("Staked principal", stateAfterStake.stakedPrincipal);
+        emit log_named_uint("Buffered assets", stateAfterStake.bufferedAssets);
+        assertGt(stateAfterStake.stakedPrincipal, 0, "should have staked");
+
+        // --- Request withdrawal of half the shares ---
+        vm.warp(block.timestamp + 1 hours);
+        uint256 halfShares = shares / 2;
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(halfShares, alice);
+        emit log_named_uint("Withdrawal request ID", requestId);
+
+        // --- Second rebalance: should unstake to cover the withdrawal ---
+        vm.warp(block.timestamp + 1 hours);
+
+        // Call computeAttesterState first (mock-loop does this)
+        stakingManager.computeAttesterState();
+
+        vm.prank(operator);
+        vault.rebalance();
+        for (uint256 i; i < 10; ++i) {
+            IOllaCore.RebalanceProgress memory p = vault.rebalanceProgress();
+            if (p.step == IOllaCore.RebalanceStep.Done) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
+        emit log_named_uint("After unstake rebalance - step", uint256(p2.step));
+
+        // Check pendingUnstakeCount
+        uint256 exitCount = stakingManager.getPendingUnstakeCount();
+        emit log_named_uint("Pending unstake count after rebalance", exitCount);
+
+        if (exitCount > 0) {
+            // There are exiting attesters. Now call finalizeExits and check.
+            emit log_named_uint("Block timestamp before finalizeExits", block.timestamp);
+
+            // Check hasExitableUnstakes via cached state
+            IStakingManager.StakingState memory stakingState = stakingManager.getStakingState();
+            emit log_named_uint("Staking state withdrawableAmount", stakingState.withdrawableAmount);
+            emit log_named_uint("Staking state pendingUnstakeAmount", stakingState.pendingUnstakeAmount);
+
+            // Advance time by 1 second to ensure exitableAt < block.timestamp
+            vm.warp(block.timestamp + 1);
+
+            // Call finalizeExits
+            uint256 finalized = stakingManager.finalizeExits();
+            emit log_named_uint("Finalized amount", finalized);
+
+            uint256 exitCountAfter = stakingManager.getPendingUnstakeCount();
+            emit log_named_uint("Pending unstake count after finalizeExits", exitCountAfter);
+
+            assertLt(exitCountAfter, exitCount, "finalizeExits should reduce pending count");
+            assertGt(finalized, 0, "finalizeExits should finalize nonzero amount");
+        }
+
+        // Now complete the rebalance if needed
+        vm.warp(block.timestamp + 1 hours);
+        for (uint256 i; i < 20; ++i) {
+            IOllaCore.RebalanceProgress memory p = vault.rebalanceProgress();
+            if (p.step == IOllaCore.RebalanceStep.Done) break;
+            vm.prank(operator);
+            vault.rebalance();
+        }
+
+        IOllaCore.RebalanceProgress memory pFinal = vault.rebalanceProgress();
+        assertEq(uint256(pFinal.step), uint256(IOllaCore.RebalanceStep.Done), "should reach Done after finalize");
+    }
 }

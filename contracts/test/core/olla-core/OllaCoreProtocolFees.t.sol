@@ -268,7 +268,8 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 oldGovShares = stAztec.balanceOf(governance);
         uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
 
-        uint256 expectedTotalAssets = depositAmount;
+        // totalAssets() now excludes pending withdrawals (shares already burned)
+        uint256 expectedTotalAssets = depositAmount - assetsExpected;
         uint256 grossRewards = assetsExpected;
         uint256 protocolFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
         uint256 rateBeforeFees = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
