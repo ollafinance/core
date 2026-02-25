@@ -114,7 +114,7 @@ contract OllaCore is
     /// @notice The instant redemption fee in basis points (0-10000).
     uint256 public instantRedemptionFeeBP;
 
-    /// @notice Minimum seconds between new rebalance cycles. 0 = disabled (rebalance blocked).
+    /// @notice Minimum seconds between permissionless rebalance cycles.
     uint256 public rebalanceCooldown;
 
     /// @notice Timestamp of the last completed rebalance cycle. Used exclusively for
@@ -602,6 +602,10 @@ contract OllaCore is
         rebalanceCooldown = cooldown_;
         emit RebalanceCooldownUpdated(old, cooldown_);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        PERMISSIONLESS FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     // Slither: rebalance is a linear state machine; complexity is intentional and reviewed.
     // slither-disable-start cyclomatic-complexity

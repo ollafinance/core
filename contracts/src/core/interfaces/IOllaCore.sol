@@ -459,6 +459,10 @@ interface IOllaCore {
     ///      No protocol invariants are violated by this reset at any step.
     function forceRebalanceReset() external;
 
+    /*//////////////////////////////////////////////////////////////
+                        PERMISSIONLESS FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Permissionless rebalance flow.
     /// @return rewardsDelta The amount of rewards harvested.
     /// @return finalizedAmount The amount of assets used for withdrawal finalization.
@@ -470,6 +474,10 @@ interface IOllaCore {
 
     /// @notice Permissionless accounting update hook.
     function updateAccounting() external;
+
+    /*//////////////////////////////////////////////////////////////
+                        GOVERNANCE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Reconciles buffered assets with the actual asset balance.
     /// @return delta The amount added to buffered assets.
@@ -638,7 +646,7 @@ interface IOllaCore {
     function instantRedemptionFeeBP() external view returns (uint256);
 
     /// @notice Returns the rebalance cooldown in seconds.
-    /// @return The cooldown value. 0 = disabled.
+    /// @return The cooldown value.
     function rebalanceCooldown() external view returns (uint256);
 
     /// @notice Returns the protocol fee in basis points.

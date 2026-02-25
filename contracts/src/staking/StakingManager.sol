@@ -243,14 +243,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
-    function finalizeExits() external override nonReentrant returns (uint256 finalized) {
-        (, IAztecRollup rollup) = _getRollup();
-        finalized = _finalizeExits(rollup);
-        _pendingClaimAmount += finalized;
-        return finalized;
-    }
-
-    /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyCore nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
         harvested = rollup.claimSequencerRewards(rewardsVault);
@@ -259,8 +251,16 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /*//////////////////////////////////////////////////////////////
-                          OPERATOR FUNCTIONS
+                        PERMISSIONLESS FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IStakingManager
+    function finalizeExits() external override nonReentrant returns (uint256 finalized) {
+        (, IAztecRollup rollup) = _getRollup();
+        finalized = _finalizeExits(rollup);
+        _pendingClaimAmount += finalized;
+        return finalized;
+    }
 
     /// @inheritdoc IStakingManager
     function computeAttesterState() external override nonReentrant returns (uint256 slashingDelta, bool completed) {
@@ -298,6 +298,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         completed = computationCompleted;
         return (slashingDelta, completed);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          OPERATOR FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
     function setAttesterStateMaxAge(uint256 maxAge) external override onlyRole(OPERATOR_ROLE) {
