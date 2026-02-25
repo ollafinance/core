@@ -248,7 +248,7 @@ contract OllaCoreReconcileTest is Test {
         vm.expectEmit(true, true, true, true, address(vault));
         emit BufferedAssetsReconciled(bonus, depositAmount + bonus, address(vault));
 
-        vm.prank(operator);
+        vm.prank(governance);
         uint256 delta = vault.reconcileBufferedAssets();
 
         assertEq(delta, bonus, "reconcile delta");

@@ -84,6 +84,8 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
@@ -113,7 +115,6 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         // After call 1: stuck at StakeSurplus with 2 AZTEC remaining
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "call 1: should be StakeSurplus");
         assertEq(p1.stakeRemaining, 2 * DECIMALS, "call 1: 2 AZTEC remaining");
-        assertTrue(vault.isRebalancePaused(), "call 1: pause should be active");
 
         // --- Rebalance call 2: stake returns 0, advances StakeSurplus -> Done ---
         stakingManager.setStakeReturnAmount(0);
@@ -124,7 +125,9 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "call 2: should be Done");
         assertEq(p2.stakeRemaining, 0, "call 2: stakeRemaining should be 0");
-        assertFalse(vault.isRebalancePaused(), "call 2: pause should be cleared");
+
+        // Advance past rebalance cooldown after cycle completion
+        vm.warp(block.timestamp + 1 hours);
 
         vm.prank(operator);
         vault.rebalance();
@@ -132,7 +135,6 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         IOllaCore.RebalanceProgress memory p3 = vault.rebalanceProgress();
 
         assertEq(uint256(p3.step), uint256(IOllaCore.RebalanceStep.Done), "call 3: should be Done");
-        assertFalse(vault.isRebalancePaused(), "call 3: pause should be cleared");
 
         vm.recordLogs();
 

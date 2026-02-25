@@ -55,11 +55,11 @@ contract OllaCoreInstantRedemptionTest is Test {
     /// @dev Storage slot for `_accountingState.stakedPrincipal` (slot 8).
     uint256 internal constant STAKED_PRINCIPAL_SLOT = 8;
     /// @dev Storage slot for `_finalizedUnclaimedAssets` (from `forge inspect OllaCore storage-layout`).
-    uint256 internal constant FINALIZED_UNCLAIMED_SLOT = 33;
+    uint256 internal constant FINALIZED_UNCLAIMED_SLOT = 31;
     /// @dev Storage slot for `_rebalanceIdleBuffer`.
-    uint256 internal constant REBALANCE_IDLE_BUFFER_SLOT = 34;
-    /// @dev Storage slot for `_rebalancePaused` (bool at slot 27, byte 0).
-    uint256 internal constant REBALANCE_PAUSED_SLOT = 27;
+    uint256 internal constant REBALANCE_IDLE_BUFFER_SLOT = 32;
+    /// @dev Storage slot for `_rebalanceProgress` (struct at slot 24).
+    uint256 internal constant REBALANCE_PROGRESS_SLOT = 24;
 
     /*//////////////////////////////////////////////////////////////
                            TEST FIXTURES
@@ -120,6 +120,8 @@ contract OllaCoreInstantRedemptionTest is Test {
         permitOwnerKey = 0xA11CE;
         permitOwner = vm.addr(permitOwnerKey);
         permitAttackerKey = 0xB0B;
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -160,8 +162,11 @@ contract OllaCoreInstantRedemptionTest is Test {
         return uint256(vm.load(address(vault), bytes32(REBALANCE_IDLE_BUFFER_SLOT)));
     }
 
-    function _setRebalancePaused(bool paused) internal {
-        vm.store(address(vault), bytes32(REBALANCE_PAUSED_SLOT), bytes32(uint256(paused ? 1 : 0)));
+    function _setRebalanceInProgress() internal {
+        // Set rebalance step to PullUnstaked (non-Done) to simulate in-progress rebalance
+        vm.store(
+            address(vault), bytes32(REBALANCE_PROGRESS_SLOT), bytes32(uint256(IOllaCore.RebalanceStep.PullUnstaked))
+        );
     }
 
     function _signPermit(
@@ -362,23 +367,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                10. REVERT: REBALANCE PAUSED
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_Redeem_RebalancePaused() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        // Directly set _rebalancePaused = true via storage
-        _setRebalancePaused(true);
-
-        vm.expectRevert(IOllaCore.OllaCore__RebalancePaused.selector);
-        vm.prank(alice);
-        vault.redeem(10 * DECIMALS, bob, 0);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-            11. REVERT: SAFETY MODULE PAUSED
+            10. REVERT: SAFETY MODULE PAUSED
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_Redeem_SafetyModulePaused() external {
@@ -608,11 +597,11 @@ contract OllaCoreInstantRedemptionTest is Test {
         vault.setInstantRedemptionFeeBP(1000);
     }
 
-    function test_RevertWhen_SetInstantRedemptionFeeBP_RebalancePaused() external {
-        // Directly set _rebalancePaused = true via storage
-        _setRebalancePaused(true);
+    function test_RevertWhen_SetInstantRedemptionFeeBP_RebalanceInProgress() external {
+        // Directly set rebalance step to non-Done via storage
+        _setRebalanceInProgress();
 
-        vm.expectRevert(IOllaCore.OllaCore__RebalancePaused.selector);
+        vm.expectRevert(IOllaCore.OllaCore__RebalanceInProgress.selector);
         vm.prank(governance);
         vault.setInstantRedemptionFeeBP(1000);
     }

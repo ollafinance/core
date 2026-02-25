@@ -73,6 +73,8 @@ contract OllaCoreRebalanceIdleGuard is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
@@ -111,7 +113,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
         // After call 1: stuck at StakeSurplus with 2 AZTEC remaining
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "call 1: should be StakeSurplus");
         assertEq(p1.stakeRemaining, 2 * DECIMALS, "call 1: 2 AZTEC remaining");
-        assertTrue(vault.isRebalancePaused(), "call 1: pause should be active");
+        assertNotEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.Done), "call 1: should not be Done yet");
 
         // --- Rebalance call 2: stake returns 0, advances StakeSurplus -> Done ---
         stakingManager.setStakeReturnAmount(0);
@@ -122,7 +124,10 @@ contract OllaCoreRebalanceIdleGuard is Test {
         IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "call 2: should be Done");
         assertEq(p2.stakeRemaining, 0, "call 2: stakeRemaining should be 0");
-        assertFalse(vault.isRebalancePaused(), "call 2: pause should be cleared");
+        assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "call 2: should be Done");
+
+        // Advance past rebalance cooldown after cycle completion
+        vm.warp(block.timestamp + 1 hours);
 
         // --- Rebalance call 3: should be a no-op due to idle buffer ---
         vm.prank(operator);
@@ -132,7 +137,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
 
         // First verify call 3 ended at Done
         assertEq(uint256(p3.step), uint256(IOllaCore.RebalanceStep.Done), "call 3: should be Done");
-        assertFalse(vault.isRebalancePaused(), "call 3: pause should be cleared");
+        assertEq(uint256(p3.step), uint256(IOllaCore.RebalanceStep.Done), "call 3: should be Done");
 
         // --- Call 4: proves the idle buffer guard prevents infinite restart ---
         // Record the Rebalanced event count. If a full cycle ran, there will be a new event.
@@ -185,7 +190,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
         vault.rebalance();
 
         assertEq(uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
-        assertFalse(vault.isRebalancePaused(), "setup: pause cleared");
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         assertEq(accountingBefore.bufferedAssets, 2 * DECIMALS, "setup: 2 AZTEC buffered");
@@ -194,6 +198,9 @@ contract OllaCoreRebalanceIdleGuard is Test {
         uint256 newRewards = 1 * DECIMALS;
         asset.mint(address(rewardsVault), newRewards);
         assertEq(rewardsVault.balance(), newRewards, "rewards vault funded");
+
+        // Advance past rebalance cooldown after cycle completion
+        vm.warp(block.timestamp + 1 hours);
 
         // Expected behavior: rebalance should start a new cycle and pull rewards vault funds into the buffer.
         vm.prank(operator);
@@ -208,11 +215,9 @@ contract OllaCoreRebalanceIdleGuard is Test {
         assertEq(rewardsVault.balance(), 0, "rewards vault should be emptied");
     }
 
-    /// @notice Tests that repeatedly calling rebalance does not cause pause/unpause cycling.
-    ///         Each full cycle would normally set _rebalancePaused=true then back to false,
-    ///         blocking any concurrent operations. The fix prevents this by skipping cycles
-    ///         when the idle buffer indicates no productive work is possible.
-    function test_RebalanceRepeatedPauseCycling() external {
+    /// @notice Tests that repeatedly calling rebalance does not trigger unnecessary cycles.
+    ///         The idle buffer guard prevents starting new cycles when no productive work is possible.
+    function test_RebalanceRepeatedCycling() external {
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);
 
@@ -230,12 +235,17 @@ contract OllaCoreRebalanceIdleGuard is Test {
         vm.prank(operator);
         vault.rebalance();
 
-        // Now vault is at step=Done, pause=false, buffered=2 AZTEC (the unstakeable remainder)
-        assertFalse(vault.isRebalancePaused(), "setup: pause should be cleared");
+        // Now vault is at step=Done, buffered=2 AZTEC (the unstakeable remainder)
+        assertEq(
+            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step should be Done"
+        );
 
-        // Count how many RebalancePauseUpdated events are emitted over 5 more calls
-        bytes32 pauseSig = keccak256("RebalancePauseUpdated(bool,uint8)");
-        uint256 totalPauseEvents = 0;
+        // Advance past rebalance cooldown after cycle completion
+        vm.warp(block.timestamp + 1 hours);
+
+        // Count how many Rebalanced events are emitted over 5 more calls
+        bytes32 rebalancedSig = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+        uint256 totalRebalancedEvents = 0;
 
         for (uint256 i = 0; i < 5; i++) {
             vm.recordLogs();
@@ -244,15 +254,16 @@ contract OllaCoreRebalanceIdleGuard is Test {
 
             Vm.Log[] memory logs = vm.getRecordedLogs();
             for (uint256 j = 0; j < logs.length; j++) {
-                if (logs[j].topics[0] == pauseSig) {
-                    totalPauseEvents++;
+                if (logs[j].topics[0] == rebalancedSig) {
+                    totalRebalancedEvents++;
                 }
             }
         }
 
         // Expected: 0 events (no cycles should start because idle buffer guard prevents them).
-        // Without the fix, each call would emit 2 pause events (pause=true at start, pause=false at end).
-        assertEq(totalPauseEvents, 0, "rebalance should not cycle pause on/off - idle buffer guard should work");
+        assertEq(
+            totalRebalancedEvents, 0, "rebalance should not trigger unnecessary cycles - idle buffer guard should work"
+        );
     }
 
     /// @notice Ensures claimable rollup rewards allow rebalance to start a new cycle
@@ -275,17 +286,21 @@ contract OllaCoreRebalanceIdleGuard is Test {
         vault.rebalance();
 
         assertEq(uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
-        assertFalse(vault.isRebalancePaused(), "setup: pause cleared");
 
         // Ensure rewards vault is empty but claimable rewards exist on the staking manager.
         assertEq(rewardsVault.balance(), 0, "setup: rewards vault empty");
         stakingManager.setClaimableRewards(1 * DECIMALS);
+
+        // Advance past rebalance cooldown after cycle completion
+        vm.warp(block.timestamp + 1 hours);
 
         vm.prank(operator);
         vault.rebalance();
 
         // Rebalance should have run harvest; mock keeps claimableRewards as a stub value,
         // but the key property is that the call does not no-op due to idle buffer guard.
-        assertFalse(vault.isRebalancePaused(), "rebalance should not get stuck paused");
+        assertEq(
+            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+        );
     }
 }

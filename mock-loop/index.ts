@@ -23,6 +23,10 @@ import { executeAccounting } from "./lib/scenarios/accounting.js";
 import { executeUserInitiateWithdraw } from "./lib/scenarios/user-initiate-withdraw.js";
 import { executeUserClaim } from "./lib/scenarios/user-claim.js";
 import { executeGovernanceChange } from "./lib/scenarios/governance-change.js";
+import { executeTimeAdvance } from "./lib/scenarios/time-advance.js";
+import { executeFinalizeExits } from "./lib/scenarios/finalize-exits.js";
+import { executeExchangeRateCheck } from "./lib/scenarios/exchange-rate-check.js";
+import { executeCooldownCheck } from "./lib/scenarios/cooldown-check.js";
 
 function parseCliArgs(): CliArgs {
   const { values } = parseArgs({
@@ -88,6 +92,14 @@ async function executeScenario(
       return executeUserClaim(scenario, tick, clients, addresses);
     case "governance-change":
       return executeGovernanceChange(scenario, tick, clients, addresses);
+    case "time-advance":
+      return executeTimeAdvance(scenario, tick, clients, addresses);
+    case "finalize-exits":
+      return executeFinalizeExits(scenario, tick, clients, addresses);
+    case "exchange-rate-check":
+      return executeExchangeRateCheck(scenario, tick, clients, addresses, scenarioState);
+    case "cooldown-check":
+      return executeCooldownCheck(scenario, tick, clients, addresses);
     default:
       return {
         scenario: (scenario as ScenarioConfig).type,

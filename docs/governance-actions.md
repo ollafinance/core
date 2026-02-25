@@ -16,6 +16,9 @@ sequenceDiagram
     GOV->>C: setTargetBufferedAssets(newBuffer)
     GOV->>C: setRebalanceGasThreshold(newThreshold)
     C->>SM: setGasThreshold(newThreshold)
+    GOV->>C: setRebalanceCooldown(newCooldown)
+    Note right of C: Must be in [10min, 24h]
+    GOV->>C: reconcileBufferedAssets()
 ```
 
 ## Roles and safety

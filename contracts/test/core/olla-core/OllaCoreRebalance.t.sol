@@ -227,6 +227,9 @@ contract OllaCoreRebalanceTest is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -340,6 +343,9 @@ contract OllaCoreRebalanceTest is Test {
         vm.prank(operator);
         vault.rebalance();
 
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 expectedBuffer = accountingBefore.bufferedAssets;
 
@@ -363,9 +369,26 @@ contract OllaCoreRebalanceTest is Test {
 
     function test_Rebalance_PullUnstakedFunds_IncreasesBuffer() external {
         uint256 unstakedAmount = 5 * DECIMALS;
+
+        // Deposit and stake first so that stakedPrincipal >= exitAmount
+        // (the mock returns exitAmount = receivedAmount, and the core code
+        // decrements stakedPrincipal by exitAmount).
+        _performDeposit(alice, unstakedAmount);
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(unstakedAmount);
+        stakingManager.setTotalStaked(unstakedAmount);
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        // Now configure unstaked funds for the next rebalance
         stakingManager.setUnstakedToken(asset);
         stakingManager.setUnstakedAmount(unstakedAmount);
         asset.mint(address(stakingManager), unstakedAmount);
+        stakingManager.setStakeReturnAmount(0);
 
         IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
         uint256 expectedBuffer = accountingBefore.bufferedAssets + unstakedAmount;
@@ -396,6 +419,49 @@ contract OllaCoreRebalanceTest is Test {
 
         IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
         assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered assets unchanged");
+    }
+
+    function test_Rebalance_PullUnstakedFunds_CapsExitAmountToStakedPrincipal() external {
+        uint256 stakedAmount = 5 * DECIMALS;
+        uint256 unstakedAmount = 8 * DECIMALS; // exitAmount > stakedPrincipal
+
+        // Deposit and stake to establish stakedPrincipal
+        _performDeposit(alice, stakedAmount);
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(stakedAmount);
+        stakingManager.setTotalStaked(stakedAmount);
+        vm.prank(operator);
+        vault.rebalance();
+
+        assertEq(vault.accountingState().stakedPrincipal, stakedAmount, "stakedPrincipal after stake");
+
+        // Advance past cooldown
+        vm.warp(block.timestamp + 1 hours);
+
+        // Configure unstaked funds where exitAmount > stakedPrincipal.
+        // This simulates a scenario where the rollup returns more than tracked
+        // (e.g. rollup upgrade or accounting drift after slashing).
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        stakingManager.setUnstakedExitAmountOverride(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+        stakingManager.setStakeReturnAmount(0);
+        // After exits, nothing remains staked on the rollup
+        stakingManager.setTotalStaked(0);
+
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(unstakedAmount);
+
+        // Without the cap, this would revert with arithmetic underflow
+        // because exitAmount (8e18) > stakedPrincipal (5e18).
+        vm.prank(operator);
+        vault.rebalance();
+
+        // _updateAccountingInternal runs at end and resets stakedPrincipal
+        // from totalStaked() (now 0). The key assertion is that we didn't revert.
+        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        assertEq(accountingAfter.stakedPrincipal, 0, "stakedPrincipal zeroed");
     }
 
     function test_Rebalance_FinalizeWithdrawals_ConsumesBuffer() external {
@@ -466,6 +532,9 @@ contract OllaCoreRebalanceTest is Test {
 
         vm.prank(operator);
         vault.rebalance();
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
 
         _requestWithdrawal(alice, depositAmount);
 
@@ -612,8 +681,21 @@ contract OllaCoreRebalanceTest is Test {
         uint256 rewardAmount = 4 * DECIMALS;
         uint256 unstakedAmount = 1 * DECIMALS;
 
+        // Deposit and stake first so stakedPrincipal >= exitAmount
         _performDeposit(alice, depositAmount);
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        stakingManager.setTotalStaked(depositAmount);
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        // Set up the actual test scenario
         stakingManager.setHarvestedRewards(rewardAmount);
+        stakingManager.setStakeReturnAmount(0);
         stakingManager.setUnstakedToken(asset);
         stakingManager.setUnstakedAmount(unstakedAmount);
         asset.mint(address(stakingManager), unstakedAmount);
@@ -673,9 +755,21 @@ contract OllaCoreRebalanceTest is Test {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 unstakedAmount = 3 * DECIMALS;
 
+        // Deposit and stake first so stakedPrincipal >= exitAmount
         _performDeposit(alice, depositAmount);
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        stakingManager.setTotalStaked(depositAmount);
+        vm.prank(operator);
+        vault.rebalance();
 
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        // Now configure unstaked funds for the next rebalance
         stakingManager.setHarvestedRewards(0);
+        stakingManager.setStakeReturnAmount(0);
         stakingManager.setUnstakedToken(asset);
         stakingManager.setUnstakedAmount(unstakedAmount);
         stakingManager.setGasBurnTarget(90_000);
@@ -730,7 +824,7 @@ contract OllaCoreRebalanceTest is Test {
         if (vault.accountingState().bufferedAssets < totalPendingBefore) {
             uint256 bufferGap = totalPendingBefore - vault.accountingState().bufferedAssets;
             asset.mint(address(vault), bufferGap);
-            vm.prank(operator);
+            vm.prank(governance);
             vault.reconcileBufferedAssets();
         }
 
@@ -825,6 +919,9 @@ contract OllaCoreRebalanceTest is Test {
         );
         assertEq(progressAfter.unstakeRemaining, 0, "unstake remaining should clear when no capacity");
 
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
         vm.prank(operator);
         vault.rebalance();
 
@@ -874,7 +971,19 @@ contract OllaCoreRebalanceTest is Test {
         uint256 rewardAmount = 5 * DECIMALS;
         uint256 unstakedAmount = 8 * DECIMALS;
 
+        // Deposit and stake first so stakedPrincipal >= exitAmount
         _performDeposit(alice, depositAmount);
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        stakingManager.setTotalStaked(depositAmount);
+        vm.prank(operator);
+        vault.rebalance();
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        // Set up the actual test scenario
         _requestWithdrawal(alice, withdrawalShares);
 
         vm.prank(governance);
@@ -1206,6 +1315,9 @@ contract OllaCoreRebalanceTest is Test {
         );
         assertEq(progressAfter.stakeRemaining, 0, "stake remaining should clear when no capacity");
 
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
         vm.prank(operator);
         vault.rebalance();
 
@@ -1345,6 +1457,8 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     function test_Rebalance_RevertsOnInconsistentFinalize() external {
@@ -1413,6 +1527,8 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     function test_Rebalance_RevertsOnFinalizeAmountMismatch() external {
@@ -1492,6 +1608,8 @@ contract OllaCoreRebalanceReentrancyTest is Test {
         vault.grantRole(operatorRole, operator);
         vault.grantRole(operatorRole, address(stakingManager));
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1699,8 +1817,17 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function setGasThreshold(uint256) external pure override { }
 
-    function getUnstakedFunds() external pure override returns (uint256 received, bool hasRemainingExits) {
-        return (0, false);
+    function finalizeExits() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getUnstakedFunds()
+        external
+        pure
+        override
+        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
+    {
+        return (0, 0, false);
     }
 
     function harvestRewards() external override returns (uint256 harvested) {
@@ -1863,6 +1990,8 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
@@ -1887,6 +2016,10 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         uint256 rewards = 69 * DECIMALS;
         asset.mint(address(rewardsVault), rewards);
 
+        // Advance past rebalance cooldown after first cycle completion
+        uint256 t1 = block.timestamp + 1 hours;
+        vm.warp(t1);
+
         // Persist rewardsVaultBalance into accounting so exchangeRate/totalAssets includes it.
         vm.prank(operator);
         vault.updateAccounting();
@@ -1895,6 +2028,9 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         uint256 shares = stAztec.balanceOf(alice);
         vm.prank(alice);
         vault.requestRedeem(shares, alice);
+
+        // Advance past rebalance cooldown after updateAccounting updated _latestReport.timestamp
+        vm.warp(t1 + 1 hours);
 
         // Rebalance should use rewards-vault funds as liquidity and avoid over-unstaking.
         // Previously this would revert with StakingManager__InsufficientStake because
@@ -1914,6 +2050,10 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         // Set rewards recipient so harvest actually transfers tokens to rewards vault
         stakingManager.setRewardsRecipient(address(rewardsVault));
 
+        // Advance past rebalance cooldown after first cycle completion
+        uint256 t1 = block.timestamp + 1 hours;
+        vm.warp(t1);
+
         // Simulate claimable rewards being included in totalAssets.
         uint256 claimableRewards = 69 * DECIMALS;
         stakingManager.setClaimableRewards(claimableRewards);
@@ -1923,6 +2063,9 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         uint256 shares = stAztec.balanceOf(alice);
         vm.prank(alice);
         vault.requestRedeem(shares, alice);
+
+        // Advance past rebalance cooldown after updateAccounting updated _latestReport.timestamp
+        vm.warp(t1 + 1 hours);
 
         // Rebalance should not over-request unstake when withdrawals include claimable rewards.
         // The harvest step pulls the rewards into the buffer before unstake sizing.

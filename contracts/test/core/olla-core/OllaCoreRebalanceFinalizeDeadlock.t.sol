@@ -98,6 +98,8 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -142,16 +144,19 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         // Complete multi-step if needed
         for (uint256 i; i < 5; ++i) {
             IOllaCore.RebalanceProgress memory p = vault.rebalanceProgress();
-            if (p.step == IOllaCore.RebalanceStep.Done && !vault.isRebalancePaused()) break;
+            if (p.step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }
+
+        // Advance past rebalance cooldown so the next cycle can start
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /// @dev Injects buffer by minting tokens directly to the vault and reconciling.
     function _injectBuffer(uint256 amount) internal {
         asset.mint(address(vault), amount);
-        vm.prank(operator);
+        vm.prank(governance);
         vault.reconcileBufferedAssets();
     }
 
@@ -258,7 +263,9 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         IOllaCore.RebalanceProgress memory p1 = vault.rebalanceProgress();
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.Done), "first cycle should reach Done");
-        assertTrue(vault.isRebalancePaused(), "pause should stay: pending unstakes in-flight");
+
+        // Advance past rebalance cooldown before starting second cycle
+        vm.warp(block.timestamp + 1 hours);
 
         // --- Second rebalance: simulate unstaked funds arriving ---
         stakingManager.setUnstakedAmount(unstakeNeeded);
@@ -273,12 +280,11 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
             vault.rebalance();
 
             IOllaCore.RebalanceProgress memory pLoop = vault.rebalanceProgress();
-            if (pLoop.step == IOllaCore.RebalanceStep.Done && !vault.isRebalancePaused()) break;
+            if (pLoop.step == IOllaCore.RebalanceStep.Done) break;
         }
 
         IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "second cycle should reach Done");
-        assertFalse(vault.isRebalancePaused(), "pause should lift after finalization completes");
 
         // Withdrawal should now be finalized — verify user can claim
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "all pending withdrawals should be finalized");
@@ -294,7 +300,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
     /// @notice Tests Change 2: completion is satisfied when `pending > 0 && buffer > 0`
     ///         but `pendingUnstakes == 0` (protocol has done all it can).
-    function test_Rebalance_PauseLiftsWhenNoPendingUnstakes() external {
+    function test_Rebalance_CompletesWhenNoPendingUnstakes() external {
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);
 
@@ -329,18 +335,16 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "should reach Done");
 
-        // With pendingUnstakes == 0, pause should lift even though pending > 0 && buffer > 0
-        assertFalse(vault.isRebalancePaused(), "pause should lift when no pending unstakes remain");
+        // Rebalance should complete to Done
     }
 
     /*//////////////////////////////////////////////////////////////
               PAUSE STAYS WHEN PENDING UNSTAKES EXIST
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Negative test for Change 2: pause stays when unstakes are in-flight.
-    ///         Pre-sets `pendingUnstakes > 0` so the completion check sees in-flight
-    ///         unstakes and keeps `_rebalancePaused = true`.
-    function test_Rebalance_PauseStaysWhenPendingUnstakesExist() external {
+    /// @notice When unstakes are in-flight, rebalance still reaches Done and
+    ///         user operations (deposit) are not blocked.
+    function test_Rebalance_CompletesAndAllowsDepositsWithPendingUnstakes() external {
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);
 
@@ -374,14 +378,10 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "should reach Done");
 
-        // Pause should stay because pendingUnstakes > 0 at completion
-        assertTrue(vault.isRebalancePaused(), "pause should stay when pending unstakes exist");
-
-        // Verify deposits are still blocked while pause is active
+        // Deposits are allowed even with pending unstakes (no rebalance pause)
         asset.mint(alice, 1 * DECIMALS);
         vm.prank(alice);
         asset.approve(address(vault), 1 * DECIMALS);
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
         vm.prank(alice);
         vault.deposit(1 * DECIMALS, alice, 0);
     }
@@ -522,18 +522,21 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         // Complete if multi-step
         for (uint256 i; i < 5; ++i) {
-            if (!vault.isRebalancePaused()) break;
+            IOllaCore.RebalanceProgress memory pLoop = vault.rebalanceProgress();
+            if (pLoop.step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
             vault.rebalance();
         }
 
         IOllaCore.RebalanceProgress memory p1 = vault.rebalanceProgress();
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.Done), "first cycle should reach Done");
-        assertFalse(vault.isRebalancePaused(), "first cycle should unpause");
 
         IOllaCore.AccountingState memory stateAfterFirst = vault.accountingState();
         uint256 bufferedAfterFirst = stateAfterFirst.bufferedAssets;
         assertGt(bufferedAfterFirst, 0, "should have buffered assets");
+
+        // Advance past rebalance cooldown before calling rebalance again
+        vm.warp(block.timestamp + 1 hours);
 
         // Second rebalance: should be a no-op (idle guard)
         vm.prank(operator);
@@ -547,6 +550,5 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "idle skip: still at Done");
-        assertFalse(vault.isRebalancePaused(), "idle skip: not paused");
     }
 }

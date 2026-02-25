@@ -222,8 +222,9 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success, bytes memory data) = address(stakingManager)
-            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
+            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.computeAttesterState, ())
+            );
             if (!success) {
                 continue;
             }
@@ -320,8 +321,9 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success, bytes memory data) = address(stakingManager)
-            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
+            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.computeAttesterState, ())
+            );
             if (!success) {
                 continue;
             }
@@ -435,11 +437,12 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
                         ACCESS CONTROL TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevertWhen_ComputeSlashingDelta_UnauthorizedCaller() external {
-        address unauthorized = makeAddr("unauthorized");
-        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__Unauthorized.selector, unauthorized));
-        vm.prank(unauthorized);
-        stakingManager.computeAttesterState();
+    function test_ComputeAttesterState_PermissionlessAccess() external {
+        address anyone = makeAddr("anyone");
+        vm.prank(anyone);
+        (uint256 slashingDelta, bool completed) = stakingManager.computeAttesterState();
+        assertEq(slashingDelta, 0);
+        assertTrue(completed);
     }
 
     function test_RevertWhen_SetSlashingDeltaMaxAge_UnauthorizedCaller() external {
@@ -711,8 +714,9 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success, bytes memory data) = address(stakingManager)
-            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
+            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.computeAttesterState, ())
+            );
             if (!success) {
                 continue;
             }
@@ -842,8 +846,9 @@ contract StakingManagerAttesterStateTest is StakingManagerBaseTest {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(defaultAdmin);
-            (bool success, bytes memory data) = address(stakingManager)
-            .call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.computeAttesterState, ()));
+            (bool success, bytes memory data) = address(stakingManager).call{ gas: gasOptions[i] }(
+                abi.encodeCall(stakingManager.computeAttesterState, ())
+            );
             if (!success) continue;
             (, bool completed) = abi.decode(data, (uint256, bool));
             uint256 cursorAfter = _getAttesterStateCursor();
