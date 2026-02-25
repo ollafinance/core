@@ -316,6 +316,10 @@ contract OllaCoreInvariantTest is Test {
             + accounting.claimableRewards;
         uint256 expectedTotal = accounting.slashingDelta >= positiveTotal ? 0 : positiveTotal - accounting.slashingDelta;
 
+        // totalAssets() subtracts pending withdrawals (shares already burned)
+        uint256 pendingWithdrawals = withdrawalQueue.totalPendingAssets();
+        expectedTotal = pendingWithdrawals >= expectedTotal ? 0 : expectedTotal - pendingWithdrawals;
+
         assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
     }
 
