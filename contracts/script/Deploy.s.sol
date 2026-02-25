@@ -3,7 +3,9 @@ pragma solidity ^0.8.27;
 
 import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { OllaCore } from "src/core/OllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
+import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
@@ -177,6 +179,19 @@ contract DeployScript is BaseDeployer {
 
         // 5.1 Wire OllaGovernance → OllaCore
         _ollaGovernanceDeployer.setCore(config, ollaGovProxy, ollaCoreProxy);
+
+        // 5.2 For local dev: unpause OllaCore via OllaGovernance timelock.
+        //     OllaGovernanceProxy holds GUARDIAN_ROLE on OllaCore, so unpause must go through it.
+        //     With timelockMinDelay=0 the deployer can schedule+execute immediately.
+        if (config.deployMocks) {
+            bytes memory unpauseData = abi.encodeCall(OllaCore.unpause, ());
+            vm.startBroadcast(config.deployerPrivateKey);
+            OllaGovernance(payable(ollaGovProxy)).schedule(
+                ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0), config.timelockMinDelay
+            );
+            OllaGovernance(payable(ollaGovProxy)).execute(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0));
+            vm.stopBroadcast();
+        }
 
         // 6. Write deployment JSON
         json = _closeAddressesJson(json);

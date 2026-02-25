@@ -1,6 +1,6 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { GovernanceChangeScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { createUserWallet, getOllaCore } from "../client.js";
+import { createUserWallet, getOllaGovernance, getOllaCore, loadAbi } from "../client.js";
 
 export async function executeGovernanceChange(
   scenario: GovernanceChangeScenario,
@@ -23,34 +23,78 @@ export async function executeGovernanceChange(
   }
 
   try {
-    const adminCore = getOllaCore(addresses, clients.operatorWallet);
+    const govWrite = getOllaGovernance(addresses, clients.operatorWallet);
+    const govRead = getOllaGovernance(addresses, clients.publicClient);
+    const govAbi = loadAbi("OllaGovernance");
+    const govAddress = addresses.OllaGovernanceProxy as `0x${string}`;
     const coreRead = getOllaCore(addresses, clients.publicClient);
 
-    const proposeTx = await adminCore.write.proposeGovernance([newGovernance]);
-    await clients.publicClient.waitForTransactionReceipt({ hash: proposeTx });
-    const newGovCore = getOllaCore(addresses, newGovernanceWallet);
-    const acceptTx = await newGovCore.write.acceptGovernance([]);
+    // Schedule proposeGovernance via timelock (minDelay=0 for local dev)
+    const proposeCalldata = {
+      functionName: "proposeGovernance",
+      args: [newGovernance],
+    };
+    const encodedPropose = (await clients.publicClient.readContract({
+      address: govAddress,
+      abi: govAbi,
+      functionName: "hashOperation",
+      args: [
+        govAddress,
+        0n,
+        // We need the raw calldata; use encodeAbiParameters manually
+        "0x" as `0x${string}`,
+        "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
+        "0x0000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
+      ],
+    })) as `0x${string}`;
+
+    // Use viem's encodeFunctionData for the proposeGovernance call
+    const { encodeFunctionData } = await import("viem");
+    const proposeData = encodeFunctionData({
+      abi: govAbi,
+      functionName: "proposeGovernance",
+      args: [newGovernance],
+    });
+
+    // Schedule + execute proposeGovernance through timelock
+    const scheduleTx = await govWrite.write.schedule([
+      govAddress,
+      0n,
+      proposeData,
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      0n,
+    ]);
+    await clients.publicClient.waitForTransactionReceipt({ hash: scheduleTx });
+
+    const executeTx = await govWrite.write.execute([
+      govAddress,
+      0n,
+      proposeData,
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "0x0000000000000000000000000000000000000000000000000000000000000000",
+    ]);
+    await clients.publicClient.waitForTransactionReceipt({ hash: executeTx });
+
+    // New governance accepts directly on OllaGovernance
+    const newGovGov = getOllaGovernance(addresses, newGovernanceWallet);
+    const acceptTx = await newGovGov.write.acceptGovernance([]);
     await clients.publicClient.waitForTransactionReceipt({ hash: acceptTx });
 
-    const operatorAddress = clients.operatorWallet.account?.address;
-    let operatorRoleTx: `0x${string}` | undefined;
-    if (operatorAddress) {
-      const operatorRole = await coreRead.read.OPERATOR_ROLE() as `0x${string}`;
-      operatorRoleTx = await newGovCore.write.grantRole([operatorRole, operatorAddress]);
-      await clients.publicClient.waitForTransactionReceipt({ hash: operatorRoleTx });
-    }
-
-    const currentGovernance = await coreRead.read.governance() as `0x${string}`;
+    // Verify: read owner from OllaCore (should still be OllaGovernanceProxy)
+    const coreOwner = await coreRead.read.owner() as `0x${string}`;
+    const govAdmin = await govRead.read.governanceAdmin() as `0x${string}`;
 
     return {
       scenario: "governance-change",
-      success: currentGovernance.toLowerCase() === newGovernance.toLowerCase(),
+      success: govAdmin.toLowerCase() === newGovernance.toLowerCase(),
       data: {
         proposed: newGovernance,
-        currentGovernance,
-        proposeTx,
+        coreOwner,
+        governanceAdmin: govAdmin,
+        scheduleTx,
+        executeTx,
         acceptTx,
-        operatorRoleTx,
       },
     };
   } catch (error) {
