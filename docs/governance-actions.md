@@ -17,7 +17,7 @@ sequenceDiagram
     GOV->>C: setRebalanceGasThreshold(newThreshold)
     C->>SM: setGasThreshold(newThreshold)
     GOV->>C: setRebalanceCooldown(newCooldown)
-    Note right of C: 0 = disabled, non-zero in [10min, 24h]
+    Note right of C: Must be in [10min, 24h]
     GOV->>C: reconcileBufferedAssets()
 ```
 

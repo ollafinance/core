@@ -523,7 +523,7 @@ interface IOllaCore {
     function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
 
     /// @notice Sets the rebalance cooldown.
-    /// @param cooldown_ The new cooldown in seconds. 0 = disabled.
+    /// @param cooldown_ The new cooldown in seconds. Must be in [MIN_REBALANCE_COOLDOWN, MAX_REBALANCE_COOLDOWN].
     function setRebalanceCooldown(uint256 cooldown_) external;
 
     /// @notice Recovers stAztec sent directly to the core.

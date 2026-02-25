@@ -147,24 +147,6 @@ contract OllaCorePermissionlessRebalance is Test {
         vault.rebalance();
     }
 
-    /// @notice When governance sets cooldown to 0, rebalance is disabled and reverts
-    /// with OllaCore__RebalanceCooldownActive(0, 0).
-    function test_RevertWhen_Rebalance_CooldownDisabled() external {
-        _performDeposit(alice, 10 * DECIMALS);
-
-        // Set cooldown to 0 (disabled)
-        vm.prank(governance);
-        vault.setRebalanceCooldown(0);
-
-        // Warp forward to ensure time is not the issue
-        vm.warp(block.timestamp + 100 hours);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceCooldownActive.selector, uint256(0), uint256(0))
-        );
-        vault.rebalance();
-    }
-
     /// @notice An in-progress rebalance cycle can be continued by any address without cooldown.
     function test_Rebalance_AnyoneCanContinueInProgressCycle() external {
         // Setup: target buffer = 0 so everything gets staked
@@ -314,24 +296,11 @@ contract OllaCorePermissionlessRebalance is Test {
         vault.setRebalanceCooldown(tooHigh);
     }
 
-    /// @notice Setting cooldown to 0 is valid and disables rebalance.
-    function test_SetRebalanceCooldown_ZeroDisablesRebalance() external {
-        vm.expectEmit(true, true, false, false);
-        emit RebalanceCooldownUpdated(1 hours, 0);
-
+    /// @notice Setting cooldown to 0 reverts with OllaCore__InvalidParameter.
+    function test_RevertWhen_SetRebalanceCooldown_Zero() external {
         vm.prank(governance);
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidParameter.selector));
         vault.setRebalanceCooldown(0);
-
-        assertEq(vault.rebalanceCooldown(), 0, "Cooldown should be 0");
-
-        // Verify rebalance is now disabled
-        _performDeposit(alice, 10 * DECIMALS);
-        vm.warp(block.timestamp + 100 hours);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceCooldownActive.selector, uint256(0), uint256(0))
-        );
-        vault.rebalance();
     }
 
     /*//////////////////////////////////////////////////////////////

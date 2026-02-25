@@ -585,8 +585,8 @@ contract OllaCore is
         emit InstantRedemptionFeeUpdated(oldFeeBP, newFeeBP);
     }
 
-    /// @notice Sets the rebalance cooldown. 0 = disabled. Non-zero must be in
-    ///         [MIN_REBALANCE_COOLDOWN, MAX_REBALANCE_COOLDOWN].
+    /// @notice Sets the rebalance cooldown.
+    ///         Must be in [MIN_REBALANCE_COOLDOWN, MAX_REBALANCE_COOLDOWN].
     /// @param cooldown_ The new cooldown in seconds.
     function setRebalanceCooldown(uint256 cooldown_)
         external
@@ -595,7 +595,7 @@ contract OllaCore is
         whenNotPaused
         whenRebalanceDone
     {
-        if (cooldown_ != 0 && (cooldown_ < MIN_REBALANCE_COOLDOWN || cooldown_ > MAX_REBALANCE_COOLDOWN)) {
+        if (cooldown_ < MIN_REBALANCE_COOLDOWN || cooldown_ > MAX_REBALANCE_COOLDOWN) {
             revert OllaCore__InvalidParameter();
         }
         uint256 old = rebalanceCooldown;
@@ -636,9 +636,6 @@ contract OllaCore is
             // after the last accounting update before starting a new cycle.
             {
                 uint256 cooldown_ = rebalanceCooldown;
-                if (cooldown_ == 0) {
-                    revert OllaCore__RebalanceCooldownActive(0, 0);
-                }
                 uint256 elapsed = block.timestamp - _lastRebalanceTimestamp;
                 if (elapsed < cooldown_) {
                     revert OllaCore__RebalanceCooldownActive(elapsed, cooldown_);
