@@ -136,7 +136,6 @@ contract StakingManagerReentrancyTest is Test {
     }
 
     function test_RevertWhen_ComputeAttesterState_ReenteredFromRollupDeposit() external {
-        // Give rollup OPERATOR_ROLE so onlyCoreOrOperator passes during reentry
         bytes32 operatorRole = stakingManager.OPERATOR_ROLE();
         vm.prank(defaultAdmin);
         stakingManager.grantRole(operatorRole, address(rollup));

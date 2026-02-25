@@ -132,13 +132,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         _;
     }
 
-    modifier onlyCoreOrOperator() {
-        if (msg.sender != core && !hasRole(OPERATOR_ROLE, msg.sender)) {
-            revert StakingManager__Unauthorized(msg.sender);
-        }
-        _;
-    }
-
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
      //////////////////////////////////////////////////////////////*/

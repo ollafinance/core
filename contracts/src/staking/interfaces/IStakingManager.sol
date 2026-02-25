@@ -158,9 +158,6 @@ interface IStakingManager {
     /// @notice Thrown when the cached attester state is stale.
     error StakingManager__AttesterStateStale(uint256 lastUpdated, uint256 maxAge);
 
-    /// @notice Thrown when caller is not authorized (core or operator).
-    error StakingManager__Unauthorized(address caller);
-
     /// @notice Thrown when a configuration parameter is out of bounds.
     error StakingManager__InvalidParameter();
 
