@@ -72,8 +72,12 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function getUnstakedFunds() external pure override returns (uint256, bool) {
-        return (0, false);
+    function finalizeExits() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getUnstakedFunds() external pure override returns (uint256, uint256, bool) {
+        return (0, 0, false);
     }
 
     function getClaimableRewards() external pure override returns (uint256) {
@@ -464,6 +468,8 @@ contract OllaCoreHarvestReentrancyTest is Test {
         vm.stopPrank();
 
         alice = makeAddr("alice");
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////

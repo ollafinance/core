@@ -196,7 +196,9 @@ contract StakingManagerHandler is Test {
     /// @notice Claim unstaked funds (only core can call)
     function getUnstakedFunds() external {
         vm.prank(core);
-        try stakingManager.getUnstakedFunds() returns (uint256, bool) {
+        try stakingManager.getUnstakedFunds() returns (
+            uint256, uint256, bool
+        ) {
         // Could track claimed amount if needed
         }
             catch {

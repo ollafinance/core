@@ -80,6 +80,8 @@ contract OllaCoreRebalanceStuck is Test {
         vm.startPrank(governance);
         vault.grantRole(operatorRole, operator);
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     function _performDeposit(address owner, uint256 assets) internal returns (uint256 shares) {
@@ -141,6 +143,7 @@ contract OllaCoreRebalanceStuck is Test {
             console.log("  Staked:", staked);
             console.log("  Step:", uint256(p.step));
             console.log("  stakeRemaining:", p.stakeRemaining);
+            if (p.step == IOllaCore.RebalanceStep.Done) break;
         }
 
         IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();

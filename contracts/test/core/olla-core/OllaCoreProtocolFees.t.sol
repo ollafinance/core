@@ -251,7 +251,7 @@ contract OllaCoreProtocolFeesTest is Test {
         assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider minted (from zero)");
     }
 
-    function test_UpdateAccounting_NetFlowsNegative_MintsFeesFromGrossRewards() external {
+    function test_UpdateAccounting_NetFlowsNegative_NoPhantomFees() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
@@ -268,25 +268,17 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 oldGovShares = stAztec.balanceOf(governance);
         uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
 
-        uint256 expectedTotalAssets = depositAmount;
-        uint256 grossRewards = assetsExpected;
-        uint256 protocolFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
-        uint256 rateBeforeFees = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
-        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeFees, Math.Rounding.Floor);
-        uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
-        uint256 providerShares = protocolSharesTotal - treasuryShares;
-
         vm.prank(operator);
         vault.updateAccounting();
 
         IOllaCore.LatestReport memory reportAfter = vault.latestReport();
         assertEq(reportAfter.netFlows, -int256(assetsExpected), "net flows negative");
-        assertEq(reportAfter.grossRewards, grossRewards, "gross rewards includes negative net flows");
-        assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "protocol fee shares minted");
-        assertEq(stAztec.balanceOf(governance), oldGovShares + treasuryShares, "treasury shares minted");
-        assertEq(
-            stAztec.balanceOf(providerRewardsRecipient), oldProviderShares + providerShares, "provider shares minted"
-        );
+        // No actual rewards accrued — pending withdrawal assets are excluded from totalAssets
+        // so no phantom rewards are computed and no protocol fees are minted.
+        assertEq(reportAfter.grossRewards, 0, "no phantom rewards from withdrawal requests");
+        assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");
+        assertEq(stAztec.balanceOf(governance), oldGovShares, "treasury shares unchanged");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), oldProviderShares, "provider shares unchanged");
     }
 
     function test_UpdateAccounting_GrossRewardsClamp_NoFeeMinting() external {

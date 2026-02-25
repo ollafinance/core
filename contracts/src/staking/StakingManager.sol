@@ -92,6 +92,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Cached attester state from last completed computation pass.
     StakingState private _cachedState;
 
+    /// @dev Tracks finalized but unclaimed exit amounts for correct accounting.
+    uint256 private _pendingClaimAmount;
+
     /// @dev Gas threshold for bounded rebalance work.
     // solhint-disable-next-line private-vars-leading-underscore
     uint256 private gasThreshold;
@@ -125,13 +128,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     modifier onlyCore() {
         if (msg.sender != core) {
             revert StakingManager__UnauthorizedCore(msg.sender);
-        }
-        _;
-    }
-
-    modifier onlyCoreOrOperator() {
-        if (msg.sender != core && !hasRole(OPERATOR_ROLE, msg.sender)) {
-            revert StakingManager__Unauthorized(msg.sender);
         }
         _;
     }
@@ -224,11 +220,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         override
         onlyCore
         nonReentrant
-        returns (uint256 received, bool hasRemainingExits)
+        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
     {
-        received = _claimUnstakedFunds();
+        exitAmount = _pendingClaimAmount;
+        _pendingClaimAmount = 0;
+
+        uint256 balance = stakingAsset.balanceOf(address(this));
+        if (balance > 0) {
+            stakingAsset.safeTransfer(core, balance);
+            emit UnstakedFundsClaimed(balance);
+        }
+        received = balance;
         hasRemainingExits = _exitingCount > 0;
-        return (received, hasRemainingExits);
+        return (received, exitAmount, hasRemainingExits);
     }
 
     /// @inheritdoc IStakingManager
@@ -240,17 +244,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /*//////////////////////////////////////////////////////////////
-                          OPERATOR FUNCTIONS
+                        PERMISSIONLESS FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
-    function computeAttesterState()
-        external
-        override
-        onlyCoreOrOperator
-        nonReentrant
-        returns (uint256 slashingDelta, bool completed)
-    {
+    function finalizeExits() external override nonReentrant returns (uint256 finalized) {
+        (, IAztecRollup rollup) = _getRollup();
+        finalized = _finalizeExits(rollup);
+        _pendingClaimAmount += finalized;
+        return finalized;
+    }
+
+    /// @inheritdoc IStakingManager
+    function computeAttesterState() external override nonReentrant returns (uint256 slashingDelta, bool completed) {
         (, IAztecRollup rollup) = _getRollup();
         uint256 lastUpdated = _lastAttesterStateTimestamp;
         bool wasStale = _isAttesterStateStale();
@@ -285,6 +291,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         completed = computationCompleted;
         return (slashingDelta, completed);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                          OPERATOR FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
     function setAttesterStateMaxAge(uint256 maxAge) external override onlyRole(OPERATOR_ROLE) {
@@ -443,28 +453,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         (, IAztecRollup rollup) = _getRollup();
         unstakedAmount = _initiateUnstakeRequests(rollup, amount);
         return unstakedAmount;
-    }
-
-    // slither-disable-end reentrancy-no-eth
-    // slither-disable-end reentrancy-benign
-    // slither-disable-end calls-loop
-
-    /// @dev Internal claim unstaked funds implementation.
-    /// @dev Validates that sumOfExitAmounts matches the actual claimed amount.
-    /// @return claimed The amount claimed.
-    // slither-disable-start calls-loop
-    // slither-disable-start reentrancy-benign
-    // Reentrancy safe: caller (claimUnstakedFunds) has nonReentrant modifier
-    //   also the called contract is trusted Aztec protocol contract
-    // slither-disable-start reentrancy-no-eth
-    function _claimUnstakedFunds() internal returns (uint256 claimed) {
-        (, IAztecRollup rollup) = _getRollup();
-
-        uint256 balanceBefore = stakingAsset.balanceOf(address(this));
-        uint256 sumOfExitAmounts = _finalizeUnstakes(rollup);
-        claimed = _finalizeClaim(balanceBefore, sumOfExitAmounts);
-
-        return claimed;
     }
 
     // slither-disable-end reentrancy-no-eth
@@ -723,15 +711,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
-    /// @notice Finalizes pending unstake requests that are exitable.
-    /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
-    /// @param rollup The rollup staking interface.
-    /// @return sumOfExitAmounts The total amount finalized.
-    function _finalizeUnstakes(IAztecRollup rollup) internal returns (uint256 sumOfExitAmounts) {
-        sumOfExitAmounts = _finalizeExits(rollup);
-        return sumOfExitAmounts;
-    }
-
     /// @notice Finalizes exiting attesters that are exitable.
     /// @dev Reentrancy protection provided by external caller (getUnstakedFunds).
     /// @param rollup The rollup staking interface.
@@ -793,31 +772,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     // slither-disable-end pess-multiple-storage-read,cache-array-length
     // slither-disable-end reentrancy-benign
-
-    /// @notice Finalizes a claim by validating and transferring unstaked funds.
-    /// @dev This function intentionally sweeps the **entire** staking asset balance held by this
-    ///      contract to `core`, not just the `newlyFinalized` amount. This serves as a recovery
-    ///      mechanism: any tokens accidentally sent directly to the StakingManager are forwarded to
-    ///      `core` alongside the legitimately finalized funds. The `sumOfExitAmounts != newlyFinalized`
-    ///      check guarantees the newly finalized amount is correct before the full-balance sweep occurs.
-    /// @param balanceBefore The token balance before finalization.
-    /// @param sumOfExitAmounts The sum of finalized exit amounts.
-    /// @return claimed The amount claimed and transferred (entire balance, not just newly finalized).
-    function _finalizeClaim(uint256 balanceBefore, uint256 sumOfExitAmounts) internal returns (uint256 claimed) {
-        uint256 balanceAfter = stakingAsset.balanceOf(address(this));
-        uint256 newlyFinalized = balanceAfter - balanceBefore;
-        if (sumOfExitAmounts != newlyFinalized) {
-            revert StakingManager__ClaimAmountMismatch();
-        }
-
-        // Intentional full-balance sweep: transfers newlyFinalized + any tokens previously stuck in this contract.
-        claimed = balanceAfter;
-        if (claimed > 0) {
-            stakingAsset.safeTransfer(core, claimed);
-            emit UnstakedFundsClaimed(claimed);
-        }
-        return claimed;
-    }
 
     function _computeAttesterStateInternal(IAztecRollup rollup)
         internal

@@ -122,24 +122,20 @@ contract StakingManagerReentrancyTest is Test {
         stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
-    function test_RevertWhen_GetUnstakedFunds_ReenteredFromRollupFinalizeWithdraw() external {
+    function test_RevertWhen_FinalizeExits_ReenteredFromRollupFinalizeWithdraw() external {
         _stakeOne();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.getUnstakedFunds, ()));
+        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.finalizeExits, ()));
         rollup.setReenterOnFinalizeWithdraw(true);
 
-        vm.prank(core);
-        vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
-        );
-        stakingManager.getUnstakedFunds();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        stakingManager.finalizeExits();
     }
 
     function test_RevertWhen_ComputeAttesterState_ReenteredFromRollupDeposit() external {
-        // Give rollup OPERATOR_ROLE so onlyCoreOrOperator passes during reentry
         bytes32 operatorRole = stakingManager.OPERATOR_ROLE();
         vm.prank(defaultAdmin);
         stakingManager.grantRole(operatorRole, address(rollup));

@@ -43,12 +43,14 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         emit UnstakeInitiated(keys[0].attester, ACTIVATION_THRESHOLD);
 
         stakingManager.unstake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
 
         vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeFinalized(keys[0].attester, ACTIVATION_THRESHOLD);
+        stakingManager.finalizeExits();
 
+        vm.prank(core);
         stakingManager.getUnstakedFunds();
-        vm.stopPrank();
     }
 
     function test_Unstake_NoStaked_ReturnsZero() external {

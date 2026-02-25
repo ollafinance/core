@@ -236,8 +236,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
 
     function invariant_TotalAssetsEqualBuckets() external view {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
-        uint256 expectedTotal =
-            accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
+        uint256 expectedTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
             + accounting.claimableRewards - accounting.slashingDelta;
 
         assertEq(vault.totalAssets(), expectedTotal, "totalAssets must equal sum of buckets");
