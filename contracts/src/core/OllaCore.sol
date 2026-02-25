@@ -1040,15 +1040,7 @@ contract OllaCore is
     ///      during the period between withdrawal request and finalization.
     /// @return The total assets attributable to shareholders.
     function totalAssets() public view override returns (uint256) {
-        IOllaCore.AccountingState memory buckets = _accountingState;
-        uint256 total =
-            buckets.bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance + buckets.claimableRewards;
-        // Slither: false positive — comparing asset amounts, not timestamps.
-        // slither-disable-next-line timestamp
-        if (buckets.slashingDelta >= total) return 0;
-        total -= buckets.slashingDelta;
-        uint256 pendingWithdrawals = _modules.withdrawalQueue.totalPendingAssets();
-        return pendingWithdrawals >= total ? 0 : total - pendingWithdrawals;
+        return _computeTotalAssets(_accountingState, _modules.withdrawalQueue.totalPendingAssets());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1570,6 +1562,7 @@ contract OllaCore is
         uint256 currentRewards
     ) internal {
         (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
+        uint256 pendingWithdrawals = _modules.withdrawalQueue.totalPendingAssets();
         // Slither: external calls (stAztec mint + safety module) are trusted and guarded by nonReentrant entrypoints.
         // slither-disable-next-line reentrancy-no-eth
         // slither-disable-next-line reentrancy-benign
@@ -1581,13 +1574,10 @@ contract OllaCore is
             uint256 treasuryShares,
             uint256 providerShares,
             uint256 rate
-        ) = _computeAccountingOutputs(oldTotalAssets, netFlows);
-
-        IOllaCore.Modules memory modules = _modules;
-        uint256 queued = modules.withdrawalQueue.totalPendingAssets();
+        ) = _computeAccountingOutputs(oldTotalAssets, netFlows, pendingWithdrawals);
 
         // slither-disable-next-line reentrancy-no-eth
-        safetyModuleRef.checkQueueRatio(queued, totalAssets());
+        safetyModuleRef.checkQueueRatio(pendingWithdrawals, totalAssets());
         _validateRateDrop(safetyModuleRef, oldRate, rate);
         _updateReportingSnapshots(
             newTotalAssets,
@@ -1611,7 +1601,7 @@ contract OllaCore is
         );
     }
 
-    function _computeAccountingOutputs(uint256 oldTotalAssets, int256 netFlows)
+    function _computeAccountingOutputs(uint256 oldTotalAssets, int256 netFlows, uint256 pendingWithdrawals)
         internal
         returns (
             IOllaCore.AccountingState memory updatedBuckets,
@@ -1624,7 +1614,7 @@ contract OllaCore is
         )
     {
         updatedBuckets = _accountingState;
-        newTotalAssets = _computeTotalAssets(updatedBuckets);
+        newTotalAssets = _computeTotalAssets(updatedBuckets, pendingWithdrawals);
         int256 grossRewardsSigned;
         (grossRewards, grossRewardsSigned) = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         // slither-disable-next-line timestamp
@@ -1934,7 +1924,7 @@ contract OllaCore is
         return (netFlows, netDeposits, netWithdrawals);
     }
 
-    function _computeTotalAssets(IOllaCore.AccountingState memory buckets)
+    function _computeTotalAssets(IOllaCore.AccountingState memory buckets, uint256 pendingWithdrawals)
         internal
         pure
         returns (uint256 totalAssets_)
@@ -1943,7 +1933,9 @@ contract OllaCore is
             + buckets.claimableRewards;
         // Slither: false positive — comparing asset amounts, not timestamps.
         // slither-disable-next-line timestamp
-        totalAssets_ = buckets.slashingDelta >= total ? 0 : total - buckets.slashingDelta;
+        if (buckets.slashingDelta >= total) return 0;
+        total -= buckets.slashingDelta;
+        totalAssets_ = pendingWithdrawals >= total ? 0 : total - pendingWithdrawals;
         return totalAssets_;
     }
 
