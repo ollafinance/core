@@ -1153,6 +1153,8 @@ contract OllaCore is
     /// @notice Pulls unstaked funds from the staking manager.
     /// @return receivedAmount The amount of unstaked funds received.
     /// @return hasRemainingExits True if there are still attesters in exiting state.
+    // Slither: multiple _accountingState reads are acceptable under nonReentrant.
+    // slither-disable-next-line pess-multiple-storage-read
     function _pullUnstakedFunds() internal returns (uint256 receivedAmount, bool hasRemainingExits) {
         IERC20 assetRef = _modules.asset;
         uint256 balanceBefore = assetRef.balanceOf(address(this));
@@ -1179,9 +1181,8 @@ contract OllaCore is
         // reducing stakedPrincipal.
         // Cap to stakedPrincipal to prevent underflow if rollup exit amounts
         // ever diverge from tracked principal (e.g. after slashing).
-        // Slither: zero-guard, not a timestamp comparison; multiple _accountingState
-        // reads are acceptable under nonReentrant.
-        // slither-disable-next-line timestamp,pess-multiple-storage-read
+        // Slither: zero-guard, not a timestamp comparison.
+        // slither-disable-next-line timestamp
         if (exitAmount > 0) {
             if (exitAmount > _accountingState.stakedPrincipal) {
                 exitAmount = _accountingState.stakedPrincipal;
