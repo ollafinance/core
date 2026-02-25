@@ -2,8 +2,16 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { Vm } from "@forge-std/Test.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
+import { StakingManager } from "src/staking/StakingManager.sol";
+import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { MaliciousAztecRollup } from "src/staking/mocks/MaliciousAztecRollup.sol";
+import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
+import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
@@ -140,5 +148,57 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         assertFalse(hasRemainingExits, "no remaining exits");
         assertEq(aztec.balanceOf(core), coreBalanceBefore + donationAmount, "core should receive donated tokens");
         assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should have zero balance after sweep");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    FINALIZE EXITS REENTRANCY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice finalizeExits() is protected by nonReentrant. Re-entering via the rollup's
+    ///         finalizeWithdraw() callback reverts with ReentrancyGuardReentrantCall.
+    function test_RevertWhen_FinalizeExits_Reentrancy() external {
+        // Deploy a malicious rollup that re-enters during finalizeWithdraw
+        MaliciousAztecRollup maliciousRollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
+        MockAztecRollupRegistry maliciousRegistry = new MockAztecRollupRegistry(address(maliciousRollup));
+        MockRewardsVault maliciousRewardsVault = new MockRewardsVault(IERC20(address(aztec)), core);
+
+        // Deploy a fresh StakingManager wired to the malicious rollup
+        StakingManager maliciousSM = StakingManager(address(new ERC1967Proxy(address(new StakingManager()), "")));
+
+        StakingProviderRegistry maliciousRegistry2 =
+            StakingProviderRegistry(address(new ERC1967Proxy(address(new StakingProviderRegistry()), "")));
+        maliciousRegistry2.initialize(address(maliciousSM), providerAdmin, providerAdmin, defaultAdmin);
+
+        maliciousSM.initialize(
+            IERC20(address(aztec)),
+            address(maliciousRegistry),
+            address(maliciousRewardsVault),
+            core,
+            address(maliciousRegistry2),
+            defaultAdmin
+        );
+
+        // Stake one attester
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        vm.prank(providerAdmin);
+        maliciousRegistry2.addKeysToProvider(keys);
+
+        aztec.mint(core, ACTIVATION_THRESHOLD);
+        vm.startPrank(core);
+        aztec.approve(address(maliciousSM), ACTIVATION_THRESHOLD);
+        maliciousSM.stake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        // Unstake to put attester into exiting state
+        vm.prank(core);
+        maliciousSM.unstake(ACTIVATION_THRESHOLD);
+
+        // Configure the malicious rollup to re-enter finalizeExits during finalizeWithdraw
+        maliciousRollup.setReentry(address(maliciousSM), abi.encodeCall(maliciousSM.finalizeExits, ()));
+        maliciousRollup.setReenterOnFinalizeWithdraw(true);
+
+        // The reentrancy attempt should revert
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        maliciousSM.finalizeExits();
     }
 }

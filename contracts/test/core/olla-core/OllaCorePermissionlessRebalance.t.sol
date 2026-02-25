@@ -488,6 +488,145 @@ contract OllaCorePermissionlessRebalance is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                reconcileBufferedAssets ACCESS CONTROL TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice reconcileBufferedAssets() is gated by DEFAULT_ADMIN_ROLE. Governance (admin) can call it;
+    ///         an operator-only address cannot.
+    function test_ReconcileBufferedAssets_AccessControl() external {
+        _performDeposit(alice, 10 * DECIMALS);
+
+        // Complete a rebalance so the state is Done
+        vault.rebalance();
+
+        // Send some asset directly to the vault to create a reconcilable delta
+        asset.mint(address(vault), 1 * DECIMALS);
+
+        // Governance (DEFAULT_ADMIN_ROLE holder) CAN call reconcileBufferedAssets
+        vm.prank(governance);
+        uint256 delta = vault.reconcileBufferedAssets();
+        assertEq(delta, 1 * DECIMALS, "governance should reconcile the donated amount");
+
+        // Operator-only address CANNOT call reconcileBufferedAssets
+        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
+        assertFalse(vault.hasRole(adminRole, operator), "operator should not have DEFAULT_ADMIN_ROLE");
+
+        // Send more to create another delta
+        asset.mint(address(vault), 1 * DECIMALS);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, operator, adminRole)
+        );
+        vm.prank(operator);
+        vault.reconcileBufferedAssets();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+           _lastRebalanceTimestamp ISOLATION FROM updateAccounting
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Calling updateAccounting() standalone does NOT reset the rebalance cooldown.
+    ///         The cooldown is driven by `_lastRebalanceTimestamp` which only updates on
+    ///         rebalance completion, not on standalone accounting updates.
+    function test_UpdateAccounting_DoesNotResetCooldown() external {
+        _performDeposit(alice, 10 * DECIMALS);
+
+        // Step 1: Complete a rebalance cycle (sets _lastRebalanceTimestamp to block.timestamp)
+        vault.rebalance();
+        uint256 rebalanceCompletionTime = block.timestamp;
+
+        // Step 2: Warp forward 30 minutes (not past the 1-hour cooldown)
+        vm.warp(rebalanceCompletionTime + 30 minutes);
+
+        // Step 3: Call updateAccounting() (updates _latestReport.timestamp but NOT _lastRebalanceTimestamp)
+        vault.updateAccounting();
+
+        // Verify the report timestamp was updated
+        IOllaCore.LatestReport memory report = vault.latestReport();
+        assertEq(
+            report.timestamp,
+            rebalanceCompletionTime + 30 minutes,
+            "report timestamp should reflect updateAccounting call"
+        );
+
+        // Step 4: Immediately try to start a new rebalance — should still revert because
+        // _lastRebalanceTimestamp was NOT affected by the updateAccounting() call.
+        // elapsed = 30 minutes since rebalance completion, cooldown = 1 hour
+        _performDeposit(alice, 5 * DECIMALS); // deposit more so next cycle has work
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOllaCore.OllaCore__RebalanceCooldownActive.selector, uint256(30 minutes), uint256(1 hours)
+            )
+        );
+        vault.rebalance();
+
+        // Step 5: Warp past the original cooldown from step 1 (30 more minutes + 1 second)
+        vm.warp(rebalanceCompletionTime + 1 hours + 1);
+
+        // Step 6: Rebalance now succeeds (cooldown measured from _lastRebalanceTimestamp, not _latestReport)
+        vault.rebalance();
+        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        assertEq(
+            uint256(progress.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should succeed after original cooldown elapses"
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+           forceRebalanceReset COOLDOWN ELIGIBILITY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice After forceRebalanceReset(), the next rebalance cycle still respects the
+    ///         original _lastRebalanceTimestamp. Force reset does NOT update the cooldown
+    ///         timestamp, so if the cooldown from the previous completion has already elapsed,
+    ///         a new rebalance can start immediately after the reset.
+    function test_ForceRebalanceReset_DoesNotUpdateCooldownTimestamp() external {
+        // Step 1: Complete a rebalance cycle
+        _performDeposit(alice, 10 * DECIMALS);
+        vault.rebalance();
+        IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
+        assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.Done), "first cycle should complete");
+
+        // Step 2: Deposit more and warp past cooldown
+        _performDeposit(alice, 10 * DECIMALS);
+        vm.warp(block.timestamp + 1 hours + 1);
+
+        // Step 3: Start a new cycle but leave it in-progress (partial staking)
+        vm.prank(governance);
+        vault.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(3 * DECIMALS);
+        stakingManager.setAllowStakeReturnExceeds(true);
+
+        vault.rebalance();
+        IOllaCore.RebalanceProgress memory progress2 = vault.rebalanceProgress();
+        assertEq(
+            uint256(progress2.step),
+            uint256(IOllaCore.RebalanceStep.StakeSurplus),
+            "should be in StakeSurplus (in-progress)"
+        );
+
+        // Step 4: Guardian calls forceRebalanceReset()
+        vm.prank(guardian);
+        vault.forceRebalanceReset();
+
+        IOllaCore.RebalanceProgress memory progressAfterReset = vault.rebalanceProgress();
+        assertEq(uint256(progressAfterReset.step), uint256(IOllaCore.RebalanceStep.Done), "should be reset to Done");
+
+        // Step 5: Immediately try rebalance — it should succeed because the cooldown
+        // was from the step-1 completion, and we already warped past it in step 2.
+        // forceRebalanceReset does NOT set _lastRebalanceTimestamp.
+        stakingManager.clearStakeReturnAmount();
+        vault.rebalance();
+        IOllaCore.RebalanceProgress memory progress3 = vault.rebalanceProgress();
+        assertEq(
+            uint256(progress3.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should succeed immediately after force reset since original cooldown already elapsed"
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
                     CONCURRENT DEPOSIT TESTS
     //////////////////////////////////////////////////////////////*/
 
