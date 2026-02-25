@@ -23,7 +23,8 @@ contract ERC6909MetadataUpgradeable is Initializable, ERC6909Upgradeable, IERC69
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC6909Metadata")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC6909MetadataStorageLocation = 0xa0651e3d105d335a33d7d04897e080112be09c416f44637d6543e5b47885f800;
+    bytes32 private constant ERC6909MetadataStorageLocation =
+        0xa0651e3d105d335a33d7d04897e080112be09c416f44637d6543e5b47885f800;
 
     function _getERC6909MetadataStorage() private pure returns (ERC6909MetadataStorage storage $) {
         assembly {
@@ -40,11 +41,10 @@ contract ERC6909MetadataUpgradeable is Initializable, ERC6909Upgradeable, IERC69
     /// @dev The decimals value for token of type `id` was updated to `newDecimals`.
     event ERC6909DecimalsUpdated(uint256 indexed id, uint8 newDecimals);
 
-    function __ERC6909Metadata_init() internal onlyInitializing {
-    }
+    function __ERC6909Metadata_init() internal onlyInitializing {}
 
-    function __ERC6909Metadata_init_unchained() internal onlyInitializing {
-    }
+    function __ERC6909Metadata_init_unchained() internal onlyInitializing {}
+
     /// @inheritdoc IERC6909Metadata
     function name(uint256 id) public view virtual override returns (string memory) {
         ERC6909MetadataStorage storage $ = _getERC6909MetadataStorage();

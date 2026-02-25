@@ -266,7 +266,7 @@ library RLP {
 
         // Get all items in order, and push them to the buffer
         for (uint256 currentOffset = listOffset; currentOffset < itemLength; ptr += 0x20) {
-            (uint256 elementOffset, uint256 elementLength, ) = _decodeLength(item.slice(currentOffset));
+            (uint256 elementOffset, uint256 elementLength,) = _decodeLength(item.slice(currentOffset));
             Memory.Slice element = item.slice(currentOffset, elementLength + elementOffset);
             currentOffset += elementOffset + elementLength;
 
@@ -326,9 +326,11 @@ library RLP {
      * @dev Decodes an RLP `item`'s `length and type from its prefix.
      * Returns the offset, length, and type of the RLP item based on the encoding rules.
      */
-    function _decodeLength(
-        Memory.Slice item
-    ) private pure returns (uint256 _offset, uint256 _length, ItemType _itemtype) {
+    function _decodeLength(Memory.Slice item)
+        private
+        pure
+        returns (uint256 _offset, uint256 _length, ItemType _itemtype)
+    {
         uint256 itemLength = item.length();
 
         require(itemLength != 0, RLPInvalidEncoding());

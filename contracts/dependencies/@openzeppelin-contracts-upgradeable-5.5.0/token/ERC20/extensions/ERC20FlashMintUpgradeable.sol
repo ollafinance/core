@@ -37,11 +37,10 @@ abstract contract ERC20FlashMintUpgradeable is Initializable, ERC20Upgradeable, 
      */
     error ERC3156InvalidReceiver(address receiver);
 
-    function __ERC20FlashMint_init() internal onlyInitializing {
-    }
+    function __ERC20FlashMint_init() internal onlyInitializing {}
 
-    function __ERC20FlashMint_init_unchained() internal onlyInitializing {
-    }
+    function __ERC20FlashMint_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev Returns the maximum amount of tokens available for loan.
      * @param token The address of the token that is requested.
@@ -112,12 +111,11 @@ abstract contract ERC20FlashMintUpgradeable is Initializable, ERC20Upgradeable, 
     // This function can reenter, but it doesn't pose a risk because it always preserves the property that the amount
     // minted at the beginning is always recovered and burned at the end, or else the entire function will revert.
     // slither-disable-next-line reentrancy-no-eth
-    function flashLoan(
-        IERC3156FlashBorrower receiver,
-        address token,
-        uint256 value,
-        bytes calldata data
-    ) public virtual returns (bool) {
+    function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 value, bytes calldata data)
+        public
+        virtual
+        returns (bool)
+    {
         uint256 maxLoan = maxFlashLoan(token);
         if (value > maxLoan) {
             revert ERC3156ExceededMaxLoan(maxLoan);

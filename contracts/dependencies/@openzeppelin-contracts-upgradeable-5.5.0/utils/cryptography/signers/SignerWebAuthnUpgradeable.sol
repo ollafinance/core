@@ -30,11 +30,10 @@ import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.s
  * or during initialization (if used as a clone) may leave the signer either front-runnable or unusable.
  */
 abstract contract SignerWebAuthnUpgradeable is Initializable, SignerP256Upgradeable {
-    function __SignerWebAuthn_init() internal onlyInitializing {
-    }
+    function __SignerWebAuthn_init() internal onlyInitializing {}
 
-    function __SignerWebAuthn_init_unchained() internal onlyInitializing {
-    }
+    function __SignerWebAuthn_init_unchained() internal onlyInitializing {}
+
     /**
      * @dev Validates a raw signature using the WebAuthn authentication assertion.
      *
@@ -42,16 +41,18 @@ abstract contract SignerWebAuthnUpgradeable is Initializable, SignerP256Upgradea
      * {SignerP256-_rawSignatureValidation} method for raw P256 signature validation by passing
      * the raw `r` and `s` values from the signature.
      */
-    function _rawSignatureValidation(
-        bytes32 hash,
-        bytes calldata signature
-    ) internal view virtual override returns (bool) {
+    function _rawSignatureValidation(bytes32 hash, bytes calldata signature)
+        internal
+        view
+        virtual
+        override
+        returns (bool)
+    {
         (bytes32 qx, bytes32 qy) = signer();
         (bool decodeSuccess, WebAuthn.WebAuthnAuth calldata auth) = WebAuthn.tryDecodeAuth(signature);
 
-        return
-            decodeSuccess
-                ? WebAuthn.verify(abi.encodePacked(hash), auth, qx, qy)
-                : super._rawSignatureValidation(hash, signature);
+        return decodeSuccess
+            ? WebAuthn.verify(abi.encodePacked(hash), auth, qx, qy)
+            : super._rawSignatureValidation(hash, signature);
     }
 }

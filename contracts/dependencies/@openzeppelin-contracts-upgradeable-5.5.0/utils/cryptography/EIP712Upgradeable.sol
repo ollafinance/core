@@ -128,15 +128,16 @@ abstract contract EIP712Upgradeable is Initializable, IERC5267 {
         // and the EIP712 domain is not reliable, as it will be missing name and version.
         require($._hashedName == 0 && $._hashedVersion == 0, "EIP712: Uninitialized");
 
-        return (
-            hex"0f", // 01111
-            _EIP712Name(),
-            _EIP712Version(),
-            block.chainid,
-            address(this),
-            bytes32(0),
-            new uint256[](0)
-        );
+        return
+            (
+                hex"0f", // 01111
+                _EIP712Name(),
+                _EIP712Version(),
+                block.chainid,
+                address(this),
+                bytes32(0),
+                new uint256[](0)
+            );
     }
 
     /**
