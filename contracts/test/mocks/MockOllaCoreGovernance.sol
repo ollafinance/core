@@ -2,25 +2,19 @@
 pragma solidity ^0.8.27;
 
 /// @title MockOllaCoreGovernance
-/// @notice Minimal mock for governance lookup via IOllaCore.
+/// @notice Minimal mock for owner lookup via Ownable on OllaCore.
 contract MockOllaCoreGovernance {
     /*//////////////////////////////////////////////////////////////
                                 STATE
     //////////////////////////////////////////////////////////////*/
 
-    address public governance;
-    address public pendingGovernance;
+    address public owner;
 
-    constructor(address governance_, address pendingGovernance_) {
-        governance = governance_;
-        pendingGovernance = pendingGovernance_;
+    constructor(address owner_) {
+        owner = owner_;
     }
 
-    function setGovernance(address governance_) external {
-        governance = governance_;
-    }
-
-    function setPendingGovernance(address pendingGovernance_) external {
-        pendingGovernance = pendingGovernance_;
+    function setOwner(address owner_) external {
+        owner = owner_;
     }
 }

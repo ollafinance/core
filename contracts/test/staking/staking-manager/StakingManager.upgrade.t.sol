@@ -52,7 +52,7 @@ contract StakingManagerUpgradeTest is Test {
         providerAdmin = makeAddr("providerAdmin");
         defaultAdmin = makeAddr("defaultAdmin");
 
-        mockCore = new MockOllaCoreGovernance(defaultAdmin, address(0));
+        mockCore = new MockOllaCoreGovernance(defaultAdmin);
         core = address(mockCore);
 
         aztec = new MockAztec(address(this));
@@ -164,7 +164,7 @@ contract StakingManagerUpgradeTest is Test {
         address rollupRegistryBefore = address(stakingManager.rollupRegistry());
         address rewardsVaultBefore = address(stakingManager.rewardsVault());
         address coreBefore = stakingManager.core();
-        address governanceBefore = mockCore.governance();
+        address ownerBefore = mockCore.owner();
 
         StakingManagerUpgradeMock newImplementation = new StakingManagerUpgradeMock();
 
@@ -186,7 +186,7 @@ contract StakingManagerUpgradeTest is Test {
         assertEq(address(v2.rollupRegistry()), rollupRegistryBefore, "rollup registry preserved");
         assertEq(address(v2.rewardsVault()), rewardsVaultBefore, "rewards vault preserved");
         assertEq(v2.core(), coreBefore, "core preserved");
-        assertEq(mockCore.governance(), governanceBefore, "governance preserved");
+        assertEq(mockCore.owner(), ownerBefore, "owner preserved");
 
         v2.setV2Value(123);
         assertEq(v2.v2Value(), 123, "v2 storage works");

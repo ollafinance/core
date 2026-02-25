@@ -20,6 +20,7 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 
 contract OllaCoreInitTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -61,7 +62,7 @@ contract OllaCoreInitTest is Test {
         vault = OllaCoreHarness(address(proxy));
 
         stakingManager = new MockAccountingStakingManager();
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
@@ -96,7 +97,7 @@ contract OllaCoreInitTest is Test {
         assertEq(vault.asset(), address(asset), "asset set");
         assertEq(vault.stAztec(), address(stAztec), "stAztec set");
         assertEq(vault.stakingManager(), address(stakingManager), "staking manager set");
-        assertEq(vault.governance(), governance, "governance set");
+        assertEq(vault.owner(), governance, "owner set");
         assertEq(vault.withdrawalQueue(), address(withdrawalQueue), "withdrawal queue set");
         assertEq(vault.rewardsVault(), address(rewardsVault), "rewards vault set");
         assertEq(vault.safetyModule(), address(safetyModule), "safety module set");
@@ -233,7 +234,7 @@ contract OllaCoreInitTest is Test {
             newSafetyModule
         );
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "governance_"));
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "governanceContract_"));
         newVault.initialize(
             asset,
             newStAztec,
