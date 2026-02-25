@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { StAztec } from "src/core/StAztec.sol";
@@ -16,6 +15,7 @@ import { LocalConfig } from "./config/Local.s.sol";
 import { TestnetConfig } from "./config/Testnet.s.sol";
 import { MocksDeployer } from "./deployers/Mocks.s.sol";
 import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
+import { OllaGovernanceDeployer } from "./deployers/OllaGovernance.s.sol";
 import { RewardsVaultDeployer } from "./deployers/RewardsVault.s.sol";
 import { StAztecDeployer } from "./deployers/StAztec.s.sol";
 import { WithdrawalQueueDeployer } from "./deployers/WithdrawalQueue.s.sol";
@@ -26,6 +26,7 @@ contract DeployScript is BaseDeployer {
     // Deployers
     MocksDeployer internal _mocksDeployer;
     OllaCoreDeployer internal _ollaCoreDeployer;
+    OllaGovernanceDeployer internal _ollaGovernanceDeployer;
     StAztecDeployer internal _stAztecDeployer;
     WithdrawalQueueDeployer internal _withdrawalQueueDeployer;
     RewardsVaultDeployer internal _rewardsVaultDeployer;
@@ -34,6 +35,7 @@ contract DeployScript is BaseDeployer {
         // Initialize deployers
         _mocksDeployer = new MocksDeployer();
         _ollaCoreDeployer = new OllaCoreDeployer();
+        _ollaGovernanceDeployer = new OllaGovernanceDeployer();
         _stAztecDeployer = new StAztecDeployer();
         _withdrawalQueueDeployer = new WithdrawalQueueDeployer();
         _rewardsVaultDeployer = new RewardsVaultDeployer();
@@ -51,6 +53,8 @@ contract DeployScript is BaseDeployer {
         address stakingProviderRegistryImpl;
         address rollup;
         address rollupRegistry;
+        address ollaGovImpl;
+        address ollaGovProxy;
         address ollaCoreImpl;
         address ollaCoreProxy;
         address stAztec;
@@ -64,14 +68,21 @@ contract DeployScript is BaseDeployer {
         string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
         bool isFirstAddress = true;
 
-        // 1. Deploy OllaCore (implementation + proxy)
+        // 1. Deploy OllaGovernance (implementation + proxy + initialize)
+        //    Must deploy first so it can be set as OllaCore's owner.
+
+        (ollaGovImpl, ollaGovProxy) = _ollaGovernanceDeployer.deploy(config, config.treasury);
+        json = _addAddressToJson(json, "OllaGovernanceImplementation", ollaGovImpl, isFirstAddress);
+        if (isFirstAddress) isFirstAddress = false;
+        json = _addAddressToJson(json, "OllaGovernanceProxy", ollaGovProxy, false);
+
+        // 2. Deploy OllaCore (implementation + proxy)
 
         (ollaCoreImpl, ollaCoreProxy) = _ollaCoreDeployer.deploy(config);
-        json = _addAddressToJson(json, "OllaCoreImplementation", ollaCoreImpl, isFirstAddress);
-        if (isFirstAddress) isFirstAddress = false;
+        json = _addAddressToJson(json, "OllaCoreImplementation", ollaCoreImpl, false);
         json = _addAddressToJson(json, "OllaCoreProxy", ollaCoreProxy, false);
 
-        // 2. Deploy or use existing mocks/external contracts
+        // 3. Deploy or use existing mocks/external contracts
         if (config.deployMocks) {
             // Deploy local staking asset + Aztec mocks (rollup + registry)
             (asset, rollup, rollupRegistry) = _mocksDeployer.deployAssetAndRollup(config);
@@ -85,25 +96,25 @@ contract DeployScript is BaseDeployer {
         }
 
         // Record asset early (now known)
-        json = _addAddressToJson(json, "Asset", asset, isFirstAddress);
-        isFirstAddress = false;
+        json = _addAddressToJson(json, "Asset", asset, false);
 
-        // 3. Deploy StAztec (linked to OllaCore proxy)
+        // 4. Deploy StAztec (linked to OllaCore proxy)
 
         stAztec = _stAztecDeployer.deploy(config, ollaCoreProxy);
         json = _addAddressToJson(json, "StAztec", stAztec, false);
 
-        // 3.1 Deploy WithdrawalQueue (linked to OllaCore proxy)
+        // 4.1 Deploy WithdrawalQueue (linked to OllaCore proxy)
+        //     OllaGovernance is the admin so it can manage roles and upgrades.
 
         (withdrawalQueueImpl, withdrawalQueue) =
-            _withdrawalQueueDeployer.deploy(config, ollaCoreProxy, config.governance, 50_000);
+            _withdrawalQueueDeployer.deploy(config, ollaCoreProxy, ollaGovProxy, 50_000);
         json = _addAddressToJson(json, "WithdrawalQueueImplementation", withdrawalQueueImpl, false);
         json = _addAddressToJson(json, "WithdrawalQueueProxy", withdrawalQueue, false);
 
-        // 3.2 Deploy RewardsVault (linked to OllaCore proxy)
+        // 4.2 Deploy RewardsVault (linked to OllaCore proxy)
 
         (rewardsVaultImpl, rewardsVault) =
-            _rewardsVaultDeployer.deploy(config, IERC20(asset), ollaCoreProxy, config.governance);
+            _rewardsVaultDeployer.deploy(config, IERC20(asset), ollaCoreProxy, ollaGovProxy);
         json = _addAddressToJson(json, "RewardsVaultImplementation", rewardsVaultImpl, false);
         json = _addAddressToJson(json, "RewardsVaultProxy", rewardsVault, false);
 
@@ -143,7 +154,7 @@ contract DeployScript is BaseDeployer {
 
             // Local safety module stub: allows deposits/withdrawals without role setup.
             vm.startBroadcast(config.deployerPrivateKey);
-            safetyModule = address(new MockSafetyModule(ollaCoreImpl));
+            safetyModule = address(new MockSafetyModule(ollaCoreProxy));
             vm.stopBroadcast();
             _logDeployment("MockSafetyModule", safetyModule);
         }
@@ -154,25 +165,20 @@ contract DeployScript is BaseDeployer {
         // Safety module (required by OllaCore deposit/withdraw paths)
         json = _addAddressToJson(json, "SafetyModule", safetyModule, false);
 
-        // 4. Initialize OllaCore with all dependencies
+        // 5. Initialize OllaCore with OllaGovernance as owner
+        //    OllaGovernance holds: owner(), DEFAULT_ADMIN_ROLE, GUARDIAN_ROLE, OPERATOR_ROLE
 
         config.withdrawalQueue = withdrawalQueue;
         config.rewardsVault = rewardsVault;
         config.safetyModule = safetyModule;
+        // Override governance to OllaGovernance proxy (OllaCore's owner)
+        config.governance = ollaGovProxy;
         _ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager, safetyModule);
 
-        // 4.1 Grant DEFAULT_ADMIN_ROLE to OllaCore proxy on satellite contracts
-        //     so that acceptGovernance() can propagate role changes.
-        if (config.deployMocks) {
-            vm.startBroadcast(config.deployerPrivateKey);
-            IAccessControl(withdrawalQueue).grantRole(bytes32(0), ollaCoreProxy);
-            IAccessControl(rewardsVault).grantRole(bytes32(0), ollaCoreProxy);
-            IAccessControl(stakingManager).grantRole(bytes32(0), ollaCoreProxy);
-            IAccessControl(stakingProviderRegistry).grantRole(bytes32(0), ollaCoreProxy);
-            vm.stopBroadcast();
-        }
+        // 5.1 Wire OllaGovernance → OllaCore
+        _ollaGovernanceDeployer.setCore(config, ollaGovProxy, ollaCoreProxy);
 
-        // 5. Write deployment JSON
+        // 6. Write deployment JSON
         json = _closeAddressesJson(json);
 
         // Add StAztec metadata for frontend signature generation
