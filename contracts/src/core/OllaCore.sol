@@ -1179,6 +1179,9 @@ contract OllaCore is
         // reducing stakedPrincipal.
         // Cap to stakedPrincipal to prevent underflow if rollup exit amounts
         // ever diverge from tracked principal (e.g. after slashing).
+        // Slither: zero-guard, not a timestamp comparison; multiple _accountingState
+        // reads are acceptable under nonReentrant.
+        // slither-disable-next-line timestamp,pess-multiple-storage-read
         if (exitAmount > 0) {
             if (exitAmount > _accountingState.stakedPrincipal) {
                 exitAmount = _accountingState.stakedPrincipal;
