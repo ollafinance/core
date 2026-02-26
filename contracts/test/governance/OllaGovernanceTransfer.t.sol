@@ -107,10 +107,14 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         assertTrue(gov.hasRole(gov.EXECUTOR_ROLE(), newGov), "newGov has EXECUTOR_ROLE");
         assertTrue(gov.hasRole(gov.CANCELLER_ROLE(), newGov), "newGov has CANCELLER_ROLE");
 
+        // New governance has DEFAULT_ADMIN_ROLE
+        assertTrue(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), newGov), "newGov has DEFAULT_ADMIN_ROLE");
+
         // Old governance lost roles
         assertFalse(gov.hasRole(gov.PROPOSER_ROLE(), admin), "old lost PROPOSER_ROLE");
         assertFalse(gov.hasRole(gov.EXECUTOR_ROLE(), admin), "old lost EXECUTOR_ROLE");
         assertFalse(gov.hasRole(gov.CANCELLER_ROLE(), admin), "old lost CANCELLER_ROLE");
+        assertFalse(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), admin), "old lost DEFAULT_ADMIN_ROLE");
     }
 
     function test_RevertWhen_AcceptGovernance_NotPending() external {
@@ -189,6 +193,33 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         gov.execute(address(gov), 0, treasuryData, bytes32(0), bytes32(uint256(99)));
 
         assertEq(gov.treasury(), alice, "new admin changed treasury");
+    }
+
+    function test_OldAdmin_CannotRegrantRolesAfterTransfer() external {
+        bytes32 proposerRole = gov.PROPOSER_ROLE();
+        bytes32 executorRole = gov.EXECUTOR_ROLE();
+        bytes32 defaultAdminRole = gov.DEFAULT_ADMIN_ROLE();
+
+        // Propose + accept
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+        _mockSatelliteACL();
+        vm.prank(newGov);
+        gov.acceptGovernance();
+
+        // Old admin cannot re-grant itself PROPOSER_ROLE via DEFAULT_ADMIN_ROLE
+        vm.expectRevert();
+        vm.prank(admin);
+        gov.grantRole(proposerRole, admin);
+
+        // Old admin cannot re-grant itself EXECUTOR_ROLE
+        vm.expectRevert();
+        vm.prank(admin);
+        gov.grantRole(executorRole, admin);
+
+        // Old admin cannot re-grant itself DEFAULT_ADMIN_ROLE
+        vm.expectRevert();
+        vm.prank(admin);
+        gov.grantRole(defaultAdminRole, admin);
     }
 
     function test_OldAdmin_CannotScheduleAfterTransfer() external {

@@ -186,9 +186,8 @@ contract DeployScript is BaseDeployer {
         if (config.deployMocks) {
             bytes memory unpauseData = abi.encodeCall(OllaCore.unpause, ());
             vm.startBroadcast(config.deployerPrivateKey);
-            OllaGovernance(payable(ollaGovProxy)).schedule(
-                ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0), config.timelockMinDelay
-            );
+            OllaGovernance(payable(ollaGovProxy))
+                .schedule(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0), config.timelockMinDelay);
             OllaGovernance(payable(ollaGovProxy)).execute(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0));
             vm.stopBroadcast();
         }

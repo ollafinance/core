@@ -135,6 +135,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         _grantRole(PROPOSER_ROLE, newGovernance);
         _grantRole(EXECUTOR_ROLE, newGovernance);
         _grantRole(CANCELLER_ROLE, newGovernance);
+        _grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
 
         // Propagate DEFAULT_ADMIN_ROLE on satellite contracts
         _propagateAdminRole(oldGovernance, newGovernance);
@@ -144,10 +145,12 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
             _revokeRole(PROPOSER_ROLE, oldGovernance);
             _revokeRole(EXECUTOR_ROLE, oldGovernance);
             _revokeRole(CANCELLER_ROLE, oldGovernance);
+            _revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
         }
 
         emit GovernanceTransferAccepted(oldGovernance, newGovernance);
     }
+
     // slither-disable-end reentrancy-events
 
     /// @inheritdoc IOllaGovernance
@@ -253,6 +256,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     function setMaxAccountingDelay(uint256 delay) external override onlySelf {
         ISafetyModule(IOllaCore(core).safetyModule()).setMaxAccountingDelay(delay);
     }
+
     // slither-disable-end pess-event-setter
 
     /*//////////////////////////////////////////////////////////////
