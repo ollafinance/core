@@ -158,9 +158,6 @@ interface IStakingManager {
     /// @notice Thrown when the cached attester state is stale.
     error StakingManager__AttesterStateStale(uint256 lastUpdated, uint256 maxAge);
 
-    /// @notice Thrown when caller is not authorized (core or operator).
-    error StakingManager__Unauthorized(address caller);
-
     /// @notice Thrown when a configuration parameter is out of bounds.
     error StakingManager__InvalidParameter();
 
@@ -204,22 +201,32 @@ interface IStakingManager {
 
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.
+    /// @return exitAmount The amount of finalized exit funds included in received.
     /// @return hasRemainingExits True if there are still attesters in exiting state after finalization.
-    function getUnstakedFunds() external returns (uint256 received, bool hasRemainingExits);
+    function getUnstakedFunds() external returns (uint256 received, uint256 exitAmount, bool hasRemainingExits);
 
     /// @notice Claims sequencer rewards to RewardsVault.
     /// @return harvested The amount of rewards harvested.
     function harvestRewards() external returns (uint256 harvested);
 
     /*//////////////////////////////////////////////////////////////
-                           OPERATOR FUNCTIONS
+                        PERMISSIONLESS FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Finalizes exitable attesters on the rollup. Permissionless.
+    /// Tokens move from rollup to StakingManager. Attesters removed from registry.
+    /// @return finalized The amount of assets finalized.
+    function finalizeExits() external returns (uint256 finalized);
 
     /// @notice Computes all attester-derived state (slashing delta, total staked, pending unstakes, withdrawable)
     ///         using bounded work and caches the results on completion.
     /// @return slashingDelta The cached slashing delta after this call.
     /// @return completed True if the computation completed in this call.
     function computeAttesterState() external returns (uint256 slashingDelta, bool completed);
+
+    /*//////////////////////////////////////////////////////////////
+                           OPERATOR FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Sets the maximum allowed age for the cached attester state.
     /// @param maxAge The maximum age in seconds.

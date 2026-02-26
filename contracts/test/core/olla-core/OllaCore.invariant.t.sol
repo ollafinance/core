@@ -316,6 +316,10 @@ contract OllaCoreInvariantTest is Test {
             + accounting.claimableRewards;
         uint256 expectedTotal = accounting.slashingDelta >= positiveTotal ? 0 : positiveTotal - accounting.slashingDelta;
 
+        // totalAssets() subtracts pending withdrawals (shares already burned)
+        uint256 pendingWithdrawals = withdrawalQueue.totalPendingAssets();
+        expectedTotal = pendingWithdrawals >= expectedTotal ? 0 : expectedTotal - pendingWithdrawals;
+
         assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
     }
 
@@ -666,7 +670,6 @@ contract OllaCoreLifecycleHandler is Test {
     function updateAccounting() external {
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         if (progress.step != IOllaCore.RebalanceStep.Done) return;
-        if (vault.isRebalancePaused()) return;
 
         ghost_rateBeforeAccounting = vault.exchangeRate();
 
@@ -887,10 +890,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
     /// @notice Token conservation (total deposited into system)
     uint256 public ghost_totalMinted;
 
-    /// @notice Rebalance pause blocks deposits
-    bool public ghost_rebalancePausedDepositAttempted;
-    bool public ghost_rebalancePausedDepositSucceeded;
-
     /// @notice Cumulative rewards monotonicity
     uint256 public ghost_previousCumulativeRewards;
 
@@ -956,22 +955,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot counters before operation
         _snapshotFlowCounters();
 
-        // Test whether deposit works while rebalance paused
-        if (vault.isRebalancePaused()) {
-            ghost_rebalancePausedDepositAttempted = true;
-            asset.mint(actor, assets);
-            ghost_totalMinted += assets;
-            vm.startPrank(actor);
-            asset.approve(address(vault), assets);
-            try vault.deposit(assets, actor, 0) {
-                ghost_rebalancePausedDepositSucceeded = true;
-            } catch {
-                // Expected: deposit reverts during rebalance pause
-            }
-            vm.stopPrank();
-            return;
-        }
-
         // Snapshot rate before (deposit is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
@@ -1001,7 +984,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
             }
         }
         if (actor == address(0)) return;
-        if (vault.isRebalancePaused()) return;
 
         uint256 sharesToRedeem = actorShares / 2;
         if (sharesToRedeem == 0) sharesToRedeem = actorShares;
@@ -1034,7 +1016,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
             }
         }
         if (actor == address(0)) return;
-        if (vault.isRebalancePaused()) return;
 
         // Only redeem a small portion to avoid InsufficientLiquidity
         uint256 sharesToRedeem = actorShares / 4;
@@ -1099,7 +1080,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
     function updateAccounting() external {
         IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
         if (progress.step != IOllaCore.RebalanceStep.Done) return;
-        if (vault.isRebalancePaused()) return;
 
         // Snapshot counters before
         _snapshotFlowCounters();
@@ -1424,27 +1404,6 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         uint256 netAssets = grossAssets - fee;
 
         assertEq(fee + netAssets, grossAssets, "fee + netAssets must equal grossAssets exactly");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-            REBALANCE PAUSE BLOCKS USER ACTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice During rebalance (isRebalancePaused==true), deposits must revert.
-    ///         When rebalance completes (Done), pause should be lifted.
-    function invariant_RebalancePauseBlocksDeposits() external view {
-        // If a deposit was attempted while paused, it must not have succeeded
-        if (handler.ghost_rebalancePausedDepositAttempted()) {
-            assertFalse(
-                handler.ghost_rebalancePausedDepositSucceeded(), "deposit must not succeed while rebalance is paused"
-            );
-        }
-
-        // When step is Done and not paused, the pause should be lifted
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
-        if (progress.step == IOllaCore.RebalanceStep.Done) {
-            assertFalse(vault.isRebalancePaused(), "pause must be lifted when rebalance step is Done");
-        }
     }
 
     /*//////////////////////////////////////////////////////////////

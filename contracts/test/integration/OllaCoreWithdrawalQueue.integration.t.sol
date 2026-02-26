@@ -110,6 +110,9 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
+
+        // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -363,7 +366,15 @@ contract RealisticStakingManager is IStakingManager {
 
     function setGasThreshold(uint256) external pure override { }
 
-    function getUnstakedFunds() external override returns (uint256 received, bool hasRemainingExits) {
+    function finalizeExits() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function getUnstakedFunds()
+        external
+        override
+        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
+    {
         // Transfer pending unstaked funds back to caller (OllaCore)
         received = pendingUnstakeAmount;
         if (received > 0) {
@@ -371,7 +382,7 @@ contract RealisticStakingManager is IStakingManager {
             withdrawableAmount = 0;
             stakingAsset.safeTransfer(msg.sender, received);
         }
-        return (received, false);
+        return (received, 0, false);
     }
 
     function totalStaked() external view override returns (uint256) {
@@ -551,6 +562,9 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         vm.stopPrank();
 
         alice = makeAddr("alice");
+
+        // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -602,12 +616,17 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         assertEq(expectedAssets, depositAmount, "expected assets should match deposit");
 
         // Step 4: Rebalance to initiate unstake (pending withdrawals > buffered)
+        vm.warp(block.timestamp + 1 hours + 1);
         vault.rebalance();
 
         // Funds should now be pending unstake in staking manager
         assertEq(stakingManager.pendingUnstakes(), depositAmount, "funds should be pending unstake");
 
         // Step 5: Rebalance to pull unstaked funds and finalize withdrawal
+        {
+            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            vm.warp(rpt.timestamp + 1 hours + 1);
+        }
         vault.rebalance();
 
         // Verify withdrawal is finalized
@@ -621,6 +640,10 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
 
         // Step 6: Another rebalance - regression check for finalized funds.
         // Finalized-but-unclaimed funds should remain reserved in the vault.
+        {
+            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            vm.warp(rpt.timestamp + 1 hours + 1);
+        }
         vault.rebalance();
 
         // Check if funds were incorrectly re-staked
@@ -659,7 +682,12 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         uint256 expectedAssets = request.assetsExpected;
 
+        vm.warp(block.timestamp + 1 hours + 1);
         vault.rebalance();
+        {
+            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            vm.warp(rpt.timestamp + 1 hours + 1);
+        }
         vault.rebalance();
 
         request = queue.getRequest(requestId);
@@ -669,6 +697,10 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         uint256 vaultBalanceBeforeRebalance = asset.balanceOf(address(vault));
         assertEq(vaultBalanceBeforeRebalance, expectedAssets, "vault should hold finalized assets");
 
+        {
+            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            vm.warp(rpt.timestamp + 1 hours + 1);
+        }
         vault.rebalance();
 
         uint256 vaultBalanceAfterRebalance = asset.balanceOf(address(vault));

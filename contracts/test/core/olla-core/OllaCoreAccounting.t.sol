@@ -111,6 +111,8 @@ contract OllaCoreAccountingTest is Test {
         vault.grantRole(operatorRole, operator);
         vault.grantRole(operatorRole, address(this));
         vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -185,7 +187,7 @@ contract OllaCoreAccountingTest is Test {
             cumulativeRewards: 0
         });
 
-        uint256 totalAssets = vault.exposedComputeTotalAssets(buckets);
+        uint256 totalAssets = vault.exposedComputeTotalAssets(buckets, 0);
 
         assertEq(totalAssets, 9 * DECIMALS, "total assets computed");
     }
@@ -241,7 +243,7 @@ contract OllaCoreAccountingTest is Test {
         assertEq(reportAfter.timestamp, expectedTimestamp, "report timestamp updated");
     }
 
-    function test_UpdateAccounting_NetFlowsNegative_ComputesGrossRewards() external {
+    function test_UpdateAccounting_NetFlowsNegative_NoPhantomRewards() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
@@ -259,8 +261,10 @@ contract OllaCoreAccountingTest is Test {
 
         IOllaCore.LatestReport memory reportAfter = vault.latestReport();
         assertEq(reportAfter.netFlows, -int256(assetsExpected), "net flows negative");
-        assertEq(reportAfter.grossRewards, assetsExpected, "gross rewards uses signed net flows");
-        assertEq(reportAfter.totalAssets, depositAmount, "total assets unchanged");
+        // No actual rewards accrued — pending withdrawal assets are excluded from totalAssets
+        // so the formula correctly computes grossRewards = 0 instead of phantom rewards.
+        assertEq(reportAfter.grossRewards, 0, "no phantom rewards from withdrawal requests");
+        assertEq(reportAfter.totalAssets, depositAmount - assetsExpected, "total assets excludes pending withdrawals");
     }
 
     function test_UpdateAccounting_GrossRewardsZero_TotalAssetsZero_NoFeeMinting() external {
@@ -373,6 +377,7 @@ contract OllaCoreAccountingTest is Test {
         assertEq(firstReport.rewardsSnapshot, 7 * DECIMALS, "first rewards snapshot stored");
 
         stakingManager.setHarvestedRewards(2 * DECIMALS);
+        vm.warp(block.timestamp + 1 hours);
         vm.prank(operator);
         vault.rebalance();
         stakingManager.setClaimableRewards(9 * DECIMALS);
@@ -732,7 +737,7 @@ contract OllaCoreAccountingTest is Test {
             cumulativeRewards: 0
         });
 
-        uint256 result = vault.exposedComputeTotalAssets(buckets);
+        uint256 result = vault.exposedComputeTotalAssets(buckets, 0);
 
         // slashingDelta (20e18) > sum of other buckets (10e18), so result should be 0
         assertEq(result, 0, "computeTotalAssets should return zero when slashing exceeds sum");
@@ -794,7 +799,7 @@ contract OllaCoreAccountingTest is Test {
             cumulativeRewards: 0
         });
 
-        uint256 result = vault.exposedComputeTotalAssets(buckets);
+        uint256 result = vault.exposedComputeTotalAssets(buckets, 0);
 
         // Result should be clamped: zero when slashing >= sum, otherwise sum - slashing
         if (slashing >= positiveTotal) {

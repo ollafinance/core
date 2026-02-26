@@ -25,13 +25,6 @@ interface IOllaCore {
         Done
     }
 
-    enum RebalancePauseReason {
-        None,
-        RebalanceStart,
-        RebalanceComplete,
-        GovernanceOverride
-    }
-
     struct AccountingState {
         uint256 bufferedAssets;
         uint256 stakedPrincipal;
@@ -230,10 +223,8 @@ interface IOllaCore {
     /// @notice Emitted when the core is unpaused.
     event Unpaused();
 
-    /// @notice Emitted when the rebalance pause state is updated.
-    /// @param paused Whether rebalance pause is active.
-    /// @param reason The reason for the pause update.
-    event RebalancePauseUpdated(bool paused, RebalancePauseReason reason);
+    /// @notice Emitted when the rebalance state machine is force-reset by governance.
+    event RebalanceReset();
 
     /// @notice Emitted when an instant redemption is completed.
     /// @param owner The share owner.
@@ -257,6 +248,11 @@ interface IOllaCore {
     /// @param oldFeeBP The previous fee in basis points.
     /// @param newFeeBP The new fee in basis points.
     event InstantRedemptionFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
+
+    /// @notice Emitted when the rebalance cooldown is updated.
+    /// @param oldCooldown The previous cooldown in seconds.
+    /// @param newCooldown The new cooldown in seconds.
+    event RebalanceCooldownUpdated(uint256 indexed oldCooldown, uint256 indexed newCooldown);
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
@@ -303,12 +299,6 @@ interface IOllaCore {
     /// @notice Thrown when the target buffer is invalid.
     error OllaCore__InvalidTargetBufferedAssets(uint256 newBuffer);
 
-    /// @notice Thrown when rebalance pause blocks an action.
-    error OllaCore__RebalancePaused();
-
-    /// @notice Thrown when a rebalance pause override is not allowed.
-    error OllaCore__RebalancePauseOverrideNotAllowed();
-
     /// @notice Thrown when an action requires rebalance completion.
     error OllaCore__RebalanceInProgress();
 
@@ -332,6 +322,14 @@ interface IOllaCore {
 
     /// @notice Thrown when the new safety module's CORE does not match this contract.
     error OllaCore__InvalidSafetyModule(address safetyModule);
+
+    /// @notice Thrown when the rebalance cooldown has not elapsed.
+    /// @param elapsed Seconds since last accounting update.
+    /// @param required Required cooldown seconds.
+    error OllaCore__RebalanceCooldownActive(uint256 elapsed, uint256 required);
+
+    /// @notice Thrown when a parameter is invalid.
+    error OllaCore__InvalidParameter();
 
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
@@ -444,7 +442,7 @@ interface IOllaCore {
     /// @notice Unpauses deposits and withdrawals.
     function unpause() external;
 
-    /// @notice Forces the rebalance state machine to reset and lifts the rebalance pause.
+    /// @notice Forces the rebalance state machine to reset to Done.
     /// @dev This function is safe to call at any rebalance step because accounting state
     ///      (bufferedAssets, stakedPrincipal, rewardsVaultBalance, _finalizedUnclaimedAssets)
     ///      is updated atomically within each sub-step. The state machine progress counters
@@ -459,9 +457,13 @@ interface IOllaCore {
     ///        remaining surplus stays in the buffer.
     ///      - Attester state cache may be stale; the next cycle's ComputeAttesterState will refresh it.
     ///      No protocol invariants are violated by this reset at any step.
-    function forceRebalanceUnpause() external;
+    function forceRebalanceReset() external;
 
-    /// @notice Operator-triggered rebalance hook.
+    /*//////////////////////////////////////////////////////////////
+                        PERMISSIONLESS FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Permissionless rebalance flow.
     /// @return rewardsDelta The amount of rewards harvested.
     /// @return finalizedAmount The amount of assets used for withdrawal finalization.
     /// @return stakedAmount The amount of assets staked.
@@ -470,8 +472,12 @@ interface IOllaCore {
         external
         returns (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
 
-    /// @notice Operator-triggered accounting update hook.
+    /// @notice Permissionless accounting update hook.
     function updateAccounting() external;
+
+    /*//////////////////////////////////////////////////////////////
+                        GOVERNANCE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Reconciles buffered assets with the actual asset balance.
     /// @return delta The amount added to buffered assets.
@@ -523,6 +529,10 @@ interface IOllaCore {
     /// @notice Sets the instant redemption fee in basis points.
     /// @param newFeeBP The new fee (0-10000).
     function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
+
+    /// @notice Sets the rebalance cooldown.
+    /// @param cooldown_ The new cooldown in seconds. Must be in [MIN_REBALANCE_COOLDOWN, MAX_REBALANCE_COOLDOWN].
+    function setRebalanceCooldown(uint256 cooldown_) external;
 
     /// @notice Recovers stAztec sent directly to the core.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
@@ -591,14 +601,6 @@ interface IOllaCore {
     /// @return The rebalance progress struct.
     function rebalanceProgress() external view returns (RebalanceProgress memory);
 
-    /// @notice Returns whether rebalance pause is active.
-    /// @return paused Whether rebalance pause is active.
-    function isRebalancePaused() external view returns (bool paused);
-
-    /// @notice Returns the rebalance pause reason code.
-    /// @return reason The pause reason code.
-    function rebalancePauseReason() external view returns (uint8 reason);
-
     /// @notice Returns the flow counter snapshots.
     /// @return The flow counters struct.
     function flowCounters() external view returns (FlowCounters memory);
@@ -642,6 +644,10 @@ interface IOllaCore {
     /// @notice Returns the instant redemption fee in basis points.
     /// @return The instant redemption fee BP.
     function instantRedemptionFeeBP() external view returns (uint256);
+
+    /// @notice Returns the rebalance cooldown in seconds.
+    /// @return The cooldown value.
+    function rebalanceCooldown() external view returns (uint256);
 
     /// @notice Returns the protocol fee in basis points.
     /// @return The protocol fee BP.

@@ -13,14 +13,20 @@ This serves two purposes:
 |---|---|---|---|
 | T-1 | `BURNER_ROLE` is held exclusively by OllaCore | StAztec | Any other holder can burn arbitrary users' stAztec without allowance, effectively confiscating their staking position |
 | T-2 | `MINTER_ROLE` is held exclusively by OllaCore | StAztec | Any other holder can mint unbacked stAztec, diluting all existing holders |
-| T-3 | `OPERATOR_ROLE` is trusted to submit correct accounting data | OllaCore, StakingManager | A malicious operator can manipulate the exchange rate, over/under-report rewards or slashing |
+| T-3 | `OPERATOR_ROLE` can set attester-state staleness window | StakingManager | A malicious operator can set an excessively large `attesterStateMaxAge`, allowing stale slashing/staking data to persist and delaying accurate accounting |
 | T-4 | `DEFAULT_ADMIN_ROLE` (governance) can upgrade all UUPS proxies | OllaCore, WithdrawalQueue, RewardsVault, StakingManager, StakingProviderRegistry | A compromised governance key can replace any implementation — full protocol rug |
 | T-5 | Governance can set protocol fees up to 100% | OllaCore | Fee misconfiguration can extract all yield from stakers |
 | T-6 | Governance can hot-swap modules (StakingManager, RewardsVault, WithdrawalQueue, SafetyModule) | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
 | T-7 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
-| T-8 | `GUARDIAN_ROLE` can pause/unpause and force-unpause a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-unpausing mid-rebalance leaves state machine inconsistent |
+| T-8 | `GUARDIAN_ROLE` can pause/unpause and force-reset a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-resetting mid-rebalance discards in-progress work (unharvested rewards wait for next cycle, partial unstakes are tracked on-chain) |
 
 ## Design Decisions
+
+### Rebalance and accounting are permissionless
+
+`rebalance()`, `updateAccounting()`, `computeAttesterState()`, and `finalizeExits()` are callable by any address. This eliminates the operator as a liveness dependency — anyone can advance the protocol's state machine. Rate-limiting is enforced by a governance-configurable cooldown (`rebalanceCooldown`, bounded to 10 min–24 h) that prevents new rebalance cycles from starting too frequently. All accounting data is derived from on-chain state (rollup attester views, rewards vault balances), not operator-submitted values.
+
+`reconcileBufferedAssets()` was moved from `OPERATOR_ROLE` to `DEFAULT_ADMIN_ROLE` (governance) because it has donation-absorption side effects that should remain privileged.
 
 ### SafetyModule is intentionally non-UUPS
 

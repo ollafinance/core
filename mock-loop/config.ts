@@ -33,6 +33,14 @@ export const defaultConfig: RunConfig = {
       privateKey: ANVIL_ACCOUNT_1_PRIVATE_KEY, // Anvil account 1
     },
     {
+      // Advance Anvil time past the rebalance cooldown (1 hour default)
+      // before rebalance ticks so the cooldown gate passes.
+      type: "time-advance",
+      enabled: true,
+      shouldRun: (_state, tick) => (tick - 2) % 10 === 0 && tick >= 2,
+      seconds: 3601, // 1 hour + 1 second
+    },
+    {
       type: "rebalance",
       enabled: true,
       shouldRun: (_state, tick) => (tick - 2) % 10 === 0 && tick >= 2,

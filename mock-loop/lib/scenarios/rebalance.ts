@@ -1,8 +1,9 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { RebalanceScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { getOllaCore, loadAbi } from "../client.js";
+import { getOllaCore, getStakingManager, loadAbi, createUserWallet } from "../client.js";
 
 const REBALANCE_STEP_DONE = 6; // RebalanceStep.Done
+const REBALANCE_STEP_PULL_UNSTAKED = 1; // RebalanceStep.PullUnstaked
 const STAKE_FAILED_SELECTOR = "0xd101596a"; // Stake failed error selector
 const REBALANCE_STEP_NAMES = ["Harvest", "PullUnstaked", "FinalizeWithdrawals", "InitiateUnstake", "StakeSurplus", "ComputeAttesterState", "Done"];
 
@@ -12,7 +13,12 @@ export async function executeRebalance(
   clients: { publicClient: PublicClient; operatorWallet: WalletClient },
   addresses: DeploymentAddresses
 ): Promise<ActionResult> {
-  const ollaCore = getOllaCore(addresses, clients.operatorWallet);
+  // Use non-operator wallet when privateKey is provided (permissionless mode)
+  const callerWallet = _scenario.privateKey
+    ? createUserWallet(clients.publicClient.transport.url, _scenario.privateKey)
+    : clients.operatorWallet;
+
+  const ollaCore = getOllaCore(addresses, callerWallet);
   const ollaCoreRead = getOllaCore(addresses, clients.publicClient);
   const stakingManagerAbi = loadAbi("StakingManager");
   const stakingManagerAddress = addresses.StakingManagerProxy as `0x${string}`;
@@ -20,19 +26,21 @@ export async function executeRebalance(
   const stepHistory: { iter: number; step: number; stepName: string; stakeRemaining: string; unstakeRemaining: string }[] = [];
   let lastProgress: { step: number; stakeRemaining: bigint; unstakeRemaining: bigint } | null = null;
   let gasLimit: bigint | undefined;
+  let finalizeExitsRetries = 0;
+  const MAX_FINALIZE_RETRIES = 3;
 
   try {
     let iteration = 0;
     let complete = false;
     const attesterGas = 500_000n;
-    const preComputeTx = await clients.operatorWallet.writeContract({
+    const preComputeTx = await callerWallet.writeContract({
       address: stakingManagerAddress,
       abi: stakingManagerAbi,
       functionName: "computeAttesterState",
       args: [],
       gas: attesterGas,
       chain: null,
-      account: clients.operatorWallet.account,
+      account: callerWallet.account,
     } as any);
     await clients.publicClient.waitForTransactionReceipt({ hash: preComputeTx });
     const gasThreshold = await ollaCoreRead.read.rebalanceGasThreshold() as bigint;
@@ -92,12 +100,37 @@ export async function executeRebalance(
         stakeRemaining: progress.stakeRemaining.toString(),
         unstakeRemaining: progress.unstakeRemaining.toString()
       });
+      // Detect stuck state: no progress between iterations
       if (
         lastProgress &&
         progress.step === lastProgress.step &&
         progress.stakeRemaining === lastProgress.stakeRemaining &&
         progress.unstakeRemaining === lastProgress.unstakeRemaining
       ) {
+        // When stuck at PullUnstaked, call finalizeExits() to move exiting attesters
+        // through the exit queue, then retry the rebalance.
+        if (progress.step === REBALANCE_STEP_PULL_UNSTAKED && finalizeExitsRetries < MAX_FINALIZE_RETRIES) {
+          finalizeExitsRetries++;
+          const stakingManager = getStakingManager(addresses, callerWallet);
+          const stakingManagerRead = getStakingManager(addresses, clients.publicClient);
+          const exitCountBefore = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
+          // Use explicit gas limit — see finalize-exits.ts for rationale.
+          const finalizeTx = await stakingManager.write.finalizeExits([], { gas: 1_000_000n });
+          await clients.publicClient.waitForTransactionReceipt({ hash: finalizeTx });
+          const exitCountAfter = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
+          iterations.push(finalizeTx);
+          stepHistory.push({
+            iter: iteration,
+            step: progress.step,
+            stepName: `FinalizeExits (inline) exits:${exitCountBefore}->${exitCountAfter}`,
+            stakeRemaining: progress.stakeRemaining.toString(),
+            unstakeRemaining: progress.unstakeRemaining.toString(),
+          });
+          // Reset lastProgress so the next rebalance call can make progress
+          lastProgress = null;
+          continue;
+        }
+
         return {
           scenario: "rebalance",
           success: true,
@@ -117,14 +150,14 @@ export async function executeRebalance(
       }
     }
 
-    const postComputeTx = await clients.operatorWallet.writeContract({
+    const postComputeTx = await callerWallet.writeContract({
       address: stakingManagerAddress,
       abi: stakingManagerAbi,
       functionName: "computeAttesterState",
       args: [],
       gas: attesterGas,
       chain: null,
-      account: clients.operatorWallet.account,
+      account: callerWallet.account,
     } as any);
     await clients.publicClient.waitForTransactionReceipt({ hash: postComputeTx });
 
@@ -136,6 +169,8 @@ export async function executeRebalance(
         transactions: iterations,
         stepHistory,
         postComputeTx,
+        caller: callerWallet.account?.address,
+        permissionless: !!_scenario.privateKey,
       },
     };
   } catch (error) {

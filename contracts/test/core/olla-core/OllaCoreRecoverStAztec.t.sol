@@ -132,10 +132,10 @@ contract OllaCoreRecoverStAztecTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    REBALANCE PAUSE GUARD (C4)
+                    REBALANCE IN PROGRESS GUARD (C4)
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevertWhen_RecoverStAztec_DuringRebalancePause() external {
+    function test_RevertWhen_RecoverStAztec_DuringRebalanceInProgress() external {
         uint256 shares = _performDeposit(alice, 8 * DECIMALS);
         uint256 recoverAmount = shares / 4;
 
@@ -143,10 +143,13 @@ contract OllaCoreRecoverStAztecTest is Test {
         stAztec.transfer(address(vault), recoverAmount);
 
         // Grant operator role and trigger rebalance with limited gas so it
-        // stops mid-cycle at PullUnstaked, leaving _rebalancePaused = true.
+        // stops mid-cycle at PullUnstaked.
         bytes32 operatorRole = vault.OPERATOR_ROLE();
         vm.prank(governance);
         vault.grantRole(operatorRole, address(this));
+
+        // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
+        vm.warp(block.timestamp + 1 hours);
 
         // Try a range of gas stipends to find one that stops at PullUnstaked
         uint256 selectedGas;
@@ -168,11 +171,15 @@ contract OllaCoreRecoverStAztecTest is Test {
         (bool ok,) = address(vault).call{ gas: selectedGas }(abi.encodeCall(vault.rebalance, ()));
         assertTrue(ok, "rebalance call should succeed");
 
-        // Verify rebalance is paused (stuck mid-cycle)
-        assertTrue(vault.isRebalancePaused(), "rebalance should be paused mid-cycle");
+        // Verify rebalance is in progress (stuck mid-cycle)
+        assertNotEq(
+            uint256(vault.rebalanceProgress().step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should be in progress mid-cycle"
+        );
 
-        // Attempt recoverStAztec during rebalance pause
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalancePaused.selector));
+        // Attempt recoverStAztec during rebalance in progress
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
         vm.prank(governance);
         vault.recoverStAztec(alice, recoverAmount);
     }

@@ -24,6 +24,8 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public harvestedRewards;
     IERC20 public unstakedToken;
     uint256 public unstakedAmount;
+    uint256 public unstakedExitAmountOverride;
+    bool public useUnstakedExitAmountOverride;
     uint256 public pendingUnstakeAmount;
     uint256 public withdrawableUnstakeAmount;
     uint256 public activatedAttesterCount;
@@ -77,6 +79,11 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setUnstakedAmount(uint256 value) external {
         unstakedAmount = value;
+    }
+
+    function setUnstakedExitAmountOverride(uint256 value) external {
+        unstakedExitAmountOverride = value;
+        useUnstakedExitAmountOverride = true;
     }
 
     function setGasBurnTarget(uint256 target) external {
@@ -200,7 +207,16 @@ contract MockAccountingStakingManager is IStakingManager {
         emit AttesterStateMaxAgeUpdated(oldMaxAge, maxAge);
     }
 
-    function getUnstakedFunds() public virtual override returns (uint256 received, bool hasRemainingExits) {
+    function finalizeExits() external virtual override returns (uint256 finalized) {
+        return 0;
+    }
+
+    function getUnstakedFunds()
+        public
+        virtual
+        override
+        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
+    {
         uint256 target = gasBurnTarget;
         if (target != 0) {
             uint256 safetyMargin = 25_000;
@@ -216,17 +232,18 @@ contract MockAccountingStakingManager is IStakingManager {
 
         uint256 amount = unstakedAmount;
         if (amount == 0) {
-            return (0, _hasRemainingExits);
+            return (0, 0, _hasRemainingExits);
         }
 
         IERC20 token = unstakedToken;
         if (address(token) == address(0)) {
-            return (0, _hasRemainingExits);
+            return (0, 0, _hasRemainingExits);
         }
 
         unstakedAmount = 0;
         token.safeTransfer(msg.sender, amount);
-        return (amount, _hasRemainingExits);
+        uint256 reportedExit = useUnstakedExitAmountOverride ? unstakedExitAmountOverride : amount;
+        return (amount, reportedExit, _hasRemainingExits);
     }
 
     function harvestRewards() external override returns (uint256 harvested) {

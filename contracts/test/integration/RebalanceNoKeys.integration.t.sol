@@ -102,7 +102,10 @@ contract RebalanceNoKeysIntegrationTest is Test {
         vm.stopPrank();
     }
 
-    function test_Rebalance_RevertsWhen_NoKeys() external {
+    /// @notice When no keys are registered, rebalance completes gracefully without staking.
+    /// @dev The StakeSurplus step catches the InsufficientKeys revert and advances,
+    ///      leaving all funds in the buffer.
+    function test_Rebalance_CompletesGracefully_WhenNoKeys() external {
         uint256 depositAmount = 50 * DECIMALS;
 
         asset.mint(user, depositAmount);
@@ -114,8 +117,18 @@ contract RebalanceNoKeysIntegrationTest is Test {
         vm.prank(governance);
         vault.setTargetBufferedAssets(0);
 
+        // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
+        vm.warp(block.timestamp + 1 hours);
+
         vm.prank(operator);
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__StakeFailed.selector, depositAmount));
-        vault.rebalance();
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+
+        // Staking should gracefully return 0 when no keys are available
+        assertEq(stakedAmount, 0, "should not stake when no keys");
+        assertEq(resultingBuffer, depositAmount, "buffer should retain all deposited funds");
+
+        // Verify the rebalance cycle completed
+        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete");
     }
 }

@@ -2,5 +2,5 @@
 @openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.5.0/
 @oz/=dependencies/@openzeppelin-contracts-5.5.0/
 @oz-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.5.0/
-@az/=dependencies/aztec-contracts-3.0.1/src/
+@az/=dependencies/aztec-contracts-4.0.0/src/
 @forge-std/=dependencies/forge-std-1.11.0/src/

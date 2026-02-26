@@ -26,6 +26,10 @@ import { executeGovernanceChange } from "./lib/scenarios/governance-change.js";
 import { executeSlashing } from "./lib/scenarios/slashing.js";
 import { executeExternalExit } from "./lib/scenarios/external-exit.js";
 import { executeSafetyModule } from "./lib/scenarios/safety-module.js";
+import { executeTimeAdvance } from "./lib/scenarios/time-advance.js";
+import { executeFinalizeExits } from "./lib/scenarios/finalize-exits.js";
+import { executeExchangeRateCheck } from "./lib/scenarios/exchange-rate-check.js";
+import { executeCooldownCheck } from "./lib/scenarios/cooldown-check.js";
 
 function parseCliArgs(): CliArgs {
   const { values } = parseArgs({
@@ -97,6 +101,14 @@ async function executeScenario(
       return executeExternalExit(scenario, tick, clients, addresses, scenarioState, runState);
     case "safety-module":
       return executeSafetyModule(scenario, tick, clients, addresses, scenarioState, runState);
+    case "time-advance":
+      return executeTimeAdvance(scenario, tick, clients, addresses);
+    case "finalize-exits":
+      return executeFinalizeExits(scenario, tick, clients, addresses);
+    case "exchange-rate-check":
+      return executeExchangeRateCheck(scenario, tick, clients, addresses, scenarioState);
+    case "cooldown-check":
+      return executeCooldownCheck(scenario, tick, clients, addresses);
     default:
       return {
         scenario: (scenario as ScenarioConfig).type,

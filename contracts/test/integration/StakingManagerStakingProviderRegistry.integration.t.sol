@@ -256,11 +256,12 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
 
-        // Claim unstaked funds
+        // Finalize exits first (permissionless), then claim unstaked funds
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
+        stakingManager.finalizeExits();
         vm.prank(core);
-        (uint256 claimed,) = stakingManager.getUnstakedFunds();
+        (uint256 claimed,,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD * 2);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);
@@ -274,7 +275,8 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
 
-        // Claim funds
+        // Finalize exits first (permissionless), then claim funds
+        stakingManager.finalizeExits();
         vm.prank(core);
         stakingManager.getUnstakedFunds();
 
@@ -336,10 +338,11 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
 
-        // Claim the externally exited funds
+        // Finalize exits first (permissionless), then claim the externally exited funds
         uint256 coreBalanceBefore = aztec.balanceOf(core);
+        stakingManager.finalizeExits();
         vm.prank(core);
-        (uint256 claimed,) = stakingManager.getUnstakedFunds();
+        (uint256 claimed,,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD * 2);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);
@@ -449,20 +452,21 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
     function test_CrossContractEvents_UnstakeFlow() external {
         IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(1);
 
-        vm.startPrank(core);
-
+        vm.prank(core);
         vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeInitiated(keys[0].attester, ACTIVATION_THRESHOLD);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
+        // finalizeExits() is permissionless and emits UnstakeFinalized
         vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeFinalized(keys[0].attester, ACTIVATION_THRESHOLD);
+        stakingManager.finalizeExits();
 
+        // getUnstakedFunds() sweeps balance to core and emits UnstakedFundsClaimed
         vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakedFundsClaimed(ACTIVATION_THRESHOLD);
-
+        vm.prank(core);
         stakingManager.getUnstakedFunds();
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -481,7 +485,8 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
         assertEq(stakingProviderRegistry.getQueueLength(), 2);
 
-        // Claim unstaked funds
+        // Finalize exits first (permissionless), then claim unstaked funds
+        stakingManager.finalizeExits();
         vm.prank(core);
         stakingManager.getUnstakedFunds();
 

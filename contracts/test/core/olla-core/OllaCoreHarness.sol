@@ -37,12 +37,12 @@ contract OllaCoreHarness is OllaCore {
         return _computeNetFlows(flows);
     }
 
-    function exposedComputeTotalAssets(IOllaCore.AccountingState memory buckets)
+    function exposedComputeTotalAssets(IOllaCore.AccountingState memory buckets, uint256 pendingWithdrawals)
         external
         pure
         returns (uint256 totalAssets_)
     {
-        return _computeTotalAssets(buckets);
+        return _computeTotalAssets(buckets, pendingWithdrawals);
     }
 
     function exposedComputeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, int256 netFlows)

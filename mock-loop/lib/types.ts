@@ -28,12 +28,41 @@ export interface RebalanceScenario {
   type: "rebalance";
   enabled: boolean;
   shouldRun?: ScenarioShouldRun;
+  privateKey?: string; // When set, call rebalance from this wallet instead of operator
 }
 
 export interface AccountingScenario {
   type: "accounting";
   enabled: boolean;
   shouldRun?: ScenarioShouldRun;
+  privateKey?: string; // When set, call updateAccounting from this wallet instead of operator
+}
+
+export interface TimeAdvanceScenario {
+  type: "time-advance";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  seconds: number; // Seconds to advance Anvil block time
+}
+
+export interface FinalizeExitsScenario {
+  type: "finalize-exits";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  privateKey?: string; // When set, call from this wallet instead of operator
+}
+
+export interface ExchangeRateCheckScenario {
+  type: "exchange-rate-check";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+}
+
+export interface CooldownCheckScenario {
+  type: "cooldown-check";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  privateKey?: string; // Wallet to attempt the premature rebalance from
 }
 
 export interface UserInitiateWithdrawScenario {
@@ -91,7 +120,11 @@ export type ScenarioConfig =
   | GovernanceChangeScenario
   | SlashingScenario
   | ExternalExitScenario
-  | SafetyModuleScenario;
+  | SafetyModuleScenario
+  | TimeAdvanceScenario
+  | FinalizeExitsScenario
+  | ExchangeRateCheckScenario
+  | CooldownCheckScenario;
 
 // Contract state types
 export interface AccountingState {
