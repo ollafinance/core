@@ -16,6 +16,7 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { GovernanceLib } from "src/core/libraries/GovernanceLib.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
@@ -423,14 +424,7 @@ contract OllaCore is
     /// @notice Sets the safety module address.
     /// @param newSafetyModule The new safety module address.
     function setSafetyModule(address newSafetyModule) external override onlyOwner whenNotPaused whenRebalanceDone {
-        if (newSafetyModule == address(0)) {
-            revert OllaCore__ZeroAddress("newSafetyModule");
-        }
-        if (ISafetyModule(newSafetyModule).CORE() != address(this)) {
-            revert OllaCore__InvalidSafetyModule(newSafetyModule);
-        }
-        address oldSafetyModule = _modules.safetyModule;
-        _modules.safetyModule = newSafetyModule;
+        address oldSafetyModule = GovernanceLib.setSafetyModule(_modules, newSafetyModule);
         emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
     }
 
@@ -458,8 +452,7 @@ contract OllaCore is
         uint256 oldThreshold = rebalanceGasThreshold;
         rebalanceGasThreshold = newThreshold;
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
-        _modules.stakingManager.setGasThreshold(newThreshold);
-        _modules.withdrawalQueue.setGasThreshold(newThreshold);
+        GovernanceLib.propagateGasThreshold(_modules, newThreshold);
     }
 
     /// @notice Sets the instant redemption fee in basis points.
@@ -767,12 +760,7 @@ contract OllaCore is
         whenNotPaused
         whenRebalanceDone
     {
-        if (amount == 0) {
-            revert OllaCore__InvalidAmount();
-        }
-        address resolvedRecipient = recipient == address(0) ? _treasury() : recipient;
-        IERC20(address(_modules.stAztec)).safeTransfer(resolvedRecipient, amount);
-        emit StAztecRecovered(amount, resolvedRecipient);
+        GovernanceLib.recoverStAztec(_modules, recipient, amount, _treasury());
     }
 
     /*//////////////////////////////////////////////////////////////
