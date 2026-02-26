@@ -192,7 +192,11 @@ contract DeployScript is BaseDeployer {
             vm.stopBroadcast();
         }
 
-        // 6. Write deployment JSON
+        // 6. Renounce deployer's temporary DEFAULT_ADMIN_ROLE on OllaGovernance.
+        //    After this, only the timelock (address(this)) retains DEFAULT_ADMIN_ROLE.
+        _ollaGovernanceDeployer.renounceDeployerAdmin(config, ollaGovProxy);
+
+        // 7. Write deployment JSON
         json = _closeAddressesJson(json);
 
         // Add StAztec metadata for frontend signature generation

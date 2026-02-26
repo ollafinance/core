@@ -32,6 +32,8 @@ contract OllaGovernanceDeployer is BaseDeployer {
         executors[0] = config.governance;
 
         // Deploy proxy with initialization
+        // The deployer is granted DEFAULT_ADMIN_ROLE for initial wiring (setCore).
+        // It MUST be renounced after setup via renounceDeployerAdmin().
         ERC1967Proxy govProxy = new ERC1967Proxy(
             address(govImpl),
             abi.encodeCall(
@@ -40,7 +42,7 @@ contract OllaGovernanceDeployer is BaseDeployer {
                     config.timelockMinDelay,
                     proposers,
                     executors,
-                    config.governance, // admin
+                    config.deployer, // temporary admin for wiring
                     treasury
                 )
             )
@@ -59,6 +61,17 @@ contract OllaGovernanceDeployer is BaseDeployer {
     function setCore(DeployConfig memory config, address govProxy, address coreProxy) external {
         vm.startBroadcast(config.deployerPrivateKey);
         OllaGovernance(payable(govProxy)).setCore(coreProxy);
+        vm.stopBroadcast();
+    }
+
+    /// @notice Renounce the deployer's temporary DEFAULT_ADMIN_ROLE after wiring is complete.
+    /// @dev MUST be called after setCore. Leaves only address(this) (the timelock) as admin.
+    /// @param config The deployment configuration.
+    /// @param govProxy The OllaGovernance proxy address.
+    function renounceDeployerAdmin(DeployConfig memory config, address govProxy) external {
+        vm.startBroadcast(config.deployerPrivateKey);
+        OllaGovernance(payable(govProxy))
+            .renounceRole(OllaGovernance(payable(govProxy)).DEFAULT_ADMIN_ROLE(), config.deployer);
         vm.stopBroadcast();
     }
 }
