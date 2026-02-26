@@ -183,7 +183,10 @@ contract DeployScript is BaseDeployer {
         // 5.2 For local dev: unpause OllaCore via OllaGovernance timelock.
         //     OllaGovernanceProxy holds GUARDIAN_ROLE on OllaCore, so unpause must go through it.
         //     With timelockMinDelay=0 the deployer can schedule+execute immediately.
+        //     Warp is needed because Forge starts block.timestamp at 1, which collides with
+        //     OZ TimelockController's _DONE_TIMESTAMP sentinel (also 1).
         if (config.deployMocks) {
+            vm.warp(block.timestamp + 1);
             bytes memory unpauseData = abi.encodeCall(OllaCore.unpause, ());
             vm.startBroadcast(config.deployerPrivateKey);
             OllaGovernance(payable(ollaGovProxy))
