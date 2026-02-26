@@ -71,6 +71,11 @@ remappings_generate = false
 runs = 8
 depth = 8
 
+# CI profile - dynamic_test_linking only compiles test files needed per job,
+# avoiding OOM from compiling all 182 files with via_ir on standard runners.
+[profile.ci]
+dynamic_test_linking = true
+
 [profile.ci.invariant]
 runs = 256
 depth = 256
