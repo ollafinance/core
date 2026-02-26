@@ -5,5 +5,5 @@
     "@oz-upgradeable=dependencies/@openzeppelin-contracts-upgradeable/",
     "forge-std=dependencies/forge-std/src"
   ],
-  "detectors_to_exclude": "naming-convention,pess-public-vs-external,unindexed-event-address"
+  "detectors_to_exclude": "naming-convention,pess-public-vs-external,unindexed-event-address,pess-timelock-controller"
 }

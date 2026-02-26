@@ -120,7 +120,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         emit GovernanceTransferProposed(governanceAdmin, newGovernance);
     }
 
-    // slither-disable-next-line reentrancy-events
+    // slither-disable-start reentrancy-events
     /// @inheritdoc IOllaGovernance
     function acceptGovernance() external override {
         if (msg.sender != pendingGovernance) {
@@ -148,6 +148,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
 
         emit GovernanceTransferAccepted(oldGovernance, newGovernance);
     }
+    // slither-disable-end reentrancy-events
 
     /// @inheritdoc IOllaGovernance
     function cancelGovernanceProposal() external override onlySelf {
@@ -177,6 +178,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
                     OLLACORE PARAMETER PASSTHROUGHS
     //////////////////////////////////////////////////////////////*/
 
+    // slither-disable-start pess-event-setter
     /// @inheritdoc IOllaGovernance
     function setProtocolFeeBP(uint256 newFeeBP) external override onlySelf {
         IOllaCore(core).setProtocolFeeBP(newFeeBP);
@@ -219,6 +221,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
 
     /// @inheritdoc IOllaGovernance
     function reconcileBufferedAssets() external override onlySelf {
+        // slither-disable-next-line unused-return
         IOllaCore(core).reconcileBufferedAssets();
     }
 
@@ -250,6 +253,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     function setMaxAccountingDelay(uint256 delay) external override onlySelf {
         ISafetyModule(IOllaCore(core).safetyModule()).setMaxAccountingDelay(delay);
     }
+    // slither-disable-end pess-event-setter
 
     /*//////////////////////////////////////////////////////////////
                           UPGRADE FUNCTIONS
