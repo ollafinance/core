@@ -14,7 +14,7 @@
  *   Tick  5      safety-module → configure
  *   Tick 12      rebalance + accounting (second round)
  *   Tick 15      slashing (12.5% slash on attester 0)
- *   Tick 20      external-exit (full exit of attester 1)
+ *   Tick 20      external-exit (full exit of original attester 1, now index 0 after attester 0 exits)
  *   Tick 22      rebalance + accounting (breaker A fires: rate drop >5%)
  *   Tick 23      safety-module → verify-breaker (expect true)
  *   Tick 24      safety-module → read-state (isPaused = true)

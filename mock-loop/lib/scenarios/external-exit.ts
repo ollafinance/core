@@ -1,40 +1,7 @@
 import type { WalletClient, PublicClient } from "viem";
-import { parseAbiItem } from "viem";
 import type { ExternalExitScenario, DeploymentAddresses, ActionResult } from "../types.js";
 import { getMockAztecRollup, getStakingProviderRegistry, loadAbi } from "../client.js";
-
-/**
- * Discover actively-validating attester addresses by reading StakedWithProvider
- * events from StakingManager, then checking getAttesterView on the rollup.
- * Only includes attesters that are VALIDATING (have a stake and no exit record).
- */
-async function findActiveAttesters(
-  publicClient: PublicClient,
-  stakingManagerAddress: `0x${string}`,
-  rollupRead: any
-): Promise<`0x${string}`[]> {
-  const logs = await publicClient.getLogs({
-    address: stakingManagerAddress,
-    event: parseAbiItem("event StakedWithProvider(address indexed attester, uint256 indexed amount)"),
-    fromBlock: 0n,
-  });
-
-  // Deduplicate and verify each attester is actively validating (no exit record)
-  const seen = new Set<string>();
-  const active: `0x${string}`[] = [];
-  for (const log of logs) {
-    const attester = log.args.attester as `0x${string}`;
-    if (seen.has(attester.toLowerCase())) continue;
-    seen.add(attester.toLowerCase());
-
-    const view = await rollupRead.read.getAttesterView([attester]) as any;
-    // Status enum: 0=NONE, 1=VALIDATING, 2=EXITING, 3=ZOMBIE
-    if (Number(view.status) === 1 && view.effectiveBalance > 0n) {
-      active.push(attester);
-    }
-  }
-  return active;
-}
+import { findActiveAttesters } from "./attesters.js";
 
 export async function executeExternalExit(
   scenario: ExternalExitScenario,

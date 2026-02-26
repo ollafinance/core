@@ -63,6 +63,33 @@ export async function executeRebalance(
     }
     chainGasLimit = (await clients.publicClient.getBlock()).gasLimit as bigint;
 
+    const attemptGasBump = (
+      step: number,
+      stakeRemaining: bigint,
+      unstakeRemaining: bigint,
+      iter: number
+    ): boolean => {
+      if (!gasLimit) return false;
+      const nextIndex = gasBumpIndex + 1;
+      if (nextIndex >= gasBumpSteps.length) return false;
+      const nextLimit = gasBumpSteps[nextIndex];
+      const cappedLimit = chainGasLimit ? (nextLimit > chainGasLimit ? chainGasLimit : nextLimit) : nextLimit;
+      if (cappedLimit <= gasLimit) return false;
+      gasBumpCount += 1;
+      gasBumped = true;
+      gasBumpIndex = nextIndex;
+      gasLimit = cappedLimit;
+      console.log(`[rebalance] gas bump to ${gasLimit.toString()}`);
+      stepHistory.push({
+        iter,
+        step,
+        stepName: "GasBump",
+        stakeRemaining: stakeRemaining.toString(),
+        unstakeRemaining: unstakeRemaining.toString(),
+      });
+      return true;
+    };
+
     while (!complete) {
       iteration++;
 
@@ -101,30 +128,9 @@ export async function executeRebalance(
             };
           }
           if (gasLimit && receipt.gasUsed >= (gasLimit * 90n) / 100n) {
-            const nextLimit = gasBumpSteps[gasBumpIndex + 1];
-            const cappedLimit = chainGasLimit ? (nextLimit > chainGasLimit ? chainGasLimit : nextLimit) : nextLimit;
-            if (nextLimit !== undefined && cappedLimit > gasLimit) {
-              gasBumpCount += 1;
-              gasBumped = true;
-              gasBumpIndex += 1;
-              gasLimit = cappedLimit;
-              console.log(`[rebalance] gas bump to ${gasLimit.toString()}`);
-              stepHistory.push({
-                iter: iteration,
-                step: progress.step,
-                stepName: "GasBump",
-                stakeRemaining: progress.stakeRemaining.toString(),
-                unstakeRemaining: progress.unstakeRemaining.toString(),
-              });
+            if (attemptGasBump(progress.step, progress.stakeRemaining, progress.unstakeRemaining, iteration)) {
               continue;
             }
-            stepHistory.push({
-              iter: iteration,
-              step: progress.step,
-              stepName: "GasBump",
-              stakeRemaining: progress.stakeRemaining.toString(),
-              unstakeRemaining: progress.unstakeRemaining.toString(),
-            });
           }
           throw new Error(`rebalance reverted in tx ${txHash}`);
         }
@@ -135,21 +141,14 @@ export async function executeRebalance(
           errorMessage.toLowerCase().includes("outofgas") ||
           errorMessage.toLowerCase().includes("intrinsic gas too low")
         ) {
-          const nextLimit = gasBumpSteps[gasBumpIndex + 1];
-          const cappedLimit = chainGasLimit ? (nextLimit > chainGasLimit ? chainGasLimit : nextLimit) : nextLimit;
-          if (nextLimit !== undefined && gasLimit && cappedLimit > gasLimit) {
-            gasBumpCount += 1;
-            gasBumped = true;
-            gasBumpIndex += 1;
-            gasLimit = cappedLimit;
-            console.log(`[rebalance] gas bump to ${gasLimit.toString()}`);
-            stepHistory.push({
-              iter: iteration,
-              step: lastProgress?.step ?? 0,
-              stepName: "GasBump",
-              stakeRemaining: lastProgress?.stakeRemaining.toString() ?? "0",
-              unstakeRemaining: lastProgress?.unstakeRemaining.toString() ?? "0",
-            });
+          if (
+            attemptGasBump(
+              lastProgress?.step ?? 0,
+              lastProgress?.stakeRemaining ?? 0n,
+              lastProgress?.unstakeRemaining ?? 0n,
+              iteration
+            )
+          ) {
             continue;
           }
         }
