@@ -18,8 +18,7 @@ contract ERC6909TokenSupplyUpgradeable is Initializable, ERC6909Upgradeable, IER
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC6909TokenSupply")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC6909TokenSupplyStorageLocation =
-        0x9cc5ac148333cfaf4365d2d67a9c6e8fab8e8f4df7b569f769d68102db719600;
+    bytes32 private constant ERC6909TokenSupplyStorageLocation = 0x9cc5ac148333cfaf4365d2d67a9c6e8fab8e8f4df7b569f769d68102db719600;
 
     function _getERC6909TokenSupplyStorage() private pure returns (ERC6909TokenSupplyStorage storage $) {
         assembly {
@@ -27,10 +26,11 @@ contract ERC6909TokenSupplyUpgradeable is Initializable, ERC6909Upgradeable, IER
         }
     }
 
-    function __ERC6909TokenSupply_init() internal onlyInitializing {}
+    function __ERC6909TokenSupply_init() internal onlyInitializing {
+    }
 
-    function __ERC6909TokenSupply_init_unchained() internal onlyInitializing {}
-
+    function __ERC6909TokenSupply_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IERC6909TokenSupply
     function totalSupply(uint256 id) public view virtual override returns (uint256) {
         ERC6909TokenSupplyStorage storage $ = _getERC6909TokenSupplyStorage();

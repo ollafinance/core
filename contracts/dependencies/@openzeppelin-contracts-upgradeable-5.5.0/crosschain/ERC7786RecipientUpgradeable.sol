@@ -31,8 +31,7 @@ abstract contract ERC7786RecipientUpgradeable is Initializable, IERC7786Recipien
     }
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ERC7786Recipient")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant ERC7786RecipientStorageLocation =
-        0x7d75506ec9b6d21d8b65a6ff14e8447c9f4ebcb3d04f3facb665dd26faeb5e00;
+    bytes32 private constant ERC7786RecipientStorageLocation = 0x7d75506ec9b6d21d8b65a6ff14e8447c9f4ebcb3d04f3facb665dd26faeb5e00;
 
     function _getERC7786RecipientStorage() private pure returns (ERC7786RecipientStorage storage $) {
         assembly {
@@ -43,20 +42,17 @@ abstract contract ERC7786RecipientUpgradeable is Initializable, IERC7786Recipien
     error ERC7786RecipientUnauthorizedGateway(address gateway, bytes sender);
     error ERC7786RecipientMessageAlreadyProcessed(address gateway, bytes32 receiveId);
 
-    function __ERC7786Recipient_init() internal onlyInitializing {}
+    function __ERC7786Recipient_init() internal onlyInitializing {
+    }
 
-    function __ERC7786Recipient_init_unchained() internal onlyInitializing {}
-
+    function __ERC7786Recipient_init_unchained() internal onlyInitializing {
+    }
     /// @inheritdoc IERC7786Recipient
     function receiveMessage(
         bytes32 receiveId,
         bytes calldata sender, // Binary Interoperable Address
         bytes calldata payload
-    )
-        external
-        payable
-        returns (bytes4)
-    {
+    ) external payable returns (bytes4) {
         ERC7786RecipientStorage storage $ = _getERC7786RecipientStorage();
         // Check authorization
         if (!_isAuthorizedGateway(msg.sender, sender)) {
@@ -84,7 +80,10 @@ abstract contract ERC7786RecipientUpgradeable is Initializable, IERC7786Recipien
     function _isAuthorizedGateway(address gateway, bytes calldata sender) internal view virtual returns (bool);
 
     /// @dev Virtual function that should contain the logic to execute when a cross-chain message is received.
-    function _processMessage(address gateway, bytes32 receiveId, bytes calldata sender, bytes calldata payload)
-        internal
-        virtual;
+    function _processMessage(
+        address gateway,
+        bytes32 receiveId,
+        bytes calldata sender,
+        bytes calldata payload
+    ) internal virtual;
 }
