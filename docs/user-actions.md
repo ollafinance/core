@@ -67,7 +67,7 @@ sequenceDiagram
     participant SAF as SafetyModule
     participant ST as StAztec
     participant AZ as AssetToken
-    participant GOV as Governance Treasury
+    participant T as Treasury
 
     U->>C: redeem(shares, recipient)
     C->>SAF: isPaused()
@@ -84,7 +84,7 @@ sequenceDiagram
     C->>C: bufferedAssets -= grossAssets
     C->>AZ: transfer(recipient, netAssets)
     opt fee > 0
-        C->>AZ: transfer(governance, fee)
+        C->>AZ: transfer(treasury, fee)
     end
     C-->>U: netAssets
 ```

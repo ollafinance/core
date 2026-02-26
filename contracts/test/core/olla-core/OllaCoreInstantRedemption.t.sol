@@ -5,7 +5,6 @@ import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
@@ -20,7 +19,9 @@ import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 
 contract OllaCoreInstantRedemptionTest is Test {
     using Math for uint256;
@@ -51,15 +52,15 @@ contract OllaCoreInstantRedemptionTest is Test {
         keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
     /// @dev Storage slot for `_accountingState.bufferedAssets` (from `forge inspect OllaCore storage-layout`).
-    uint256 internal constant BUFFERED_ASSETS_SLOT = 7;
-    /// @dev Storage slot for `_accountingState.stakedPrincipal` (slot 8).
-    uint256 internal constant STAKED_PRINCIPAL_SLOT = 8;
+    uint256 internal constant BUFFERED_ASSETS_SLOT = 6;
+    /// @dev Storage slot for `_accountingState.stakedPrincipal` (slot 7).
+    uint256 internal constant STAKED_PRINCIPAL_SLOT = 7;
     /// @dev Storage slot for `_finalizedUnclaimedAssets` (from `forge inspect OllaCore storage-layout`).
-    uint256 internal constant FINALIZED_UNCLAIMED_SLOT = 31;
+    uint256 internal constant FINALIZED_UNCLAIMED_SLOT = 30;
     /// @dev Storage slot for `_rebalanceIdleBuffer`.
-    uint256 internal constant REBALANCE_IDLE_BUFFER_SLOT = 32;
-    /// @dev Storage slot for `_rebalanceProgress` (struct at slot 24).
-    uint256 internal constant REBALANCE_PROGRESS_SLOT = 24;
+    uint256 internal constant REBALANCE_IDLE_BUFFER_SLOT = 31;
+    /// @dev Storage slot for `_rebalanceProgress` (struct at slot 23).
+    uint256 internal constant REBALANCE_PROGRESS_SLOT = 23;
 
     /*//////////////////////////////////////////////////////////////
                            TEST FIXTURES
@@ -91,7 +92,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         vault = OllaCoreHarness(address(proxy));
 
         stakingManager = new MockAccountingStakingManager();
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));
@@ -564,11 +565,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_SetInstantRedemptionFeeBP_NonAdmin() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
         vault.setInstantRedemptionFeeBP(1000);
     }

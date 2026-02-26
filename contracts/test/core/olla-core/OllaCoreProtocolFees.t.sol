@@ -15,6 +15,7 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 
 contract OllaCoreProtocolFeesTest is Test {
     using Math for uint256;
@@ -72,7 +73,7 @@ contract OllaCoreProtocolFeesTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCoreHarness(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         rewardsVault = new MockRewardsVault(asset, address(vault));

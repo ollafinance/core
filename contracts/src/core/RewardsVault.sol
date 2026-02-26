@@ -2,12 +2,12 @@
 pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 
 /// @title RewardsVault
@@ -138,7 +138,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     /// @notice Authorizes upgrade to new implementation.
     /// @param newImplementation The new implementation address.
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != IOllaCore(core).governance()) {
+        if (msg.sender != OwnableUpgradeable(core).owner()) {
             revert RewardsVault__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {

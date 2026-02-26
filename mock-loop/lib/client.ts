@@ -80,7 +80,7 @@ export function loadAbi(contractName: string): Abi {
   } catch (error) {
     throw new Error(
       `Failed to load ABI for ${contractName} from ${abiPath}. ` +
-        `Did you run 'forge build'? Error: ${error}`
+      `Did you run 'forge build'? Error: ${error}`
     );
   }
 }
@@ -99,7 +99,7 @@ export function loadDeployments(env: string): DeploymentAddresses {
   } catch (error) {
     throw new Error(
       `Failed to load deployment for ${env} from ${deploymentPath}. ` +
-        `Did you run 'yarn deploy:${env}'? Error: ${error}`
+      `Did you run 'yarn deploy:${env}'? Error: ${error}`
     );
   }
 }
@@ -228,6 +228,18 @@ export function getRewardsVault(
     client
   );
 }
+
+export function getOllaGovernance(
+  addresses: DeploymentAddresses,
+  client: PublicClient | WalletClient
+) {
+  return getContractInstance(
+    "OllaGovernance",
+    addresses.OllaGovernanceProxy as Address,
+    client
+  );
+}
+
 
 export function getSafetyModule(
   addresses: DeploymentAddresses,

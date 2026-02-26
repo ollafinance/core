@@ -806,7 +806,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_FinalizedUnclaimedAssetsLeqBalance() external view {
-        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(33))));
+        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(30))));
         assertLe(finalizedUnclaimed, asset.balanceOf(address(vault)), "finalized unclaimed <= balance");
     }
 
@@ -1282,7 +1282,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     /// @notice asset.balanceOf(core) >= bufferedAssets + _finalizedUnclaimedAssets
     function invariant_VaultSolvency() external view {
         IOllaCore.AccountingState memory accounting = vault.accountingState();
-        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(33))));
+        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(30))));
         uint256 vaultBalance = asset.balanceOf(address(vault));
 
         assertGe(

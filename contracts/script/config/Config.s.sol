@@ -19,8 +19,11 @@ struct DeployConfig {
     // Protocol fee config
     uint256 protocolFeeBP;
     uint256 treasuryFeeSplitBP;
-    // Governance addresses
-    address governance;
+    // Governance config
+    address governance; // EOA/multisig that controls OllaGovernance
+    address treasury; // fee recipient
+    uint256 timelockMinDelay; // minimum timelock delay in seconds
+    // Satellite addresses (populated during deployment)
     address withdrawalQueue;
     address rewardsVault;
     address safetyModule;

@@ -20,6 +20,7 @@ import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 
 /// @notice Mock staking manager that returns configurable harvested rewards.
 contract MockHarvestStakingManager is IStakingManager {
@@ -207,7 +208,7 @@ contract OllaCoreReentrancyTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         rewardsVault = makeAddr("rewardsVault");
@@ -434,7 +435,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockHarvestStakingManager();
         rewardsVault = new MaliciousRewardsVault(asset, address(vault));
@@ -534,7 +535,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         rewardsVault = makeAddr("rewardsVault");

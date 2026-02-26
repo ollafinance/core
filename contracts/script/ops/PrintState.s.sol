@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import { console2 } from "@forge-std/console2.sol";
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
@@ -35,7 +36,7 @@ contract PrintState is BaseScript {
         address stAztec = c.stAztec();
         address stakingManager = c.stakingManager();
         address withdrawalQueue = c.withdrawalQueue();
-        address governance = c.governance();
+        address owner = OwnableUpgradeable(core).owner();
 
         console2.log("env", env);
         console2.log("core", core);
@@ -44,7 +45,7 @@ contract PrintState is BaseScript {
         console2.log("rewardsVault", rewardsVault);
         console2.log("withdrawalQueue", withdrawalQueue);
         console2.log("stakingManager", stakingManager);
-        console2.log("governance", governance);
+        console2.log("owner (governance)", owner);
 
         console2.log("totalAssets()", c.totalAssets());
         console2.log("exchangeRate()", c.exchangeRate());

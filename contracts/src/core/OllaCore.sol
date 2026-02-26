@@ -2,6 +2,7 @@
 pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
+import { Ownable2StepUpgradeable } from "@oz-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
@@ -15,6 +16,7 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -24,6 +26,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 /// @author Olla Core contributors
 contract OllaCore is
     Initializable,
+    Ownable2StepUpgradeable,
     AccessControlUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
@@ -122,24 +125,15 @@ contract OllaCore is
     ///         standalone `updateAccounting()` calls cannot reset the cooldown clock.
     uint256 private _lastRebalanceTimestamp;
 
-    /// @notice Pending governance address for two-step transfer.
-    /// @dev This variable persists across UUPS proxy upgrades. A pending governance proposal set before
-    ///      an upgrade will remain active after the upgrade. This is expected behavior — callers should
-    ///      either accept or cancel any pending proposal before upgrading.
-    address private _pendingGovernance;
-
     /// @notice Storage gap for upgradability.
-    /// @dev State variables occupy 40 slots (including struct members). When adding new state
+    /// @dev State variables occupy 39 slots (including struct members). When adding new state
     ///      variables, append them above this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
-    uint256[46] private __gap;
+    uint256[47] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Thrown when a caller is not governance.
-    error OllaCore__UnauthorizedGovernance(address caller);
 
     /// @notice Thrown when a bucket lacks sufficient balance.
     error OllaCore__InsufficientBucketBalance(Bucket bucket, uint256 amount, uint256 available);
@@ -176,7 +170,7 @@ contract OllaCore is
         IStakingManager stakingManager_,
         uint256 protocolFeeBP_,
         uint256 treasuryFeeSplitBP_,
-        address governance_,
+        address governanceContract_,
         address withdrawalQueue_,
         IRewardsVault rewardsVault_,
         address safetyModule_
@@ -187,11 +181,12 @@ contract OllaCore is
             stakingManager_,
             protocolFeeBP_,
             treasuryFeeSplitBP_,
-            governance_,
+            governanceContract_,
             withdrawalQueue_,
             rewardsVault_,
             safetyModule_
         );
+        __Ownable_init(governanceContract_);
         __AccessControl_init();
         __Pausable_init();
         _pause();
@@ -200,7 +195,6 @@ contract OllaCore is
             asset: asset_,
             stAztec: stAztec_,
             stakingManager: stakingManager_,
-            governance: governance_,
             withdrawalQueue: IWithdrawalQueue(withdrawalQueue_),
             rewardsVault: rewardsVault_,
             safetyModule: safetyModule_
@@ -229,12 +223,12 @@ contract OllaCore is
         // slither-disable-next-line timestamp
         _lastRebalanceTimestamp = block.timestamp;
 
-        // Governance receives all three roles (DEFAULT_ADMIN_ROLE,
-        // GUARDIAN_ROLE, OPERATOR_ROLE) at init; the deployer is expected to be a trusted governance
-        // address. Role separation is available immediately after deployment.
-        _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governance_);
-        _grantRole(GUARDIAN_ROLE, governance_);
-        _grantRole(OPERATOR_ROLE, governance_);
+        // OllaGovernance receives DEFAULT_ADMIN_ROLE for managing GUARDIAN/OPERATOR role
+        // grants/revokes. It also gets GUARDIAN_ROLE and OPERATOR_ROLE initially;
+        // role separation is available immediately after deployment.
+        _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governanceContract_);
+        _grantRole(GUARDIAN_ROLE, governanceContract_);
+        _grantRole(OPERATOR_ROLE, governanceContract_);
     }
 
     /// @notice Deposits assets and mints stAztec shares.
@@ -406,13 +400,7 @@ contract OllaCore is
 
     /// @notice Sets the protocol fee in basis points.
     /// @param newFeeBP The new fee (0-5000).
-    function setProtocolFeeBP(uint256 newFeeBP)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenRebalanceDone
-    {
+    function setProtocolFeeBP(uint256 newFeeBP) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (newFeeBP > MAX_PROTOCOL_FEE_BP) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
@@ -423,13 +411,7 @@ contract OllaCore is
 
     /// @notice Sets the treasury fee split in basis points.
     /// @param newSplitBP The new split (1000-9000).
-    function setTreasuryFeeSplitBP(uint256 newSplitBP)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenRebalanceDone
-    {
+    function setTreasuryFeeSplitBP(uint256 newSplitBP) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (newSplitBP < MIN_TREASURY_SPLIT_BP || newSplitBP > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(newSplitBP);
         }
@@ -438,91 +420,9 @@ contract OllaCore is
         emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
     }
 
-    /// @notice Proposes a new governance address.
-    /// @param newGovernance The proposed governance address.
-    function proposeGovernance(address newGovernance)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenRebalanceDone
-    {
-        if (newGovernance == address(0)) {
-            revert OllaCore__ZeroAddress("newGovernance");
-        }
-        if (_pendingGovernance != address(0)) {
-            revert OllaCore__PendingGovernanceAlreadySet(_pendingGovernance);
-        }
-        _pendingGovernance = newGovernance;
-        emit GovernanceProposed(_modules.governance, newGovernance);
-    }
-
-    /// @notice Accepts governance by the pending governance address.
-    // Slither: satellite contracts are trusted protocol-owned modules; external grantRole/revokeRole
-    // calls do not introduce reentrancy risk. Multiple _modules reads are acceptable for clarity.
-    // slither-disable-next-line reentrancy-events,pess-multiple-storage-read
-    function acceptGovernance() external override whenNotPaused whenRebalanceDone {
-        if (msg.sender != _pendingGovernance) {
-            revert OllaCore__UnauthorizedPendingGovernance(msg.sender);
-        }
-        address oldGovernance = _modules.governance;
-        address newGovernance = _pendingGovernance;
-        _modules.governance = newGovernance;
-        _pendingGovernance = address(0);
-
-        // Transfer governance-related roles from the old governance to the new one
-        if (newGovernance != oldGovernance) {
-            // Cache the staking provider registry address to avoid two external calls
-            // slither-disable-next-line unused-return
-            address stakingProviderRegistryAddr = address(_modules.stakingManager.stakingProviderRegistry());
-
-            // Grant roles to the new governance address first (before revoking from old)
-            _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, newGovernance);
-            _grantRole(GUARDIAN_ROLE, newGovernance);
-            _grantRole(OPERATOR_ROLE, newGovernance);
-
-            // Propagate DEFAULT_ADMIN_ROLE grant to satellite contracts
-            AccessControlUpgradeable(address(_modules.withdrawalQueue)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-            AccessControlUpgradeable(address(_modules.rewardsVault)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-            AccessControlUpgradeable(address(_modules.stakingManager)).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-            AccessControlUpgradeable(stakingProviderRegistryAddr).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-
-            // Revoke roles from the old governance address
-            if (oldGovernance != address(0)) {
-                _revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-                _revokeRole(GUARDIAN_ROLE, oldGovernance);
-                _revokeRole(OPERATOR_ROLE, oldGovernance);
-
-                // Propagate DEFAULT_ADMIN_ROLE revoke from satellite contracts
-                AccessControlUpgradeable(address(_modules.withdrawalQueue))
-                    .revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-                AccessControlUpgradeable(address(_modules.rewardsVault)).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-                AccessControlUpgradeable(address(_modules.stakingManager)).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-                AccessControlUpgradeable(stakingProviderRegistryAddr).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-            }
-        }
-        emit GovernanceAccepted(oldGovernance, newGovernance);
-    }
-
-    /// @notice Cancels a pending governance proposal.
-    function cancelGovernanceProposal() external override onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused whenRebalanceDone {
-        if (_pendingGovernance == address(0)) {
-            revert OllaCore__NoPendingGovernance();
-        }
-        address pending = _pendingGovernance;
-        _pendingGovernance = address(0);
-        emit GovernanceProposalCancelled(_modules.governance, pending);
-    }
-
     /// @notice Sets the safety module address.
     /// @param newSafetyModule The new safety module address.
-    function setSafetyModule(address newSafetyModule)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenRebalanceDone
-    {
+    function setSafetyModule(address newSafetyModule) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (newSafetyModule == address(0)) {
             revert OllaCore__ZeroAddress("newSafetyModule");
         }
@@ -536,13 +436,7 @@ contract OllaCore is
 
     /// @notice Sets the target buffer used to reserve liquid assets.
     /// @param newBuffer The new target buffer.
-    function setTargetBufferedAssets(uint256 newBuffer)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenRebalanceDone
-    {
+    function setTargetBufferedAssets(uint256 newBuffer) external override onlyOwner whenNotPaused whenRebalanceDone {
         uint256 oldBuffer = targetBufferedAssets;
         targetBufferedAssets = newBuffer;
         _rebalanceIdleBuffer = 0;
@@ -554,7 +448,7 @@ contract OllaCore is
     function setRebalanceGasThreshold(uint256 newThreshold)
         external
         override
-        onlyRole(DEFAULT_ADMIN_ROLE)
+        onlyOwner
         whenNotPaused
         whenRebalanceDone
     {
@@ -570,13 +464,7 @@ contract OllaCore is
 
     /// @notice Sets the instant redemption fee in basis points.
     /// @param newFeeBP The new fee (0-2000).
-    function setInstantRedemptionFeeBP(uint256 newFeeBP)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenRebalanceDone
-    {
+    function setInstantRedemptionFeeBP(uint256 newFeeBP) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (newFeeBP > MAX_INSTANT_REDEMPTION_FEE_BP) {
             revert OllaCore__InvalidFeeBP(newFeeBP);
         }
@@ -588,13 +476,7 @@ contract OllaCore is
     /// @notice Sets the rebalance cooldown.
     ///         Must be in [MIN_REBALANCE_COOLDOWN, MAX_REBALANCE_COOLDOWN].
     /// @param cooldown_ The new cooldown in seconds.
-    function setRebalanceCooldown(uint256 cooldown_)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-        whenNotPaused
-        whenRebalanceDone
-    {
+    function setRebalanceCooldown(uint256 cooldown_) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (cooldown_ < MIN_REBALANCE_COOLDOWN || cooldown_ > MAX_REBALANCE_COOLDOWN) {
             revert OllaCore__InvalidParameter();
         }
@@ -866,7 +748,7 @@ contract OllaCore is
     function reconcileBufferedAssets()
         external
         override
-        onlyRole(DEFAULT_ADMIN_ROLE)
+        onlyOwner
         whenNotPaused
         whenRebalanceDone
         returns (uint256 delta)
@@ -881,14 +763,14 @@ contract OllaCore is
     function recoverStAztec(address recipient, uint256 amount)
         external
         override
-        onlyRole(DEFAULT_ADMIN_ROLE)
+        onlyOwner
         whenNotPaused
         whenRebalanceDone
     {
         if (amount == 0) {
             revert OllaCore__InvalidAmount();
         }
-        address resolvedRecipient = recipient == address(0) ? _modules.governance : recipient;
+        address resolvedRecipient = recipient == address(0) ? _treasury() : recipient;
         IERC20(address(_modules.stAztec)).safeTransfer(resolvedRecipient, amount);
         emit StAztecRecovered(amount, resolvedRecipient);
     }
@@ -927,18 +809,6 @@ contract OllaCore is
     /// @return requestIds The active request ids.
     function activeRequestIds(address owner) external view override returns (uint256[] memory requestIds) {
         return _ownerRequestIds[owner];
-    }
-
-    /// @notice Returns the governance address.
-    /// @return The governance address.
-    function governance() external view override returns (address) {
-        return _modules.governance;
-    }
-
-    /// @notice Returns the pending governance address.
-    /// @return The pending governance address.
-    function pendingGovernance() external view override returns (address) {
-        return _pendingGovernance;
     }
 
     /// @notice Returns the withdrawal queue module address.
@@ -1410,10 +1280,11 @@ contract OllaCore is
         // Transfer net assets to recipient
         modules.asset.safeTransfer(recipient, netAssets);
 
-        // Transfer fee to treasury (governance)
+        // Transfer fee to treasury
         // slither-disable-next-line incorrect-equality
         if (fee != 0) {
-            modules.asset.safeTransfer(modules.governance, fee);
+            address treasuryAddr = _treasury();
+            modules.asset.safeTransfer(treasuryAddr, fee);
         }
 
         // Track in flow counters and reset idle buffer
@@ -1440,7 +1311,8 @@ contract OllaCore is
         Modules memory modules = _modules;
         (ollaProtocolFeeAssets, treasuryShares, providerShares) = _calculateProtocolFees(grossAssetRewards);
         emit OllaProtocolFeesPaid(ollaProtocolFeeAssets, treasuryShares, providerShares);
-        modules.stAztec.mint(modules.governance, treasuryShares);
+        address treasuryAddr = _treasury();
+        modules.stAztec.mint(treasuryAddr, treasuryShares);
         address providerRewardsRecipient = modules.stakingManager.getProviderConfig().rewardsRecipient;
         modules.stAztec.mint(providerRewardsRecipient, providerShares);
 
@@ -1860,10 +1732,13 @@ contract OllaCore is
         return assets.mulDiv(_modules.stAztec.totalSupply() + 1, totalAssets() + 1, rounding);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != _modules.governance) {
-            revert OllaCore__UnauthorizedGovernance(msg.sender);
-        }
+    /// @notice Returns the treasury address from the governance contract.
+    /// @return The treasury address.
+    function _treasury() internal view returns (address) {
+        return IOllaGovernance(owner()).treasury();
+    }
+
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         if (newImplementation == address(0)) {
             revert OllaCore__ZeroAddress("newImplementation");
         }
@@ -1881,7 +1756,7 @@ contract OllaCore is
         IStakingManager stakingManager_,
         uint256 protocolFeeBP_,
         uint256 treasuryFeeSplitBP_,
-        address governance_,
+        address governanceContract_,
         address withdrawalQueue_,
         IRewardsVault rewardsVault_,
         address safetyModule_
@@ -1901,8 +1776,8 @@ contract OllaCore is
         if (treasuryFeeSplitBP_ < MIN_TREASURY_SPLIT_BP || treasuryFeeSplitBP_ > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(treasuryFeeSplitBP_);
         }
-        if (governance_ == address(0)) {
-            revert OllaCore__ZeroAddress("governance_");
+        if (governanceContract_ == address(0)) {
+            revert OllaCore__ZeroAddress("governanceContract_");
         }
         if (withdrawalQueue_ == address(0)) {
             revert OllaCore__ZeroAddress("withdrawalQueue_");
