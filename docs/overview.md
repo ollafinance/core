@@ -35,12 +35,13 @@ subgraph "Wallets"
     ollaOperatorActor --- ollaOperatorWallet
     governanceActor --- treasury
     governanceActor --- governanceAdminWallet
-    governanceAdminWallet -->|"proposer/executor/canceller"| ollaGov
 end
 
 subgraph "Olla Governance"
     ollaGov["OllaGovernance (timelock)"]
 end
+
+governanceAdminWallet -->|"proposer/executor/canceller"| ollaGov
 
 subgraph "Olla Core"
     core[OllaCore]
