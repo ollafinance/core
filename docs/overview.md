@@ -134,7 +134,7 @@ style withdrawQ stroke:#090,stroke-width:3px
 style rollupRegistry stroke:#ff6,stroke-width:2px
 style guardianActor stroke:#050,stroke-width:2px
 style governanceActor stroke:#050,stroke-width:2px
-style ollaGov stroke:#f90,stroke-width:3px
+style ollaGov stroke:#090,stroke-width:3px
 ```
 
 ## Contract architecture
@@ -145,6 +145,10 @@ config:
   layout: elk
 ---
 flowchart LR
+
+subgraph "Olla Governance"
+    ollaGov["OllaGovernance (timelock)"]
+end
 
 subgraph "Olla Core"
     core[OllaCore]
@@ -162,6 +166,14 @@ subgraph "Aztec Contracts"
     rollupRegistry[AztecRollupRegistry]
     rollup["AztecRollup (canonical)"]
 end
+
+%% Governance -> contracts
+ollaGov -->|"owner (Ownable2Step)"| core
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> safety
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> rewards
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> stkMan
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> spr
 
 %% OllaCore <-> WithdrawalQueue
 core -->|"request-,claim-,finalize-withdrawal"| withdrawQ
@@ -196,6 +208,7 @@ core -->|"balance()"| rewards
 %% Finalize withdrawals
 core -->|"finalizeWithdrawals(available)"| withdrawQ
 
+style ollaGov stroke:#090,stroke-width:3px
 style core stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
 style rewards stroke:#090,stroke-width:3px
