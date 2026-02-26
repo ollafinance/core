@@ -32,6 +32,8 @@ library GovernanceLib {
         }
         oldSafetyModule = modules.safetyModule;
         modules.safetyModule = newSafetyModule;
+
+        return oldSafetyModule;
     }
 
     /// @notice Propagates gas threshold to staking manager and withdrawal queue.

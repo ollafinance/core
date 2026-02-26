@@ -16,10 +16,10 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { IStAztec } from "src/core/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { GovernanceLib } from "src/core/libraries/GovernanceLib.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
-import { GovernanceLib } from "src/core/libraries/GovernanceLib.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 
 /// @title OllaCore
