@@ -2,12 +2,12 @@
 pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
@@ -952,7 +952,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != IOllaCore(core).governance()) {
+        if (msg.sender != OwnableUpgradeable(core).owner()) {
             revert StakingManager__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {

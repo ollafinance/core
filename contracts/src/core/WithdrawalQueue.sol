@@ -2,11 +2,10 @@
 pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 
 /// @title WithdrawalQueue
@@ -274,7 +273,7 @@ contract WithdrawalQueue is
     //////////////////////////////////////////////////////////////*/
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != IOllaCore(core).governance()) {
+        if (msg.sender != OwnableUpgradeable(core).owner()) {
             revert WithdrawalQueue__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {

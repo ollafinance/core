@@ -15,6 +15,7 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 
 contract OllaCoreSlippageTest is Test {
     using Math for uint256;
@@ -57,7 +58,7 @@ contract OllaCoreSlippageTest is Test {
         vault = OllaCoreHarness(address(proxy));
 
         stakingManager = new MockAccountingStakingManager();
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         rewardsVault = new MockRewardsVault(asset, address(vault));
         safetyModule = new MockSafetyModule(address(coreImplementation));

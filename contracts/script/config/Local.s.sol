@@ -31,8 +31,11 @@ contract LocalConfig is ConfigHelper {
             // Protocol fee config
             protocolFeeBP: 500,
             treasuryFeeSplitBP: 5000,
-            // Governance addresses - all set to deployer for local dev
+            // Governance config - deployer acts as governance admin for local dev
             governance: deployer,
+            treasury: deployer,
+            timelockMinDelay: 0, // instant for local dev
+            // Satellite addresses - populated during deployment
             withdrawalQueue: deployer,
             rewardsVault: deployer,
             safetyModule: deployer

@@ -202,6 +202,8 @@ export interface RunConfig {
 
 // Deployment addresses
 export interface DeploymentAddresses {
+  OllaGovernanceImplementation: string;
+  OllaGovernanceProxy: string;
   OllaCoreImplementation: string;
   OllaCoreProxy: string;
   Asset: string;

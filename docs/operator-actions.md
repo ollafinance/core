@@ -255,7 +255,7 @@ sequenceDiagram
     C->>SM: getSlashingDelta()
     C->>SM: totalStaked()
     C->>RV: balance()
-    C->>ST: mint(governance/provider fee shares)
+    C->>ST: mint(treasury/provider fee shares)
     C->>WQ: totalPendingAssets()
     C->>SAF: checkQueueRatio(queued, newTotalAssets)
     C->>SAF: checkRateDrop(oldRate, nextRate)

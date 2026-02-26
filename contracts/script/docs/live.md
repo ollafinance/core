@@ -15,10 +15,10 @@ Placeholder.
 
 ## Post-Governance Transfer
 
-After `acceptGovernance()` completes, the new governance address automatically receives
-`DEFAULT_ADMIN_ROLE` on all satellite contracts and `GUARDIAN_ROLE` + `OPERATOR_ROLE` on
-OllaCore. However, `OPERATOR_ROLE` on **StakingManager** is **not** propagated
-automatically.
+After `OllaGovernance.acceptGovernance()` completes, the new governance address automatically
+receives `PROPOSER_ROLE`, `EXECUTOR_ROLE`, and `CANCELLER_ROLE` on `OllaGovernance`, and
+`DEFAULT_ADMIN_ROLE` is propagated to all satellite contracts (WithdrawalQueue, RewardsVault,
+StakingManager, StakingProviderRegistry). The old governance's roles are revoked atomically.
 
 ### Checklist
 
@@ -33,6 +33,10 @@ automatically.
 
 3. **Verify role state** -- Confirm via `StakingManager.hasRole(OPERATOR_ROLE, addr)`
    that the new governance holds the role and the old governance does not.
+
+> **Note:** `OllaCore` ownership (`Ownable2Step`) is not changed by governance transfer --
+> `OllaGovernance` remains the owner. Only the timelock roles and satellite admin roles
+> are transferred to the new governance admin.
 
 > **Note:** `STAKING_PROVIDER_ADMIN_ROLE` on `StakingProviderRegistry` belongs to the
 > staking provider, not governance. It is intentionally not touched during governance

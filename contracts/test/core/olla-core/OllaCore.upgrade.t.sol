@@ -6,6 +6,7 @@ import { Test } from "@forge-std/Test.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -145,7 +146,7 @@ contract OllaCoreUpgradeTest is Test {
         vault.upgradeToAndCall(address(newImplementation), "");
     }
 
-    function test_RevertWhen_DefaultAdminButNotGovernance_Upgrade() external {
+    function test_RevertWhen_DefaultAdminButNotOwner_Upgrade() external {
         OllaCoreUpgradeMock newImplementation = new OllaCoreUpgradeMock();
         address otherAdmin = makeAddr("otherAdmin");
 
@@ -153,7 +154,7 @@ contract OllaCoreUpgradeTest is Test {
         vm.prank(governance);
         vault.grantRole(defaultAdminRole, otherAdmin);
 
-        vm.expectRevert(abi.encodeWithSelector(OllaCore.OllaCore__UnauthorizedGovernance.selector, otherAdmin));
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, otherAdmin));
         vm.prank(otherAdmin);
         vault.upgradeToAndCall(address(newImplementation), "");
     }

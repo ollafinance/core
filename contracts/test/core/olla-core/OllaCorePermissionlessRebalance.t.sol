@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import { Test } from "@forge-std/Test.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
@@ -15,6 +15,7 @@ import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingMa
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 
 /// @title OllaCorePermissionlessRebalance.t.sol
 /// @notice Tests for permissionless rebalance and cooldown mechanism on OllaCore.
@@ -46,7 +47,7 @@ contract OllaCorePermissionlessRebalance is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
@@ -483,9 +484,7 @@ contract OllaCorePermissionlessRebalance is Test {
         // Send more to create another delta
         asset.mint(address(vault), 1 * DECIMALS);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, operator, adminRole)
-        );
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, operator));
         vm.prank(operator);
         vault.reconcileBufferedAssets();
     }

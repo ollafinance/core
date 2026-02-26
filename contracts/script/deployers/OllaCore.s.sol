@@ -63,10 +63,7 @@ contract OllaCoreDeployer is BaseDeployer {
                 safetyModule
             );
 
-        // For local dev: unpause so scripts work immediately.
-        // Production deploys stay paused until governance explicitly unpauses.
         if (config.deployMocks) {
-            OllaCore(proxyAddress).unpause();
             IERC20(asset).approve(proxyAddress, type(uint256).max);
             IERC20(stAztec).approve(proxyAddress, type(uint256).max);
         }

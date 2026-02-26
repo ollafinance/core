@@ -228,3 +228,14 @@ export function getRewardsVault(
     client
   );
 }
+
+export function getOllaGovernance(
+  addresses: DeploymentAddresses,
+  client: PublicClient | WalletClient
+) {
+  return getContractInstance(
+    "OllaGovernance",
+    addresses.OllaGovernanceProxy as Address,
+    client
+  );
+}

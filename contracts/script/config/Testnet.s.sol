@@ -29,8 +29,11 @@ contract TestnetConfig is ConfigHelper {
             // Protocol fee config - TODO: set real values
             protocolFeeBP: 500,
             treasuryFeeSplitBP: 5000,
-            // Governance addresses - TODO: replace with real addresses
-            governance: deployer, // TODO: Set real governance address
+            // Governance config - TODO: replace with real addresses
+            governance: deployer, // TODO: Set real governance multisig
+            treasury: deployer, // TODO: Set real treasury address
+            timelockMinDelay: 1 days,
+            // Satellite addresses - TODO: replace with real addresses
             withdrawalQueue: deployer, // TODO: Set real withdrawal queue address
             rewardsVault: deployer, // TODO: Set real rewards vault address
             safetyModule: deployer // TODO: Set real safety module address

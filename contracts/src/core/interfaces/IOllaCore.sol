@@ -61,7 +61,6 @@ interface IOllaCore {
         IERC20 asset;
         IStAztec stAztec;
         IStakingManager stakingManager;
-        address governance;
         IWithdrawalQueue withdrawalQueue;
         IRewardsVault rewardsVault;
         address safetyModule;
@@ -114,21 +113,6 @@ interface IOllaCore {
     /// @param oldThreshold The old gas threshold.
     /// @param newThreshold The new gas threshold.
     event RebalanceGasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
-
-    /// @notice Emitted when a new governance address is proposed.
-    /// @param oldGovernance The current governance address.
-    /// @param newGovernance The proposed governance address.
-    event GovernanceProposed(address oldGovernance, address newGovernance);
-
-    /// @notice Emitted when the pending governance accepts and becomes active.
-    /// @param oldGovernance The previous governance address.
-    /// @param newGovernance The new governance address.
-    event GovernanceAccepted(address oldGovernance, address newGovernance);
-
-    /// @notice Emitted when a pending governance proposal is cancelled.
-    /// @param governance The current governance address.
-    /// @param pendingGovernance The cancelled pending governance address.
-    event GovernanceProposalCancelled(address governance, address pendingGovernance);
 
     /// @notice Emitted when the safety module address is updated.
     /// @param oldSafetyModule The old safety module address.
@@ -305,15 +289,6 @@ interface IOllaCore {
     /// @notice Thrown when an instant redemption exceeds available liquidity.
     error OllaCore__InsufficientLiquidity(uint256 requested, uint256 available);
 
-    /// @notice Thrown when a governance proposal already exists.
-    error OllaCore__PendingGovernanceAlreadySet(address pendingGovernance);
-
-    /// @notice Thrown when a governance proposal is missing.
-    error OllaCore__NoPendingGovernance();
-
-    /// @notice Thrown when a caller is not the pending governance.
-    error OllaCore__UnauthorizedPendingGovernance(address caller);
-
     /// @notice Thrown when output is less than the caller's minimum.
     error OllaCore__SlippageExceeded(uint256 actual, uint256 minimum);
 
@@ -341,7 +316,7 @@ interface IOllaCore {
     /// @param stakingManager_ The staking manager for delegation messaging.
     /// @param protocolFeeBP_ The protocol fee in basis points.
     /// @param treasuryFeeSplitBP_ The treasury fee split in basis points.
-    /// @param governance_ The governance address authorized to upgrade.
+    /// @param governanceContract_ The OllaGovernance contract address (set as owner).
     /// @param withdrawalQueue_ The withdrawal queue module address.
     /// @param rewardsVault_ The rewards vault module address.
     /// @param safetyModule_ The safety module address.
@@ -351,7 +326,7 @@ interface IOllaCore {
         IStakingManager stakingManager_,
         uint256 protocolFeeBP_,
         uint256 treasuryFeeSplitBP_,
-        address governance_,
+        address governanceContract_,
         address withdrawalQueue_,
         IRewardsVault rewardsVault_,
         address safetyModule_
@@ -491,29 +466,6 @@ interface IOllaCore {
     /// @param newSplitBP The new split (0-10000).
     function setTreasuryFeeSplitBP(uint256 newSplitBP) external;
 
-    /// @notice Proposes a new governance address.
-    /// @param newGovernance The proposed governance address.
-    function proposeGovernance(address newGovernance) external;
-
-    /// @notice Accepts governance by the pending governance address.
-    /// @dev Propagates DEFAULT_ADMIN_ROLE to all satellite contracts (WithdrawalQueue,
-    ///      RewardsVault, StakingManager, StakingProviderRegistry) and transfers
-    ///      GUARDIAN_ROLE + OPERATOR_ROLE on OllaCore itself.
-    ///
-    ///      IMPORTANT: OPERATOR_ROLE on StakingManager is NOT propagated automatically.
-    ///      The new governance must self-grant OPERATOR_ROLE on StakingManager via its
-    ///      DEFAULT_ADMIN_ROLE after the transfer completes. Without this step, operational
-    ///      functions gated by OPERATOR_ROLE on StakingManager (e.g. setAttesterStateMaxAge)
-    ///      will be inaccessible to the new governance.
-    ///
-    ///      Note: STAKING_PROVIDER_ADMIN_ROLE on StakingProviderRegistry belongs to the
-    ///      staking provider, not governance. It is intentionally not touched during
-    ///      governance transfer.
-    function acceptGovernance() external;
-
-    /// @notice Cancels a pending governance proposal.
-    function cancelGovernanceProposal() external;
-
     /// @notice Sets the safety module address.
     /// @param newSafetyModule The new safety module address.
     function setSafetyModule(address newSafetyModule) external;
@@ -564,14 +516,6 @@ interface IOllaCore {
     /// @param owner The request owner.
     /// @return requestIds The active request ids.
     function activeRequestIds(address owner) external view returns (uint256[] memory requestIds);
-
-    /// @notice Returns the governance address.
-    /// @return The governance address.
-    function governance() external view returns (address);
-
-    /// @notice Returns the pending governance address.
-    /// @return The pending governance address.
-    function pendingGovernance() external view returns (address);
 
     /// @notice Returns the withdrawal queue module address.
     /// @return The withdrawal queue address.

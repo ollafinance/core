@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import { Test, Vm } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
@@ -19,6 +19,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 
 contract InconsistentWithdrawalQueue is IWithdrawalQueue {
     uint256 internal _totalPendingAssets;
@@ -190,7 +191,7 @@ contract OllaCoreRebalanceTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
@@ -261,11 +262,7 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     function test_RevertWhen_NonAdminSetsRebalanceGasThreshold() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
         vault.setRebalanceGasThreshold(200_000);
     }
@@ -278,11 +275,7 @@ contract OllaCoreRebalanceTest is Test {
 
         assertTrue(vault.hasRole(operatorRole, otherOperator), "test operator role");
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, otherOperator, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, otherOperator));
         vm.prank(otherOperator);
         vault.setRebalanceGasThreshold(200_000);
     }
@@ -1426,7 +1419,7 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
@@ -1496,7 +1489,7 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
@@ -1573,7 +1566,7 @@ contract OllaCoreRebalanceReentrancyTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MaliciousReentrantStakingManager();
         operator = makeAddr("operator");
@@ -1698,7 +1691,7 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
         ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
         vault = OllaCore(address(proxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
@@ -1959,7 +1952,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         asset = new MockAztec(address(this));
         stakingManager = new UnstakeRevertingStakingManager(asset);
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         alice = makeAddr("alice");
         operator = makeAddr("operator");
 

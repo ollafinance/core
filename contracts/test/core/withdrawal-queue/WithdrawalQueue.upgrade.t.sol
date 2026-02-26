@@ -49,7 +49,7 @@ contract WithdrawalQueueUpgradeTest is Test {
     function setUp() external {
         admin = makeAddr("admin");
 
-        mockCore = new MockOllaCoreGovernance(admin, address(0));
+        mockCore = new MockOllaCoreGovernance(admin);
         core = address(mockCore);
 
         WithdrawalQueue implementation = new WithdrawalQueue();

@@ -49,7 +49,7 @@ contract StakingProviderRegistryUpgradeTest is Test {
         defaultAdmin = makeAddr("defaultAdmin");
         attacker = makeAddr("attacker");
 
-        mockCore = new MockOllaCoreGovernance(defaultAdmin, address(0));
+        mockCore = new MockOllaCoreGovernance(defaultAdmin);
         mockStakingManager = new MockStakingManager();
         mockStakingManager.initialize(
             IERC20(address(0)), address(0), address(0), address(mockCore), address(0), address(0)
@@ -145,7 +145,7 @@ contract StakingProviderRegistryUpgradeTest is Test {
         uint256 queueLengthBefore = registry.getQueueLength();
         IStakingManager.ProviderConfig memory providerBefore = registry.getStakingProviderConfig();
         address stakingManagerBefore = registry.stakingManager();
-        address governanceBefore = mockCore.governance();
+        address ownerBefore = mockCore.owner();
 
         // Perform upgrade
         StakingProviderRegistryUpgradeMock newImplementation = new StakingProviderRegistryUpgradeMock();
@@ -161,7 +161,7 @@ contract StakingProviderRegistryUpgradeTest is Test {
         assertEq(v2.version(), 2, "upgrade applied");
         assertEq(v2.getQueueLength(), queueLengthBefore, "queue length preserved");
         assertEq(v2.stakingManager(), stakingManagerBefore, "staking manager preserved");
-        assertEq(mockCore.governance(), governanceBefore, "governance preserved");
+        assertEq(mockCore.owner(), ownerBefore, "owner preserved");
 
         IStakingManager.ProviderConfig memory providerAfter = v2.getStakingProviderConfig();
         assertEq(providerAfter.admin, providerBefore.admin, "provider admin preserved");

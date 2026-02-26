@@ -11,13 +11,14 @@ to grow into an open-source, auditable codebase.
 - `contracts/src/core/` Protocol core contracts.
 - `contracts/src/core/interfaces/` Core module interfaces.
 - `contracts/src/core/mocks/` Core module mocks and mock interfaces.
+- `contracts/src/governance/` Governance contract and interface (OllaGovernance with embedded timelock).
 - `contracts/src/safetymodule/` Safety module contracts and interface.
 - `contracts/src/staking/` Staking module contracts.
 - `contracts/src/staking/libraries/` Staking module libraries.
 - `contracts/src/staking/interfaces/` Staking module interfaces.
 - `contracts/src/staking/mocks/` Staking module mocks and mock interfaces.
 - `contracts/script/` Foundry scripts.
-- `contracts/test/` Component-based Foundry tests (e.g., `core/`, `safetymodule/`, `staking/`, `integration/`, `e2e/`).
+- `contracts/test/` Component-based Foundry tests (e.g., `core/`, `governance/`, `safetymodule/`, `staking/`, `integration/`, `e2e/`).
 - `research/` Protocol research and design notes (Obsidian vault).
 
 Key research index:
@@ -53,30 +54,9 @@ yarn dev:chain
 yarn deploy:local
 ```
 
-### Governance timelock (local)
+### Governance
 
-For Option A governance timelock, use the ops scripts under `contracts/script/ops`:
-
-```bash
-# Deploy timelock (defaults to 48h delay, writes deployments/<env>.json)
-cd contracts
-forge script script/ops/DeployTimelock.s.sol --broadcast --rpc-url http://127.0.0.1:8545
-
-# Set OllaCore governance address to the timelock (direct if admin, or via timelock if already transferred)
-forge script script/ops/SetGovernanceToTimelock.s.sol --broadcast --rpc-url http://127.0.0.1:8545
-
-# Transfer DEFAULT_ADMIN_ROLE on all contracts to the timelock (skip local MockSafetyModule)
-SKIP_SAFETY_MODULE=true forge script script/ops/TransferAdminToTimelock.s.sol --broadcast --rpc-url http://127.0.0.1:8545
-```
-
-You can override timelock params via env vars:
-
-- `TIMELOCK_MIN_DELAY` (seconds)
-- `TIMELOCK_PROPOSER`
-- `TIMELOCK_EXECUTOR`
-- `TIMELOCK_ADMIN`
-- `TIMELOCK_SALT` (bytes32, optional)
-- `SKIP_SAFETY_MODULE` (bool, optional)
+The `OllaGovernance` contract embeds a `TimelockController` and is deployed as part of the standard deploy flow (`yarn deploy:local`). It is automatically set as the owner of `OllaCore` and holds `DEFAULT_ADMIN_ROLE` on all satellite contracts. All governance actions (parameter changes, upgrades, governance transfers) must be scheduled, wait for the timelock delay, and then executed through `OllaGovernance`.
 
 For automated protocol testing with the TypeScript mock loop, see [`mock-loop/README.md`](mock-loop/README.md).
 

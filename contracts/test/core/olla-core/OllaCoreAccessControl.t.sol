@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { IAccessControl } from "@oz/access/IAccessControl.sol";
+import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
@@ -22,9 +22,6 @@ contract OllaCoreAccessControlTest is Test {
 
     event ProtocolFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
-    event GovernanceProposed(address oldGovernance, address newGovernance);
-    event GovernanceAccepted(address oldGovernance, address newGovernance);
-    event GovernanceProposalCancelled(address governance, address pendingGovernance);
     event SafetyModuleUpdated(address oldSafetyModule, address newSafetyModule);
     event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
@@ -90,52 +87,26 @@ contract OllaCoreAccessControlTest is Test {
                           ACCESS CONTROL TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevertWhen_NonAdminSetsProtocolFeeBP() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
+    function test_RevertWhen_NonOwnerSetsProtocolFeeBP() external {
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
         vault.setProtocolFeeBP(100);
     }
 
-    function test_RevertWhen_NonAdminSetsTreasuryFeeSplitBP() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
+    function test_RevertWhen_NonOwnerSetsTreasuryFeeSplitBP() external {
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
         vault.setTreasuryFeeSplitBP(100);
     }
 
-    function test_RevertWhen_NonAdminProposesGovernance() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
-        vm.prank(alice);
-        vault.proposeGovernance(alice);
-    }
-
-    function test_RevertWhen_NonAdminSetsSafetyModule() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
+    function test_RevertWhen_NonOwnerSetsSafetyModule() external {
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
         vault.setSafetyModule(alice);
     }
 
-    function test_RevertWhen_NonAdminSetsTargetBufferedAssets() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, vault.DEFAULT_ADMIN_ROLE()
-            )
-        );
+    function test_RevertWhen_NonOwnerSetsTargetBufferedAssets() external {
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
         vault.setTargetBufferedAssets(1);
     }
@@ -163,12 +134,6 @@ contract OllaCoreAccessControlTest is Test {
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, belowMin));
         vault.setTreasuryFeeSplitBP(belowMin);
-    }
-
-    function test_RevertWhen_GovernanceIsZero() external {
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newGovernance"));
-        vm.prank(governance);
-        vault.proposeGovernance(address(0));
     }
 
     function test_RevertWhen_SafetyModuleIsZero() external {
@@ -217,18 +182,6 @@ contract OllaCoreAccessControlTest is Test {
         vault.setTreasuryFeeSplitBP(newSplitBP);
 
         assertEq(vault.treasuryFeeSplitBP(), newSplitBP, "treasury split updated");
-    }
-
-    function test_ProposeGovernance_UpdatesAndEmits() external {
-        address newGovernance = makeAddr("newGovernance");
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit GovernanceProposed(governance, newGovernance);
-
-        vm.prank(governance);
-        vault.proposeGovernance(newGovernance);
-
-        assertEq(vault.pendingGovernance(), newGovernance, "pending governance updated");
     }
 
     function test_SetSafetyModule_UpdatesAndEmits() external {
@@ -358,15 +311,6 @@ contract OllaCoreAccessControlTest is Test {
         vault.setTreasuryFeeSplitBP(newSplitBP);
     }
 
-    function testFuzz_ProposeGovernance_NonZeroAddress(address newGovernance) external {
-        vm.assume(newGovernance != address(0));
-
-        vm.prank(governance);
-        vault.proposeGovernance(newGovernance);
-
-        assertEq(vault.pendingGovernance(), newGovernance, "governance fuzz");
-    }
-
     function testFuzz_SetSafetyModule_AcceptsValidModule(uint256 salt) external {
         // Deploy a fresh MockSafetyModule with the correct CORE for each fuzz run.
         MockSafetyModule newModule = new MockSafetyModule{ salt: bytes32(salt) }(address(vault));
@@ -380,56 +324,5 @@ contract OllaCoreAccessControlTest is Test {
         vault.setSafetyModule(address(newModule));
 
         assertEq(vault.safetyModule(), address(newModule), "safety module fuzz");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    GOVERNANCE ROLE TRANSFER (C2)
-    //////////////////////////////////////////////////////////////*/
-
-    // NOTE: test_AcceptGovernance_TransfersAllRoles moved to OllaCoreGovernanceTransfer.t.sol
-    // which uses real satellite contracts (AccessControlUpgradeable) instead of lightweight mocks.
-
-    function test_RevertWhen_PendingGovernanceAlreadySet() external {
-        address newGovernance = makeAddr("newGovernance");
-        address secondGovernance = makeAddr("secondGovernance");
-
-        vm.prank(governance);
-        vault.proposeGovernance(newGovernance);
-
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__PendingGovernanceAlreadySet.selector, newGovernance));
-        vm.prank(governance);
-        vault.proposeGovernance(secondGovernance);
-    }
-
-    function test_RevertWhen_NonPendingAcceptsGovernance() external {
-        address newGovernance = makeAddr("newGovernance");
-
-        vm.prank(governance);
-        vault.proposeGovernance(newGovernance);
-
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__UnauthorizedPendingGovernance.selector, governance));
-        vm.prank(governance);
-        vault.acceptGovernance();
-    }
-
-    function test_CancelGovernanceProposal_ClearsPending() external {
-        address newGovernance = makeAddr("newGovernance");
-
-        vm.prank(governance);
-        vault.proposeGovernance(newGovernance);
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit GovernanceProposalCancelled(governance, newGovernance);
-
-        vm.prank(governance);
-        vault.cancelGovernanceProposal();
-
-        assertEq(vault.pendingGovernance(), address(0), "pending governance cleared");
-    }
-
-    function test_RevertWhen_CancelWithoutPending() external {
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__NoPendingGovernance.selector));
-        vm.prank(governance);
-        vault.cancelGovernanceProposal();
     }
 }

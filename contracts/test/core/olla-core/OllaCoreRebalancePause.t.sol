@@ -295,9 +295,6 @@ contract OllaCoreRebalancePauseTest is Test {
         vault.setTreasuryFeeSplitBP(1);
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
-        vault.proposeGovernance(makeAddr("newGov"));
-
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
         vault.setTargetBufferedAssets(1);
 
         vm.stopPrank();

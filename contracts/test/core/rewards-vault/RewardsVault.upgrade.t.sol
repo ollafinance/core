@@ -49,7 +49,7 @@ contract RewardsVaultUpgradeTest is Test {
     function setUp() external {
         defaultAdmin = makeAddr("defaultAdmin");
 
-        mockCore = new MockOllaCoreGovernance(defaultAdmin, address(0));
+        mockCore = new MockOllaCoreGovernance(defaultAdmin);
         core = address(mockCore);
 
         aztec = new MockAztec(address(this));

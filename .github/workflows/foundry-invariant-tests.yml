@@ -23,6 +23,13 @@ jobs:
           version: stable
       - name: Setup Soldeer dependencies
         uses: ./.github/actions/setup-soldeer
+      - name: Cache Foundry build artifacts
+        uses: actions/cache@v4
+        with:
+          path: contracts/out
+          key: ${{ runner.os }}-forge-out-${{ hashFiles('contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/foundry.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-forge-out-
       - name: Forge invariant tests
         run: forge test --match-path "test/**/*.invariant.t.sol"
         env:

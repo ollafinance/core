@@ -35,10 +35,13 @@ subgraph "Wallets"
     ollaOperatorActor --- ollaOperatorWallet
     governanceActor --- treasury
     governanceActor --- governanceAdminWallet
-    governanceAdminWallet -->|"DEFAULT_ADMIN_ROLE (pre-timelock)"| governanceAdminWallet
-    timelock[TimelockController]
-    governanceAdminWallet -->|"proposer/executor/admin"| timelock
 end
+
+subgraph "Olla Governance"
+    ollaGov["OllaGovernance (timelock)"]
+end
+
+governanceAdminWallet -->|"proposer/executor/canceller"| ollaGov
 
 subgraph "Olla Core"
     core[OllaCore]
@@ -62,12 +65,13 @@ guardianWallet -. "GUARDIAN_ROLE" .-> core
 guardianWallet -. "GUARDIAN_ROLE" .-> safety
 
 stakingProviderAdminWallet -. "STAKING_PROVIDER_ADMIN_ROLE" .-> spr
-timelock -. "DEFAULT_ADMIN_ROLE" .-> core
-timelock -. "DEFAULT_ADMIN_ROLE" .-> safety
-timelock -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
-timelock -. "DEFAULT_ADMIN_ROLE" .-> rewards
-timelock -. "DEFAULT_ADMIN_ROLE" .-> stkMan
-timelock -. "DEFAULT_ADMIN_ROLE" .-> spr
+ollaGov -->|"owner (Ownable2Step)"| core
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> core
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> safety
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> rewards
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> stkMan
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> spr
 
 %% User flows (asset + call-path)
 userWallet -->|"deposit/requestRedeem/claimActiveRequest"| core
@@ -111,7 +115,7 @@ core -->|"finalizeWithdrawals(available)"| withdrawQ
 
 core -->|"balance()"| rewards
 
-core -->|"pay staking fees >StAztec< mint(governance, treasuryShares)"| treasury
+core -->|"pay staking fees >StAztec< mint(treasury, treasuryShares)"| treasury
 core -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
 
 %% Staking provider admin (control-plane)
@@ -130,6 +134,7 @@ style withdrawQ stroke:#090,stroke-width:3px
 style rollupRegistry stroke:#ff6,stroke-width:2px
 style guardianActor stroke:#050,stroke-width:2px
 style governanceActor stroke:#050,stroke-width:2px
+style ollaGov stroke:#090,stroke-width:3px
 ```
 
 ## Contract architecture
@@ -140,6 +145,10 @@ config:
   layout: elk
 ---
 flowchart LR
+
+subgraph "Olla Governance"
+    ollaGov["OllaGovernance (timelock)"]
+end
 
 subgraph "Olla Core"
     core[OllaCore]
@@ -157,6 +166,14 @@ subgraph "Aztec Contracts"
     rollupRegistry[AztecRollupRegistry]
     rollup["AztecRollup (canonical)"]
 end
+
+%% Governance -> contracts
+ollaGov -->|"owner (Ownable2Step)"| core
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> safety
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> rewards
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> stkMan
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> spr
 
 %% OllaCore <-> WithdrawalQueue
 core -->|"request-,claim-,finalize-withdrawal"| withdrawQ
@@ -191,6 +208,7 @@ core -->|"balance()"| rewards
 %% Finalize withdrawals
 core -->|"finalizeWithdrawals(available)"| withdrawQ
 
+style ollaGov stroke:#090,stroke-width:3px
 style core stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
 style rewards stroke:#090,stroke-width:3px
@@ -323,16 +341,19 @@ style spr stroke:#090,stroke-width:3px
 
 ## Governance
 
-Requires `DEFAULT_ADMIN_ROLE` on all contracts (granted via TimelockController). The governance admin wallet holds `DEFAULT_ADMIN_ROLE` directly during the initial deployment phase (pre-timelock), then transfers it to the timelock where it acts as proposer, executor, and admin.
+The governance admin wallet holds proposer, executor, and canceller roles on `OllaGovernance`, which inherits `TimelockControllerUpgradeable`. All governance actions (parameter changes, upgrades, governance transfers) must be scheduled, wait for the timelock delay, and then executed. `OllaGovernance` is the owner of `OllaCore` (via `Ownable2Step`) and holds `DEFAULT_ADMIN_ROLE` on all satellite contracts.
 
 ```mermaid
 flowchart LR
 
 governanceAdminWallet[Governance Admin Wallet]
 treasury[Governance Treasury]
-timelock[TimelockController]
 
-governanceAdminWallet -->|"proposer/executor/admin"| timelock
+subgraph "Olla Governance"
+    ollaGov["OllaGovernance (timelock)"]
+end
+
+governanceAdminWallet -->|"proposer/executor/canceller"| ollaGov
 
 subgraph "Olla Core"
     core[OllaCore]
@@ -345,17 +366,17 @@ subgraph "Olla Staking Components"
     spr[StakingProviderRegistry]
 end
 
-timelock -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, proposeGovernance, cancelGovernanceProposal, setTargetBufferedAssets, setRebalanceGasThreshold, setRebalanceCooldown, setInstantRedemptionFeeBP, reconcileBufferedAssets, recoverStAztec, _authorizeUpgrade"| core
-timelock -->|"setDepositCap, setWithdrawalMinimum, setMinRateDropBps, setMaxQueueRatioBps, setMaxAccountingDelay"| safety
-timelock -->|"_authorizeUpgrade"| withdrawQ
-timelock -->|"_authorizeUpgrade"| rewards
-timelock -->|"_authorizeUpgrade"| stkMan
-timelock -->|"_authorizeUpgrade"| spr
+ollaGov -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, setTargetBufferedAssets, setRebalanceGasThreshold, setRebalanceCooldown, setInstantRedemptionFeeBP, reconcileBufferedAssets, recoverStAztec, setSafetyModule, upgradeCore"| core
+ollaGov -->|"setDepositCap, setWithdrawalMinimum, setMinRateDropBps, setMaxQueueRatioBps, setMaxAccountingDelay"| safety
+ollaGov -->|"upgradeSatellite"| withdrawQ
+ollaGov -->|"upgradeSatellite"| rewards
+ollaGov -->|"upgradeSatellite"| stkMan
+ollaGov -->|"upgradeSatellite"| spr
 
-core -->|"pay staking fees >StAztec< mint(governance, treasuryShares)"| treasury
+core -->|"pay staking fees >StAztec< mint(treasury, treasuryShares)"| treasury
 
 style governanceAdminWallet stroke:#050,stroke-width:2px
-style timelock stroke:#f90,stroke-width:2px
+style ollaGov stroke:#f90,stroke-width:3px
 style core stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
 style rewards stroke:#090,stroke-width:3px
