@@ -57,6 +57,12 @@ const config: RunConfig = {
       seedCount: 5,
     },
     {
+      type: "refill-keys",
+      enabled: true,
+      shouldRun: everyNTick(1),
+      seedCount: 5,
+    },
+    {
       type: "mock-rewards",
       enabled: true,
       shouldRun: everyNTick(1),

@@ -123,8 +123,9 @@ contract DeployScript is BaseDeployer {
         // Local wiring for staking stack + safety module (requires RewardsVault and core proxy)
         if (config.deployMocks) {
             // Deploy + init StakingManager + StakingProviderRegistry behind proxies
-            (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
-                _mocksDeployer.deployStakingStack(config, ollaCoreProxy, rewardsVault, asset, rollupRegistry);
+            (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) = _mocksDeployer.deployStakingStack(
+                config, ollaCoreProxy, rewardsVault, asset, rollupRegistry, ollaGovProxy
+            );
             json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
             json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
             json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);
@@ -200,7 +201,7 @@ contract DeployScript is BaseDeployer {
             vm.warp(block.timestamp + 1);
             bytes memory unpauseData = abi.encodeCall(OllaCore.unpause, ());
             vm.startBroadcast(config.deployerPrivateKey);
-            
+
             OllaGovernance(payable(ollaGovProxy))
                 .schedule(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0), config.timelockMinDelay);
             OllaGovernance(payable(ollaGovProxy)).execute(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0));

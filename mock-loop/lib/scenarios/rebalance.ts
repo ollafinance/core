@@ -1,10 +1,17 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { RebalanceScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { getOllaCore, getStakingManager, loadAbi, createUserWallet } from "../client.js";
+import {
+  getOllaCore,
+  getStakingManager,
+  getStakingProviderRegistry,
+  loadAbi,
+  createUserWallet,
+} from "../client.js";
 
 const REBALANCE_STEP_DONE = 6; // RebalanceStep.Done
 const REBALANCE_STEP_PULL_UNSTAKED = 1; // RebalanceStep.PullUnstaked
 const STAKE_FAILED_SELECTOR = "0xd101596a"; // Stake failed error selector
+const INSUFFICIENT_KEYS_SELECTOR = "0x8f90cd97"; // StakingManager__InsufficientKeys selector
 const REBALANCE_STEP_NAMES = ["Harvest", "PullUnstaked", "FinalizeWithdrawals", "InitiateUnstake", "StakeSurplus", "ComputeAttesterState", "Done"];
 
 export async function executeRebalance(
@@ -26,6 +33,11 @@ export async function executeRebalance(
   const stepHistory: { iter: number; step: number; stepName: string; stakeRemaining: string; unstakeRemaining: string }[] = [];
   let lastProgress: { step: number; stakeRemaining: bigint; unstakeRemaining: bigint } | null = null;
   let gasLimit: bigint | undefined;
+  let gasBumped = false;
+  let gasBumpCount = 0;
+  const gasBumpSteps = [1_000_000n, 2_500_000n, 5_000_000n, 10_000_000n];
+  let gasBumpIndex = 0;
+  let chainGasLimit: bigint | null = null;
   let finalizeExitsRetries = 0;
   const MAX_FINALIZE_RETRIES = 3;
 
@@ -44,11 +56,12 @@ export async function executeRebalance(
     } as any);
     await clients.publicClient.waitForTransactionReceipt({ hash: preComputeTx });
     const gasThreshold = await ollaCoreRead.read.rebalanceGasThreshold() as bigint;
-    const minGasLimit = 1_000_000n;
+    const minGasLimit = gasBumpSteps[0];
     gasLimit = gasThreshold + 300_000n;
     if (gasLimit < minGasLimit) {
       gasLimit = minGasLimit;
     }
+    chainGasLimit = (await clients.publicClient.getBlock()).gasLimit as bigint;
 
     while (!complete) {
       iteration++;
@@ -65,10 +78,85 @@ export async function executeRebalance(
       try {
         const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: txHash });
         if (receipt.status === "reverted") {
+          const progress = await ollaCoreRead.read.rebalanceProgress() as {
+            step: number;
+            stakeRemaining: bigint;
+            unstakeRemaining: bigint;
+          };
+          const providerRegistry = getStakingProviderRegistry(addresses, clients.publicClient);
+          const availableKeyCount = await providerRegistry.read.getQueueLength() as bigint;
+          if (progress.step === 4 && availableKeyCount === 0n) {
+            return {
+              scenario: "rebalance",
+              success: true,
+              data: {
+                iterations: iteration,
+                transactions: iterations,
+                stepHistory,
+                note: "rebalance reverted during StakeSurplus with no provider keys; yielding until keys are added",
+                availableKeyCount: availableKeyCount.toString(),
+                gasBumped,
+                gasBumpCount,
+              },
+            };
+          }
+          if (gasLimit && receipt.gasUsed >= (gasLimit * 90n) / 100n) {
+            const nextLimit = gasBumpSteps[gasBumpIndex + 1];
+            const cappedLimit = chainGasLimit ? (nextLimit > chainGasLimit ? chainGasLimit : nextLimit) : nextLimit;
+            if (nextLimit !== undefined && cappedLimit > gasLimit) {
+              gasBumpCount += 1;
+              gasBumped = true;
+              gasBumpIndex += 1;
+              gasLimit = cappedLimit;
+              console.log(`[rebalance] gas bump to ${gasLimit.toString()}`);
+              stepHistory.push({
+                iter: iteration,
+                step: progress.step,
+                stepName: "GasBump",
+                stakeRemaining: progress.stakeRemaining.toString(),
+                unstakeRemaining: progress.unstakeRemaining.toString(),
+              });
+              continue;
+            }
+            stepHistory.push({
+              iter: iteration,
+              step: progress.step,
+              stepName: "GasBump",
+              stakeRemaining: progress.stakeRemaining.toString(),
+              unstakeRemaining: progress.unstakeRemaining.toString(),
+            });
+          }
           throw new Error(`rebalance reverted in tx ${txHash}`);
         }
       } catch (waitError) {
-        if (waitError instanceof Error && waitError.message.includes(STAKE_FAILED_SELECTOR)) {
+        const errorMessage = waitError instanceof Error ? waitError.message : String(waitError);
+        if (
+          errorMessage.toLowerCase().includes("out of gas") ||
+          errorMessage.toLowerCase().includes("outofgas") ||
+          errorMessage.toLowerCase().includes("intrinsic gas too low")
+        ) {
+          const nextLimit = gasBumpSteps[gasBumpIndex + 1];
+          const cappedLimit = chainGasLimit ? (nextLimit > chainGasLimit ? chainGasLimit : nextLimit) : nextLimit;
+          if (nextLimit !== undefined && gasLimit && cappedLimit > gasLimit) {
+            gasBumpCount += 1;
+            gasBumped = true;
+            gasBumpIndex += 1;
+            gasLimit = cappedLimit;
+            console.log(`[rebalance] gas bump to ${gasLimit.toString()}`);
+            stepHistory.push({
+              iter: iteration,
+              step: lastProgress?.step ?? 0,
+              stepName: "GasBump",
+              stakeRemaining: lastProgress?.stakeRemaining.toString() ?? "0",
+              unstakeRemaining: lastProgress?.unstakeRemaining.toString() ?? "0",
+            });
+            continue;
+          }
+        }
+        if (
+          errorMessage.includes(STAKE_FAILED_SELECTOR) ||
+          errorMessage.includes(INSUFFICIENT_KEYS_SELECTOR)
+        ) {
           return {
             scenario: "rebalance",
             success: true,
@@ -77,16 +165,20 @@ export async function executeRebalance(
               transactions: iterations,
               stepHistory,
               note: "stake failed; likely insufficient provider keys or activation threshold too high",
+              gasBumped,
+              gasBumpCount,
             },
           };
         }
         return {
           scenario: "rebalance",
           success: false,
-          error: waitError instanceof Error ? waitError.message : String(waitError),
+          error: errorMessage,
           data: {
             iterationsCompleted: iterations.length,
             stepHistory,
+            gasBumped,
+            gasBumpCount,
           },
         };
       }
@@ -139,6 +231,8 @@ export async function executeRebalance(
             transactions: iterations,
             stepHistory,
             note: "rebalance made no progress; yielding until next tick",
+            gasBumped,
+            gasBumpCount,
           },
         };
       }
@@ -171,6 +265,8 @@ export async function executeRebalance(
         postComputeTx,
         caller: callerWallet.account?.address,
         permissionless: !!_scenario.privateKey,
+        gasBumped,
+        gasBumpCount,
       },
     };
   } catch (error) {
@@ -181,6 +277,8 @@ export async function executeRebalance(
       data: {
         iterationsCompleted: iterations.length,
         stepHistory,
+        gasBumped,
+        gasBumpCount,
       },
     };
   }

@@ -9,6 +9,13 @@ export interface ProviderKeysScenario {
   seedCount: number;
 }
 
+export interface RefillKeysScenario {
+  type: "refill-keys";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  seedCount: number;
+}
+
 export interface MockRewardsScenario {
   type: "mock-rewards";
   enabled: boolean;
@@ -111,6 +118,7 @@ export interface SafetyModuleScenario {
 
 export type ScenarioConfig =
   | ProviderKeysScenario
+  | RefillKeysScenario
   | MockRewardsScenario
   | UserDepositScenario
   | RebalanceScenario

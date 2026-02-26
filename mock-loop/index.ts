@@ -16,6 +16,7 @@ import type {
 
 // Import scenario executors
 import { executeProviderKeys } from "./lib/scenarios/provider-keys.js";
+import { executeRefillKeys } from "./lib/scenarios/refill-keys.js";
 import { executeMockRewards } from "./lib/scenarios/mock-rewards.js";
 import { executeUserDeposit } from "./lib/scenarios/user-deposit.js";
 import { executeRebalance } from "./lib/scenarios/rebalance.js";
@@ -81,6 +82,8 @@ async function executeScenario(
   switch (scenario.type) {
     case "provider-keys":
       return executeProviderKeys(scenario, tick, clients, addresses, runState);
+    case "refill-keys":
+      return executeRefillKeys(scenario, tick, clients, addresses, runState);
     case "mock-rewards":
       return executeMockRewards(scenario, tick, clients, addresses, scenarioState, runState);
     case "user-deposit":
