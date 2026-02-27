@@ -205,6 +205,14 @@ contract DeployScript is BaseDeployer {
             OllaGovernance(payable(ollaGovProxy))
                 .schedule(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0), config.timelockMinDelay);
             OllaGovernance(payable(ollaGovProxy)).execute(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0));
+
+            // Lower rebalance cooldown to 10 min so mock-loop time warps
+            // stay well under the 1-hour accounting liveness breaker.
+            bytes memory setCooldownData = abi.encodeCall(OllaCore.setRebalanceCooldown, (10 minutes));
+            OllaGovernance(payable(ollaGovProxy))
+                .schedule(ollaCoreProxy, 0, setCooldownData, bytes32(0), bytes32(uint256(1)), config.timelockMinDelay);
+            OllaGovernance(payable(ollaGovProxy))
+                .execute(ollaCoreProxy, 0, setCooldownData, bytes32(0), bytes32(uint256(1)));
             vm.stopBroadcast();
         }
 
