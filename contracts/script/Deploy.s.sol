@@ -6,7 +6,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
@@ -123,8 +123,9 @@ contract DeployScript is BaseDeployer {
         // Local wiring for staking stack + safety module (requires RewardsVault and core proxy)
         if (config.deployMocks) {
             // Deploy + init StakingManager + StakingProviderRegistry behind proxies
-            (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
-                _mocksDeployer.deployStakingStack(config, ollaCoreProxy, rewardsVault, asset, rollupRegistry);
+            (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) = _mocksDeployer.deployStakingStack(
+                config, ollaCoreProxy, rewardsVault, asset, rollupRegistry, ollaGovProxy
+            );
             json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
             json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
             json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);
@@ -154,11 +155,22 @@ contract DeployScript is BaseDeployer {
             json = _addAddressToJson(json, "MockAztecRollup", rollup, false);
             json = _addAddressToJson(json, "MockAztecRollupRegistry", rollupRegistry, false);
 
-            // Local safety module stub: allows deposits/withdrawals without role setup.
+            // Deploy real SafetyModule with generous local-dev defaults.
+            // CORE must be the proxy (not impl) so onlyCore modifier works.
             vm.startBroadcast(config.deployerPrivateKey);
-            safetyModule = address(new MockSafetyModule(ollaCoreProxy));
+            safetyModule = address(
+                new SafetyModule(
+                    config.deployer, // admin
+                    config.deployer, // guardian (deployer can pause/unpause locally)
+                    ollaCoreProxy, // core — must match OllaCore proxy address
+                    1_000_000_000e18, // depositCap — 1B tokens, effectively unlimited
+                    500, // minRateDropBps — 5% rate drop triggers breaker
+                    5_000, // maxQueueRatioBps — 50% queue ratio triggers breaker
+                    1 hours // maxAccountingDelay — minimum allowed, easy to test liveness breaker
+                )
+            );
             vm.stopBroadcast();
-            _logDeployment("MockSafetyModule", safetyModule);
+            _logDeployment("SafetyModule", safetyModule);
         }
 
         // Always write StakingManager to JSON once known
@@ -189,6 +201,7 @@ contract DeployScript is BaseDeployer {
             vm.warp(block.timestamp + 1);
             bytes memory unpauseData = abi.encodeCall(OllaCore.unpause, ());
             vm.startBroadcast(config.deployerPrivateKey);
+
             OllaGovernance(payable(ollaGovProxy))
                 .schedule(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0), config.timelockMinDelay);
             OllaGovernance(payable(ollaGovProxy)).execute(ollaCoreProxy, 0, unpauseData, bytes32(0), bytes32(0));

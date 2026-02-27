@@ -20,6 +20,12 @@ export const defaultConfig: RunConfig = {
       seedCount: 5,
     },
     {
+      type: "refill-keys",
+      enabled: true,
+      shouldRun: everyNTick(1),
+      seedCount: 5,
+    },
+    {
       type: "mock-rewards",
       enabled: true,
       shouldRun: everyNTick(1),
@@ -72,6 +78,24 @@ export const defaultConfig: RunConfig = {
         return tick >= 43;
       },
       privateKey: ANVIL_ACCOUNT_1_PRIVATE_KEY,
+    },
+    // Phase 1: Core protocol scenarios (disabled by default)
+    {
+      type: "slashing",
+      enabled: false,
+      shouldRun: (_state, tick) => tick === 20,
+      slashAmountBps: 100, // 1% slash
+    },
+    {
+      type: "external-exit",
+      enabled: false,
+      shouldRun: (_state, tick) => tick === 15,
+    },
+    {
+      type: "safety-module",
+      enabled: false,
+      shouldRun: (_state, tick) => tick === 5,
+      action: "configure",
     },
   ],
 };

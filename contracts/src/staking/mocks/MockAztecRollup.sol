@@ -204,6 +204,14 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function setExternalExit(address _attester, uint256 _amount, uint256 _exitableAt) external override {
+        // Decrement totalStaked to mirror what initiateWithdraw does,
+        // so the rollup's view stays consistent with the protocol's.
+        uint256 currentStake = stakes[_attester];
+        if (currentStake > 0) {
+            totalStaked -= currentStake;
+            stakes[_attester] = 0;
+        }
+
         address withdrawer = withdrawers[_attester];
         if (withdrawer == address(0)) {
             withdrawer = address(this);

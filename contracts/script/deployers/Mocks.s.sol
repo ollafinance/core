@@ -21,6 +21,7 @@ contract MocksDeployer is BaseDeployer {
         address rewardsVault;
         address asset;
         address rollupRegistry;
+        address governanceAdmin;
     }
 
     /// @notice Deploy the local staking asset and Aztec-side mocks.
@@ -43,8 +44,17 @@ contract MocksDeployer is BaseDeployer {
         MockAztecRollupRegistry registry = new MockAztecRollupRegistry(address(mockRollup));
         _logDeployment("MockAztecRollupRegistry", address(registry));
 
-        // Mint initial tokens to deployer for local testing.
-        mockAsset.mint(config.deployer, 1000 ether);
+        // Mint initial tokens to all 10 default Anvil accounts for local testing.
+        mockAsset.mint(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266, 10_000_000 ether);
+        mockAsset.mint(0x70997970C51812dc3A010C7d01b50e0d17dc79C8, 10_000_000 ether);
+        mockAsset.mint(0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC, 10_000_000 ether);
+        mockAsset.mint(0x90F79bf6EB2c4f870365E785982E1f101E93b906, 10_000_000 ether);
+        mockAsset.mint(0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65, 10_000_000 ether);
+        mockAsset.mint(0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc, 10_000_000 ether);
+        mockAsset.mint(0x976EA74026E726554dB657fA54763abd0C3a0aa9, 10_000_000 ether);
+        mockAsset.mint(0x14dC79964da2C08b23698B3D3cc7Ca32193d9955, 10_000_000 ether);
+        mockAsset.mint(0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f, 10_000_000 ether);
+        mockAsset.mint(0xa0Ee7A142d267C1f36714E4a8F75612F20a79720, 10_000_000 ether);
 
         vm.stopBroadcast();
 
@@ -58,7 +68,8 @@ contract MocksDeployer is BaseDeployer {
         address core,
         address rewardsVault,
         address asset,
-        address rollupRegistry
+        address rollupRegistry,
+        address governanceAdmin
     )
         external
         returns (
@@ -69,7 +80,12 @@ contract MocksDeployer is BaseDeployer {
         )
     {
         StakingStackParams memory params = StakingStackParams({
-            config: config, core: core, rewardsVault: rewardsVault, asset: asset, rollupRegistry: rollupRegistry
+            config: config,
+            core: core,
+            rewardsVault: rewardsVault,
+            asset: asset,
+            rollupRegistry: rollupRegistry,
+            governanceAdmin: governanceAdmin
         });
 
         return _deployStakingStackInternal(params);
@@ -90,6 +106,7 @@ contract MocksDeployer is BaseDeployer {
         require(params.rewardsVault != address(0), "MocksDeployer: rewardsVault required");
         require(params.asset != address(0), "MocksDeployer: asset required");
         require(params.rollupRegistry != address(0), "MocksDeployer: rollupRegistry required");
+        require(params.governanceAdmin != address(0), "MocksDeployer: governanceAdmin required");
 
         vm.startBroadcast(params.config.deployerPrivateKey);
 
@@ -109,6 +126,7 @@ contract MocksDeployer is BaseDeployer {
 
         // Cache all values to minimize stack usage
         address deployer = params.config.deployer;
+        address governanceAdmin = params.governanceAdmin;
         address smProxyAddr = address(smProxy);
         address sprProxyAddr = address(sprProxy);
         IERC20 asset = IERC20(params.asset);
@@ -117,10 +135,10 @@ contract MocksDeployer is BaseDeployer {
         address core = params.core;
 
         // Initialize StakingProviderRegistry first (needs stakingManager address)
-        StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, deployer, deployer, deployer);
+        StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, deployer, deployer, governanceAdmin);
 
         // Initialize StakingManager
-        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsVault, core, sprProxyAddr, deployer);
+        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsVault, core, sprProxyAddr, governanceAdmin);
 
         vm.stopBroadcast();
 
