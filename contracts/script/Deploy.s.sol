@@ -20,6 +20,7 @@ import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
 import { OllaGovernanceDeployer } from "./deployers/OllaGovernance.s.sol";
 import { RewardsVaultDeployer } from "./deployers/RewardsVault.s.sol";
 import { StAztecDeployer } from "./deployers/StAztec.s.sol";
+import { StAztecOFTAdapterDeployer } from "./deployers/StAztecOFTAdapter.s.sol";
 import { WithdrawalQueueDeployer } from "./deployers/WithdrawalQueue.s.sol";
 
 /// @title DeployScript
@@ -30,6 +31,7 @@ contract DeployScript is BaseDeployer {
     OllaCoreDeployer internal _ollaCoreDeployer;
     OllaGovernanceDeployer internal _ollaGovernanceDeployer;
     StAztecDeployer internal _stAztecDeployer;
+    StAztecOFTAdapterDeployer internal _stAztecOFTAdapterDeployer;
     WithdrawalQueueDeployer internal _withdrawalQueueDeployer;
     RewardsVaultDeployer internal _rewardsVaultDeployer;
 
@@ -39,6 +41,7 @@ contract DeployScript is BaseDeployer {
         _ollaCoreDeployer = new OllaCoreDeployer();
         _ollaGovernanceDeployer = new OllaGovernanceDeployer();
         _stAztecDeployer = new StAztecDeployer();
+        _stAztecOFTAdapterDeployer = new StAztecOFTAdapterDeployer();
         _withdrawalQueueDeployer = new WithdrawalQueueDeployer();
         _rewardsVaultDeployer = new RewardsVaultDeployer();
     }
@@ -65,6 +68,8 @@ contract DeployScript is BaseDeployer {
         address rewardsVault;
         address withdrawalQueueImpl;
         address rewardsVaultImpl;
+        address lzEndpoint;
+        address oftAdapter;
 
         // Initialize deployment JSON
         string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
@@ -104,6 +109,24 @@ contract DeployScript is BaseDeployer {
 
         stAztec = _stAztecDeployer.deploy(config, ollaCoreProxy);
         json = _addAddressToJson(json, "StAztec", stAztec, false);
+
+        // 4a. Deploy LayerZero OFTAdapter for stAztec bridging.
+        //     Local: deploy a mock LZ endpoint first. Non-local: use LZ_ENDPOINT env var.
+        //     The deployer is set as delegate (owner) for local dev; in production the
+        //     OllaGovernance proxy would be the delegate.
+        if (config.deployMocks) {
+            // EID 1 = home chain for local dev
+            lzEndpoint = _mocksDeployer.deployLzEndpointMock(config, 1);
+            json = _addAddressToJson(json, "EndpointV2Mock", lzEndpoint, false);
+        } else {
+            lzEndpoint = vm.envOr("LZ_ENDPOINT", address(0));
+        }
+
+        if (lzEndpoint != address(0)) {
+            address oftDelegate = config.deployMocks ? config.deployer : ollaGovProxy;
+            oftAdapter = _stAztecOFTAdapterDeployer.deploy(config, stAztec, lzEndpoint, oftDelegate);
+            json = _addAddressToJson(json, "StAztecOFTAdapter", oftAdapter, false);
+        }
 
         // 4.1 Deploy WithdrawalQueue (linked to OllaCore proxy)
         //     OllaGovernance is the admin so it can manage roles and upgrades.
