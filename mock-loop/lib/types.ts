@@ -9,6 +9,13 @@ export interface ProviderKeysScenario {
   seedCount: number;
 }
 
+export interface RefillKeysScenario {
+  type: "refill-keys";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  seedCount: number;
+}
+
 export interface MockRewardsScenario {
   type: "mock-rewards";
   enabled: boolean;
@@ -86,8 +93,32 @@ export interface GovernanceChangeScenario {
   newGovernancePrivateKey: string;
 }
 
+export interface SlashingScenario {
+  type: "slashing";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  slashAmountBps: number; // basis points of staked amount to slash
+  targetAttesterIndex?: number; // which attester to slash (default: 0)
+}
+
+export interface ExternalExitScenario {
+  type: "external-exit";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  exitAttesterIndex?: number; // which attester to exit (default: last one)
+}
+
+export interface SafetyModuleScenario {
+  type: "safety-module";
+  enabled: boolean;
+  shouldRun?: ScenarioShouldRun;
+  action: "configure" | "read-state" | "verify-breaker" | "unpause" | "warp-time";
+  warpSeconds?: number; // for warp-time action
+}
+
 export type ScenarioConfig =
   | ProviderKeysScenario
+  | RefillKeysScenario
   | MockRewardsScenario
   | UserDepositScenario
   | RebalanceScenario
@@ -95,6 +126,9 @@ export type ScenarioConfig =
   | UserInitiateWithdrawScenario
   | UserClaimScenario
   | GovernanceChangeScenario
+  | SlashingScenario
+  | ExternalExitScenario
+  | SafetyModuleScenario
   | TimeAdvanceScenario
   | FinalizeExitsScenario
   | ExchangeRateCheckScenario
