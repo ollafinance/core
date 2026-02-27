@@ -144,6 +144,7 @@ const config: RunConfig = {
       enabled: true,
       shouldRun: (_state, tick) => tick === 23,
       action: "verify-breaker",
+      expectedPaused: true,
     },
 
     // Read full state while paused
@@ -168,6 +169,7 @@ const config: RunConfig = {
       enabled: true,
       shouldRun: (_state, tick) => tick === 26,
       action: "verify-breaker",
+      expectedPaused: false,
     },
 
     // === BREAKER B: Accounting Liveness ===
@@ -190,6 +192,7 @@ const config: RunConfig = {
       enabled: true,
       shouldRun: (_state, tick) => tick === 36,
       action: "verify-breaker",
+      expectedPaused: true,
     },
 
     // Guardian unpauses again
@@ -206,6 +209,7 @@ const config: RunConfig = {
       enabled: true,
       shouldRun: (_state, tick) => tick === 38,
       action: "verify-breaker",
+      expectedPaused: false,
     },
   ],
 };

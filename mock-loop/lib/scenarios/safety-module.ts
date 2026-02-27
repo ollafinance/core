@@ -94,12 +94,20 @@ export async function executeSafetyModule(
           ollaCoreRead.read.totalAssets(),
         ] as const) as [bigint, bigint];
 
+        // If expectedPaused is specified, fail on mismatch
+        const expected = scenario.expectedPaused;
+        const matched = expected === undefined || isPaused === expected;
+
         return {
           scenario: "safety-module",
-          success: true,
+          success: matched,
+          ...(!matched && {
+            error: `verify-breaker: expected isPaused=${expected} but got ${isPaused}`,
+          }),
           data: {
             action: "verify-breaker",
             breakerTriggered: isPaused,
+            ...(expected !== undefined && { expectedPaused: expected }),
             exchangeRate: exchangeRate.toString(),
             totalAssets: totalAssets.toString(),
           },
