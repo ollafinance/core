@@ -61,6 +61,11 @@ subgraph "Aztec Contracts"
     rollup["AztecRollup (canonical)"]
 end
 
+subgraph "Cross-Chain Bridge"
+    oftAdapter["StAztecOFTAdapter (home chain)"]
+    oftDest["StAztecOFT (destination chains)"]
+end
+
 guardianWallet -. "GUARDIAN_ROLE" .-> core
 guardianWallet -. "GUARDIAN_ROLE" .-> safety
 
@@ -118,6 +123,10 @@ core -->|"balance()"| rewards
 core -->|"pay staking fees >StAztec< mint(treasury, treasuryShares)"| treasury
 core -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
 
+%% Cross-chain bridge (LayerZero V2)
+userWallet -->|"approve + send (bridge out)"| oftAdapter
+oftAdapter <-->|"LayerZero messages"| oftDest
+
 %% Staking provider admin (control-plane)
 
 style user fill:#900
@@ -135,6 +144,8 @@ style rollupRegistry stroke:#ff6,stroke-width:2px
 style guardianActor stroke:#050,stroke-width:2px
 style governanceActor stroke:#050,stroke-width:2px
 style ollaGov stroke:#090,stroke-width:3px
+style oftAdapter stroke:#09f,stroke-width:3px
+style oftDest stroke:#09f,stroke-width:3px
 ```
 
 ## Contract architecture
@@ -165,6 +176,11 @@ end
 subgraph "Aztec Contracts"
     rollupRegistry[AztecRollupRegistry]
     rollup["AztecRollup (canonical)"]
+end
+
+subgraph "Cross-Chain Bridge (LayerZero V2)"
+    oftAdapter["StAztecOFTAdapter (Ethereum)"]
+    oftDest["StAztecOFT (destination chains)"]
 end
 
 %% Governance -> contracts
@@ -208,6 +224,10 @@ core -->|"balance()"| rewards
 %% Finalize withdrawals
 core -->|"finalizeWithdrawals(available)"| withdrawQ
 
+%% Cross-chain bridge
+oftAdapter <-->|"LayerZero V2 messages"| oftDest
+ollaGov -. "owner (setPeer, DVN config)" .-> oftAdapter
+
 style ollaGov stroke:#090,stroke-width:3px
 style core stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
@@ -217,6 +237,8 @@ style spr stroke:#090,stroke-width:3px
 style withdrawQ stroke:#090,stroke-width:3px
 style rollup stroke:#ff6,stroke-width:2px
 style rollupRegistry stroke:#ff6,stroke-width:2px
+style oftAdapter stroke:#09f,stroke-width:3px
+style oftDest stroke:#09f,stroke-width:3px
 ```
 
 ## User
