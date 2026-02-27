@@ -114,6 +114,7 @@ export interface SafetyModuleScenario {
   shouldRun?: ScenarioShouldRun;
   action: "configure" | "read-state" | "verify-breaker" | "unpause" | "warp-time";
   warpSeconds?: number; // for warp-time action
+  expectedPaused?: boolean; // for verify-breaker: expected isPaused state
 }
 
 export type ScenarioConfig =
