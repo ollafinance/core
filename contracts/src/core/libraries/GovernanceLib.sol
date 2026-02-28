@@ -16,11 +16,11 @@ import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 library GovernanceLib {
     using SafeERC20 for IERC20;
 
-    /// @notice Validates and sets the safety module on the Modules struct.
-    /// @param modules The Modules storage reference.
+    /// @notice Validates and sets the safety module on the CoreModules struct.
+    /// @param modules The CoreModules storage reference.
     /// @param newSafetyModule The new safety module address.
     /// @return oldSafetyModule The previous safety module address.
-    function setSafetyModule(IOllaCore.Modules storage modules, address newSafetyModule)
+    function setSafetyModule(IOllaCore.CoreModules storage modules, address newSafetyModule)
         external
         returns (address oldSafetyModule)
     {
@@ -36,27 +36,11 @@ library GovernanceLib {
         return oldSafetyModule;
     }
 
-    /// @notice Propagates gas threshold to staking manager and withdrawal queue.
-    /// @param modules The Modules storage reference.
+    /// @notice Propagates gas threshold to staking manager.
+    /// @dev WithdrawalQueue gas threshold is set separately by governance via DEFAULT_ADMIN_ROLE.
+    /// @param modules The CoreModules storage reference.
     /// @param newThreshold The new gas threshold.
-    function propagateGasThreshold(IOllaCore.Modules storage modules, uint256 newThreshold) external {
+    function propagateGasThreshold(IOllaCore.CoreModules storage modules, uint256 newThreshold) external {
         modules.stakingManager.setGasThreshold(newThreshold);
-        modules.withdrawalQueue.setGasThreshold(newThreshold);
-    }
-
-    /// @notice Recovers stAztec to a recipient or treasury fallback.
-    /// @param modules The Modules storage reference.
-    /// @param recipient The recipient address (zero = use treasury).
-    /// @param amount The amount of stAztec to recover.
-    /// @param treasury The fallback treasury address.
-    function recoverStAztec(IOllaCore.Modules storage modules, address recipient, uint256 amount, address treasury)
-        external
-    {
-        if (amount == 0) {
-            revert IOllaCore.OllaCore__InvalidAmount();
-        }
-        address resolvedRecipient = recipient == address(0) ? treasury : recipient;
-        IERC20(address(modules.stAztec)).safeTransfer(resolvedRecipient, amount);
-        emit IOllaCore.StAztecRecovered(amount, resolvedRecipient);
     }
 }

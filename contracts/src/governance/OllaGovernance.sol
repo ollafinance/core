@@ -9,6 +9,7 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaGovernance
 /// @notice Governance contract for the Olla protocol. Inherits TimelockController for
@@ -203,18 +204,8 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     }
 
     /// @inheritdoc IOllaGovernance
-    function setInstantRedemptionFeeBP(uint256 newFeeBP) external override onlySelf {
-        IOllaCore(core).setInstantRedemptionFeeBP(newFeeBP);
-    }
-
-    /// @inheritdoc IOllaGovernance
     function setSafetyModule(address newSafetyModule) external override onlySelf {
         IOllaCore(core).setSafetyModule(newSafetyModule);
-    }
-
-    /// @inheritdoc IOllaGovernance
-    function recoverStAztec(address recipient, uint256 amount) external override onlySelf {
-        IOllaCore(core).recoverStAztec(recipient, amount);
     }
 
     /// @inheritdoc IOllaGovernance
@@ -222,10 +213,24 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         IOllaCore(core).setRebalanceCooldown(cooldown_);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                    OLLAVAULT PARAMETER PASSTHROUGHS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IOllaGovernance
+    function setInstantRedemptionFeeBP(uint256 newFeeBP) external override onlySelf {
+        IOllaVault(IOllaCore(core).vault()).setInstantRedemptionFeeBP(newFeeBP);
+    }
+
+    /// @inheritdoc IOllaGovernance
+    function recoverStAztec(address recipient, uint256 amount) external override onlySelf {
+        IOllaVault(IOllaCore(core).vault()).recoverStAztec(recipient, amount);
+    }
+
     /// @inheritdoc IOllaGovernance
     function reconcileBufferedAssets() external override onlySelf {
         // slither-disable-next-line unused-return
-        IOllaCore(core).reconcileBufferedAssets();
+        IOllaVault(IOllaCore(core).vault()).reconcileBufferedAssets();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -291,20 +296,20 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     /// @param newGovernance The new governance address to grant to.
     function _propagateAdminRole(address oldGovernance, address newGovernance) internal {
         address coreAddr = core;
-        address wq = IOllaCore(coreAddr).withdrawalQueue();
+        address vaultAddr = IOllaCore(coreAddr).vault();
         address rv = IOllaCore(coreAddr).rewardsVault();
         address sm = IOllaCore(coreAddr).stakingManager();
         address spr = address(IStakingManager(sm).stakingProviderRegistry());
 
         // Grant DEFAULT_ADMIN_ROLE to new governance on all satellites
-        AccessControlUpgradeable(wq).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+        AccessControlUpgradeable(vaultAddr).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
         AccessControlUpgradeable(rv).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
         AccessControlUpgradeable(sm).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
         AccessControlUpgradeable(spr).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
 
         // Revoke from old governance
         if (oldGovernance != address(0) && oldGovernance != newGovernance) {
-            AccessControlUpgradeable(wq).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+            AccessControlUpgradeable(vaultAddr).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
             AccessControlUpgradeable(rv).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
             AccessControlUpgradeable(sm).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
             AccessControlUpgradeable(spr).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);

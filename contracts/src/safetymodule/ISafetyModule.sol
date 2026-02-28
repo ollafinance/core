@@ -145,7 +145,15 @@ interface ISafetyModule {
     /// @param shares The withdrawal amount in shares.
     function checkWithdrawalMinimum(uint256 shares) external view;
 
+    /// @notice Returns the deposit cap.
+    /// @return The maximum total assets allowed.
+    function depositCap() external view returns (uint256);
+
     /// @notice Returns the core address.
     /// @return The core contract address.
     function CORE() external view returns (address);
+
+    /// @notice Returns the vault address.
+    /// @return The vault contract address.
+    function VAULT() external view returns (address);
 }

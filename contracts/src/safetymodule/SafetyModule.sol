@@ -55,6 +55,9 @@ contract SafetyModule is AccessControl, ISafetyModule {
     // slither-disable-start immutable-states
     /// @notice The core address allowed to call checks.
     address public immutable CORE;
+
+    /// @notice The vault address allowed to call user-facing checks.
+    address public immutable VAULT;
     // slither-disable-end immutable-states
 
     /// @notice Maximum total assets allowed.
@@ -82,8 +85,8 @@ contract SafetyModule is AccessControl, ISafetyModule {
                                  MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    modifier onlyCore() {
-        if (msg.sender != CORE) {
+    modifier onlyCoreOrVault() {
+        if (msg.sender != CORE && msg.sender != VAULT) {
             revert ISafetyModule.SafetyModule__UnauthorizedCore(msg.sender);
         }
         _;
@@ -97,6 +100,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     /// @param admin The default admin address.
     /// @param guardian The guardian address.
     /// @param core_ The core address allowed to call checks.
+    /// @param vault_ The vault address allowed to call user-facing checks.
     /// @param depositCap_ The initial deposit cap.
     /// @param minRateDropBps_ The minimum rate drop threshold in basis points.
     /// @param maxQueueRatioBps_ The maximum queue ratio threshold in basis points.
@@ -105,6 +109,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         address admin,
         address guardian,
         address core_,
+        address vault_,
         uint256 depositCap_,
         uint256 minRateDropBps_,
         uint256 maxQueueRatioBps_,
@@ -118,6 +123,9 @@ contract SafetyModule is AccessControl, ISafetyModule {
         }
         if (core_ == address(0)) {
             revert SafetyModule__ZeroAddress("core");
+        }
+        if (vault_ == address(0)) {
+            revert SafetyModule__ZeroAddress("vault");
         }
         if (depositCap_ == 0) {
             revert SafetyModule__InvalidParameter();
@@ -140,6 +148,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         lastAccountingTimestamp = block.timestamp;
 
         CORE = core_;
+        VAULT = vault_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(GUARDIAN_ROLE, guardian);
@@ -156,7 +165,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ISafetyModule
-    function checkRateDrop(uint256 oldRate, uint256 nextRate) external override onlyCore {
+    function checkRateDrop(uint256 oldRate, uint256 nextRate) external override onlyCoreOrVault {
         // solhint-disable-next-line gas-strict-inequalities
         if (nextRate >= oldRate) {
             return;
@@ -175,7 +184,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function checkQueueRatio(uint256 queued, uint256 total) external override onlyCore {
+    function checkQueueRatio(uint256 queued, uint256 total) external override onlyCoreOrVault {
         if (total == 0) {
             if (queued > 0) {
                 _triggerBreaker(ISafetyModule.BreakerReason.QueueRatio);
@@ -191,7 +200,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function checkAccountingLiveness() external override onlyCore {
+    function checkAccountingLiveness() external override onlyCoreOrVault {
         // slither-disable-next-line timestamp
         // solhint-disable-next-line gas-strict-inequalities
         if (block.timestamp <= lastAccountingTimestamp) {
@@ -255,7 +264,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp_) external override onlyCore {
+    function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp_) external override onlyCoreOrVault {
         // slither-disable-next-line timestamp
         if (latestAccountingTimestamp_ > block.timestamp) revert SafetyModule__InvalidParameter();
         lastAccountingTimestamp = latestAccountingTimestamp_;
@@ -294,7 +303,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         external
         view
         override
-        onlyCore
+        onlyCoreOrVault
         returns (bool allowed)
     {
         if (deposit > depositCap || total > depositCap - deposit) {
@@ -304,7 +313,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function checkWithdrawalMinimum(uint256 shares) external view override onlyCore {
+    function checkWithdrawalMinimum(uint256 shares) external view override onlyCoreOrVault {
         if (shares < withdrawalMinimum) {
             revert SafetyModule__BelowWithdrawalMinimum(shares, withdrawalMinimum);
         }

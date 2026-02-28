@@ -22,20 +22,20 @@ contract StAztec is ERC20Permit, IStAztec {
                                IMMUTABLES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The immutable OllaCore address authorized to mint and burn.
-    address public immutable OLLA_CORE;
+    /// @notice The immutable OllaVault address authorized to mint and burn.
+    address public immutable OLLA_VAULT;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets the immutable OllaCore address.
-    /// @param ollaCore_ The OllaCore proxy address authorized to mint and burn.
-    constructor(address ollaCore_) ERC20("stAztec", "stAZTEC") ERC20Permit("stAztec") {
-        if (ollaCore_ == address(0)) {
+    /// @notice Sets the immutable OllaVault address.
+    /// @param ollaVault_ The OllaVault proxy address authorized to mint and burn.
+    constructor(address ollaVault_) ERC20("stAztec", "stAZTEC") ERC20Permit("stAztec") {
+        if (ollaVault_ == address(0)) {
             revert StAztecZeroAddress();
         }
-        OLLA_CORE = ollaCore_;
+        OLLA_VAULT = ollaVault_;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -46,7 +46,7 @@ contract StAztec is ERC20Permit, IStAztec {
     /// @param to The recipient address.
     /// @param amount The amount of shares to mint.
     function mint(address to, uint256 amount) external override {
-        if (msg.sender != OLLA_CORE) revert StAztec__Unauthorized();
+        if (msg.sender != OLLA_VAULT) revert StAztec__Unauthorized();
         _mint(to, amount);
     }
 
@@ -54,7 +54,7 @@ contract StAztec is ERC20Permit, IStAztec {
     /// @param from The account to burn shares from.
     /// @param amount The amount of shares to burn.
     function burn(address from, uint256 amount) external override {
-        if (msg.sender != OLLA_CORE) revert StAztec__Unauthorized();
+        if (msg.sender != OLLA_VAULT) revert StAztec__Unauthorized();
         _burn(from, amount);
     }
 

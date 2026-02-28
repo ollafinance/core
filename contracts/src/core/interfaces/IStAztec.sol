@@ -16,7 +16,7 @@ interface IStAztec is IERC20, IERC20Metadata, IERC20Permit {
     /// @notice Thrown when a zero address is provided.
     error StAztecZeroAddress();
 
-    /// @notice Thrown when the caller is not the authorized OllaCore contract.
+    /// @notice Thrown when the caller is not the authorized OllaVault contract.
     error StAztec__Unauthorized();
 
     /*//////////////////////////////////////////////////////////////
@@ -37,7 +37,7 @@ interface IStAztec is IERC20, IERC20Metadata, IERC20Permit {
                                VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the immutable OllaCore address authorized to mint and burn.
-    /// @return The OllaCore contract address.
-    function OLLA_CORE() external view returns (address);
+    /// @notice Returns the immutable OllaVault address authorized to mint and burn.
+    /// @return The OllaVault contract address.
+    function OLLA_VAULT() external view returns (address);
 }
