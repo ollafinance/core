@@ -156,7 +156,7 @@ contract DeployScript is BaseDeployer {
 
             // Local safety module stub: allows deposits/withdrawals without role setup.
             vm.startBroadcast(config.deployerPrivateKey);
-            safetyModule = address(new MockSafetyModule(ollaCoreProxy));
+            safetyModule = address(new MockSafetyModule(ollaCoreProxy, address(0)));
             vm.stopBroadcast();
             _logDeployment("MockSafetyModule", safetyModule);
         }

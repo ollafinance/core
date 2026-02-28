@@ -6,6 +6,7 @@ import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.so
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title PrintState
@@ -35,7 +36,7 @@ contract PrintState is BaseScript {
         address rewardsVault = c.rewardsVault();
         address stAztec = c.stAztec();
         address stakingManager = c.stakingManager();
-        address withdrawalQueue = c.withdrawalQueue();
+        address vaultAddr = c.vault();
         address owner = OwnableUpgradeable(core).owner();
 
         console2.log("env", env);
@@ -43,7 +44,7 @@ contract PrintState is BaseScript {
         console2.log("asset", asset);
         console2.log("stAztec", stAztec);
         console2.log("rewardsVault", rewardsVault);
-        console2.log("withdrawalQueue", withdrawalQueue);
+        console2.log("vault", vaultAddr);
         console2.log("stakingManager", stakingManager);
         console2.log("owner (governance)", owner);
 
@@ -60,7 +61,6 @@ contract PrintState is BaseScript {
         console2.log("latestReport.timestamp", r.timestamp);
 
         IOllaCore.AccountingState memory a = c.accountingState();
-        console2.log("accounting.bufferedAssets", a.bufferedAssets);
         console2.log("accounting.stakedPrincipal", a.stakedPrincipal);
         console2.log("accounting.rewardsVaultBalance", a.rewardsVaultBalance);
         console2.log("accounting.claimableRewards", a.claimableRewards);
@@ -73,6 +73,13 @@ contract PrintState is BaseScript {
         console2.log("flows.cumulativeWithdrawals", f.cumulativeWithdrawals);
         console2.log("flows.latestReportCumulativeDeposits", f.latestReportCumulativeDeposits);
         console2.log("flows.latestReportCumulativeWithdrawals", f.latestReportCumulativeWithdrawals);
+
+        if (vaultAddr != address(0)) {
+            IOllaVault v = IOllaVault(vaultAddr);
+            console2.log("vault.bufferedAssets", v.bufferedAssets());
+            console2.log("vault.pendingWithdrawalAssets", v.pendingWithdrawalAssets());
+            console2.log("asset.balance(vault)", IERC20(asset).balanceOf(vaultAddr));
+        }
 
         console2.log("asset.balance(core)", IERC20(asset).balanceOf(core));
         console2.log("asset.balance(rewardsVault)", IERC20(asset).balanceOf(rewardsVault));

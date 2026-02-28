@@ -58,7 +58,6 @@ contract OllaCoreDeployer is BaseDeployer {
                 config.protocolFeeBP,
                 config.treasuryFeeSplitBP,
                 config.governance,
-                config.withdrawalQueue,
                 IRewardsVault(config.rewardsVault),
                 safetyModule
             );
