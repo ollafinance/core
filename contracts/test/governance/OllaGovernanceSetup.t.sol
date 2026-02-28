@@ -15,6 +15,8 @@ import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaGovernanceSetup
 /// @notice Shared base test fixture for OllaGovernance test suites.
@@ -33,7 +35,8 @@ abstract contract OllaGovernanceSetup is Test {
     //////////////////////////////////////////////////////////////*/
 
     OllaGovernance internal gov;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     MockAztec internal asset;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
@@ -71,32 +74,45 @@ abstract contract OllaGovernanceSetup is Test {
         // ---- Deploy OllaCore (impl + proxy) ----
         OllaCore coreImpl = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImpl), "");
-        vault = OllaCore(address(coreProxy));
+        core = OllaCore(address(coreProxy));
+
+        // ---- Deploy OllaVault (impl + proxy) ----
+        OllaVault vaultImpl = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), "");
+        vault = OllaVault(address(vaultProxy));
 
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Initialize OllaCore with OllaGovernance as owner
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             PROTOCOL_FEE_BP,
             TREASURY_FEE_SPLIT_BP,
             address(gov),
-            address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
 
-        // Wire OllaGovernance → OllaCore
+        // Initialize OllaVault
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), address(gov));
+
+        // Wire core -> vault
+        vm.prank(address(gov));
+        core.setVault(address(vault));
+
+        // Wire OllaGovernance -> OllaCore
         vm.prank(admin);
-        gov.setCore(address(vault));
+        gov.setCore(address(core));
 
         // Unpause (gov contract holds GUARDIAN_ROLE from OllaCore.initialize)
+        vm.prank(address(gov));
+        core.unpause();
         vm.prank(address(gov));
         vault.unpause();
     }

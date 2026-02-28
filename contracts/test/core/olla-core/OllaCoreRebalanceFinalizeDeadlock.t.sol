@@ -14,6 +14,8 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaCoreRebalanceFinalizeDeadlockTest
 /// @notice Regression and coverage tests for the rebalance FinalizeWithdrawals deadlock fix.
@@ -37,7 +39,8 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     WithdrawalQueue internal withdrawalQueue;
@@ -54,9 +57,15 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
@@ -70,33 +79,31 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
         stakingManager.setUnstakedToken(asset);
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
 
         vm.prank(governance);
         vault.unpause();
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
@@ -139,14 +146,14 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         stakingManager.setTotalStaked(stakeAmount);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Complete multi-step if needed
         for (uint256 i; i < 5; ++i) {
-            IOllaCore.RebalanceProgress memory p = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
             if (p.step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         // Advance past rebalance cooldown so the next cycle can start
@@ -169,7 +176,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         the state machine must advance past FinalizeWithdrawals to InitiateUnstake.
     function test_Rebalance_FinalizeAdvancesWhenRequestExceedsBuffer() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 depositAmount = 10 * DECIMALS;
         uint256 shares = _performDeposit(alice, depositAmount);
@@ -178,11 +185,10 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         // Inject 3 DECIMALS of "rewards" to create buffer
         _injectBuffer(3 * DECIMALS);
 
-        IOllaCore.AccountingState memory stateBeforeRedeem = vault.accountingState();
-        assertEq(stateBeforeRedeem.bufferedAssets, 3 * DECIMALS, "buffer should be 3 DECIMALS");
+        assertEq(vault.bufferedAssets(), 3 * DECIMALS, "buffer should be 3 DECIMALS");
 
         // Request withdrawal for 8 DECIMALS worth of shares (more than 3 DECIMALS buffer)
-        uint256 sharesToRedeem = vault.convertToShares(8 * DECIMALS);
+        uint256 sharesToRedeem = core.convertToShares(8 * DECIMALS);
         if (sharesToRedeem > shares) {
             sharesToRedeem = shares;
         }
@@ -196,9 +202,9 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         // Rebalance: should advance past FinalizeWithdrawals
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
 
         // Should have advanced past FinalizeWithdrawals (step 2)
         assertGt(
@@ -225,7 +231,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         all steps until claim succeeds.
     function test_Rebalance_FullCycleLargeWithdrawal_UnstakeAndFinalize() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 depositAmount = 100 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
@@ -234,8 +240,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         // Inject 5 DECIMALS buffer (simulates rewards/leftover)
         _injectBuffer(5 * DECIMALS);
 
-        IOllaCore.AccountingState memory stateBeforeRedeem = vault.accountingState();
-        assertEq(stateBeforeRedeem.bufferedAssets, 5 * DECIMALS, "buffer should be 5 DECIMALS");
+        assertEq(vault.bufferedAssets(), 5 * DECIMALS, "buffer should be 5 DECIMALS");
 
         // Request withdrawal of all shares. With totalStaked=100 and buffer=5, totalAssets=105.
         // Exchange rate = 105/100 = 1.05, so allShares (100) converts to 105 DECIMALS.
@@ -255,13 +260,13 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         // Run the first rebalance cycle to completion
         for (uint256 i; i < 10; ++i) {
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
 
-            IOllaCore.RebalanceProgress memory pLoop = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory pLoop = core.rebalanceProgress();
             if (pLoop.step == IOllaCore.RebalanceStep.Done) break;
         }
 
-        IOllaCore.RebalanceProgress memory p1 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p1 = core.rebalanceProgress();
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.Done), "first cycle should reach Done");
 
         // Advance past rebalance cooldown before starting second cycle
@@ -277,13 +282,13 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         // Run the second rebalance cycle to completion
         for (uint256 i; i < 10; ++i) {
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
 
-            IOllaCore.RebalanceProgress memory pLoop = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory pLoop = core.rebalanceProgress();
             if (pLoop.step == IOllaCore.RebalanceStep.Done) break;
         }
 
-        IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p2 = core.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "second cycle should reach Done");
 
         // Withdrawal should now be finalized — verify user can claim
@@ -302,7 +307,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         but `pendingUnstakes == 0` (protocol has done all it can).
     function test_Rebalance_CompletesWhenNoPendingUnstakes() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 depositAmount = 50 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
@@ -311,7 +316,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         _injectBuffer(10 * DECIMALS);
 
         // Request withdrawal for more than buffer but less than total
-        uint256 sharesToRedeem = vault.convertToShares(30 * DECIMALS);
+        uint256 sharesToRedeem = core.convertToShares(30 * DECIMALS);
         if (sharesToRedeem > allShares) {
             sharesToRedeem = allShares;
         }
@@ -326,13 +331,13 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         for (uint256 i; i < 10; ++i) {
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
 
-            IOllaCore.RebalanceProgress memory p = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
             if (p.step == IOllaCore.RebalanceStep.Done) break;
         }
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "should reach Done");
 
         // Rebalance should complete to Done
@@ -346,7 +351,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         user operations (deposit) are not blocked.
     function test_Rebalance_CompletesAndAllowsDepositsWithPendingUnstakes() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 depositAmount = 50 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
@@ -354,7 +359,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         _injectBuffer(10 * DECIMALS);
 
-        uint256 sharesToRedeem = vault.convertToShares(30 * DECIMALS);
+        uint256 sharesToRedeem = core.convertToShares(30 * DECIMALS);
         if (sharesToRedeem > allShares) {
             sharesToRedeem = allShares;
         }
@@ -369,13 +374,13 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         for (uint256 i; i < 10; ++i) {
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
 
-            IOllaCore.RebalanceProgress memory p = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
             if (p.step == IOllaCore.RebalanceStep.Done) break;
         }
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "should reach Done");
 
         // Deposits are allowed even with pending unstakes (no rebalance pause)
@@ -394,7 +399,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         Verifies partial progress followed by advancement when stuck.
     function test_Rebalance_MultipleSmallRequests_PartialFinalizeThenAdvance() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         // Deposit enough to cover all redemption shares with margin
         uint256 depositAmount = 100 * DECIMALS;
@@ -409,9 +414,9 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         // exchangeRate = 107/100 = 1.07, so convertToShares(2) = 2/1.07 ≈ 1.869
         // assetsExpected = shares * 107 / 100 (rounds down for each step).
         // Use convertToShares to get exact share amounts, then check assetsExpected.
-        uint256 shares2 = vault.convertToShares(2 * DECIMALS);
-        uint256 shares3 = vault.convertToShares(3 * DECIMALS);
-        uint256 shares15 = vault.convertToShares(15 * DECIMALS);
+        uint256 shares2 = core.convertToShares(2 * DECIMALS);
+        uint256 shares3 = core.convertToShares(3 * DECIMALS);
+        uint256 shares15 = core.convertToShares(15 * DECIMALS);
 
         (, uint256 ae1) = _requestRedeem(alice, shares2, alice);
         (, uint256 ae2) = _requestRedeem(alice, shares3, alice);
@@ -430,7 +435,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         stakingManager.setStakeReturnAmount(0);
 
         vm.prank(operator);
-        (, uint256 finalizedAmount,,) = vault.rebalance();
+        (, uint256 finalizedAmount,,) = core.rebalance();
 
         assertEq(finalizedAmount, ae1 + ae2, "should finalize first two requests");
 
@@ -439,9 +444,9 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         // Second rebalance: buffer < ae3 → finalizedAmount = 0 → advances past FinalizeWithdrawals
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertGt(
             uint256(progress.step),
             uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
@@ -458,7 +463,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         the state machine must advance to InitiateUnstake.
     function test_Rebalance_ZeroFinalizedAdvancesToInitiateUnstake() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 depositAmount = 20 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
@@ -468,15 +473,14 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         _injectBuffer(4 * DECIMALS);
 
         // Request withdrawal for ~12 DECIMALS (exceeds 4 DECIMALS buffer)
-        uint256 sharesToRedeem = vault.convertToShares(12 * DECIMALS);
+        uint256 sharesToRedeem = core.convertToShares(12 * DECIMALS);
         if (sharesToRedeem > allShares) {
             sharesToRedeem = allShares;
         }
         (, uint256 assetsExpected) = _requestRedeem(alice, sharesToRedeem, alice);
         assertGt(assetsExpected, 4 * DECIMALS, "request should exceed buffer");
 
-        IOllaCore.AccountingState memory stateBeforeRebalance = vault.accountingState();
-        assertEq(stateBeforeRebalance.bufferedAssets, 4 * DECIMALS, "buffer should be 4 DECIMALS");
+        assertEq(vault.bufferedAssets(), 4 * DECIMALS, "buffer should be 4 DECIMALS");
 
         // Rebalance
         stakingManager.setHarvestedRewards(0);
@@ -485,9 +489,9 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         stakingManager.setPendingUnstakes(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
 
         // State machine should have advanced to InitiateUnstake (step 3) or beyond
         assertGe(
@@ -505,7 +509,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         When a cycle completes with no productive work, subsequent rebalance calls skip.
     function test_Rebalance_IdleGuardKicksInAfterUnproductiveCycles() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 depositAmount = 5 * DECIMALS;
         _performDeposit(alice, depositAmount);
@@ -518,21 +522,20 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         // First rebalance: runs through all steps, nothing productive
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Complete if multi-step
         for (uint256 i; i < 5; ++i) {
-            IOllaCore.RebalanceProgress memory pLoop = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory pLoop = core.rebalanceProgress();
             if (pLoop.step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
-        IOllaCore.RebalanceProgress memory p1 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p1 = core.rebalanceProgress();
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.Done), "first cycle should reach Done");
 
-        IOllaCore.AccountingState memory stateAfterFirst = vault.accountingState();
-        uint256 bufferedAfterFirst = stateAfterFirst.bufferedAssets;
+        uint256 bufferedAfterFirst = vault.bufferedAssets();
         assertGt(bufferedAfterFirst, 0, "should have buffered assets");
 
         // Advance past rebalance cooldown before calling rebalance again
@@ -541,14 +544,14 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         // Second rebalance: should be a no-op (idle guard)
         vm.prank(operator);
         (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
-            vault.rebalance();
+            core.rebalance();
 
         assertEq(rewardsDelta, 0, "idle skip: rewardsDelta should be 0");
         assertEq(finalizedAmount, 0, "idle skip: finalizedAmount should be 0");
         assertEq(stakedAmount, 0, "idle skip: stakedAmount should be 0");
         assertEq(resultingBuffer, bufferedAfterFirst, "idle skip: buffer unchanged");
 
-        IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p2 = core.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "idle skip: still at Done");
     }
 }

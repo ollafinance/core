@@ -35,7 +35,7 @@ contract OllaGovernanceUpgradesTest is OllaGovernanceSetup {
 
         _scheduleAndExecute(address(gov), data);
 
-        uint256 ver = OllaCoreV2Mock(address(vault)).version();
+        uint256 ver = OllaCoreV2Mock(address(core)).version();
         assertEq(ver, 2, "core upgraded to v2");
     }
 
@@ -67,15 +67,15 @@ contract OllaGovernanceUpgradesTest is OllaGovernanceSetup {
         vm.prank(alice);
         vault.deposit(depositAmount, alice, 0);
 
-        uint256 totalBefore = vault.totalAssets();
+        uint256 totalBefore = core.totalAssets();
 
         // Upgrade
         OllaCoreV2Mock newImpl = new OllaCoreV2Mock();
         bytes memory data = abi.encodeCall(IOllaGovernance.upgradeCore, (address(newImpl)));
         _scheduleAndExecute(address(gov), data);
 
-        assertEq(vault.totalAssets(), totalBefore, "total assets preserved");
-        assertEq(OllaCoreV2Mock(address(vault)).version(), 2, "v2 applied");
+        assertEq(core.totalAssets(), totalBefore, "total assets preserved");
+        assertEq(OllaCoreV2Mock(address(core)).version(), 2, "v2 applied");
     }
 
     /*//////////////////////////////////////////////////////////////

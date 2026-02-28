@@ -15,6 +15,8 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /*//////////////////////////////////////////////////////////////
                     REBALANCE FUZZ HANDLER
@@ -30,7 +32,8 @@ contract OllaCoreRebalanceFuzzHandler is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec public asset;
-    OllaCore public vault;
+    OllaCore public core;
+    OllaVault public vault;
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsVault public rewardsVault;
@@ -57,7 +60,8 @@ contract OllaCoreRebalanceFuzzHandler is Test {
 
     constructor(
         MockAztec _asset,
-        OllaCore _vault,
+        OllaCore _core,
+        OllaVault _vault,
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsVault _rewardsVault,
@@ -66,6 +70,7 @@ contract OllaCoreRebalanceFuzzHandler is Test {
         address _governance
     ) {
         asset = _asset;
+        core = _core;
         vault = _vault;
         stAztec = _stAztec;
         stakingManager = _stakingManager;
@@ -116,18 +121,18 @@ contract OllaCoreRebalanceFuzzHandler is Test {
     }
 
     function rebalanceSingleStep() external {
-        IOllaCore.RebalanceProgress memory progressBefore = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressBefore = core.rebalanceProgress();
         uint256 stepBefore = uint256(progressBefore.step);
 
         vm.prank(operator);
-        try vault.rebalance() {
+        try core.rebalance() {
             ghost_rebalanceCalled = true;
             ghost_rebalanceCallCount += 1;
         } catch {
             return;
         }
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         uint256 stepAfter = uint256(progressAfter.step);
 
         if (stepBefore != uint256(IOllaCore.RebalanceStep.Done)) {
@@ -144,7 +149,7 @@ contract OllaCoreRebalanceFuzzHandler is Test {
             ghost_highestStepOrdinal = 0;
         }
 
-        uint256 buffered = vault.accountingState().bufferedAssets;
+        uint256 buffered = vault.bufferedAssets();
         if (buffered > ghost_maxBuffered) {
             ghost_maxBuffered = buffered;
         }
@@ -169,7 +174,8 @@ contract OllaCoreRebalanceFuzzTest is Test {
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
@@ -187,44 +193,58 @@ contract OllaCoreRebalanceFuzzTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCore implementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(implementation));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(implementation), address(vault));
 
         address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
 
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             0,
             5_000,
             governance,
-            address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
         operator = makeAddr("operator");
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
         handler = new OllaCoreRebalanceFuzzHandler(
-            asset, vault, stAztec, stakingManager, rewardsVault, withdrawalQueue, operator, governance
+            asset, core, vault, stAztec, stakingManager, rewardsVault, withdrawalQueue, operator, governance
         );
 
         targetContract(address(handler));
@@ -235,11 +255,11 @@ contract OllaCoreRebalanceFuzzTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_TotalAssetsEqualBuckets() external view {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
-        uint256 expectedTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
+        IOllaCore.AccountingState memory accounting = core.accountingState();
+        uint256 expectedTotal = vault.bufferedAssets() + accounting.stakedPrincipal + accounting.rewardsVaultBalance
             + accounting.claimableRewards - accounting.slashingDelta;
 
-        assertEq(vault.totalAssets(), expectedTotal, "totalAssets must equal sum of buckets");
+        assertEq(core.totalAssets(), expectedTotal, "totalAssets must equal sum of buckets");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -255,9 +275,8 @@ contract OllaCoreRebalanceFuzzTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_BufferedAssetsReasonable() external view {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
         uint256 vaultBalance = asset.balanceOf(address(vault));
 
-        assertLe(accounting.bufferedAssets, vaultBalance, "bufferedAssets must not exceed vault asset balance");
+        assertLe(vault.bufferedAssets(), vaultBalance, "bufferedAssets must not exceed vault asset balance");
     }
 }

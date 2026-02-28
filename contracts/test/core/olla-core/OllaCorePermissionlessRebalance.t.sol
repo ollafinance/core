@@ -16,6 +16,8 @@ import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaCorePermissionlessRebalance.t.sol
 /// @notice Tests for permissionless rebalance and cooldown mechanism on OllaCore.
@@ -24,7 +26,8 @@ contract OllaCorePermissionlessRebalance is Test {
     uint256 internal constant DEFAULT_REBALANCE_GAS_THRESHOLD = 180_000;
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
@@ -43,9 +46,15 @@ contract OllaCorePermissionlessRebalance is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
@@ -58,35 +67,34 @@ contract OllaCorePermissionlessRebalance is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, DEFAULT_REBALANCE_GAS_THRESHOLD))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Configure staking manager to mint rewards directly to rewards vault
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
-        bytes32 guardianRole = vault.GUARDIAN_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
+        bytes32 guardianRole = core.GUARDIAN_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
-        vault.grantRole(guardianRole, guardian);
+        core.grantRole(operatorRole, operator);
+        core.grantRole(guardianRole, guardian);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
@@ -109,23 +117,23 @@ contract OllaCorePermissionlessRebalance is Test {
     function test_Rebalance_AnyoneCanStartNewCycle() external {
         // Set a target buffer so not all assets are staked (some remain in buffer)
         vm.prank(governance);
-        vault.setTargetBufferedAssets(2 * DECIMALS);
+        core.setTargetBufferedAssets(2 * DECIMALS);
 
         _performDeposit(alice, 10 * DECIMALS);
 
         address randomCaller = makeAddr("randomCaller");
 
         // randomCaller has no roles
-        assertFalse(vault.hasRole(vault.OPERATOR_ROLE(), randomCaller));
-        assertFalse(vault.hasRole(vault.GUARDIAN_ROLE(), randomCaller));
-        assertFalse(vault.hasRole(vault.DEFAULT_ADMIN_ROLE(), randomCaller));
+        assertFalse(core.hasRole(core.OPERATOR_ROLE(), randomCaller));
+        assertFalse(core.hasRole(core.GUARDIAN_ROLE(), randomCaller));
+        assertFalse(core.hasRole(core.DEFAULT_ADMIN_ROLE(), randomCaller));
 
         // Cooldown has already elapsed (setUp warped 1 hour)
         vm.prank(randomCaller);
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
 
         // Verify rebalance completed
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "Rebalance should complete");
 
         // The cycle ran: resultingBuffer should reflect target buffer
@@ -139,20 +147,20 @@ contract OllaCorePermissionlessRebalance is Test {
         _performDeposit(alice, 10 * DECIMALS);
 
         // Complete a rebalance cycle to set the latest report timestamp
-        vault.rebalance();
+        core.rebalance();
 
         // Immediately try another rebalance without warping
         vm.expectRevert(
             abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceCooldownActive.selector, uint256(0), uint256(1 hours))
         );
-        vault.rebalance();
+        core.rebalance();
     }
 
     /// @notice An in-progress rebalance cycle can be continued by any address without cooldown.
     function test_Rebalance_AnyoneCanContinueInProgressCycle() external {
         // Setup: target buffer = 0 so everything gets staked
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _performDeposit(alice, 10 * DECIMALS);
 
@@ -164,9 +172,9 @@ contract OllaCorePermissionlessRebalance is Test {
         // First caller starts the cycle
         address caller1 = makeAddr("caller1");
         vm.prank(caller1);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress1 = core.rebalanceProgress();
         assertEq(
             uint256(progress1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus step"
         );
@@ -178,9 +186,9 @@ contract OllaCorePermissionlessRebalance is Test {
         // Second caller continues the in-progress cycle (no cooldown needed)
         address caller2 = makeAddr("caller2");
         vm.prank(caller2);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress2 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress2 = core.rebalanceProgress();
         assertEq(uint256(progress2.step), uint256(IOllaCore.RebalanceStep.Done), "Should have completed");
         assertEq(progress2.stakeRemaining, 0, "stakeRemaining should be 0");
     }
@@ -191,15 +199,15 @@ contract OllaCorePermissionlessRebalance is Test {
         _performDeposit(alice, 10 * DECIMALS);
 
         // Complete first cycle
-        vault.rebalance();
-        IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
+        core.rebalance();
+        IOllaCore.RebalanceProgress memory progress1 = core.rebalanceProgress();
         assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.Done), "First cycle should complete");
 
         // Immediately trying should revert (cooldown active)
         vm.expectRevert(
             abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceCooldownActive.selector, uint256(0), uint256(1 hours))
         );
-        vault.rebalance();
+        core.rebalance();
 
         // Deposit more to ensure there is work to do in the next cycle
         _performDeposit(alice, 5 * DECIMALS);
@@ -208,8 +216,8 @@ contract OllaCorePermissionlessRebalance is Test {
         vm.warp(block.timestamp + 1 hours + 1);
 
         // Now it should succeed
-        vault.rebalance();
-        IOllaCore.RebalanceProgress memory progress2 = vault.rebalanceProgress();
+        core.rebalance();
+        IOllaCore.RebalanceProgress memory progress2 = core.rebalanceProgress();
         assertEq(uint256(progress2.step), uint256(IOllaCore.RebalanceStep.Done), "Second cycle should complete");
     }
 
@@ -222,13 +230,13 @@ contract OllaCorePermissionlessRebalance is Test {
         _performDeposit(alice, 10 * DECIMALS);
 
         // Complete cycle 1 at ts0
-        vault.rebalance();
+        core.rebalance();
 
         // Try immediate new cycle -- should revert (elapsed = 0)
         vm.expectRevert(
             abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceCooldownActive.selector, uint256(0), uint256(1 hours))
         );
-        vault.rebalance();
+        core.rebalance();
 
         // Deposit more to give the next cycle work
         _performDeposit(alice, 5 * DECIMALS);
@@ -236,20 +244,20 @@ contract OllaCorePermissionlessRebalance is Test {
         // Warp past cooldown and succeed (cycle 2)
         uint256 ts1 = ts0 + 1 hours + 1;
         vm.warp(ts1);
-        vault.rebalance();
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        core.rebalance();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "Cycle after warp should complete");
 
         // Again, immediate retry reverts
         vm.expectRevert();
-        vault.rebalance();
+        core.rebalance();
 
         // Deposit + warp again (cycle 3)
         _performDeposit(alice, 5 * DECIMALS);
         uint256 ts2 = ts1 + 1 hours + 1;
         vm.warp(ts2);
-        vault.rebalance();
-        IOllaCore.RebalanceProgress memory progress2 = vault.rebalanceProgress();
+        core.rebalance();
+        IOllaCore.RebalanceProgress memory progress2 = core.rebalanceProgress();
         assertEq(uint256(progress2.step), uint256(IOllaCore.RebalanceStep.Done), "Third cycle should complete");
     }
 
@@ -265,9 +273,9 @@ contract OllaCorePermissionlessRebalance is Test {
         emit RebalanceCooldownUpdated(1 hours, newCooldown);
 
         vm.prank(governance);
-        vault.setRebalanceCooldown(newCooldown);
+        core.setRebalanceCooldown(newCooldown);
 
-        assertEq(vault.rebalanceCooldown(), newCooldown, "Cooldown should be updated");
+        assertEq(core.rebalanceCooldown(), newCooldown, "Cooldown should be updated");
     }
 
     /// @notice Non-admin addresses cannot call setRebalanceCooldown.
@@ -276,7 +284,7 @@ contract OllaCorePermissionlessRebalance is Test {
 
         vm.prank(randomCaller);
         vm.expectRevert();
-        vault.setRebalanceCooldown(30 minutes);
+        core.setRebalanceCooldown(30 minutes);
     }
 
     /// @notice Setting cooldown below MIN_REBALANCE_COOLDOWN (10 minutes) but > 0 reverts.
@@ -285,7 +293,7 @@ contract OllaCorePermissionlessRebalance is Test {
 
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidParameter.selector));
-        vault.setRebalanceCooldown(tooLow);
+        core.setRebalanceCooldown(tooLow);
     }
 
     /// @notice Setting cooldown above MAX_REBALANCE_COOLDOWN (24 hours) reverts.
@@ -294,14 +302,14 @@ contract OllaCorePermissionlessRebalance is Test {
 
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidParameter.selector));
-        vault.setRebalanceCooldown(tooHigh);
+        core.setRebalanceCooldown(tooHigh);
     }
 
     /// @notice Setting cooldown to 0 reverts with OllaCore__InvalidParameter.
     function test_RevertWhen_SetRebalanceCooldown_Zero() external {
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidParameter.selector));
-        vault.setRebalanceCooldown(0);
+        core.setRebalanceCooldown(0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -312,7 +320,7 @@ contract OllaCorePermissionlessRebalance is Test {
     function test_UserOps_DuringInProgressRebalance() external {
         // Setup: target buffer = 0, partial staking
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 aliceShares = _performDeposit(alice, 10 * DECIMALS);
 
@@ -320,9 +328,9 @@ contract OllaCorePermissionlessRebalance is Test {
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
 
         // Deposit from bob should succeed during in-progress rebalance
@@ -333,7 +341,7 @@ contract OllaCorePermissionlessRebalance is Test {
         // Alice has shares and there should be assets in the buffer from the deposit
         uint256 redeemShares = aliceShares / 10; // redeem a small portion
         vm.prank(alice);
-        uint256 assetsRedeemed = vault.redeem(redeemShares, alice, 0);
+        uint256 assetsRedeemed = vault.instantRedeem(redeemShares, alice, 0);
         assertGt(assetsRedeemed, 0, "Alice should receive assets from instant redemption");
     }
 
@@ -345,27 +353,27 @@ contract OllaCorePermissionlessRebalance is Test {
     function test_RevertWhen_AdminOps_DuringInProgressRebalance() external {
         // Setup: target buffer = 0, partial staking
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _performDeposit(alice, 10 * DECIMALS);
 
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
 
         // setRebalanceCooldown should revert because rebalance is in progress
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
-        vault.setRebalanceCooldown(30 minutes);
+        core.setRebalanceCooldown(30 minutes);
 
         // setTargetBufferedAssets should also revert
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
-        vault.setTargetBufferedAssets(1 * DECIMALS);
+        core.setTargetBufferedAssets(1 * DECIMALS);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -377,27 +385,27 @@ contract OllaCorePermissionlessRebalance is Test {
         _performDeposit(alice, 10 * DECIMALS);
 
         // Complete a rebalance cycle first so accounting has data
-        vault.rebalance();
+        core.rebalance();
 
         // Warp forward so the accounting update produces a fresh timestamp
         vm.warp(block.timestamp + 1 hours);
 
         // Random address calls updateAccounting (no role required)
         address randomCaller = makeAddr("randomCaller");
-        assertFalse(vault.hasRole(vault.OPERATOR_ROLE(), randomCaller));
+        assertFalse(core.hasRole(core.OPERATOR_ROLE(), randomCaller));
 
         vm.prank(randomCaller);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         // If we got here without reverting, the call succeeded
-        IOllaCore.LatestReport memory report = vault.latestReport();
+        IOllaCore.LatestReport memory report = core.latestReport();
         assertEq(report.timestamp, block.timestamp, "Report timestamp should be updated");
     }
 
     /// @notice updateAccounting() reverts with OllaCore__RebalanceInProgress during an in-progress rebalance.
     function test_RevertWhen_UpdateAccounting_DuringRebalance() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _performDeposit(alice, 10 * DECIMALS);
 
@@ -405,13 +413,13 @@ contract OllaCorePermissionlessRebalance is Test {
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
-        vault.updateAccounting();
+        core.updateAccounting();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -421,37 +429,37 @@ contract OllaCorePermissionlessRebalance is Test {
     /// @notice Guardian can force reset the rebalance state machine. Non-guardian reverts.
     function test_ForceRebalanceReset_GuardianOnly() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _performDeposit(alice, 10 * DECIMALS);
 
         // Put rebalance in-progress
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
 
         // Non-guardian cannot force reset
         address randomCaller = makeAddr("randomCaller");
         vm.prank(randomCaller);
         vm.expectRevert();
-        vault.forceRebalanceReset();
+        core.forceRebalanceReset();
 
         // Operator cannot force reset either
         vm.prank(operator);
         vm.expectRevert();
-        vault.forceRebalanceReset();
+        core.forceRebalanceReset();
 
         // Guardian can force reset
         vm.expectEmit(false, false, false, true);
         emit RebalanceReset();
 
         vm.prank(guardian);
-        vault.forceRebalanceReset();
+        core.forceRebalanceReset();
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(uint256(progressAfter.step), uint256(IOllaCore.RebalanceStep.Done), "Should be reset to Done");
         assertEq(progressAfter.stakeRemaining, 0, "stakeRemaining should be 0");
         assertEq(progressAfter.unstakeRemaining, 0, "unstakeRemaining should be 0");
@@ -467,7 +475,7 @@ contract OllaCorePermissionlessRebalance is Test {
         _performDeposit(alice, 10 * DECIMALS);
 
         // Complete a rebalance so the state is Done
-        vault.rebalance();
+        core.rebalance();
 
         // Send some asset directly to the vault to create a reconcilable delta
         asset.mint(address(vault), 1 * DECIMALS);
@@ -478,8 +486,8 @@ contract OllaCorePermissionlessRebalance is Test {
         assertEq(delta, 1 * DECIMALS, "governance should reconcile the donated amount");
 
         // Operator-only address CANNOT call reconcileBufferedAssets
-        bytes32 adminRole = vault.DEFAULT_ADMIN_ROLE();
-        assertFalse(vault.hasRole(adminRole, operator), "operator should not have DEFAULT_ADMIN_ROLE");
+        bytes32 adminRole = core.DEFAULT_ADMIN_ROLE();
+        assertFalse(core.hasRole(adminRole, operator), "operator should not have DEFAULT_ADMIN_ROLE");
 
         // Send more to create another delta
         asset.mint(address(vault), 1 * DECIMALS);
@@ -500,17 +508,17 @@ contract OllaCorePermissionlessRebalance is Test {
         _performDeposit(alice, 10 * DECIMALS);
 
         // Step 1: Complete a rebalance cycle (sets _lastRebalanceTimestamp to block.timestamp)
-        vault.rebalance();
+        core.rebalance();
         uint256 rebalanceCompletionTime = block.timestamp;
 
         // Step 2: Warp forward 30 minutes (not past the 1-hour cooldown)
         vm.warp(rebalanceCompletionTime + 30 minutes);
 
         // Step 3: Call updateAccounting() (updates _latestReport.timestamp but NOT _lastRebalanceTimestamp)
-        vault.updateAccounting();
+        core.updateAccounting();
 
         // Verify the report timestamp was updated
-        IOllaCore.LatestReport memory report = vault.latestReport();
+        IOllaCore.LatestReport memory report = core.latestReport();
         assertEq(
             report.timestamp,
             rebalanceCompletionTime + 30 minutes,
@@ -526,14 +534,14 @@ contract OllaCorePermissionlessRebalance is Test {
                 IOllaCore.OllaCore__RebalanceCooldownActive.selector, uint256(30 minutes), uint256(1 hours)
             )
         );
-        vault.rebalance();
+        core.rebalance();
 
         // Step 5: Warp past the original cooldown from step 1 (30 more minutes + 1 second)
         vm.warp(rebalanceCompletionTime + 1 hours + 1);
 
         // Step 6: Rebalance now succeeds (cooldown measured from _lastRebalanceTimestamp, not _latestReport)
-        vault.rebalance();
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        core.rebalance();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(
             uint256(progress.step),
             uint256(IOllaCore.RebalanceStep.Done),
@@ -552,8 +560,8 @@ contract OllaCorePermissionlessRebalance is Test {
     function test_ForceRebalanceReset_DoesNotUpdateCooldownTimestamp() external {
         // Step 1: Complete a rebalance cycle
         _performDeposit(alice, 10 * DECIMALS);
-        vault.rebalance();
-        IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
+        core.rebalance();
+        IOllaCore.RebalanceProgress memory progress1 = core.rebalanceProgress();
         assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.Done), "first cycle should complete");
 
         // Step 2: Deposit more and warp past cooldown
@@ -562,12 +570,12 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Step 3: Start a new cycle but leave it in-progress (partial staking)
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
-        vault.rebalance();
-        IOllaCore.RebalanceProgress memory progress2 = vault.rebalanceProgress();
+        core.rebalance();
+        IOllaCore.RebalanceProgress memory progress2 = core.rebalanceProgress();
         assertEq(
             uint256(progress2.step),
             uint256(IOllaCore.RebalanceStep.StakeSurplus),
@@ -576,17 +584,17 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Step 4: Guardian calls forceRebalanceReset()
         vm.prank(guardian);
-        vault.forceRebalanceReset();
+        core.forceRebalanceReset();
 
-        IOllaCore.RebalanceProgress memory progressAfterReset = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfterReset = core.rebalanceProgress();
         assertEq(uint256(progressAfterReset.step), uint256(IOllaCore.RebalanceStep.Done), "should be reset to Done");
 
         // Step 5: Immediately try rebalance — it should succeed because the cooldown
         // was from the step-1 completion, and we already warped past it in step 2.
         // forceRebalanceReset does NOT set _lastRebalanceTimestamp.
         stakingManager.clearStakeReturnAmount();
-        vault.rebalance();
-        IOllaCore.RebalanceProgress memory progress3 = vault.rebalanceProgress();
+        core.rebalance();
+        IOllaCore.RebalanceProgress memory progress3 = core.rebalanceProgress();
         assertEq(
             uint256(progress3.step),
             uint256(IOllaCore.RebalanceStep.Done),
@@ -604,7 +612,7 @@ contract OllaCorePermissionlessRebalance is Test {
     function test_Rebalance_ConcurrentDeposit_StakeRemainingRecomputed() external {
         // Setup: target buffer = 0 so all assets should be staked
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         // Initial deposit of 10 ETH
         _performDeposit(alice, 10 * DECIMALS);
@@ -614,9 +622,9 @@ contract OllaCorePermissionlessRebalance is Test {
         stakingManager.setAllowStakeReturnExceeds(true);
 
         // First rebalance: stakes 5 ETH, pauses at StakeSurplus with 5 remaining
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progress1 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress1 = core.rebalanceProgress();
         assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be in StakeSurplus");
         assertEq(progress1.stakeRemaining, 5 * DECIMALS, "Should have 5 ETH remaining to stake");
 
@@ -624,15 +632,14 @@ contract OllaCorePermissionlessRebalance is Test {
         _performDeposit(bob, 10 * DECIMALS);
 
         // Verify buffer increased from the deposit
-        IOllaCore.AccountingState memory accountingMid = vault.accountingState();
-        assertEq(accountingMid.bufferedAssets, 15 * DECIMALS, "Buffer should have 5 remaining + 10 deposit");
+        assertEq(vault.bufferedAssets(), 15 * DECIMALS, "Buffer should have 5 remaining + 10 deposit");
 
         // Clear the fixed return amount so mock returns whatever is passed in
         stakingManager.clearStakeReturnAmount();
 
         // Second rebalance: continues with existing stakeRemaining = 5 ETH
         // The cycle finishes staking the original 5 and completes.
-        (,, uint256 stakedAmount2, uint256 resultingBuffer) = vault.rebalance();
+        (,, uint256 stakedAmount2, uint256 resultingBuffer) = core.rebalance();
 
         // The staked amount is the remaining 5 from the original calculation
         assertEq(stakedAmount2, 5 * DECIMALS, "Should stake the remaining 5 ETH");
@@ -640,13 +647,13 @@ contract OllaCorePermissionlessRebalance is Test {
         // The concurrent deposit of 10 ETH remains in the buffer
         assertEq(resultingBuffer, 10 * DECIMALS, "10 ETH from concurrent deposit should remain in buffer");
 
-        IOllaCore.RebalanceProgress memory progress2 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress2 = core.rebalanceProgress();
         assertEq(uint256(progress2.step), uint256(IOllaCore.RebalanceStep.Done), "Should have completed");
 
         // The next cycle (after cooldown) can stake the remaining buffered assets
         _performDeposit(bob, 1 * DECIMALS); // small deposit to ensure work available
         vm.warp(block.timestamp + 1 hours + 1);
-        (,, uint256 stakedAmount3,) = vault.rebalance();
+        (,, uint256 stakedAmount3,) = core.rebalance();
         assertGt(stakedAmount3, 0, "Next cycle should stake the buffered assets from concurrent deposit");
     }
 }

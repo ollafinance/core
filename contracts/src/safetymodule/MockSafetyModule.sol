@@ -14,6 +14,9 @@ contract MockSafetyModule is ISafetyModule {
     /// @notice The core contract address.
     address public immutable CORE_ADDRESS;
 
+    /// @notice The vault contract address.
+    address public immutable VAULT_ADDRESS;
+
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
@@ -26,8 +29,10 @@ contract MockSafetyModule is ISafetyModule {
 
     /// @notice Constructs the MockSafetyModule.
     /// @param coreAddress The core contract address.
-    constructor(address coreAddress) {
+    /// @param vaultAddress The vault contract address.
+    constructor(address coreAddress, address vaultAddress) {
         CORE_ADDRESS = coreAddress;
+        VAULT_ADDRESS = vaultAddress;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -55,6 +60,12 @@ contract MockSafetyModule is ISafetyModule {
     /// @return The core contract address.
     function CORE() external view override returns (address) {
         return CORE_ADDRESS;
+    }
+
+    /// @notice Returns the vault address.
+    /// @return The vault contract address.
+    function VAULT() external view override returns (address) {
+        return VAULT_ADDRESS;
     }
 
     // solhint-enable func-name-mixedcase
@@ -129,6 +140,12 @@ contract MockSafetyModule is ISafetyModule {
     function checkDepositAllowed(uint256 deposit, uint256 total) external pure override returns (bool allowed) {
         _noop(deposit + total);
         return true;
+    }
+
+    /// @notice Returns max uint256 deposit cap for tests.
+    /// @return The deposit cap.
+    function depositCap() external pure override returns (uint256) {
+        return type(uint256).max;
     }
 
     /// @notice No-op withdrawal minimum check for tests.

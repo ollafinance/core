@@ -13,6 +13,8 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaCoreRebalanceInfiniteRestart
 /// @notice Regression coverage for the infinite restart loop using the real WithdrawalQueue.
@@ -31,7 +33,8 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
     uint256 internal constant DECIMALS = 1e18;
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
@@ -44,9 +47,15 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
@@ -58,31 +67,30 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
@@ -99,7 +107,7 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
     function test_RebalanceDoesNotInfinitelyRestart_WithWithdrawalQueue() external {
         // Target buffer = 0, so all buffered assets are "surplus" to stake
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
         _performDeposit(alice, 200_002 * DECIMALS);
@@ -109,9 +117,9 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         stakingManager.setAllowStakeReturnExceeds(true);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory p1 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p1 = core.rebalanceProgress();
         // After call 1: stuck at StakeSurplus with 2 AZTEC remaining
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "call 1: should be StakeSurplus");
         assertEq(p1.stakeRemaining, 2 * DECIMALS, "call 1: 2 AZTEC remaining");
@@ -120,9 +128,9 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         stakingManager.setStakeReturnAmount(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p2 = core.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "call 2: should be Done");
         assertEq(p2.stakeRemaining, 0, "call 2: stakeRemaining should be 0");
 
@@ -130,16 +138,16 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         vm.warp(block.timestamp + 1 hours);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory p3 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p3 = core.rebalanceProgress();
 
         assertEq(uint256(p3.step), uint256(IOllaCore.RebalanceStep.Done), "call 3: should be Done");
 
         vm.recordLogs();
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 rebalancedSig = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");

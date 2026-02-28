@@ -20,6 +20,8 @@ import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract OllaCoreHandler is Test {
     using Math for uint256;
@@ -29,7 +31,8 @@ contract OllaCoreHandler is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec public asset;
-    OllaCore public vault;
+    OllaCore public core;
+    OllaVault public vault;
     StAztec public stAztec;
 
     address[] public actors;
@@ -38,8 +41,9 @@ contract OllaCoreHandler is Test {
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(MockAztec _asset, OllaCore _vault, StAztec _stAztec) {
+    constructor(MockAztec _asset, OllaCore _core, OllaVault _vault, StAztec _stAztec) {
         asset = _asset;
+        core = _core;
         vault = _vault;
         stAztec = _stAztec;
 
@@ -80,7 +84,8 @@ contract OllaCoreDepositHandler is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec public asset;
-    OllaCore public vault;
+    OllaCore public core;
+    OllaVault public vault;
     StAztec public stAztec;
 
     address[] public actors;
@@ -92,8 +97,9 @@ contract OllaCoreDepositHandler is Test {
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(MockAztec _asset, OllaCore _vault, StAztec _stAztec) {
+    constructor(MockAztec _asset, OllaCore _core, OllaVault _vault, StAztec _stAztec) {
         asset = _asset;
+        core = _core;
         vault = _vault;
         stAztec = _stAztec;
 
@@ -101,7 +107,7 @@ contract OllaCoreDepositHandler is Test {
             actors.push(makeAddr(string(abi.encode("actor", i))));
         }
 
-        latestExchangeRate = vault.exchangeRate();
+        latestExchangeRate = core.exchangeRate();
         previousExchangeRate = latestExchangeRate;
     }
 
@@ -133,7 +139,7 @@ contract OllaCoreDepositHandler is Test {
         vault.deposit(assets, actor, 0);
         vm.stopPrank();
 
-        latestExchangeRate = vault.exchangeRate();
+        latestExchangeRate = core.exchangeRate();
     }
 }
 
@@ -145,7 +151,8 @@ contract OllaCoreAccountingHandler is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec public asset;
-    OllaCore public vault;
+    OllaCore public core;
+    OllaVault public vault;
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsVault public rewardsVault;
@@ -164,19 +171,21 @@ contract OllaCoreAccountingHandler is Test {
 
     constructor(
         MockAztec _asset,
-        OllaCore _vault,
+        OllaCore _core,
+        OllaVault _vault,
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsVault _rewardsVault,
         address _operator
     ) {
         asset = _asset;
+        core = _core;
         vault = _vault;
         stAztec = _stAztec;
         stakingManager = _stakingManager;
         rewardsVault = _rewardsVault;
         operator = _operator;
-        lastReportTotalAssets = _vault.latestReport().totalAssets;
+        lastReportTotalAssets = _core.latestReport().totalAssets;
 
         for (uint256 i = 0; i < 5; i++) {
             actors.push(makeAddr(string(abi.encode("actor", i))));
@@ -237,10 +246,10 @@ contract OllaCoreAccountingHandler is Test {
     }
 
     function updateAccounting() external {
-        IOllaCore.LatestReport memory report = vault.latestReport();
+        IOllaCore.LatestReport memory report = core.latestReport();
         lastReportTotalAssets = report.totalAssets;
         vm.startPrank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
         vm.stopPrank();
     }
 }
@@ -252,7 +261,8 @@ contract OllaCoreInvariantTest is Test {
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
@@ -270,39 +280,47 @@ contract OllaCoreInvariantTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore implementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         address governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(implementation));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             0,
             5_000,
             governance,
-            address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         operator = makeAddr("operator");
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, address(this));
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, address(this));
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
-        handler = new OllaCoreAccountingHandler(asset, vault, stAztec, stakingManager, rewardsVault, operator);
+        handler = new OllaCoreAccountingHandler(asset, core, vault, stAztec, stakingManager, rewardsVault, operator);
         targetContract(address(handler));
     }
 
@@ -311,8 +329,8 @@ contract OllaCoreInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_TotalAssetsEqualBuckets() external view {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
-        uint256 positiveTotal = accounting.bufferedAssets + accounting.stakedPrincipal + accounting.rewardsVaultBalance
+        IOllaCore.AccountingState memory accounting = core.accountingState();
+        uint256 positiveTotal = vault.bufferedAssets() + accounting.stakedPrincipal + accounting.rewardsVaultBalance
             + accounting.claimableRewards;
         uint256 expectedTotal = accounting.slashingDelta >= positiveTotal ? 0 : positiveTotal - accounting.slashingDelta;
 
@@ -320,20 +338,20 @@ contract OllaCoreInvariantTest is Test {
         uint256 pendingWithdrawals = withdrawalQueue.totalPendingAssets();
         expectedTotal = pendingWithdrawals >= expectedTotal ? 0 : expectedTotal - pendingWithdrawals;
 
-        assertEq(vault.totalAssets(), expectedTotal, "total assets sum");
+        assertEq(core.totalAssets(), expectedTotal, "total assets sum");
     }
 
     function invariant_TotalAssetsNeverReverts() external view {
         // totalAssets() must always be callable regardless of slashing state
-        uint256 total = vault.totalAssets();
+        uint256 total = core.totalAssets();
         assertGe(total, 0, "totalAssets should never revert");
     }
 
     function invariant_ExchangeRateMatchesTotals() external view {
         uint256 supply = stAztec.totalSupply();
-        uint256 expectedRate = (vault.totalAssets() + 1).mulDiv(1e18, supply + 1, Math.Rounding.Floor);
+        uint256 expectedRate = (core.totalAssets() + 1).mulDiv(1e18, supply + 1, Math.Rounding.Floor);
 
-        assertEq(vault.exchangeRate(), expectedRate, "exchange rate matches totals");
+        assertEq(core.exchangeRate(), expectedRate, "exchange rate matches totals");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -344,12 +362,12 @@ contract OllaCoreInvariantTest is Test {
         handler.updateAccounting();
 
         uint256 supply = stAztec.totalSupply();
-        IOllaCore.LatestReport memory report = vault.latestReport();
-        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        IOllaCore.LatestReport memory report = core.latestReport();
+        IOllaCore.FlowCounters memory flows = core.flowCounters();
         uint256 expectedRate = (report.totalAssets + 1).mulDiv(1e18, supply + 1, Math.Rounding.Floor);
 
         assertEq(report.exchangeRate, expectedRate, "stored exchange rate matches snapshot");
-        assertEq(report.totalAssets, vault.totalAssets(), "snapshot total assets matches total assets");
+        assertEq(report.totalAssets, core.totalAssets(), "snapshot total assets matches total assets");
         assertEq(
             flows.latestReportCumulativeDeposits,
             flows.cumulativeDeposits,
@@ -366,7 +384,7 @@ contract OllaCoreInvariantTest is Test {
         vm.warp(block.timestamp + 1);
         handler.updateAccounting();
 
-        IOllaCore.LatestReport memory report = vault.latestReport();
+        IOllaCore.LatestReport memory report = core.latestReport();
         uint256 latestTimestamp = report.timestamp;
         assertLe(latestTimestamp, block.timestamp, "report timestamp should not exceed block time");
     }
@@ -376,11 +394,11 @@ contract OllaCoreInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function _expectedShares(uint256 assets) internal view returns (uint256) {
-        return assets.mulDiv(stAztec.totalSupply() + 1, vault.totalAssets() + 1, Math.Rounding.Floor);
+        return assets.mulDiv(stAztec.totalSupply() + 1, core.totalAssets() + 1, Math.Rounding.Floor);
     }
 
     function _expectedAssets(uint256 shares) internal view returns (uint256) {
-        return shares.mulDiv(vault.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
+        return shares.mulDiv(core.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -389,11 +407,11 @@ contract OllaCoreInvariantTest is Test {
 
     function invariant_ConvertToSharesMatchesSpec() external view {
         uint256 assets = bound(uint256(block.timestamp), 1, type(uint96).max);
-        assertEq(vault.convertToShares(assets), _expectedShares(assets), "convertToShares matches spec");
+        assertEq(core.convertToShares(assets), _expectedShares(assets), "convertToShares matches spec");
     }
 
     function invariant_GrossRewardsMatchesSignedFlows() external view {
-        IOllaCore.LatestReport memory report = vault.latestReport();
+        IOllaCore.LatestReport memory report = core.latestReport();
         int256 changeInAssets = int256(report.totalAssets) - int256(handler.lastReportTotalAssets());
         int256 expectedGrossSigned = changeInAssets - report.netFlows;
         uint256 expectedGross = expectedGrossSigned > 0 ? uint256(expectedGrossSigned) : 0;
@@ -403,7 +421,7 @@ contract OllaCoreInvariantTest is Test {
 
     function invariant_ConvertToAssetsMatchesSpec() external view {
         uint256 shares = bound(uint256(block.number), 1, type(uint96).max);
-        assertEq(vault.convertToAssets(shares), _expectedAssets(shares), "convertToAssets matches spec");
+        assertEq(core.convertToAssets(shares), _expectedAssets(shares), "convertToAssets matches spec");
     }
 
     function invariant_PreviewDepositMatchesSpec() external view {
@@ -421,21 +439,21 @@ contract OllaCoreInvariantTest is Test {
             return;
         }
 
-        uint256 total = vault.totalAssets();
+        uint256 total = core.totalAssets();
         uint256 assets = 1e18;
         uint256 shares = 1e18;
 
         // With virtual offset: exchangeRate = (total + 1) * 1e18 / (0 + 1)
         uint256 expectedRate = (total + 1).mulDiv(1e18, 1, Math.Rounding.Floor);
-        assertEq(vault.exchangeRate(), expectedRate, "zero supply: exchangeRate with virtual offset");
+        assertEq(core.exchangeRate(), expectedRate, "zero supply: exchangeRate with virtual offset");
 
         // convertToShares = assets * (0 + 1) / (total + 1)
         uint256 expectedShares = assets.mulDiv(1, total + 1, Math.Rounding.Floor);
-        assertEq(vault.convertToShares(assets), expectedShares, "zero supply: convertToShares with virtual offset");
+        assertEq(core.convertToShares(assets), expectedShares, "zero supply: convertToShares with virtual offset");
 
         // convertToAssets = shares * (total + 1) / (0 + 1)
         uint256 expectedAssets = shares.mulDiv(total + 1, 1, Math.Rounding.Floor);
-        assertEq(vault.convertToAssets(shares), expectedAssets, "zero supply: convertToAssets with virtual offset");
+        assertEq(core.convertToAssets(shares), expectedAssets, "zero supply: convertToAssets with virtual offset");
 
         // previewDeposit = assets * (0 + 1) / (total + 1)
         assertEq(vault.previewDeposit(assets), expectedShares, "zero supply: previewDeposit with virtual offset");
@@ -449,7 +467,8 @@ contract OllaCoreDepositInvariantTest is Test {
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
@@ -465,34 +484,35 @@ contract OllaCoreDepositInvariantTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore implementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         address governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         address rewardsVault = makeAddr("rewardsVault");
-        safetyModule = new MockSafetyModule(address(implementation));
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            IRewardsVault(rewardsVault),
-            address(safetyModule)
+        safetyModule = new MockSafetyModule(address(core), address(vault));
+        core.initialize(
+            asset, stAztec, stakingManager, 0, 5_000, governance, IRewardsVault(rewardsVault), address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.prank(governance);
-        vault.grantRole(operatorRole, address(this));
+        core.grantRole(operatorRole, address(this));
 
-        handler = new OllaCoreDepositHandler(asset, vault, stAztec);
+        handler = new OllaCoreDepositHandler(asset, core, vault, stAztec);
         targetContract(address(handler));
     }
 
@@ -519,7 +539,8 @@ contract OllaCoreLifecycleHandler is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec public asset;
-    OllaCore public vault;
+    OllaCore public core;
+    OllaVault public vault;
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsVault public rewardsVault;
@@ -551,7 +572,8 @@ contract OllaCoreLifecycleHandler is Test {
 
     constructor(
         MockAztec _asset,
-        OllaCore _vault,
+        OllaCore _core,
+        OllaVault _vault,
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsVault _rewardsVault,
@@ -559,6 +581,7 @@ contract OllaCoreLifecycleHandler is Test {
         address _operator
     ) {
         asset = _asset;
+        core = _core;
         vault = _vault;
         stAztec = _stAztec;
         stakingManager = _stakingManager;
@@ -626,16 +649,16 @@ contract OllaCoreLifecycleHandler is Test {
     }
 
     function rebalanceSingleStep() external {
-        IOllaCore.RebalanceProgress memory progressBefore = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressBefore = core.rebalanceProgress();
         IOllaCore.RebalanceStep stepBefore = progressBefore.step;
 
         vm.prank(operator);
-        try vault.rebalance() { }
+        try core.rebalance() { }
         catch {
             return;
         }
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         IOllaCore.RebalanceStep stepAfter = progressAfter.step;
 
         if (uint8(stepAfter) < uint8(stepBefore)) {
@@ -668,18 +691,18 @@ contract OllaCoreLifecycleHandler is Test {
     }
 
     function updateAccounting() external {
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         if (progress.step != IOllaCore.RebalanceStep.Done) return;
 
-        ghost_rateBeforeAccounting = vault.exchangeRate();
+        ghost_rateBeforeAccounting = core.exchangeRate();
 
         vm.prank(operator);
-        try vault.updateAccounting() { }
+        try core.updateAccounting() { }
         catch {
             return;
         }
 
-        ghost_rateAfterAccounting = vault.exchangeRate();
+        ghost_rateAfterAccounting = core.exchangeRate();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -714,7 +737,8 @@ contract OllaCoreLifecycleInvariantTest is Test {
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
@@ -736,12 +760,16 @@ contract OllaCoreLifecycleInvariantTest is Test {
 
         OllaCore implementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(coreProxy));
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
@@ -755,28 +783,32 @@ contract OllaCoreLifecycleInvariantTest is Test {
 
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             0,
             5_000,
             governance,
-            address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
-        vault.grantRole(operatorRole, address(this));
+        core.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, address(this));
         vm.stopPrank();
 
         handler = new OllaCoreLifecycleHandler(
-            asset, vault, stAztec, stakingManager, rewardsVault, withdrawalQueue, operator
+            asset, core, vault, stAztec, stakingManager, rewardsVault, withdrawalQueue, operator
         );
 
         targetContract(address(handler));
@@ -815,7 +847,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_StakedPrincipalLeqTotalStaked() external view {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        IOllaCore.AccountingState memory accounting = core.accountingState();
         assertLe(accounting.stakedPrincipal, stakingManager.totalStakedAmount(), "stakedPrincipal <= totalStaked");
     }
 
@@ -856,7 +888,8 @@ contract OllaCoreProtocolPropertyHandler is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec public asset;
-    OllaCore public vault;
+    OllaCore public core;
+    OllaVault public vault;
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsVault public rewardsVault;
@@ -907,7 +940,8 @@ contract OllaCoreProtocolPropertyHandler is Test {
 
     constructor(
         MockAztec _asset,
-        OllaCore _vault,
+        OllaCore _core,
+        OllaVault _vault,
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsVault _rewardsVault,
@@ -916,6 +950,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         address _governance
     ) {
         asset = _asset;
+        core = _core;
         vault = _vault;
         stAztec = _stAztec;
         stakingManager = _stakingManager;
@@ -924,7 +959,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         operator = _operator;
         governance = _governance;
 
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
         ghost_previousExchangeRate = ghost_latestExchangeRate;
 
         for (uint256 i = 0; i < 5; i++) {
@@ -958,7 +993,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (deposit is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = vault.accountingState().slashingDelta == 0;
+        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
 
         asset.mint(actor, assets);
         ghost_totalMinted += assets;
@@ -968,7 +1003,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         vm.stopPrank();
 
         // Update rate after
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
     }
 
     function requestRedeem(uint256 actorSeed) external {
@@ -993,14 +1028,14 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (requestRedeem is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = vault.accountingState().slashingDelta == 0;
+        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
 
         vm.prank(actor);
         uint256 requestId = vault.requestRedeem(sharesToRedeem, actor);
         _pendingRequestIds.push(requestId);
 
         // Update rate after
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
     }
 
     function instantRedeem(uint256 actorSeed) external {
@@ -1021,7 +1056,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         uint256 sharesToRedeem = actorShares / 4;
         if (sharesToRedeem == 0) sharesToRedeem = 1;
 
-        uint256 grossAssets = vault.convertToAssets(sharesToRedeem);
+        uint256 grossAssets = core.convertToAssets(sharesToRedeem);
         if (grossAssets == 0) return;
         if (grossAssets > vault.availableForInstantRedemption()) return;
 
@@ -1030,16 +1065,16 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (instantRedeem is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = vault.accountingState().slashingDelta == 0;
+        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
 
         vm.prank(actor);
-        try vault.redeem(sharesToRedeem, actor, 0) { }
+        try vault.instantRedeem(sharesToRedeem, actor, 0) { }
         catch {
             return;
         }
 
         // Update rate after
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
     }
 
     function rebalanceSingleStep() external {
@@ -1047,7 +1082,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         _snapshotSlashingDelta();
 
         vm.prank(operator);
-        try vault.rebalance() { }
+        try core.rebalance() { }
         catch {
             return;
         }
@@ -1058,7 +1093,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // inconsistencies (e.g. stake() transfers tokens but totalStaked stays 0).
         // Reset the ghost baseline so rate monotonicity is only checked across
         // operations that have consistent accounting.
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = false;
     }
@@ -1078,7 +1113,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
     }
 
     function updateAccounting() external {
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         if (progress.step != IOllaCore.RebalanceStep.Done) return;
 
         // Snapshot counters before
@@ -1094,16 +1129,16 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // have no pending slashing. updateAccounting() syncs the mock's slashingDelta
         // into accounting state, so a pending increase on the mock will cause a rate drop.
         ghost_vaultHealthyAtPreviousRate =
-            vault.accountingState().slashingDelta == 0 && stakingManager.slashingDelta() == 0;
+            core.accountingState().slashingDelta == 0 && stakingManager.slashingDelta() == 0;
 
         vm.prank(operator);
-        try vault.updateAccounting() { }
+        try core.updateAccounting() { }
         catch {
             return;
         }
 
         // Update rate after
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1120,7 +1155,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         stakingManager.setClaimableRewards(next);
         // Mock state changes shift the virtual exchange rate outside protocol ops;
         // reset the ghost baseline so monotonicity only tracks real protocol operations.
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = false;
     }
@@ -1134,7 +1169,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         _lastTotalStaked = next;
         stakingManager.setTotalStaked(next);
         // Reset ghost baseline after mock mutation
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = false;
     }
@@ -1144,7 +1179,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         uint256 next = stakingManager.slashingDelta() + increase;
         stakingManager.setSlashingDelta(next);
         // Reset ghost baseline after mock mutation
-        ghost_latestExchangeRate = vault.exchangeRate();
+        ghost_latestExchangeRate = core.exchangeRate();
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = false;
     }
@@ -1180,18 +1215,18 @@ contract OllaCoreProtocolPropertyHandler is Test {
     }
 
     function _snapshotFlowCounters() internal {
-        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        IOllaCore.FlowCounters memory flows = core.flowCounters();
         ghost_previousCumulativeDeposits = flows.cumulativeDeposits;
         ghost_previousCumulativeWithdrawals = flows.cumulativeWithdrawals;
     }
 
     function _snapshotSlashingDelta() internal {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        IOllaCore.AccountingState memory accounting = core.accountingState();
         ghost_previousSlashingDelta = accounting.slashingDelta;
     }
 
     function _snapshotCumulativeRewards() internal {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        IOllaCore.AccountingState memory accounting = core.accountingState();
         ghost_previousCumulativeRewards = accounting.cumulativeRewards;
     }
 }
@@ -1207,7 +1242,8 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
@@ -1229,12 +1265,16 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
 
         OllaCore implementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(coreProxy));
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
@@ -1248,28 +1288,32 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
 
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             0,
             5_000,
             governance,
-            address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
-        vault.grantRole(operatorRole, address(this));
+        core.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, address(this));
         vm.stopPrank();
 
         handler = new OllaCoreProtocolPropertyHandler(
-            asset, vault, stAztec, stakingManager, rewardsVault, withdrawalQueue, operator, governance
+            asset, core, vault, stAztec, stakingManager, rewardsVault, withdrawalQueue, operator, governance
         );
 
         targetContract(address(handler));
@@ -1279,15 +1323,15 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
                         VAULT SOLVENCY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice asset.balanceOf(core) >= bufferedAssets + _finalizedUnclaimedAssets
+    /// @notice asset.balanceOf(vault) >= bufferedAssets + _finalizedUnclaimedAssets
     function invariant_VaultSolvency() external view {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        IOllaCore.AccountingState memory accounting = core.accountingState();
         uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(30))));
         uint256 vaultBalance = asset.balanceOf(address(vault));
 
         assertGe(
             vaultBalance,
-            accounting.bufferedAssets + finalizedUnclaimed,
+            vault.bufferedAssets() + finalizedUnclaimed,
             "vault balance must cover buffered + finalized unclaimed"
         );
     }
@@ -1320,8 +1364,8 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     /// @notice convertToAssets(convertToShares(assets)) <= assets
     function invariant_DepositRedeemRoundtripFavorsProtocol() external view {
         uint256 assets = bound(uint256(block.timestamp), 1, type(uint96).max);
-        uint256 sharesFromAssets = vault.convertToShares(assets);
-        uint256 assetsFromShares = vault.convertToAssets(sharesFromAssets);
+        uint256 sharesFromAssets = core.convertToShares(assets);
+        uint256 assetsFromShares = core.convertToAssets(sharesFromAssets);
 
         assertLe(assetsFromShares, assets, "round-trip must not create value (rounding favors protocol)");
     }
@@ -1332,7 +1376,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
 
     /// @notice cumulativeDeposits and cumulativeWithdrawals never decrease.
     function invariant_CumulativeCountersNeverDecrease() external view {
-        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        IOllaCore.FlowCounters memory flows = core.flowCounters();
 
         assertGe(
             flows.cumulativeDeposits,
@@ -1352,7 +1396,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
 
     /// @notice slashingDelta in accounting state must never decrease.
     function invariant_SlashingDeltaMonotonicity() external view {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        IOllaCore.AccountingState memory accounting = core.accountingState();
 
         assertGe(
             accounting.slashingDelta,
@@ -1396,7 +1440,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     /// @notice fee + netAssets == grossAssets (no value created or lost in fee split).
     function invariant_InstantRedemptionFeeConservation() external view {
         uint256 shares = bound(uint256(block.timestamp), 1, type(uint96).max);
-        uint256 grossAssets = vault.convertToAssets(shares);
+        uint256 grossAssets = core.convertToAssets(shares);
 
         uint256 feeBP = vault.instantRedemptionFeeBP();
         uint256 bpDivisor = vault.BP_DIVISOR();
@@ -1412,7 +1456,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
 
     /// @notice accountingState().cumulativeRewards must never decrease.
     function invariant_CumulativeRewardsNeverDecrease() external view {
-        IOllaCore.AccountingState memory accounting = vault.accountingState();
+        IOllaCore.AccountingState memory accounting = core.accountingState();
 
         assertGe(
             accounting.cumulativeRewards,
@@ -1430,7 +1474,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     ///         received must be non-zero when totalAssets is not inflated beyond deposit.
     function invariant_VirtualOffsetPreventsExtraction() external view {
         uint256 supply = stAztec.totalSupply();
-        uint256 total = vault.totalAssets();
+        uint256 total = core.totalAssets();
 
         // Skip when the supply/totalAssets ratio is extreme enough that convertToShares
         // would overflow. This arises from mock-driven accounting divergence (the mock
@@ -1443,8 +1487,8 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         // Core check: convertToAssets(convertToShares(x)) <= x (no value extraction)
         // This ensures the virtual offset prevents the first depositor from extracting
         // more assets than they deposit through share manipulation.
-        uint256 shares = vault.convertToShares(testAmount);
-        uint256 assetsBack = vault.convertToAssets(shares);
+        uint256 shares = core.convertToShares(testAmount);
+        uint256 assetsBack = core.convertToAssets(shares);
 
         // No depositor can extract more than they put in
         assertLe(assetsBack, testAmount, "round-trip must not create value for depositor");
@@ -1455,7 +1499,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
 
             // Verify small deposits also work 1:1 on empty vault
             uint256 smallAmount = 1e6;
-            uint256 smallShares = vault.convertToShares(smallAmount);
+            uint256 smallShares = core.convertToShares(smallAmount);
             assertEq(smallShares, smallAmount, "empty vault small deposit should give 1:1 shares");
         }
     }

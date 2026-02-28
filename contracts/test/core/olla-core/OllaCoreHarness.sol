@@ -9,10 +9,6 @@ contract OllaCoreHarness is OllaCore {
                            CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function exposedIncreaseBuffered(uint256 amount) external {
-        _increaseBuffered(amount);
-    }
-
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
         uint256 newRewardsVaultBalance,
@@ -25,10 +21,6 @@ contract OllaCoreHarness is OllaCore {
         );
     }
 
-    function exposedSyncBufferedWithBalance() external {
-        _syncBufferedWithBalance();
-    }
-
     function exposedComputeNetFlows(IOllaCore.FlowCounters memory flows)
         external
         pure
@@ -37,12 +29,12 @@ contract OllaCoreHarness is OllaCore {
         return _computeNetFlows(flows);
     }
 
-    function exposedComputeTotalAssets(IOllaCore.AccountingState memory buckets, uint256 pendingWithdrawals)
-        external
-        pure
-        returns (uint256 totalAssets_)
-    {
-        return _computeTotalAssets(buckets, pendingWithdrawals);
+    function exposedComputeTotalAssets(
+        IOllaCore.AccountingState memory buckets,
+        uint256 bufferedAssets,
+        uint256 pendingWithdrawals
+    ) external pure returns (uint256 totalAssets_) {
+        return _computeTotalAssets(buckets, bufferedAssets, pendingWithdrawals);
     }
 
     function exposedComputeGrossRewards(uint256 oldTotalAssets, uint256 newTotalAssets, int256 netFlows)

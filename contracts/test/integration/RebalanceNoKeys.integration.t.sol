@@ -18,13 +18,16 @@ import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract RebalanceNoKeysIntegrationTest is Test {
     uint256 internal constant DECIMALS = 1e18;
     uint256 internal constant ACTIVATION_THRESHOLD = 32 * DECIMALS;
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
@@ -49,11 +52,15 @@ contract RebalanceNoKeysIntegrationTest is Test {
 
         OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(coreProxy));
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
@@ -75,30 +82,27 @@ contract RebalanceNoKeysIntegrationTest is Test {
             IERC20(address(asset)),
             address(rollupRegistry),
             address(rewardsVault),
-            address(vault),
+            address(core),
             address(stakingProviderRegistry),
             defaultAdmin
         );
 
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
     }
 
@@ -115,20 +119,20 @@ contract RebalanceNoKeysIntegrationTest is Test {
         vault.deposit(depositAmount, user, 0);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
         vm.warp(block.timestamp + 1 hours);
 
         vm.prank(operator);
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
 
         // Staking should gracefully return 0 when no keys are available
         assertEq(stakedAmount, 0, "should not stake when no keys");
         assertEq(resultingBuffer, depositAmount, "buffer should retain all deposited funds");
 
         // Verify the rebalance cycle completed
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete");
     }
 }

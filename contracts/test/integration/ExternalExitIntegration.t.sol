@@ -23,6 +23,8 @@ import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegist
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title ExternalExitIntegrationTest
 /// @notice Integration test demonstrating the external exit bug.
@@ -45,7 +47,8 @@ contract ExternalExitIntegrationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     // Core contracts
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     WithdrawalQueue internal withdrawalQueue;
 
@@ -61,7 +64,6 @@ contract ExternalExitIntegrationTest is Test {
     MockSafetyModule internal safetyModule;
 
     // Addresses
-    address internal core;
     address internal governance;
     address internal providerAdmin;
     address internal defaultAdmin;
@@ -94,27 +96,30 @@ contract ExternalExitIntegrationTest is Test {
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
 
         // Deploy all implementations first
-        OllaCore vaultImpl = new OllaCore();
+        OllaCore coreImpl = new OllaCore();
         StakingManager stakingImpl = new StakingManager();
         StakingProviderRegistry registryImpl = new StakingProviderRegistry();
         WithdrawalQueue queueImpl = new WithdrawalQueue();
+        OllaVault vaultImpl = new OllaVault();
 
         // Deploy all proxies
-        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), "");
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImpl), "");
         ERC1967Proxy stakingProxy = new ERC1967Proxy(address(stakingImpl), "");
         ERC1967Proxy registryProxy = new ERC1967Proxy(address(registryImpl), "");
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), "");
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), "");
 
         // Set contract references
-        vault = OllaCore(address(vaultProxy));
+        core = OllaCore(address(coreProxy));
+        vault = OllaVault(address(vaultProxy));
         stakingManager = StakingManager(address(stakingProxy));
         stakingProviderRegistry = StakingProviderRegistry(address(registryProxy));
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
-        // Deploy supporting contracts with vault address
+        // Deploy supporting contracts
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(IERC20(address(aztec)), address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(IERC20(address(aztec)), address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Initialize stakingProviderRegistry (needs stakingManager address)
         stakingProviderRegistry.initialize(
@@ -124,37 +129,46 @@ contract ExternalExitIntegrationTest is Test {
             defaultAdmin
         );
 
-        // Initialize stakingManager with vault as core
+        // Initialize stakingManager with core
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
             address(rewardsVault),
-            address(vault), // vault is the core!
+            address(core),
             address(stakingProviderRegistry),
             defaultAdmin
         );
 
-        // Initialize withdrawalQueue (must happen before vault.initialize which calls setGasThreshold on WQ)
+        // Initialize withdrawalQueue (must happen before vault.initialize)
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        // Initialize vault
-        vault.initialize(
+        // Initialize core
+        core.initialize(
             IERC20(address(aztec)),
             stAztec,
             stakingManager,
             0, // protocolFeeBP
             5_000, // treasuryFeeSplitBP
             governance,
-            address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+
+        // Initialize vault
+        vault.initialize(
+            IERC20(address(aztec)), stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance
+        );
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
         // Setup roles
         vm.startPrank(governance);
-        vault.grantRole(vault.OPERATOR_ROLE(), operator);
+        core.grantRole(core.OPERATOR_ROLE(), operator);
         vm.stopPrank();
 
         // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
@@ -189,7 +203,7 @@ contract ExternalExitIntegrationTest is Test {
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -197,7 +211,7 @@ contract ExternalExitIntegrationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice External exits can be reconciled during rebalance.
-    /// @dev computeAttesterState() syncs Active→Exiting before rebalance claims exits.
+    /// @dev computeAttesterState() syncs Active->Exiting before rebalance claims exits.
     function test_ExternalExit_ReconciledDuringRebalance() external {
         // 1. Add 2 attester keys
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
@@ -216,13 +230,13 @@ contract ExternalExitIntegrationTest is Test {
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Refresh cached state after staking and update accounting to get correct exchange rate
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         // Verify: 2 activated attesters, 200 ether staked
         assertEq(stakingManager.getActivatedAttesterCount(), 2, "Should have 2 activated attesters");
@@ -238,7 +252,7 @@ contract ExternalExitIntegrationTest is Test {
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Verify: 1 active, 1 exiting
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "Should have 1 activated attester");
@@ -256,8 +270,7 @@ contract ExternalExitIntegrationTest is Test {
         assertTrue(rollup.getExit(activatedAttester).exists, "Exit should exist in rollup");
         assertTrue(stakingManager.hasExitableUnstakes(), "hasExitableUnstakes should be true for active exitable exits");
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 bufferBefore = accountingBefore.bufferedAssets;
+        uint256 bufferBefore = vault.bufferedAssets();
 
         IStakingManager.KeyStore[] memory additionalKeys = _createMockKeys(1);
         additionalKeys[0].attester = address(uint160(3));
@@ -275,20 +288,20 @@ contract ExternalExitIntegrationTest is Test {
         // because getUnstakedFunds() returns hasRemainingExits=false (via _exitingCount)
         // after all exiting attesters have been finalized.
         {
-            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            IOllaCore.LatestReport memory rpt = core.latestReport();
             vm.warp(rpt.timestamp + 1 hours + 1);
         }
         stakingManager.finalizeExits();
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        (, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+        (, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bool foundEvent = false;
         bytes32 expectedSelector = keccak256("UnstakedFundsClaimed(uint256)");
         for (uint256 i; i < entries.length; ++i) {
-            if (entries[i].emitter == address(vault) && entries[i].topics[0] == expectedSelector) {
+            if (entries[i].emitter == address(core) && entries[i].topics[0] == expectedSelector) {
                 uint256 claimed = abi.decode(entries[i].data, (uint256));
                 assertEq(claimed, expectedGrossClaimed);
                 foundEvent = true;
@@ -326,20 +339,20 @@ contract ExternalExitIntegrationTest is Test {
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Refresh cached state after staking
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(depositAmount);
+        core.setTargetBufferedAssets(depositAmount);
 
         vm.warp(block.timestamp + 1 hours);
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Refresh cached state after unstake
         vm.prank(defaultAdmin);
@@ -354,23 +367,23 @@ contract ExternalExitIntegrationTest is Test {
         uint256 managerBalance = aztec.balanceOf(address(stakingManager));
         assertEq(managerBalance, depositAmount, "manager should hold externally finalized exit");
 
-        uint256 coreBalanceBefore = aztec.balanceOf(address(vault));
+        uint256 vaultBalanceBefore = aztec.balanceOf(address(vault));
 
         {
-            IOllaCore.LatestReport memory rpt = vault.latestReport();
+            IOllaCore.LatestReport memory rpt = core.latestReport();
             vm.warp(rpt.timestamp + 1 hours + 1);
         }
         stakingManager.finalizeExits();
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        uint256 coreBalanceAfter = aztec.balanceOf(address(vault));
+        uint256 vaultBalanceAfter = aztec.balanceOf(address(vault));
         assertEq(
-            coreBalanceAfter,
-            coreBalanceBefore + managerBalance,
-            "core balance should increase by externally finalized amount"
+            vaultBalanceAfter,
+            vaultBalanceBefore + managerBalance,
+            "vault balance should increase by externally finalized amount"
         );
         assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager balance should clear after pull");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending unstake count should clear");
@@ -411,13 +424,13 @@ contract ExternalExitIntegrationTest is Test {
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Refresh cached state after staking and update accounting so totalAssets reflects staked principal
         vm.prank(defaultAdmin);
         stakingManager.computeAttesterState();
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         // Verify: 2 attesters staked
         assertEq(stakingManager.totalStaked(), 200 ether, "Should have 200 ether staked");
@@ -426,7 +439,7 @@ contract ExternalExitIntegrationTest is Test {
         // This is the key: 150 ether requires unstaking 1.5 attesters
         // But attesters are discrete 100-ether units!
         uint256 aliceShares = stAztec.balanceOf(alice);
-        uint256 withdrawShares = (150 ether * aliceShares) / vault.totalAssets();
+        uint256 withdrawShares = (150 ether * aliceShares) / core.totalAssets();
         vm.prank(alice);
         vault.requestRedeem(withdrawShares, alice);
 
@@ -443,14 +456,14 @@ contract ExternalExitIntegrationTest is Test {
         stakingManager.computeAttesterState();
         vm.prank(operator);
         (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
-            vault.rebalance();
+            core.rebalance();
 
         assertEq(rewardsDelta, 0, "Rewards delta should be zero in this flow");
         assertEq(finalizedAmount, 0, "Finalize should not run before unstake finalizes");
         assertEq(stakedAmount, 0, "No surplus should be staked during unstake initiation");
         assertEq(resultingBuffer, 0, "Buffer should remain zero after initiate unstake");
 
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(progress.unstakeRemaining, 0, "unstake remaining should clamp to zero");
 
         uint256 pendingAfter = withdrawalQueue.totalPendingAssets();

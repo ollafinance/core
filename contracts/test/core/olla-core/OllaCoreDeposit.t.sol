@@ -17,6 +17,8 @@ import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract OllaCoreDepositTest is Test {
     using Math for uint256;
@@ -40,7 +42,8 @@ contract OllaCoreDepositTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreHarness internal vault;
+    OllaCoreHarness internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
@@ -60,31 +63,35 @@ contract OllaCoreDepositTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCoreHarness coreImplementation = new OllaCoreHarness();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCoreHarness(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCoreHarness(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
 
         vm.prank(governance);
         vault.unpause();
@@ -145,9 +152,9 @@ contract OllaCoreDepositTest is Test {
         uint256 firstShares = _performDeposit(alice, depositAssetAmountAlice);
         assertEq(firstShares, depositAssetAmountAlice, "first deposit: 1:1 shares at zero supply");
 
-        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
 
-        uint256 totalAssetsBeforeSecondDeposit = vault.totalAssets();
+        uint256 totalAssetsBeforeSecondDeposit = core.totalAssets();
         uint256 totalSharesBeforeSecondDeposit = stAztec.totalSupply();
 
         uint256 depositAssetAmountBob = 50 * DECIMALS;
@@ -162,8 +169,8 @@ contract OllaCoreDepositTest is Test {
         uint256 shares = _performDeposit(alice, 10 * DECIMALS);
 
         assertEq(stAztec.balanceOf(alice), shares, "shares minted");
-        assertEq(vault.totalAssets(), 10 * DECIMALS, "assets buffered");
-        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        assertEq(core.totalAssets(), 10 * DECIMALS, "assets buffered");
+        IOllaCore.FlowCounters memory flows = core.flowCounters();
         assertEq(flows.cumulativeDeposits, 10 * DECIMALS, "cumulative deposits updated");
     }
 
@@ -278,7 +285,7 @@ contract OllaCoreDepositTest is Test {
 
         assertEq(shares, assets, "shares minted at 1:1");
         assertEq(stAztec.balanceOf(alice), shares, "shares balance");
-        assertEq(vault.totalAssets(), assets, "assets buffered");
+        assertEq(core.totalAssets(), assets, "assets buffered");
     }
 
     function testFuzz_MultiDepositorAtDifferentRates(uint96 deposit1, uint96 deposit2, uint96 rewards) external {
@@ -291,14 +298,14 @@ contract OllaCoreDepositTest is Test {
 
         // Simulate rewards to change the exchange rate
         stakingManager.setClaimableRewards(rewards);
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.prank(governance);
-        vault.grantRole(operatorRole, address(this));
-        vault.updateAccounting();
+        core.grantRole(operatorRole, address(this));
+        core.updateAccounting();
 
         // Snapshot state before Bob's deposit
         uint256 supplyBeforeBob = stAztec.totalSupply();
-        uint256 totalAssetsBeforeBob = vault.totalAssets();
+        uint256 totalAssetsBeforeBob = core.totalAssets();
 
         // Bob deposits at new rate
         uint256 bobShares = _performDeposit(bob, deposit2);

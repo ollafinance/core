@@ -6,6 +6,8 @@ import { Test } from "@forge-std/Test.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
@@ -20,7 +22,8 @@ contract OllaCoreRemoveOwnerRequestTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreHarness internal vault;
+    OllaCoreHarness internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
@@ -38,14 +41,18 @@ contract OllaCoreRemoveOwnerRequestTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCoreHarness coreImplementation = new OllaCoreHarness();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCoreHarness(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCoreHarness(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
@@ -53,26 +60,21 @@ contract OllaCoreRemoveOwnerRequestTest is Test {
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, address(this));
+        core.grantRole(operatorRole, address(this));
         vm.stopPrank();
     }
 
@@ -83,7 +85,7 @@ contract OllaCoreRemoveOwnerRequestTest is Test {
     function test_ClaimWithdrawal_RevertWhen_RequestNotFound() external {
         // Attempt to claim a non-existent request (id 999 was never created)
         // This triggers _removeOwnerRequest with index == 0
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RequestNotFound.selector, 999));
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__RequestNotFound.selector, 999));
         vault.claimRequestById(999);
     }
 
@@ -96,7 +98,7 @@ contract OllaCoreRemoveOwnerRequestTest is Test {
         vault.deposit(10 ether, alice, 0);
 
         // Attempt to claim request id 42 which was never created
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RequestNotFound.selector, 42));
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__RequestNotFound.selector, 42));
         vm.prank(alice);
         vault.claimRequestById(42);
     }

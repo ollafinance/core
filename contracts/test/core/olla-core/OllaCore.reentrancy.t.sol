@@ -7,6 +7,8 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/core/StAztec.sol";
 import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
@@ -16,7 +18,6 @@ import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MaliciousSafetyModule } from "src/safetymodule/MaliciousSafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
@@ -183,7 +184,8 @@ contract OllaCoreReentrancyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MaliciousAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     uint256 internal protocolFeeBP;
@@ -205,36 +207,45 @@ contract OllaCoreReentrancyTest is Test {
         asset = new MaliciousAztec();
 
         OllaCore implementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         rewardsVault = makeAddr("rewardsVault");
-        safetyModule = new MockSafetyModule(address(implementation));
+        safetyModule = new MockSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MaliciousWithdrawalQueue();
 
         protocolFeeBP = 500;
         treasuryFeeSplitBP = 5_000;
 
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             protocolFeeBP,
             treasuryFeeSplitBP,
             governance,
-            address(withdrawalQueue),
             IRewardsVault(rewardsVault),
             address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         vm.startPrank(governance);
-        vault.grantRole(vault.OPERATOR_ROLE(), address(withdrawalQueue));
+        core.grantRole(core.OPERATOR_ROLE(), address(withdrawalQueue));
         vm.stopPrank();
 
         alice = makeAddr("alice");
@@ -282,7 +293,11 @@ contract OllaCoreReentrancyTest is Test {
 
         asset.mint(address(asset), assets);
         asset.setSelfAllowance(assets);
-        asset.configureReentry(address(vault), abi.encodeCall(vault.deposit, (assets, alice, 0)), true);
+        asset.configureReentry(
+            address(vault),
+            abi.encodeWithSelector(bytes4(keccak256("deposit(uint256,address,uint256)")), assets, alice, 0),
+            true
+        );
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
@@ -297,7 +312,9 @@ contract OllaCoreReentrancyTest is Test {
         _deposit(alice, 10 * DECIMALS);
 
         uint256 shares = 2 * DECIMALS;
-        withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.requestRedeem, (shares, bob)));
+        withdrawalQueue.setReentry(
+            address(vault), abi.encodeWithSignature("requestRedeem(uint256,address)", shares, bob)
+        );
         withdrawalQueue.setReenterOnRequest(true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
@@ -355,12 +372,12 @@ contract OllaCoreReentrancyTest is Test {
         vm.prank(alice);
         vault.requestRedeem(shares, bob);
 
-        withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.rebalance, ()));
+        withdrawalQueue.setReentry(address(core), abi.encodeCall(core.rebalance, ()));
         withdrawalQueue.setReenterOnFinalize(true);
 
         vm.expectRevert();
         vm.prank(governance);
-        vault.rebalance();
+        core.rebalance();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -374,11 +391,13 @@ contract OllaCoreReentrancyTest is Test {
 
         // Skip first transfer (net assets to recipient), fire re-entry on second (fee to governance)
         asset.setTransferReentrySkipCount(1);
-        asset.configureTransferReentry(address(vault), abi.encodeCall(vault.redeem, (sharesToRedeem, bob, 0)), true);
+        asset.configureTransferReentry(
+            address(vault), abi.encodeCall(vault.instantRedeem, (sharesToRedeem, bob, 0)), true
+        );
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
-        vault.redeem(sharesToRedeem, bob, 0);
+        vault.instantRedeem(sharesToRedeem, bob, 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -393,11 +412,13 @@ contract OllaCoreReentrancyTest is Test {
         (uint8 v, bytes32 r, bytes32 s) =
             _signPermit(permitOwner, permitOwnerKey, address(vault), sharesToRedeem, deadline);
 
-        asset.configureTransferReentry(address(vault), abi.encodeCall(vault.redeem, (sharesToRedeem, bob, 0)), true);
+        asset.configureTransferReentry(
+            address(vault), abi.encodeCall(vault.instantRedeem, (sharesToRedeem, bob, 0)), true
+        );
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(permitOwner);
-        vault.redeemWithPermit(sharesToRedeem, bob, 0, deadline, v, r, s);
+        vault.instantRedeemWithPermit(sharesToRedeem, bob, 0, deadline, v, r, s);
     }
 }
 
@@ -413,7 +434,8 @@ contract OllaCoreHarvestReentrancyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockHarvestStakingManager internal stakingManager;
     uint256 internal protocolFeeBP;
@@ -432,14 +454,18 @@ contract OllaCoreHarvestReentrancyTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore implementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockHarvestStakingManager();
-        rewardsVault = new MaliciousRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(implementation));
+        rewardsVault = new MaliciousRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         // Configure staking manager to mint rewards directly to rewards vault
@@ -449,23 +475,28 @@ contract OllaCoreHarvestReentrancyTest is Test {
         protocolFeeBP = 500;
         treasuryFeeSplitBP = 5_000;
 
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             protocolFeeBP,
             treasuryFeeSplitBP,
             governance,
-            address(withdrawalQueue),
             IRewardsVault(address(rewardsVault)),
             address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
         vm.startPrank(governance);
-        vault.grantRole(vault.OPERATOR_ROLE(), governance);
-        vault.grantRole(vault.OPERATOR_ROLE(), address(rewardsVault));
+        core.grantRole(core.OPERATOR_ROLE(), governance);
+        core.grantRole(core.OPERATOR_ROLE(), address(rewardsVault));
         vm.stopPrank();
 
         alice = makeAddr("alice");
@@ -495,11 +526,11 @@ contract OllaCoreHarvestReentrancyTest is Test {
         uint256 rewardAmount = 5 * DECIMALS;
         stakingManager.setHarvestedRewards(rewardAmount);
 
-        rewardsVault.configureReentry(address(vault), abi.encodeCall(vault.rebalance, ()), true);
+        rewardsVault.configureReentry(address(core), abi.encodeCall(core.rebalance, ()), true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(governance);
-        vault.rebalance();
+        core.rebalance();
     }
 }
 
@@ -515,7 +546,8 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MaliciousAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     MaliciousSafetyModule internal safetyModule;
@@ -532,32 +564,34 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         asset = new MaliciousAztec();
 
         OllaCore implementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         rewardsVault = makeAddr("rewardsVault");
-        safetyModule = new MaliciousSafetyModule(address(implementation));
+        safetyModule = new MaliciousSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            500,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            IRewardsVault(rewardsVault),
-            address(safetyModule)
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, IRewardsVault(rewardsVault), address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
         vm.startPrank(governance);
-        vault.grantRole(vault.OPERATOR_ROLE(), governance);
+        core.grantRole(core.OPERATOR_ROLE(), governance);
         vm.stopPrank();
 
         alice = makeAddr("alice");
@@ -582,13 +616,12 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
     function test_RevertWhen_UpdateAccounting_ReenteredFromSafetyModuleCheck() external {
         _deposit(alice, 10 * DECIMALS);
 
-        // Re-entry targets deposit() — user-callable, same nonReentrant guard applies
-        asset.mint(address(safetyModule), 1 * DECIMALS);
-        safetyModule.setReentry(address(vault), abi.encodeCall(vault.deposit, (1 * DECIMALS, alice, 0)));
+        // Re-entry targets updateAccounting() on core — same nonReentrant guard applies
+        safetyModule.setReentry(address(core), abi.encodeCall(core.updateAccounting, ()));
         safetyModule.setReenterOnCheckAccountingLiveness(true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(governance);
-        vault.updateAccounting();
+        core.updateAccounting();
     }
 }

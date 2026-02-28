@@ -19,6 +19,8 @@ import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProvide
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { AttesterView } from "src/staking/libraries/AztecTypes.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title ComputeAttesterStateIntegration
 /// @notice Targeted integration test: deposit -> rebalance -> computeAttesterState -> assert totalStaked > 0.
@@ -58,7 +60,8 @@ contract ComputeAttesterStateIntegration is Test {
     event DebugTimestamps(uint256 lastUpdated, uint256 maxAge, uint256 blockTimestamp);
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
@@ -77,7 +80,12 @@ contract ComputeAttesterStateIntegration is Test {
         // Deploy OllaCore
         OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(coreProxy));
+        core = OllaCore(address(coreProxy));
+
+        // Deploy OllaVault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
@@ -92,7 +100,7 @@ contract ComputeAttesterStateIntegration is Test {
         RewardsVault rewardsImplementation = new RewardsVault();
         ERC1967Proxy rewardsProxy = new ERC1967Proxy(address(rewardsImplementation), "");
         rewardsVault = RewardsVault(address(rewardsProxy));
-        rewardsVault.initialize(IERC20(asset), address(vault), governance);
+        rewardsVault.initialize(IERC20(asset), address(core), governance);
 
         // Deploy Mock Rollup and Registry
         mockRollup = new MockAztecRollup(IERC20(asset), 0);
@@ -121,27 +129,26 @@ contract ComputeAttesterStateIntegration is Test {
             IERC20(asset),
             address(mockRollupRegistry),
             address(rewardsVault),
-            address(vault),
+            address(core),
             address(stakingProviderRegistry),
             governance
         );
 
         // Deploy SafetyModule
-        safetyModule =
-            new SafetyModule(governance, governance, address(vault), 1_000_000 * DECIMALS, 500, 6_000, 1 days);
+        safetyModule = new SafetyModule(
+            governance, governance, address(core), address(vault), 1_000_000 * DECIMALS, 500, 6_000, 1 days
+        );
 
         // Initialize OllaCore
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+
+        // Initialize OllaVault
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
@@ -150,7 +157,7 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Grant OPERATOR_ROLE on both OllaCore and StakingManager
         vm.startPrank(governance);
-        vault.grantRole(vault.OPERATOR_ROLE(), operator);
+        core.grantRole(core.OPERATOR_ROLE(), operator);
         stakingManager.grantRole(stakingManager.OPERATOR_ROLE(), operator);
         vm.stopPrank();
 
@@ -314,7 +321,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _addKeys(5);
 
@@ -326,23 +333,23 @@ contract ComputeAttesterStateIntegration is Test {
 
         // ── Step 1: Rebalance (stakes funds on rollup) ──
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.AccountingState memory stateAfterRebalance1 = vault.accountingState();
-        emit log_named_uint("bufferedAssets after rebalance 1", stateAfterRebalance1.bufferedAssets);
+        IOllaCore.AccountingState memory stateAfterRebalance1 = core.accountingState();
+        emit log_named_uint("bufferedAssets after rebalance 1", vault.bufferedAssets());
         emit log_named_uint("stakedPrincipal after rebalance 1", stateAfterRebalance1.stakedPrincipal);
 
         // If rebalance is still in progress, call again
-        if (vault.rebalanceProgress().step != IOllaCore.RebalanceStep.Done) {
+        if (core.rebalanceProgress().step != IOllaCore.RebalanceStep.Done) {
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         // ── Debug: state after rebalance ──
         _emitFullDebugState("AFTER REBALANCE");
 
-        IOllaCore.AccountingState memory stateAfterRebalance = vault.accountingState();
-        emit log_named_uint("bufferedAssets after rebalance", stateAfterRebalance.bufferedAssets);
+        IOllaCore.AccountingState memory stateAfterRebalance = core.accountingState();
+        emit log_named_uint("bufferedAssets after rebalance", vault.bufferedAssets());
         emit log_named_uint("stakedPrincipal after rebalance", stateAfterRebalance.stakedPrincipal);
 
         // Verify funds are actually on the rollup
@@ -384,7 +391,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _addKeys(1);
 
@@ -393,13 +400,13 @@ contract ComputeAttesterStateIntegration is Test {
 
         // ── Rebalance to stake ──
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Complete rebalance if multi-step
         for (uint256 i; i < 5; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         // ── Verify attester is registered and active ──
@@ -462,7 +469,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _addKeys(3); // extra key so remainder doesn't cause InsufficientKeys
 
@@ -471,17 +478,17 @@ contract ComputeAttesterStateIntegration is Test {
 
         // ── Rebalance to stake (now includes computeAttesterState + updateAccounting) ──
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Complete rebalance if multi-step
         for (uint256 i; i < 10; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         assertEq(
-            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+            uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
         );
 
         // ── Verify totalStaked on StakingManager is correct ──
@@ -490,7 +497,7 @@ contract ComputeAttesterStateIntegration is Test {
         assertEq(totalStaked, activationThreshold * 2, "totalStaked should be 2x activation threshold");
 
         // ── Verify OllaCore.stakedPrincipal is synced via accounting ──
-        IOllaCore.AccountingState memory statePostRebalance = vault.accountingState();
+        IOllaCore.AccountingState memory statePostRebalance = core.accountingState();
         emit log_named_uint("stakedPrincipal after rebalance", statePostRebalance.stakedPrincipal);
         assertEq(
             statePostRebalance.stakedPrincipal,
@@ -505,7 +512,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 numAttesters = 5;
         _addKeys(numAttesters);
@@ -515,12 +522,12 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Rebalance to stake all
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         for (uint256 i; i < 10; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         // Verify all attesters registered
@@ -557,7 +564,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 numAttesters = 12;
         _addKeys(numAttesters);
@@ -567,39 +574,39 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Set a high gasThreshold on StakingManager so the accumulation loop
         // can only process ~1-2 attesters per call.
-        vm.prank(address(vault));
+        vm.prank(address(core));
         stakingManager.setGasThreshold(400_000);
 
         // ── First rebalance call: should stake and enter ComputeAttesterState ──
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Continue calling until paused at ComputeAttesterState (or until rebalance completes)
         uint256 maxCalls = 30;
         uint256 callsMade = 1;
         uint256 pausedAtComputeCount;
         for (uint256 i; i < maxCalls; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
-            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
                 pausedAtComputeCount++;
             }
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
             callsMade++;
         }
 
         // Verify rebalance completed
         assertEq(
-            uint256(vault.rebalanceProgress().step),
+            uint256(core.rebalanceProgress().step),
             uint256(IOllaCore.RebalanceStep.Done),
             "rebalance should complete after multi-pass compute"
         );
-        IOllaCore.RebalanceProgress memory finalProgress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory finalProgress = core.rebalanceProgress();
         assertEq(uint256(finalProgress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should reach Done step");
 
         // Verify stakedPrincipal matches actual staked amount
-        IOllaCore.AccountingState memory stateAfter = vault.accountingState();
+        IOllaCore.AccountingState memory stateAfter = core.accountingState();
         assertEq(
             stateAfter.stakedPrincipal,
             activationThreshold * numAttesters,
@@ -617,7 +624,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         uint256 numAttesters = 10;
         _addKeys(numAttesters);
@@ -625,7 +632,7 @@ contract ComputeAttesterStateIntegration is Test {
         uint256 depositAmount = activationThreshold * numAttesters;
         _performDeposit(alice, depositAmount);
 
-        vm.prank(address(vault));
+        vm.prank(address(core));
         stakingManager.setGasThreshold(400_000);
 
         // Run rebalance, recording logs on every call (including the first)
@@ -637,18 +644,18 @@ contract ComputeAttesterStateIntegration is Test {
         for (uint256 i; i < maxCalls; ++i) {
             vm.recordLogs();
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
             Vm.Log[] memory entries = vm.getRecordedLogs();
 
-            if (_hasEvent(entries, accountingUpdatedTopic, address(vault))) {
+            if (_hasEvent(entries, accountingUpdatedTopic, address(core))) {
                 emittedAccounting = true;
             }
 
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
         }
 
         assertEq(
-            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+            uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
         );
         assertTrue(emittedAccounting, "AccountingUpdated event must be emitted on the completion call");
     }
@@ -665,7 +672,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         // Add enough keys for two batches so we can complete one rebalance and start another
         _addKeys(3);
@@ -675,16 +682,16 @@ contract ComputeAttesterStateIntegration is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         for (uint256 i; i < 10; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         assertEq(
-            uint256(vault.rebalanceProgress().step),
+            uint256(core.rebalanceProgress().step),
             uint256(IOllaCore.RebalanceStep.Done),
             "first rebalance should complete"
         );
@@ -692,7 +699,7 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Phase 2: Set extremely high gasThreshold so computeAttesterState loop
         // never processes any attester.
-        vm.prank(address(vault));
+        vm.prank(address(core));
         stakingManager.setGasThreshold(10_000_000);
 
         // New deposit to clear idle buffer guard and trigger a new rebalance cycle
@@ -702,29 +709,29 @@ contract ComputeAttesterStateIntegration is Test {
         vm.warp(block.timestamp + 1 hours);
 
         // Call rebalance repeatedly with limited gas. The staking step will also be affected
-        // by the high threshold (no new staking), but that's fine — the key point is that
+        // by the high threshold (no new staking), but that's fine -- the key point is that
         // ComputeAttesterState cannot complete.
         uint256 stallCount;
         for (uint256 i; i < 10; ++i) {
             vm.prank(operator);
-            vault.rebalance{ gas: 5_000_000 }();
+            core.rebalance{ gas: 5_000_000 }();
 
-            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
                 stallCount++;
             }
 
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
         }
 
         // The rebalance should still be paused (stalled at ComputeAttesterState)
         assertNotEq(
-            uint256(vault.rebalanceProgress().step),
+            uint256(core.rebalanceProgress().step),
             uint256(IOllaCore.RebalanceStep.Done),
             "rebalance should remain in progress (stalled)"
         );
 
-        IOllaCore.RebalanceProgress memory finalProgress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory finalProgress = core.rebalanceProgress();
         assertEq(
             uint256(finalProgress.step),
             uint256(IOllaCore.RebalanceStep.ComputeAttesterState),
@@ -745,45 +752,45 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         // Add keys (so _stake won't revert with InsufficientKeys), but deposit less
-        // than the activation threshold — _calculateAttestersToStake returns 0 → _stake returns 0.
+        // than the activation threshold -- _calculateAttestersToStake returns 0 -> _stake returns 0.
         _addKeys(1);
 
         uint256 depositAmount = 50 * DECIMALS; // below 100 ether threshold
         _performDeposit(alice, depositAmount);
 
         // StakeSurplus: stakeRemaining = 50, but _stake returns 0 (amount < threshold)
-        // → advances to ComputeAttesterState with empty attester array
+        // -> advances to ComputeAttesterState with empty attester array
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        // With no attesters, computeAttesterState completes immediately (empty array → progressed=true)
+        // With no attesters, computeAttesterState completes immediately (empty array -> progressed=true)
         // So rebalance should reach Done
         for (uint256 i; i < 5; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         // Verify rebalance completed and pause is cleared
         assertEq(
-            uint256(vault.rebalanceProgress().step),
+            uint256(core.rebalanceProgress().step),
             uint256(IOllaCore.RebalanceStep.Done),
             "rebalance should complete with empty attester array"
         );
-        IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should reach Done");
 
         // Verify the attester array is indeed empty
         uint256 length = _readAttestersLength();
         assertEq(length, 0, "attester array should be empty");
 
-        // Verify accounting state — nothing staked, everything buffered
-        IOllaCore.AccountingState memory state = vault.accountingState();
+        // Verify accounting state -- nothing staked, everything buffered
+        IOllaCore.AccountingState memory state = core.accountingState();
         assertEq(state.stakedPrincipal, 0, "stakedPrincipal should be 0 with no attesters");
-        assertEq(state.bufferedAssets, depositAmount, "all assets should remain buffered");
+        assertEq(vault.bufferedAssets(), depositAmount, "all assets should remain buffered");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -797,7 +804,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _addKeys(2);
 
@@ -806,20 +813,20 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Complete full rebalance cycle
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         for (uint256 i; i < 10; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         assertEq(
-            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+            uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
         );
 
         // Verify stakedPrincipal after rebalance
-        IOllaCore.AccountingState memory stateAfterRebalance = vault.accountingState();
+        IOllaCore.AccountingState memory stateAfterRebalance = core.accountingState();
         assertEq(
             stateAfterRebalance.stakedPrincipal, activationThreshold * 2, "stakedPrincipal should match after rebalance"
         );
@@ -832,12 +839,12 @@ contract ComputeAttesterStateIntegration is Test {
         assertTrue(completed, "standalone computeAttesterState should complete");
         assertEq(slashingDelta, 0, "no slashing should have occurred");
 
-        // Call updateAccounting as operator — verify it succeeds
+        // Call updateAccounting as operator -- verify it succeeds
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         // Verify stakedPrincipal is still correct
-        IOllaCore.AccountingState memory stateAfterAccounting = vault.accountingState();
+        IOllaCore.AccountingState memory stateAfterAccounting = core.accountingState();
         assertEq(
             stateAfterAccounting.stakedPrincipal,
             activationThreshold * 2,
@@ -857,7 +864,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _addKeys(5);
 
@@ -866,34 +873,34 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Set StakingManager gas threshold high enough that the internal loop breaks early
         // but low enough that _hasGasForStep() in OllaCore still passes
-        vm.prank(address(vault));
+        vm.prank(address(core));
         stakingManager.setGasThreshold(300_000);
 
         // Run rebalance
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Keep calling, checking that step saves progress correctly
         uint256 computeCallCount;
         for (uint256 i; i < 15; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
-            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
                 computeCallCount++;
             }
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         // Verify rebalance eventually completes
         assertEq(
-            uint256(vault.rebalanceProgress().step),
+            uint256(core.rebalanceProgress().step),
             uint256(IOllaCore.RebalanceStep.Done),
             "rebalance should eventually complete"
         );
 
-        // Verify no data corruption — stakedPrincipal and totalStaked should match
-        IOllaCore.AccountingState memory state = vault.accountingState();
+        // Verify no data corruption -- stakedPrincipal and totalStaked should match
+        IOllaCore.AccountingState memory state = core.accountingState();
         uint256 totalStaked = stakingManager.totalStaked();
         assertEq(state.stakedPrincipal, totalStaked, "stakedPrincipal must match StakingManager totalStaked");
         assertEq(totalStaked, activationThreshold * 5, "totalStaked should equal all 5 attesters");
@@ -910,7 +917,7 @@ contract ComputeAttesterStateIntegration is Test {
         mockRollup.setActivationThreshold(activationThreshold);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _addKeys(1);
 
@@ -919,12 +926,12 @@ contract ComputeAttesterStateIntegration is Test {
 
         // Rebalance now includes computeAttesterState, so cache is populated after rebalance
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         for (uint256 i; i < 5; ++i) {
-            if (vault.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) break;
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
         }
 
         uint256 length = _readAttestersLength();

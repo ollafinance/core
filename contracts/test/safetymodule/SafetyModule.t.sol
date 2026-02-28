@@ -31,6 +31,7 @@ contract SafetyModuleTest is Test {
     address internal admin;
     address internal guardian;
     address internal core;
+    address internal vault;
     address internal alice;
 
     /*//////////////////////////////////////////////////////////////
@@ -41,9 +42,10 @@ contract SafetyModuleTest is Test {
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         core = makeAddr("core");
+        vault = makeAddr("vault");
         alice = makeAddr("alice");
 
-        safetyModule = new SafetyModule(admin, guardian, core, 1_000 ether, 500, 6_000, 1 days);
+        safetyModule = new SafetyModule(admin, guardian, core, vault, 1_000 ether, 500, 6_000, 1 days);
     }
 
     /*//////////////////////////////////////////////////////////////

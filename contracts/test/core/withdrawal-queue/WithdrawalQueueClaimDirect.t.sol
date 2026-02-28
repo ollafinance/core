@@ -15,6 +15,8 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
 import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title WithdrawalQueueClaimDirectTest
 /// @notice Verifies the S-1 fix: direct claimWithdrawal calls from non-core addresses must revert.
@@ -32,7 +34,8 @@ contract WithdrawalQueueClaimDirectTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     WithdrawalQueue internal withdrawalQueue;
     MockAccountingStakingManager internal stakingManager;
@@ -58,12 +61,17 @@ contract WithdrawalQueueClaimDirectTest is Test {
         // Deploy OllaCore behind a UUPS proxy
         OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(coreProxy));
+        core = OllaCore(address(coreProxy));
+
+        // Deploy OllaVault behind a UUPS proxy
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         // Deploy supporting modules
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsVault = new MockRewardsVault(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         stakingManager = new MockAccountingStakingManager();
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsVault(address(rewardsVault));
@@ -74,28 +82,35 @@ contract WithdrawalQueueClaimDirectTest is Test {
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
-        // Initialize WithdrawalQueue with OllaCore as the core address
+        // Initialize WithdrawalQueue with OllaVault as the core address
         // (must happen before vault.initialize which calls setGasThreshold on WQ)
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         // Initialize OllaCore
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             0, // protocolFeeBP
             5_000, // treasuryFeeSplitBP
             governance,
-            address(withdrawalQueue),
             rewardsVault,
             address(safetyModule)
         );
+
+        // Initialize OllaVault
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
         // Grant operator role
         vm.startPrank(governance);
-        vault.grantRole(vault.OPERATOR_ROLE(), operator);
+        core.grantRole(core.OPERATOR_ROLE(), operator);
         vm.stopPrank();
     }
 
@@ -103,7 +118,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
                                HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deposits assets into OllaCore on behalf of a user.
+    /// @notice Deposits assets into OllaVault on behalf of a user.
     function _deposit(address user, uint256 assets) internal returns (uint256 shares) {
         asset.mint(user, assets);
         vm.prank(user);
@@ -131,7 +146,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
 
         // Rebalance to finalize the withdrawal (the queue has pending assets and core has buffer)
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Verify the request is finalized
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
@@ -158,7 +173,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
         withdrawalQueue.claimWithdrawal(requestId);
     }
 
-    /// @notice Claiming through OllaCore.claimRequestById succeeds because OllaCore is the
+    /// @notice Claiming through OllaVault.claimRequestById succeeds because OllaVault is the
     ///         authorized core address on the WithdrawalQueue.
     function test_ClaimWithdrawal_SucceedsFromCore() external {
         uint256 depositAmount = 10 * DECIMALS;
@@ -174,7 +189,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         uint256 expectedAssets = request.assetsExpected;
 
-        // Claim via OllaCore (which is the authorized core on the queue)
+        // Claim via OllaVault (which is the authorized core on the queue)
         vm.prank(alice);
         uint256 claimed = vault.claimRequestById(requestId);
 
