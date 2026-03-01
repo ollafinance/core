@@ -2,8 +2,8 @@
 pragma solidity 0.8.27;
 
 import { Address } from "@oz/utils/Address.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { IMaliciousWithdrawalQueue } from "src/core/mocks/IMaliciousWithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
+import { IMaliciousWithdrawalQueue } from "src/vault/mocks/IMaliciousWithdrawalQueue.sol";
 
 /// @title MaliciousWithdrawalQueue
 /// @notice Test-only withdrawal queue that attempts reentrancy on selected entrypoints.

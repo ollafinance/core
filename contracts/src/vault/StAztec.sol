@@ -6,7 +6,7 @@ import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
 import { IERC20Metadata } from "@oz/token/ERC20/extensions/IERC20Metadata.sol";
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
+import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 
 /// @title StAztec
 /// @notice ERC-20 token representing staked Aztec shares in OllaCore.

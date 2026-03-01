@@ -3,7 +3,7 @@ pragma solidity 0.8.27;
 
 import { Address } from "@oz/utils/Address.sol";
 
-import { IMaliciousSafetyModule } from "src/safetymodule/IMaliciousSafetyModule.sol";
+import { IMaliciousSafetyModule } from "src/safetymodule/mocks/IMaliciousSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 
 /// @title MaliciousSafetyModule
