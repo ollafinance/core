@@ -192,7 +192,7 @@ contract OllaVault is
 
     /// @inheritdoc IOllaVault
     function claimRequestById(uint256 requestId) external override nonReentrant whenNotPaused returns (uint256 assets) {
-        assets = _claimWithdrawal(requestId);
+        assets = _claimWithdrawal(requestId, address(0));
         return assets;
     }
 
@@ -204,10 +204,7 @@ contract OllaVault is
         whenNotPaused
         returns (uint256 assetsAfterFee)
     {
-        assetsAfterFee = _redeem(msg.sender, shares, recipient);
-        // slither-disable-next-line timestamp
-        if (assetsAfterFee < minAssetsOut) revert OllaVault__SlippageExceeded(assetsAfterFee, minAssetsOut);
-        return assetsAfterFee;
+        return _instantRedeem(shares, recipient, minAssetsOut);
     }
 
     /// @inheritdoc IOllaVault
@@ -222,6 +219,13 @@ contract OllaVault is
     ) external override nonReentrant whenNotPaused returns (uint256 assetsAfterFee) {
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
+        return _instantRedeem(shares, recipient, minAssetsOut);
+    }
+
+    function _instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut)
+        private
+        returns (uint256 assetsAfterFee)
+    {
         assetsAfterFee = _redeem(msg.sender, shares, recipient);
         // slither-disable-next-line timestamp
         if (assetsAfterFee < minAssetsOut) revert OllaVault__SlippageExceeded(assetsAfterFee, minAssetsOut);
@@ -271,7 +275,7 @@ contract OllaVault is
         _checkControllerOrOperator(controller);
         if (receiver == address(0)) revert OllaVault__ZeroAddress("receiver");
         uint256 requestId = _findClaimableRequest(controller, shares);
-        assets = _claimWithdrawalTo(requestId, receiver);
+        assets = _claimWithdrawal(requestId, receiver);
         return assets;
     }
 
@@ -287,7 +291,7 @@ contract OllaVault is
         return true;
     }
 
-    /// @notice Requests an async redemption (ERC-7540 3-arg version).
+    /// @notice Requests an async redemption (ERC-7540).
     function requestRedeem(uint256 shares, address controller, address owner)
         external
         override(IOllaVault)
@@ -298,9 +302,10 @@ contract OllaVault is
         if (msg.sender != owner && !_operators[owner][msg.sender]) {
             revert OllaVault__Unauthorized();
         }
+        if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
 
         uint256 assets = IOllaCore(_modules.core).convertToAssets(shares);
-        requestId = _requestRedeemFor(owner, shares, controller);
+        requestId = _executeRedeemRequest(owner, controller, controller, shares);
 
         emit RedeemRequest(controller, owner, requestId, msg.sender, assets);
         return requestId;
@@ -658,14 +663,6 @@ contract OllaVault is
         return shares;
     }
 
-    function _requestRedeemFor(address shareOwner, uint256 shares, address controller)
-        internal
-        returns (uint256 requestId)
-    {
-        if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
-        return _executeRedeemRequest(shareOwner, controller, controller, shares);
-    }
-
     /// @dev Shared logic for all async redemption paths.
     /// @param shareOwner  Address whose stAztec shares are burned.
     /// @param controller  Address that owns the withdrawal request (bookkeeping).
@@ -742,31 +739,12 @@ contract OllaVault is
         return netAssets;
     }
 
+    /// @dev Claims a withdrawal request. If receiverOverride is address(0), uses the request's recipient.
     // slither-disable-next-line reentrancy-benign
-    function _claimWithdrawal(uint256 requestId) internal returns (uint256 assets) {
+    function _claimWithdrawal(uint256 requestId, address receiverOverride) internal returns (uint256 assets) {
         IWithdrawalQueue queue = _modules.withdrawalQueue;
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
-        address receiver = request.recipient;
-        assets = request.assetsExpected;
-        address requestOwnerAddr = _requestOwners[requestId];
-
-        _removeOwnerRequest(requestOwnerAddr, requestId);
-        delete _requestOwners[requestId];
-
-        uint256 assetsClaimed = queue.claimWithdrawal(requestId);
-        if (assetsClaimed != assets) revert OllaVault__ClaimAssetsMismatch(requestId, assets, assetsClaimed);
-
-        if (request.finalized) {
-            _finalizedUnclaimedAssets -= assets;
-        }
-        _modules.asset.safeTransfer(receiver, assets);
-        emit WithdrawalClaimed(requestId, receiver, assets);
-        return assets;
-    }
-
-    function _claimWithdrawalTo(uint256 requestId, address receiver) internal returns (uint256 assets) {
-        IWithdrawalQueue queue = _modules.withdrawalQueue;
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        address receiver = receiverOverride == address(0) ? request.recipient : receiverOverride;
         assets = request.assetsExpected;
         address requestOwnerAddr = _requestOwners[requestId];
 
