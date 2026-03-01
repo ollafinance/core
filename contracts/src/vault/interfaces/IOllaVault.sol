@@ -238,15 +238,15 @@ interface IOllaVault {
         bytes32 s
     ) external returns (uint256 shares);
 
-    /// @notice Requests async redemption with permit.
-    /// @param shares The number of shares to redeem.
-    /// @param recipient The recipient of the assets.
+    /// @notice Requests async redemption with permit (ERC-7540 semantics).
+    /// @param shares The number of shares to redeem from msg.sender.
+    /// @param controller The controller of the request who receives the assets.
     /// @param deadline The permit deadline timestamp.
     /// @param v The permit signature v.
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return requestId The withdrawal request id.
-    function requestRedeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+    function requestRedeemWithPermit(uint256 shares, address controller, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
         external
         returns (uint256 requestId);
 
