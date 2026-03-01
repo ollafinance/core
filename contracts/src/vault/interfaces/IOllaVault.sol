@@ -2,8 +2,8 @@
 pragma solidity 0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 /// @title IOllaVault
 /// @notice Interface for the user-facing ERC-7540/ERC-7575/ERC-4626 vault.
@@ -238,12 +238,6 @@ interface IOllaVault {
         bytes32 s
     ) external returns (uint256 shares);
 
-    /// @notice Requests async redemption (Olla-native).
-    /// @param shares The number of shares to redeem.
-    /// @param recipient The recipient of the assets.
-    /// @return requestId The withdrawal request id.
-    function requestRedeem(uint256 shares, address recipient) external returns (uint256 requestId);
-
     /// @notice Requests async redemption with permit.
     /// @param shares The number of shares to redeem.
     /// @param recipient The recipient of the assets.
@@ -446,9 +440,6 @@ interface IOllaVault {
 
     /// @notice Returns the safety module address.
     function safetyModule() external view returns (address);
-
-    /// @notice Returns the stAztec share token address.
-    function stAztec() external view returns (address);
 
     /// @notice Returns the OllaCore address.
     function core() external view returns (address);

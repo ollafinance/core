@@ -14,8 +14,8 @@ import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
@@ -86,14 +86,14 @@ contract OllaVault is
 
     /// @notice Storage gap for upgradability.
     // slither-disable-next-line unused-state
-    uint256[40] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when a bucket lacks sufficient balance.
-    error OllaVault__InsufficientBucketBalance(uint256 amount, uint256 available);
+    /// @notice Thrown when a finalization exceeds available buffered assets.
+    error OllaVault__InsufficientBufferedAssets(uint256 amount, uint256 available);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -176,18 +176,6 @@ contract OllaVault is
     }
 
     /// @inheritdoc IOllaVault
-    function requestRedeem(uint256 shares, address recipient)
-        external
-        override(IOllaVault)
-        nonReentrant
-        whenNotPaused
-        returns (uint256 requestId)
-    {
-        requestId = _requestRedeem(msg.sender, shares, recipient);
-        return requestId;
-    }
-
-    /// @inheritdoc IOllaVault
     function requestRedeemWithPermit(uint256 shares, address recipient, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
         external
         override
@@ -196,8 +184,9 @@ contract OllaVault is
         returns (uint256 requestId)
     {
         // slither-disable-next-line reentrancy-benign
+        if (recipient == address(0)) revert OllaVault__ZeroAddress("recipient");
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
-        requestId = _requestRedeem(msg.sender, shares, recipient);
+        requestId = _executeRedeemRequest(msg.sender, msg.sender, recipient, shares);
         return requestId;
     }
 
@@ -361,7 +350,7 @@ contract OllaVault is
         }
 
         if (finalizedAmount > _bufferedAssets) {
-            revert OllaVault__InsufficientBucketBalance(finalizedAmount, _bufferedAssets);
+            revert OllaVault__InsufficientBufferedAssets(finalizedAmount, _bufferedAssets);
         }
 
         // slither-disable-next-line incorrect-equality
@@ -539,11 +528,6 @@ contract OllaVault is
         return address(_modules.asset);
     }
 
-    /// @notice Returns the stAztec share token address.
-    function stAztec() external view override returns (address) {
-        return address(_modules.stAztec);
-    }
-
     /// @notice Returns the OllaCore address.
     function core() external view override returns (address) {
         return _modules.core;
@@ -674,40 +658,22 @@ contract OllaVault is
         return shares;
     }
 
-    function _requestRedeem(address owner, uint256 shares, address recipient) internal returns (uint256 requestId) {
-        if (recipient == address(0)) revert OllaVault__ZeroAddress("recipient");
-        if (shares == 0) revert OllaVault__InvalidAmount();
-
-        VaultModules memory modules = _modules;
-        IOllaCore coreRef = IOllaCore(modules.core);
-
-        uint256 rate = coreRef.exchangeRate();
-        uint256 assetsExpected = coreRef.convertToAssets(shares);
-        ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
-        uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
-
-        _requestOwners[expectedRequestId] = owner;
-        _ownerRequestIndex[expectedRequestId] = _ownerRequestIds[owner].length + 1;
-        _ownerRequestIds[owner].push(expectedRequestId);
-        cumulativeWithdrawals += assetsExpected;
-
-        modules.stAztec.burn(owner, shares);
-
-        requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
-        // slither-disable-next-line timestamp
-        if (requestId != expectedRequestId) {
-            revert OllaVault__UnexpectedRequestId(expectedRequestId, requestId);
-        }
-
-        emit WithdrawalRequested(requestId, owner, recipient, shares, assetsExpected, rate);
-        return requestId;
-    }
-
     function _requestRedeemFor(address shareOwner, uint256 shares, address controller)
         internal
         returns (uint256 requestId)
     {
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
+        return _executeRedeemRequest(shareOwner, controller, controller, shares);
+    }
+
+    /// @dev Shared logic for all async redemption paths.
+    /// @param shareOwner  Address whose stAztec shares are burned.
+    /// @param controller  Address that owns the withdrawal request (bookkeeping).
+    /// @param recipient   Address passed to the WithdrawalQueue as the payout destination.
+    function _executeRedeemRequest(address shareOwner, address controller, address recipient, uint256 shares)
+        private
+        returns (uint256 requestId)
+    {
         if (shares == 0) revert OllaVault__InvalidAmount();
 
         VaultModules memory modules = _modules;
@@ -725,13 +691,13 @@ contract OllaVault is
 
         modules.stAztec.burn(shareOwner, shares);
 
-        requestId = modules.withdrawalQueue.requestWithdrawal(controller, shares, assetsExpected, rate);
+        requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
         // slither-disable-next-line timestamp
         if (requestId != expectedRequestId) {
             revert OllaVault__UnexpectedRequestId(expectedRequestId, requestId);
         }
 
-        emit WithdrawalRequested(requestId, shareOwner, controller, shares, assetsExpected, rate);
+        emit WithdrawalRequested(requestId, shareOwner, recipient, shares, assetsExpected, rate);
         return requestId;
     }
 
@@ -865,6 +831,7 @@ contract OllaVault is
         }
     }
 
+    /// @dev Linear scan for ERC-7540 redeem() compatibility. Prefer claimRequestById() for O(1) claims.
     function _findClaimableRequest(address controller, uint256 shares) internal view returns (uint256 requestId) {
         uint256[] storage requestIds = _ownerRequestIds[controller];
         uint256 len = requestIds.length;

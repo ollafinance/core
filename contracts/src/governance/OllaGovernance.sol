@@ -297,7 +297,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     function _propagateAdminRole(address oldGovernance, address newGovernance) internal {
         address coreAddr = core;
         address vaultAddr = IOllaCore(coreAddr).vault();
-        address rv = IOllaCore(coreAddr).rewardsVault();
+        address rv = IOllaCore(coreAddr).rewardsCollector();
         address sm = IOllaCore(coreAddr).stakingManager();
         address spr = address(IStakingManager(sm).stakingProviderRegistry());
 

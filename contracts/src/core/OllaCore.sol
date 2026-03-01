@@ -12,8 +12,8 @@ import { Math } from "@oz/utils/math/Math.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 import { GovernanceLib } from "src/core/libraries/GovernanceLib.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -23,7 +23,7 @@ import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaCore
 /// @notice Orchestration + accounting layer. Manages rebalance, computes totalAssets/exchangeRate,
-///         interacts with StakingManager/RewardsVault/SafetyModule, and instructs Vault via CORE_ROLE.
+///         interacts with StakingManager/RewardsCollector/SafetyModule, and instructs Vault via CORE_ROLE.
 /// @author Olla Core contributors
 contract OllaCore is
     Initializable,
@@ -140,7 +140,7 @@ contract OllaCore is
         uint256 protocolFeeBP_,
         uint256 treasuryFeeSplitBP_,
         address governanceContract_,
-        IRewardsVault rewardsVault_,
+        IRewardsCollector rewardsCollector_,
         address safetyModule_
     ) external override initializer {
         _validateInitialParams(
@@ -150,7 +150,7 @@ contract OllaCore is
             protocolFeeBP_,
             treasuryFeeSplitBP_,
             governanceContract_,
-            rewardsVault_,
+            rewardsCollector_,
             safetyModule_
         );
         __Ownable_init(governanceContract_);
@@ -163,7 +163,7 @@ contract OllaCore is
             vault: address(0), // Set via setVault() after vault deployment
             stAztec: stAztec_,
             stakingManager: stakingManager_,
-            rewardsVault: rewardsVault_,
+            rewardsCollector: rewardsCollector_,
             safetyModule: safetyModule_
         });
 
@@ -517,8 +517,8 @@ contract OllaCore is
     }
 
     /// @notice Returns the rewards vault module address.
-    function rewardsVault() external view override returns (address) {
-        return address(_modules.rewardsVault);
+    function rewardsCollector() external view override returns (address) {
+        return address(_modules.rewardsCollector);
     }
 
     /// @notice Returns the safety module address.
@@ -596,9 +596,9 @@ contract OllaCore is
         ) = _getStakingManagerState();
         _validateSlashingDelta(slashingDelta);
 
-        uint256 rewardsVaultBalance = _getRewardsVaultBalance();
+        uint256 rewardsCollectorBalance = _getRewardsCollectorBalance();
 
-        _applyAccountingUpdates(stakedPrincipal, rewardsVaultBalance, claimableRewards, rewardsDelta, slashingDelta);
+        _applyAccountingUpdates(stakedPrincipal, rewardsCollectorBalance, claimableRewards, rewardsDelta, slashingDelta);
 
         _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
         // slither-disable-end reentrancy-events
@@ -611,37 +611,37 @@ contract OllaCore is
         // slither-disable-next-line unused-return
         _modules.stakingManager.harvestRewards();
 
-        IRewardsVault rewardsVaultRef = _modules.rewardsVault;
+        IRewardsCollector rewardsCollectorRef = _modules.rewardsCollector;
         // slither-disable-next-line reentrancy-benign
-        rewardsDelta = rewardsVaultRef.recordBalance();
+        rewardsDelta = rewardsCollectorRef.recordBalance();
         if (rewardsDelta != 0) {
             _accountingState.cumulativeRewards += rewardsDelta;
         }
         emit RewardsDelta(rewardsDelta);
 
-        _pullRewardsVaultFunds();
+        _pullRewardsCollectorFunds();
 
         return rewardsDelta;
     }
 
-    function _pullRewardsVaultFunds() internal returns (uint256 pulledAmount) {
-        IRewardsVault rewardsVaultRef = _modules.rewardsVault;
-        uint256 rewardsVaultBalance = rewardsVaultRef.balance();
+    function _pullRewardsCollectorFunds() internal returns (uint256 pulledAmount) {
+        IRewardsCollector rewardsCollectorRef = _modules.rewardsCollector;
+        uint256 rewardsCollectorBalance = rewardsCollectorRef.balance();
 
         // slither-disable-next-line timestamp,incorrect-equality
-        if (rewardsVaultBalance == 0) return 0;
+        if (rewardsCollectorBalance == 0) return 0;
 
         IOllaVault vaultRef = IOllaVault(_modules.vault);
 
         // slither-disable-next-line reentrancy-benign
-        rewardsVaultRef.withdrawToCore();
+        rewardsCollectorRef.withdrawToCore();
         // Forward received funds to Vault
-        _modules.asset.safeTransfer(address(vaultRef), rewardsVaultBalance);
-        vaultRef.receiveUnstaked(rewardsVaultBalance);
+        _modules.asset.safeTransfer(address(vaultRef), rewardsCollectorBalance);
+        vaultRef.receiveUnstaked(rewardsCollectorBalance);
 
-        _accountingState.rewardsVaultBalance = 0;
-        emit RewardsVaultFundsPulled(rewardsVaultBalance);
-        return rewardsVaultBalance;
+        _accountingState.rewardsCollectorBalance = 0;
+        emit RewardsCollectorFundsPulled(rewardsCollectorBalance);
+        return rewardsCollectorBalance;
     }
 
     // slither-disable-next-line pess-multiple-storage-read
@@ -814,14 +814,14 @@ contract OllaCore is
     // slither-disable-next-line pess-multiple-storage-read
     function _applyAccountingUpdates(
         uint256 newStakedPrincipal,
-        uint256 newRewardsVaultBalance,
+        uint256 newRewardsCollectorBalance,
         uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) internal {
         IOllaCore.AccountingState storage stateSnapshot = _accountingState;
         stateSnapshot.stakedPrincipal = newStakedPrincipal;
-        stateSnapshot.rewardsVaultBalance = newRewardsVaultBalance;
+        stateSnapshot.rewardsCollectorBalance = newRewardsCollectorBalance;
         stateSnapshot.claimableRewards = newClaimableRewards;
         stateSnapshot.rewardsDelta = newRewardsDelta;
         stateSnapshot.slashingDelta = newSlashingDelta;
@@ -956,8 +956,8 @@ contract OllaCore is
 
     // slither-disable-next-line timestamp,pess-multiple-storage-read
     function _hasRebalanceWorkAvailable() internal view returns (bool) {
-        uint256 rewardsVaultBalance = _getRewardsVaultBalance();
-        if (rewardsVaultBalance > 0) return true;
+        uint256 rewardsCollectorBalance = _getRewardsCollectorBalance();
+        if (rewardsCollectorBalance > 0) return true;
 
         if (_modules.stakingManager.getClaimableRewards() > 0) return true;
 
@@ -1014,8 +1014,8 @@ contract OllaCore is
         return (report.totalAssets, report.exchangeRate);
     }
 
-    function _getRewardsVaultBalance() internal view returns (uint256 rewardsVaultBalance) {
-        return IRewardsVault(_modules.rewardsVault).balance();
+    function _getRewardsCollectorBalance() internal view returns (uint256 rewardsCollectorBalance) {
+        return IRewardsCollector(_modules.rewardsCollector).balance();
     }
 
     function _validateSlashingDelta(uint256 slashingDelta) internal view {
@@ -1041,6 +1041,8 @@ contract OllaCore is
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
 
+    /// @dev Core is the pricing authority because it owns totalAssets() (computed from _accountingState).
+    ///      The Vault delegates pricing to Core via cross-contract calls to avoid circular dependencies.
     function _exchangeRate() internal view returns (uint256) {
         return (totalAssets() + 1).mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + 1, Math.Rounding.Floor);
     }
@@ -1073,7 +1075,7 @@ contract OllaCore is
         uint256 protocolFeeBP_,
         uint256 treasuryFeeSplitBP_,
         address governanceContract_,
-        IRewardsVault rewardsVault_,
+        IRewardsCollector rewardsCollector_,
         address safetyModule_
     ) internal pure {
         if (address(asset_) == address(0)) revert OllaCore__ZeroAddress("asset_");
@@ -1084,7 +1086,7 @@ contract OllaCore is
             revert OllaCore__InvalidSplitBP(treasuryFeeSplitBP_);
         }
         if (governanceContract_ == address(0)) revert OllaCore__ZeroAddress("governanceContract_");
-        if (address(rewardsVault_) == address(0)) revert OllaCore__ZeroAddress("rewardsVault_");
+        if (address(rewardsCollector_) == address(0)) revert OllaCore__ZeroAddress("rewardsCollector_");
         if (safetyModule_ == address(0)) revert OllaCore__ZeroAddress("safetyModule_");
     }
 
@@ -1110,7 +1112,7 @@ contract OllaCore is
         uint256 bufferedAssets,
         uint256 pendingWithdrawals
     ) internal pure returns (uint256 totalAssets_) {
-        uint256 total = bufferedAssets + buckets.stakedPrincipal + buckets.rewardsVaultBalance
+        uint256 total = bufferedAssets + buckets.stakedPrincipal + buckets.rewardsCollectorBalance
             + buckets.claimableRewards;
         // slither-disable-next-line timestamp
         if (buckets.slashingDelta >= total) return 0;
