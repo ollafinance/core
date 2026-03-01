@@ -26,7 +26,7 @@ contract UserInitiateWithdrawAll is BaseScript {
         }
 
         vm.startBroadcast(pk);
-        IOllaVault(vaultAddr).requestRedeem(shares, recipient);
+        IOllaVault(vaultAddr).requestRedeem(shares, recipient, user);
         vm.stopBroadcast();
     }
 }

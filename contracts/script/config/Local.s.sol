@@ -37,7 +37,7 @@ contract LocalConfig is ConfigHelper {
             timelockMinDelay: 0, // instant for local dev
             // Satellite addresses - populated during deployment
             withdrawalQueue: deployer,
-            rewardsVault: deployer,
+            rewardsCollector: deployer,
             safetyModule: deployer
         });
     }

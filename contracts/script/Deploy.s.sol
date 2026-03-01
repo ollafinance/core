@@ -4,9 +4,9 @@ pragma solidity ^0.8.27;
 import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
@@ -18,7 +18,7 @@ import { TestnetConfig } from "./config/Testnet.s.sol";
 import { MocksDeployer } from "./deployers/Mocks.s.sol";
 import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
 import { OllaGovernanceDeployer } from "./deployers/OllaGovernance.s.sol";
-import { RewardsVaultDeployer } from "./deployers/RewardsVault.s.sol";
+import { RewardsCollectorDeployer } from "./deployers/RewardsCollector.s.sol";
 import { StAztecDeployer } from "./deployers/StAztec.s.sol";
 import { WithdrawalQueueDeployer } from "./deployers/WithdrawalQueue.s.sol";
 
@@ -31,7 +31,7 @@ contract DeployScript is BaseDeployer {
     OllaGovernanceDeployer internal _ollaGovernanceDeployer;
     StAztecDeployer internal _stAztecDeployer;
     WithdrawalQueueDeployer internal _withdrawalQueueDeployer;
-    RewardsVaultDeployer internal _rewardsVaultDeployer;
+    RewardsCollectorDeployer internal _rewardsCollectorDeployer;
 
     function setUp() public {
         // Initialize deployers
@@ -40,7 +40,7 @@ contract DeployScript is BaseDeployer {
         _ollaGovernanceDeployer = new OllaGovernanceDeployer();
         _stAztecDeployer = new StAztecDeployer();
         _withdrawalQueueDeployer = new WithdrawalQueueDeployer();
-        _rewardsVaultDeployer = new RewardsVaultDeployer();
+        _rewardsCollectorDeployer = new RewardsCollectorDeployer();
     }
 
     function run() public {
@@ -62,9 +62,9 @@ contract DeployScript is BaseDeployer {
         address stAztec;
         address safetyModule;
         address withdrawalQueue;
-        address rewardsVault;
+        address rewardsCollector;
         address withdrawalQueueImpl;
-        address rewardsVaultImpl;
+        address rewardsCollectorImpl;
 
         // Initialize deployment JSON
         string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
@@ -113,18 +113,18 @@ contract DeployScript is BaseDeployer {
         json = _addAddressToJson(json, "WithdrawalQueueImplementation", withdrawalQueueImpl, false);
         json = _addAddressToJson(json, "WithdrawalQueueProxy", withdrawalQueue, false);
 
-        // 4.2 Deploy RewardsVault (linked to OllaCore proxy)
+        // 4.2 Deploy RewardsCollector (linked to OllaCore proxy)
 
-        (rewardsVaultImpl, rewardsVault) =
-            _rewardsVaultDeployer.deploy(config, IERC20(asset), ollaCoreProxy, ollaGovProxy);
-        json = _addAddressToJson(json, "RewardsVaultImplementation", rewardsVaultImpl, false);
-        json = _addAddressToJson(json, "RewardsVaultProxy", rewardsVault, false);
+        (rewardsCollectorImpl, rewardsCollector) =
+            _rewardsCollectorDeployer.deploy(config, IERC20(asset), ollaCoreProxy, ollaGovProxy);
+        json = _addAddressToJson(json, "RewardsCollectorImplementation", rewardsCollectorImpl, false);
+        json = _addAddressToJson(json, "RewardsCollectorProxy", rewardsCollector, false);
 
-        // Local wiring for staking stack + safety module (requires RewardsVault and core proxy)
+        // Local wiring for staking stack + safety module (requires RewardsCollector and core proxy)
         if (config.deployMocks) {
             // Deploy + init StakingManager + StakingProviderRegistry behind proxies
             (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
-                _mocksDeployer.deployStakingStack(config, ollaCoreProxy, rewardsVault, asset, rollupRegistry);
+                _mocksDeployer.deployStakingStack(config, ollaCoreProxy, rewardsCollector, asset, rollupRegistry);
             json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
             json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
             json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);
@@ -146,9 +146,9 @@ contract DeployScript is BaseDeployer {
             StakingProviderRegistry(stakingProviderRegistry).addKeysToProvider(keys);
             vm.stopBroadcast();
 
-            // Configure rollup mock to send tick() rewards to RewardsVault
+            // Configure rollup mock to send tick() rewards to RewardsCollector
             vm.startBroadcast(config.deployerPrivateKey);
-            MockAztecRollup(rollup).setRewardsCoinbase(rewardsVault);
+            MockAztecRollup(rollup).setRewardsCoinbase(rewardsCollector);
             vm.stopBroadcast();
 
             json = _addAddressToJson(json, "MockAztecRollup", rollup, false);
@@ -171,7 +171,7 @@ contract DeployScript is BaseDeployer {
         //    OllaGovernance holds: owner(), DEFAULT_ADMIN_ROLE, GUARDIAN_ROLE, OPERATOR_ROLE
 
         config.withdrawalQueue = withdrawalQueue;
-        config.rewardsVault = rewardsVault;
+        config.rewardsCollector = rewardsCollector;
         config.safetyModule = safetyModule;
         // Override governance to OllaGovernance proxy (OllaCore's owner)
         config.governance = ollaGovProxy;

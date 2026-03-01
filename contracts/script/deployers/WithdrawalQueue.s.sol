@@ -2,7 +2,7 @@
 pragma solidity ^0.8.27;
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { BaseDeployer } from "./../base/BaseDeployer.s.sol";
 import { DeployConfig } from "./../config/Config.s.sol";
 

@@ -18,7 +18,7 @@ contract MocksDeployer is BaseDeployer {
     struct StakingStackParams {
         DeployConfig config;
         address core;
-        address rewardsVault;
+        address rewardsCollector;
         address asset;
         address rollupRegistry;
     }
@@ -56,7 +56,7 @@ contract MocksDeployer is BaseDeployer {
     function deployStakingStack(
         DeployConfig memory config,
         address core,
-        address rewardsVault,
+        address rewardsCollector,
         address asset,
         address rollupRegistry
     )
@@ -69,7 +69,7 @@ contract MocksDeployer is BaseDeployer {
         )
     {
         StakingStackParams memory params = StakingStackParams({
-            config: config, core: core, rewardsVault: rewardsVault, asset: asset, rollupRegistry: rollupRegistry
+            config: config, core: core, rewardsCollector: rewardsCollector, asset: asset, rollupRegistry: rollupRegistry
         });
 
         return _deployStakingStackInternal(params);
@@ -87,7 +87,7 @@ contract MocksDeployer is BaseDeployer {
     {
         require(params.config.deployMocks, "MocksDeployer: mocks not enabled for this environment");
         require(params.core != address(0), "MocksDeployer: core required");
-        require(params.rewardsVault != address(0), "MocksDeployer: rewardsVault required");
+        require(params.rewardsCollector != address(0), "MocksDeployer: rewardsCollector required");
         require(params.asset != address(0), "MocksDeployer: asset required");
         require(params.rollupRegistry != address(0), "MocksDeployer: rollupRegistry required");
 
@@ -113,14 +113,14 @@ contract MocksDeployer is BaseDeployer {
         address sprProxyAddr = address(sprProxy);
         IERC20 asset = IERC20(params.asset);
         address rollupRegistry = params.rollupRegistry;
-        address rewardsVault = params.rewardsVault;
+        address rewardsCollector = params.rewardsCollector;
         address core = params.core;
 
         // Initialize StakingProviderRegistry first (needs stakingManager address)
         StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, deployer, deployer, deployer);
 
         // Initialize StakingManager
-        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsVault, core, sprProxyAddr, deployer);
+        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsCollector, core, sprProxyAddr, deployer);
 
         vm.stopBroadcast();
 

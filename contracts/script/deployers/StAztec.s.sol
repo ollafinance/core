@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { BaseDeployer } from "./../base/BaseDeployer.s.sol";
 import { DeployConfig } from "./../config/Config.s.sol";
 
