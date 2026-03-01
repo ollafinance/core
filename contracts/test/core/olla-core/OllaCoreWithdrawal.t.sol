@@ -211,13 +211,13 @@ contract OllaCoreWithdrawalTest is Test {
         assertEq(recordedRate, rate, "queue receives exchange rate");
     }
 
-    function test_RequestOwner_ReturnsOwnerWhenRecipientDiffers() external {
+    function test_RequestOwner_ReturnsControllerNotShareOwner() external {
         _performDeposit(alice, 12 * DECIMALS);
 
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(4 * DECIMALS, bob, alice);
 
-        assertEq(vault.requestOwner(requestId), alice, "request owner tracked separately from recipient");
+        assertEq(vault.requestOwner(requestId), bob, "controller owns the request (ERC-7540)");
     }
 
     function test_ActiveRequestIds_ReturnsOutstandingRequests() external {
@@ -228,17 +228,20 @@ contract OllaCoreWithdrawalTest is Test {
         vm.prank(alice);
         uint256 secondRequestId = vault.requestRedeem(4 * DECIMALS, alice, alice);
 
-        uint256[] memory activeRequests = vault.activeRequestIds(alice);
-        assertEq(activeRequests.length, 2, "active request count");
-        assertEq(activeRequests[0], firstRequestId, "first request id stored");
-        assertEq(activeRequests[1], secondRequestId, "second request id stored");
+        // First request is owned by bob (controller), second by alice
+        uint256[] memory bobRequests = vault.activeRequestIds(bob);
+        assertEq(bobRequests.length, 1, "bob active request count");
+        assertEq(bobRequests[0], firstRequestId, "bob owns first request");
+
+        uint256[] memory aliceRequests = vault.activeRequestIds(alice);
+        assertEq(aliceRequests.length, 1, "alice active request count");
+        assertEq(aliceRequests[0], secondRequestId, "alice owns second request");
 
         vm.prank(alice);
-        vault.claimRequestById(firstRequestId);
+        vault.claimRequestById(secondRequestId);
 
-        activeRequests = vault.activeRequestIds(alice);
-        assertEq(activeRequests.length, 1, "active request count after claim");
-        assertEq(activeRequests[0], secondRequestId, "remaining request id stored");
+        aliceRequests = vault.activeRequestIds(alice);
+        assertEq(aliceRequests.length, 0, "alice active request count after claim");
     }
 
     function test_RequestRedeem_StillWorks() external {
