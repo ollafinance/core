@@ -4,13 +4,13 @@ pragma solidity 0.8.27;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@oz/utils/Address.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { IMaliciousRewardsVault } from "src/core/mocks/IMaliciousRewardsVault.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IMaliciousRewardsCollector } from "src/core/mocks/IMaliciousRewardsCollector.sol";
 
-/// @title MaliciousRewardsVault
+/// @title MaliciousRewardsCollector
 /// @notice Test-only rewards vault that attempts reentrancy in recordBalance.
 /// @author Olla Core contributors
-contract MaliciousRewardsVault is IMaliciousRewardsVault {
+contract MaliciousRewardsCollector is IMaliciousRewardsCollector {
     using Address for address;
     using SafeERC20 for IERC20;
 
@@ -42,7 +42,7 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         _reenterOnHook = enabled;
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function recordBalance() external override returns (uint256 balanceDelta) {
         if (_reenterOnHook) {
             _reenterOnHook = false;
@@ -88,13 +88,13 @@ contract MaliciousRewardsVault is IMaliciousRewardsVault {
         return _totalReceived;
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function latestRecordedRewardsAmount() external view override returns (uint256) {
         return _latestRecordedRewardsAmount;
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function initialize(IERC20, address, address) external pure override {
-        revert MaliciousRewardsVault__NoInitializer();
+        revert MaliciousRewardsCollector__NoInitializer();
     }
 }

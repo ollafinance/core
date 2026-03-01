@@ -6,15 +6,15 @@ import { Test } from "@forge-std/Test.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-import { RewardsVault } from "src/core/RewardsVault.sol";
+import { RewardsCollector } from "src/core/RewardsCollector.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 
-contract RewardsVaultHandler is Test {
+contract RewardsCollectorHandler is Test {
     /*//////////////////////////////////////////////////////////////
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
-    RewardsVault public vault;
+    RewardsCollector public vault;
     MockAztec public asset;
     address public core;
 
@@ -22,7 +22,7 @@ contract RewardsVaultHandler is Test {
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(RewardsVault _vault, MockAztec _asset, address _core) {
+    constructor(RewardsCollector _vault, MockAztec _asset, address _core) {
         vault = _vault;
         asset = _asset;
         core = _core;
@@ -53,14 +53,14 @@ contract RewardsVaultHandler is Test {
     }
 }
 
-contract RewardsVaultInvariantTest is Test {
+contract RewardsCollectorInvariantTest is Test {
     /*//////////////////////////////////////////////////////////////
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
-    RewardsVault internal vault;
+    RewardsCollector internal vault;
     MockAztec internal asset;
-    RewardsVaultHandler internal handler;
+    RewardsCollectorHandler internal handler;
     address internal core;
     address internal admin;
 
@@ -74,12 +74,12 @@ contract RewardsVaultInvariantTest is Test {
 
         asset = new MockAztec(address(this));
 
-        RewardsVault implementation = new RewardsVault();
+        RewardsCollector implementation = new RewardsCollector();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        vault = RewardsVault(address(proxy));
+        vault = RewardsCollector(address(proxy));
         vault.initialize(IERC20(address(asset)), core, admin);
 
-        handler = new RewardsVaultHandler(vault, asset, core);
+        handler = new RewardsCollectorHandler(vault, asset, core);
         targetContract(address(handler));
     }
 

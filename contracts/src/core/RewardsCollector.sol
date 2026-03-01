@@ -8,12 +8,12 @@ import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
 
-/// @title RewardsVault
+/// @title RewardsCollector
 /// @notice Base implementation for rewards and fee management vault.
 /// @author Olla Core contributors
-contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuard, IRewardsVault {
+contract RewardsCollector is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuard, IRewardsCollector {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -39,7 +39,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
                                   ERRORS
     //////////////////////////////////////////////////////////////*/
 
-    error RewardsVault__UnauthorizedGovernance(address caller);
+    error RewardsCollector__UnauthorizedGovernance(address caller);
 
     /*//////////////////////////////////////////////////////////////
                                  MODIFIERS
@@ -47,7 +47,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
 
     modifier onlyCore() {
         if (msg.sender != core) {
-            revert IRewardsVault.RewardsVault__UnauthorizedCore(msg.sender);
+            revert IRewardsCollector.RewardsCollector__UnauthorizedCore(msg.sender);
         }
         _;
     }
@@ -64,19 +64,19 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
                                INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the RewardsVault behind a proxy.
+    /// @notice Initializes the RewardsCollector behind a proxy.
     /// @param rewardsToken_ The rewards token address.
     /// @param core_ The core contract address.
     /// @param defaultAdmin_ The default admin for role management.
     function initialize(IERC20 rewardsToken_, address core_, address defaultAdmin_) external override initializer {
         if (address(rewardsToken_) == address(0)) {
-            revert RewardsVault__ZeroAddress("rewardsToken");
+            revert RewardsCollector__ZeroAddress("rewardsToken");
         }
         if (core_ == address(0)) {
-            revert RewardsVault__ZeroAddress("core");
+            revert RewardsCollector__ZeroAddress("core");
         }
         if (defaultAdmin_ == address(0)) {
-            revert RewardsVault__ZeroAddress("defaultAdmin");
+            revert RewardsCollector__ZeroAddress("defaultAdmin");
         }
 
         __AccessControl_init();
@@ -91,13 +91,13 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function recordBalance() external override onlyCore nonReentrant returns (uint256 balanceDelta) {
         uint256 previousAmount = latestRecordedRewardsAmount;
         uint256 currentTokenBalance = rewardsToken.balanceOf(address(this));
         // Revert if balance decreased (should never happen in normal operation)
         if (currentTokenBalance < previousAmount) {
-            revert RewardsVault__BalanceMismatch();
+            revert RewardsCollector__BalanceMismatch();
         }
         balanceDelta = currentTokenBalance - previousAmount;
         latestRecordedRewardsAmount = currentTokenBalance;
@@ -105,17 +105,17 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         return balanceDelta;
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function withdrawToCore() external override onlyCore nonReentrant {
         uint256 availableBalance = rewardsToken.balanceOf(address(this));
         // slither-disable-next-line incorrect-equality
         if (availableBalance == 0) {
-            revert RewardsVault__ZeroAmount();
+            revert RewardsCollector__ZeroAmount();
         }
         // slither-disable-next-line incorrect-equality
         if (availableBalance != latestRecordedRewardsAmount) {
             // NOTE: this practically forces to run recordBalance in same tx before withdrawing
-            revert RewardsVault__BalanceMismatch();
+            revert RewardsCollector__BalanceMismatch();
         }
         rewardsToken.safeTransfer(core, availableBalance);
         latestRecordedRewardsAmount = 0;
@@ -126,7 +126,7 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function balance() external view override returns (uint256) {
         return rewardsToken.balanceOf(address(this));
     }
@@ -139,10 +139,10 @@ contract RewardsVault is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     /// @param newImplementation The new implementation address.
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (msg.sender != OwnableUpgradeable(core).owner()) {
-            revert RewardsVault__UnauthorizedGovernance(msg.sender);
+            revert RewardsCollector__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {
-            revert RewardsVault__ZeroAddress("newImplementation");
+            revert RewardsCollector__ZeroAddress("newImplementation");
         }
     }
 }

@@ -4,14 +4,14 @@ pragma solidity 0.8.27;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { IMockRewardsVault } from "src/core/mocks/IMockRewardsVault.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IMockRewardsCollector } from "src/core/mocks/IMockRewardsCollector.sol";
 
-/// @title MockRewardsVault
+/// @title MockRewardsCollector
 /// @notice Mock rewards vault for testing StakingManager reward harvesting.
-/// @dev Implements IRewardsVault interface with test helpers.
+/// @dev Implements IRewardsCollector interface with test helpers.
 /// @author Olla Core contributors
-contract MockRewardsVault is IMockRewardsVault {
+contract MockRewardsCollector is IMockRewardsCollector {
     using SafeERC20 for IERC20;
     /*//////////////////////////////////////////////////////////////
                                 IMMUTABLES
@@ -40,7 +40,7 @@ contract MockRewardsVault is IMockRewardsVault {
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Constructs the MockRewardsVault.
+    /// @notice Constructs the MockRewardsCollector.
     /// @param rewardsToken_ The rewards token address.
     /// @param coreAddress The core contract address.
     constructor(IERC20 rewardsToken_, address coreAddress) {
@@ -52,10 +52,10 @@ contract MockRewardsVault is IMockRewardsVault {
                              CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function recordBalance() external override returns (uint256 balanceDelta) {
         if (_hookShouldFail) {
-            revert MockRewardsVault__HookFailed();
+            revert MockRewardsCollector__HookFailed();
         }
         uint256 currentBalance = REWARDS_TOKEN.balanceOf(address(this));
         balanceDelta = currentBalance - _latestRecordedRewardsAmount;
@@ -65,7 +65,7 @@ contract MockRewardsVault is IMockRewardsVault {
         return balanceDelta;
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function withdrawToCore() external override {
         uint256 available = REWARDS_TOKEN.balanceOf(address(this));
         _latestRecordedRewardsAmount = 0;
@@ -77,7 +77,7 @@ contract MockRewardsVault is IMockRewardsVault {
                           TEST HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IMockRewardsVault
+    /// @inheritdoc IMockRewardsCollector
     function setHookShouldFail(bool shouldFail) external override {
         _hookShouldFail = shouldFail;
     }
@@ -86,33 +86,33 @@ contract MockRewardsVault is IMockRewardsVault {
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function balance() external view override returns (uint256) {
         return REWARDS_TOKEN.balanceOf(address(this));
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function core() external view override returns (address) {
         return CORE_ADDRESS;
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function rewardsToken() external view override returns (IERC20) {
         return REWARDS_TOKEN;
     }
 
-    /// @inheritdoc IMockRewardsVault
+    /// @inheritdoc IMockRewardsCollector
     function totalReceived() external view override returns (uint256) {
         return _totalReceived;
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function latestRecordedRewardsAmount() external view override returns (uint256) {
         return _latestRecordedRewardsAmount;
     }
 
-    /// @inheritdoc IRewardsVault
+    /// @inheritdoc IRewardsCollector
     function initialize(IERC20, address, address) external pure override {
-        revert MockRewardsVault__NoInitializer();
+        revert MockRewardsCollector__NoInitializer();
     }
 }

@@ -7,12 +7,12 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-import { RewardsVault } from "src/core/RewardsVault.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { RewardsCollector } from "src/core/RewardsCollector.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockOllaCoreGovernance } from "test/mocks/MockOllaCoreGovernance.sol";
 
-contract RewardsVaultUpgradeMock is RewardsVault {
+contract RewardsCollectorUpgradeMock is RewardsCollector {
     uint256 public v2Value;
 
     function setV2Value(uint256 value) external {
@@ -24,7 +24,7 @@ contract RewardsVaultUpgradeMock is RewardsVault {
     }
 }
 
-contract RewardsVaultUpgradeTest is Test {
+contract RewardsCollectorUpgradeTest is Test {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -36,7 +36,7 @@ contract RewardsVaultUpgradeTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal aztec;
-    RewardsVault internal vault;
+    RewardsCollector internal vault;
 
     address internal core;
     address internal defaultAdmin;
@@ -54,9 +54,9 @@ contract RewardsVaultUpgradeTest is Test {
 
         aztec = new MockAztec(address(this));
 
-        RewardsVault implementation = new RewardsVault();
+        RewardsCollector implementation = new RewardsCollector();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        vault = RewardsVault(address(proxy));
+        vault = RewardsCollector(address(proxy));
         vault.initialize(IERC20(address(aztec)), core, defaultAdmin);
     }
 
@@ -65,7 +65,7 @@ contract RewardsVaultUpgradeTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_UnauthorizedUpgrade() external {
-        RewardsVaultUpgradeMock newImplementation = new RewardsVaultUpgradeMock();
+        RewardsCollectorUpgradeMock newImplementation = new RewardsCollectorUpgradeMock();
         address attacker = makeAddr("attacker");
 
         vm.expectRevert(
@@ -78,27 +78,27 @@ contract RewardsVaultUpgradeTest is Test {
     }
 
     function test_RevertWhen_DefaultAdminButNotGovernance_Upgrade() external {
-        RewardsVaultUpgradeMock newImplementation = new RewardsVaultUpgradeMock();
+        RewardsCollectorUpgradeMock newImplementation = new RewardsCollectorUpgradeMock();
         address otherAdmin = makeAddr("otherAdmin");
 
         bytes32 defaultAdminRole = vault.DEFAULT_ADMIN_ROLE();
         vm.prank(defaultAdmin);
         vault.grantRole(defaultAdminRole, otherAdmin);
 
-        vm.expectRevert(abi.encodeWithSelector(RewardsVault.RewardsVault__UnauthorizedGovernance.selector, otherAdmin));
+        vm.expectRevert(abi.encodeWithSelector(RewardsCollector.RewardsCollector__UnauthorizedGovernance.selector, otherAdmin));
         vm.prank(otherAdmin);
         vault.upgradeToAndCall(address(newImplementation), "");
     }
 
     function test_RevertWhen_UpgradeToZeroImplementation() external {
-        vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__ZeroAddress.selector, "newImplementation"));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "newImplementation"));
         vm.prank(defaultAdmin);
         vault.upgradeToAndCall(address(0), "");
     }
 
     function test_RevertWhen_UpgradeCalledOnImplementationDirectly() external {
-        RewardsVaultUpgradeMock newImplementation = new RewardsVaultUpgradeMock();
-        RewardsVault implementation = new RewardsVault();
+        RewardsCollectorUpgradeMock newImplementation = new RewardsCollectorUpgradeMock();
+        RewardsCollector implementation = new RewardsCollector();
 
         vm.expectRevert();
         vm.prank(defaultAdmin);
@@ -115,7 +115,7 @@ contract RewardsVaultUpgradeTest is Test {
         address rewardsTokenBefore = address(vault.rewardsToken());
         uint256 latestRecordedBefore = vault.latestRecordedRewardsAmount();
 
-        RewardsVaultUpgradeMock newImplementation = new RewardsVaultUpgradeMock();
+        RewardsCollectorUpgradeMock newImplementation = new RewardsCollectorUpgradeMock();
 
         vm.expectEmit(true, true, false, true, address(vault));
         emit Upgraded(address(newImplementation));
@@ -123,7 +123,7 @@ contract RewardsVaultUpgradeTest is Test {
         vm.prank(defaultAdmin);
         vault.upgradeToAndCall(address(newImplementation), "");
 
-        RewardsVaultUpgradeMock v2 = RewardsVaultUpgradeMock(address(vault));
+        RewardsCollectorUpgradeMock v2 = RewardsCollectorUpgradeMock(address(vault));
         assertEq(v2.version(), 2, "upgrade applied");
         assertEq(v2.core(), coreBefore, "core preserved");
         assertEq(address(v2.rewardsToken()), rewardsTokenBefore, "rewards token preserved");

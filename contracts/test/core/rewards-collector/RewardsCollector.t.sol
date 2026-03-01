@@ -8,11 +8,11 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-import { RewardsVault } from "src/core/RewardsVault.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { RewardsCollector } from "src/core/RewardsCollector.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 
-contract RewardsVaultTest is Test {
+contract RewardsCollectorTest is Test {
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -25,7 +25,7 @@ contract RewardsVaultTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal aztec;
-    RewardsVault internal vault;
+    RewardsCollector internal vault;
 
     address internal core;
     address internal defaultAdmin;
@@ -37,24 +37,24 @@ contract RewardsVaultTest is Test {
         alice = makeAddr("alice");
 
         aztec = new MockAztec(address(this));
-        vault = _deployRewardsVault(IERC20(address(aztec)), core, defaultAdmin);
+        vault = _deployRewardsCollector(IERC20(address(aztec)), core, defaultAdmin);
     }
 
-    function _deployRewardsVault(IERC20 rewardsToken_, address core_, address defaultAdmin_)
+    function _deployRewardsCollector(IERC20 rewardsToken_, address core_, address defaultAdmin_)
         internal
-        returns (RewardsVault)
+        returns (RewardsCollector)
     {
-        RewardsVault implementation = new RewardsVault();
+        RewardsCollector implementation = new RewardsCollector();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        RewardsVault deployed = RewardsVault(address(proxy));
+        RewardsCollector deployed = RewardsCollector(address(proxy));
         deployed.initialize(rewardsToken_, core_, defaultAdmin_);
         return deployed;
     }
 
-    function _deployUninitializedRewardsVault() internal returns (RewardsVault) {
-        RewardsVault implementation = new RewardsVault();
+    function _deployUninitializedRewardsCollector() internal returns (RewardsCollector) {
+        RewardsCollector implementation = new RewardsCollector();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        return RewardsVault(address(proxy));
+        return RewardsCollector(address(proxy));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -69,23 +69,23 @@ contract RewardsVaultTest is Test {
     }
 
     function test_RevertWhen_Initialize_RewardsTokenZeroAddress() external {
-        RewardsVault v = _deployUninitializedRewardsVault();
+        RewardsCollector v = _deployUninitializedRewardsCollector();
 
-        vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__ZeroAddress.selector, "rewardsToken"));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "rewardsToken"));
         v.initialize(IERC20(address(0)), core, defaultAdmin);
     }
 
     function test_RevertWhen_Initialize_CoreZeroAddress() external {
-        RewardsVault v = _deployUninitializedRewardsVault();
+        RewardsCollector v = _deployUninitializedRewardsCollector();
 
-        vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__ZeroAddress.selector, "core"));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "core"));
         v.initialize(IERC20(address(aztec)), address(0), defaultAdmin);
     }
 
     function test_RevertWhen_Initialize_DefaultAdminZeroAddress() external {
-        RewardsVault v = _deployUninitializedRewardsVault();
+        RewardsCollector v = _deployUninitializedRewardsCollector();
 
-        vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__ZeroAddress.selector, "defaultAdmin"));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "defaultAdmin"));
         v.initialize(IERC20(address(aztec)), core, address(0));
     }
 
@@ -99,7 +99,7 @@ contract RewardsVaultTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_PostReceiveFundsHook_Unauthorized() external {
-        vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__UnauthorizedCore.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         vault.recordBalance();
     }
@@ -149,7 +149,7 @@ contract RewardsVaultTest is Test {
         vm.prank(address(vault));
         aztec.transfer(alice, 10 ether);
 
-        vm.expectRevert(IRewardsVault.RewardsVault__BalanceMismatch.selector);
+        vm.expectRevert(IRewardsCollector.RewardsCollector__BalanceMismatch.selector);
         vm.prank(core);
         vault.recordBalance();
     }
@@ -159,13 +159,13 @@ contract RewardsVaultTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_WithdrawToCore_Unauthorized() external {
-        vm.expectRevert(abi.encodeWithSelector(IRewardsVault.RewardsVault__UnauthorizedCore.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         vault.withdrawToCore();
     }
 
     function test_RevertWhen_WithdrawToCore_ZeroBalance() external {
-        vm.expectRevert(IRewardsVault.RewardsVault__ZeroAmount.selector);
+        vm.expectRevert(IRewardsCollector.RewardsCollector__ZeroAmount.selector);
         vm.prank(core);
         vault.withdrawToCore();
     }
@@ -173,7 +173,7 @@ contract RewardsVaultTest is Test {
     function test_RevertWhen_WithdrawToCore_BalanceMismatch_WhenNotRecorded() external {
         aztec.mint(address(vault), 1 ether);
 
-        vm.expectRevert(IRewardsVault.RewardsVault__BalanceMismatch.selector);
+        vm.expectRevert(IRewardsCollector.RewardsCollector__BalanceMismatch.selector);
         vm.prank(core);
         vault.withdrawToCore();
     }
@@ -231,7 +231,7 @@ contract RewardsVaultTest is Test {
         uint256 extraAmount = 5 ether;
         aztec.mint(address(vault), extraAmount);
 
-        vm.expectRevert(IRewardsVault.RewardsVault__BalanceMismatch.selector);
+        vm.expectRevert(IRewardsCollector.RewardsCollector__BalanceMismatch.selector);
         vm.prank(core);
         vault.withdrawToCore();
     }
