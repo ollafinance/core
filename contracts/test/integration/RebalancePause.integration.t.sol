@@ -7,12 +7,12 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
@@ -34,7 +34,7 @@ contract RebalanceInProgressIntegrationTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     SafetyModule internal safetyModule;
     address internal governance;
     address internal admin;
@@ -60,7 +60,7 @@ contract RebalanceInProgressIntegrationTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         safetyModule =
@@ -73,12 +73,12 @@ contract RebalanceInProgressIntegrationTest is Test {
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsCollector(address(rewardsCollector));
         stakingManager.setUnstakedToken(asset);
 
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -120,7 +120,7 @@ contract RebalanceInProgressIntegrationTest is Test {
         returns (uint256 requestId, uint256 assetsExpected)
     {
         vm.prank(owner);
-        requestId = vault.requestRedeem(shares, recipient);
+        requestId = vault.requestRedeem(shares, recipient, owner);
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);
@@ -177,7 +177,7 @@ contract RebalanceInProgressIntegrationTest is Test {
 
         // RequestRedeem succeeds during rebalance in progress
         vm.prank(user);
-        vault.requestRedeem(1 * DECIMALS, user);
+        vault.requestRedeem(1 * DECIMALS, user, user);
 
         // Claims revert if not yet finalized (rebalance stopped before FinalizeWithdrawals),
         // but this is a queue error, not a rebalance-pause error.
@@ -252,7 +252,7 @@ contract RebalanceInProgressIntegrationTest is Test {
         // Create a new request to make a second rebalance have work to do
         uint256 newShares = core.convertToShares(1 * DECIMALS);
         vm.prank(user);
-        vault.requestRedeem(newShares, user);
+        vault.requestRedeem(newShares, user, user);
 
         // Start a second rebalance and stop mid-way
         vm.warp(block.timestamp + 1 hours + 1);

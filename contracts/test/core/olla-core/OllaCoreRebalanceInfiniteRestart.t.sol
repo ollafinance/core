@@ -7,12 +7,12 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
@@ -40,7 +40,7 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
     address internal governance;
     address internal alice;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -67,13 +67,13 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsCollector(address(rewardsCollector));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 

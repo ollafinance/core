@@ -11,14 +11,14 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
@@ -30,13 +30,13 @@ contract OllaCoreWithdrawalQueueHarness is OllaCore {
 
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
-        uint256 newRewardsVaultBalance,
+        uint256 newRewardsCollectorBalance,
         uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
         _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsVaultBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+            newStakedPrincipal, newRewardsCollectorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
         );
     }
 }
@@ -68,7 +68,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
     MockStakingManager internal stakingManager;
     WithdrawalQueue internal queue;
     address internal governance;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     SafetyModule internal safetyModule;
     address internal admin;
     address internal guardian;
@@ -93,7 +93,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         stakingManager = new MockStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         safetyModule =
@@ -105,7 +105,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
         queue.initialize(address(vault), governance, 180_000);
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(queue), address(safetyModule), address(core), governance);
 
@@ -136,7 +136,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 shares = _deposit(alice, 10 ether);
 
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(4 ether, alice);
+        uint256 requestId = vault.requestRedeem(4 ether, alice, alice);
 
         assertEq(requestId, 1, "request id starts at 1");
         assertEq(stAztec.balanceOf(alice), shares - 4 ether, "shares burned on request");
@@ -149,7 +149,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 expectedAssets = shares * rate / 1e18;
 
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, alice);
+        uint256 requestId = vault.requestRedeem(shares, alice, alice);
 
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         assertEq(request.assetsExpected, expectedAssets, "assetsExpected locked at request rate");
@@ -173,7 +173,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         emit WithdrawalRequested(1, alice, bob, shares, expectedAssets, rate);
 
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, bob);
+        uint256 requestId = vault.requestRedeem(shares, bob, alice);
 
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         assertEq(request.recipient, bob, "queue stores recipient");
@@ -224,9 +224,9 @@ contract OllaCoreWithdrawalQueueTest is Test {
         _deposit(alice, 15 ether);
 
         vm.prank(alice);
-        uint256 firstRequestId = vault.requestRedeem(5 ether, alice);
+        uint256 firstRequestId = vault.requestRedeem(5 ether, alice, alice);
         vm.prank(alice);
-        uint256 secondRequestId = vault.requestRedeem(2 ether, bob);
+        uint256 secondRequestId = vault.requestRedeem(2 ether, bob, alice);
 
         assertEq(firstRequestId, 1, "first request id");
         assertEq(secondRequestId, 2, "second request id");
@@ -241,7 +241,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         vm.prank(alice);
-        vault.requestRedeem(4 ether, alice);
+        vault.requestRedeem(4 ether, alice, alice);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -337,7 +337,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         returns (uint256 requestId, uint256 assetsExpected)
     {
         vm.prank(owner);
-        requestId = vault.requestRedeem(shares, recipient);
+        requestId = vault.requestRedeem(shares, recipient, owner);
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);
@@ -530,7 +530,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
     RealisticStakingManager internal stakingManager;
     WithdrawalQueue internal queue;
     address internal governance;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     SafetyModule internal safetyModule;
     address internal admin;
     address internal guardian;
@@ -554,7 +554,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         stakingManager = new RealisticStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         safetyModule =
@@ -566,7 +566,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
 
         queue.initialize(address(vault), governance, 180_000);
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(queue), address(safetyModule), address(core), governance);
 
@@ -633,7 +633,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         // Step 3: User requests full withdrawal
         uint256 shares = stAztec.balanceOf(alice);
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, alice);
+        uint256 requestId = vault.requestRedeem(shares, alice, alice);
 
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         uint256 expectedAssets = request.assetsExpected;
@@ -701,7 +701,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
 
         uint256 shares = stAztec.balanceOf(alice);
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, alice);
+        uint256 requestId = vault.requestRedeem(shares, alice, alice);
 
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
         uint256 expectedAssets = request.assetsExpected;

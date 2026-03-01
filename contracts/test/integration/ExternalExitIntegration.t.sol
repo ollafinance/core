@@ -8,10 +8,10 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
@@ -20,8 +20,8 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
@@ -60,7 +60,7 @@ contract ExternalExitIntegrationTest is Test {
     MockAztec internal aztec;
     MockAztecRollup internal rollup;
     MockAztecRollupRegistry internal rollupRegistry;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
 
     // Addresses
@@ -118,7 +118,7 @@ contract ExternalExitIntegrationTest is Test {
 
         // Deploy supporting contracts
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(IERC20(address(aztec)), address(core));
+        rewardsCollector = new MockRewardsCollector(IERC20(address(aztec)), address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Initialize stakingProviderRegistry (needs stakingManager address)
@@ -133,7 +133,7 @@ contract ExternalExitIntegrationTest is Test {
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            address(rewardsVault),
+            address(rewardsCollector),
             address(core),
             address(stakingProviderRegistry),
             defaultAdmin
@@ -150,7 +150,7 @@ contract ExternalExitIntegrationTest is Test {
             0, // protocolFeeBP
             5_000, // treasuryFeeSplitBP
             governance,
-            rewardsVault,
+            rewardsCollector,
             address(safetyModule)
         );
 
@@ -245,7 +245,7 @@ contract ExternalExitIntegrationTest is Test {
         // 4. Alice requests withdrawal of 100 ether (1 attester worth)
         uint256 withdrawShares = stAztec.balanceOf(alice) / 2;
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(withdrawShares, alice);
+        uint256 requestId = vault.requestRedeem(withdrawShares, alice, alice);
 
         // 5. Rebalance #1 - initiates unstake for 1 attester
         vm.warp(block.timestamp + 1 hours + 1);
@@ -441,7 +441,7 @@ contract ExternalExitIntegrationTest is Test {
         uint256 aliceShares = stAztec.balanceOf(alice);
         uint256 withdrawShares = (150 ether * aliceShares) / core.totalAssets();
         vm.prank(alice);
-        vault.requestRedeem(withdrawShares, alice);
+        vault.requestRedeem(withdrawShares, alice, alice);
 
         uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
         assertApproxEqAbs(pendingBefore, 150 ether, 1 ether, "Should have ~150 ether pending");

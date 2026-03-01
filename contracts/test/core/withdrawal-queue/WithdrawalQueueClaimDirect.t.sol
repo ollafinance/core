@@ -8,12 +8,12 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
@@ -39,7 +39,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
     StAztec internal stAztec;
     WithdrawalQueue internal withdrawalQueue;
     MockAccountingStakingManager internal stakingManager;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
 
     address internal governance;
@@ -70,11 +70,11 @@ contract WithdrawalQueueClaimDirectTest is Test {
 
         // Deploy supporting modules
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         stakingManager = new MockAccountingStakingManager();
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsCollector(address(rewardsCollector));
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
         // Deploy WithdrawalQueue behind a UUPS proxy
@@ -94,7 +94,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
             0, // protocolFeeBP
             5_000, // treasuryFeeSplitBP
             governance,
-            rewardsVault,
+            rewardsCollector,
             address(safetyModule)
         );
 
@@ -139,7 +139,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
 
         // Request redemption
         vm.prank(user);
-        requestId = vault.requestRedeem(redeemShares, user);
+        requestId = vault.requestRedeem(redeemShares, user, user);
 
         // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
         vm.warp(block.timestamp + 1 hours);

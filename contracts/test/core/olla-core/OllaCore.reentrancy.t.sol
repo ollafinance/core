@@ -9,16 +9,16 @@ import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProvide
 import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
-import { MaliciousRewardsVault } from "src/core/mocks/MaliciousRewardsVault.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MaliciousSafetyModule } from "src/safetymodule/MaliciousSafetyModule.sol";
+import { MaliciousRewardsCollector } from "src/core/mocks/MaliciousRewardsCollector.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MaliciousSafetyModule } from "src/safetymodule/mocks/MaliciousSafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { MaliciousWithdrawalQueue } from "src/core/mocks/MaliciousWithdrawalQueue.sol";
+import { MaliciousWithdrawalQueue } from "src/vault/mocks/MaliciousWithdrawalQueue.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
@@ -26,7 +26,7 @@ import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 /// @notice Mock staking manager that returns configurable harvested rewards.
 contract MockHarvestStakingManager is IStakingManager {
     IERC20 public rewardsToken;
-    address public rewardsVault;
+    address public rewardsCollector;
     uint256 public harvestedRewards;
     uint256 private _attesterStateLastUpdated = 1;
     uint256 private _attesterStateMaxAge = type(uint256).max;
@@ -35,8 +35,8 @@ contract MockHarvestStakingManager is IStakingManager {
         rewardsToken = token;
     }
 
-    function setRewardsVault(address vault) external {
-        rewardsVault = vault;
+    function setRewardsCollector(address vault) external {
+        rewardsCollector = vault;
     }
 
     function setHarvestedRewards(uint256 value) external {
@@ -46,10 +46,10 @@ contract MockHarvestStakingManager is IStakingManager {
     function harvestRewards() external override returns (uint256 harvested) {
         harvested = harvestedRewards;
         // Actually transfer tokens to rewards vault to simulate real harvest
-        if (harvested > 0 && address(rewardsToken) != address(0) && rewardsVault != address(0)) {
+        if (harvested > 0 && address(rewardsToken) != address(0) && rewardsCollector != address(0)) {
             // Cast to MockAztec/MaliciousAztec and mint tokens to this contract first, then transfer to vault
             MockAztec(address(rewardsToken)).mint(address(this), harvested);
-            rewardsToken.transfer(rewardsVault, harvested);
+            rewardsToken.transfer(rewardsCollector, harvested);
         }
         return harvested;
     }
@@ -193,7 +193,7 @@ contract OllaCoreReentrancyTest is Test {
     MaliciousWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     address internal governance;
-    address internal rewardsVault;
+    address internal rewardsCollector;
     address internal alice;
     address internal bob;
     address internal permitOwner;
@@ -217,7 +217,7 @@ contract OllaCoreReentrancyTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsVault = makeAddr("rewardsVault");
+        rewardsCollector = makeAddr("rewardsCollector");
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MaliciousWithdrawalQueue();
 
@@ -231,7 +231,7 @@ contract OllaCoreReentrancyTest is Test {
             protocolFeeBP,
             treasuryFeeSplitBP,
             governance,
-            IRewardsVault(rewardsVault),
+            IRewardsCollector(rewardsCollector),
             address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
@@ -313,13 +313,13 @@ contract OllaCoreReentrancyTest is Test {
 
         uint256 shares = 2 * DECIMALS;
         withdrawalQueue.setReentry(
-            address(vault), abi.encodeWithSignature("requestRedeem(uint256,address)", shares, bob)
+            address(vault), abi.encodeWithSignature("requestRedeem(uint256,address,address)", shares, bob, alice)
         );
         withdrawalQueue.setReenterOnRequest(true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
-        vault.requestRedeem(shares, bob);
+        vault.requestRedeem(shares, bob, alice);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -331,7 +331,7 @@ contract OllaCoreReentrancyTest is Test {
 
         uint256 shares = 2 * DECIMALS;
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, bob);
+        uint256 requestId = vault.requestRedeem(shares, bob, alice);
 
         withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.claimRequestById, (requestId)));
         withdrawalQueue.setReenterOnClaim(true);
@@ -346,7 +346,7 @@ contract OllaCoreReentrancyTest is Test {
 
         uint256 shares = 2 * DECIMALS;
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, bob);
+        uint256 requestId = vault.requestRedeem(shares, bob, alice);
 
         withdrawalQueue.setReentry(address(this), abi.encodeCall(this.assertRequestCleared, (alice, requestId)));
         withdrawalQueue.setReenterOnClaim(true);
@@ -370,7 +370,7 @@ contract OllaCoreReentrancyTest is Test {
 
         uint256 shares = 2 * DECIMALS;
         vm.prank(alice);
-        vault.requestRedeem(shares, bob);
+        vault.requestRedeem(shares, bob, alice);
 
         withdrawalQueue.setReentry(address(core), abi.encodeCall(core.rebalance, ()));
         withdrawalQueue.setReenterOnFinalize(true);
@@ -442,7 +442,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
     uint256 internal treasuryFeeSplitBP;
     MockWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
-    MaliciousRewardsVault internal rewardsVault;
+    MaliciousRewardsCollector internal rewardsCollector;
     address internal governance;
     address internal alice;
 
@@ -464,13 +464,13 @@ contract OllaCoreHarvestReentrancyTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockHarvestStakingManager();
-        rewardsVault = new MaliciousRewardsVault(asset, address(core));
+        rewardsCollector = new MaliciousRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         // Configure staking manager to mint rewards directly to rewards vault
         stakingManager.setRewardsToken(IERC20(address(asset)));
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsCollector(address(rewardsCollector));
 
         protocolFeeBP = 500;
         treasuryFeeSplitBP = 5_000;
@@ -482,7 +482,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
             protocolFeeBP,
             treasuryFeeSplitBP,
             governance,
-            IRewardsVault(address(rewardsVault)),
+            IRewardsCollector(address(rewardsCollector)),
             address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
@@ -496,7 +496,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
 
         vm.startPrank(governance);
         core.grantRole(core.OPERATOR_ROLE(), governance);
-        core.grantRole(core.OPERATOR_ROLE(), address(rewardsVault));
+        core.grantRole(core.OPERATOR_ROLE(), address(rewardsCollector));
         vm.stopPrank();
 
         alice = makeAddr("alice");
@@ -520,13 +520,13 @@ contract OllaCoreHarvestReentrancyTest is Test {
                              REBALANCE HARVEST
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevertWhen_Rebalance_ReenteredFromRewardsVaultHook() external {
+    function test_RevertWhen_Rebalance_ReenteredFromRewardsCollectorHook() external {
         _deposit(alice, 10 * DECIMALS);
 
         uint256 rewardAmount = 5 * DECIMALS;
         stakingManager.setHarvestedRewards(rewardAmount);
 
-        rewardsVault.configureReentry(address(core), abi.encodeCall(core.rebalance, ()), true);
+        rewardsCollector.configureReentry(address(core), abi.encodeCall(core.rebalance, ()), true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(governance);
@@ -553,7 +553,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
     MaliciousSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal governance;
-    address internal rewardsVault;
+    address internal rewardsCollector;
     address internal alice;
 
     /*//////////////////////////////////////////////////////////////
@@ -574,12 +574,12 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsVault = makeAddr("rewardsVault");
+        rewardsCollector = makeAddr("rewardsCollector");
         safetyModule = new MaliciousSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         core.initialize(
-            asset, stAztec, stakingManager, 500, 5_000, governance, IRewardsVault(rewardsVault), address(safetyModule)
+            asset, stAztec, stakingManager, 500, 5_000, governance, IRewardsCollector(rewardsCollector), address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 

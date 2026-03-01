@@ -10,12 +10,12 @@ import { ECDSA } from "@oz/utils/cryptography/ECDSA.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -72,7 +72,7 @@ contract OllaCoreWithdrawalTest is Test {
     uint256 internal permitOwnerKey;
     uint256 internal permitAttackerKey;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     address internal operator;
     address internal providerRewardsRecipient;
@@ -97,7 +97,7 @@ contract OllaCoreWithdrawalTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
@@ -105,9 +105,9 @@ contract OllaCoreWithdrawalTest is Test {
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsCollector(address(rewardsCollector));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -200,7 +200,7 @@ contract OllaCoreWithdrawalTest is Test {
         emit WithdrawalRequested(1, alice, bob, shares, expectedAssets, rate);
 
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, bob);
+        uint256 requestId = vault.requestRedeem(shares, bob, alice);
 
         assertEq(requestId, 1, "request id should start at 1");
         (address recipient, uint256 recordedShares, uint256 recordedAssets, uint256 recordedRate) =
@@ -215,7 +215,7 @@ contract OllaCoreWithdrawalTest is Test {
         _performDeposit(alice, 12 * DECIMALS);
 
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(4 * DECIMALS, bob);
+        uint256 requestId = vault.requestRedeem(4 * DECIMALS, bob, alice);
 
         assertEq(vault.requestOwner(requestId), alice, "request owner tracked separately from recipient");
     }
@@ -224,9 +224,9 @@ contract OllaCoreWithdrawalTest is Test {
         _performDeposit(alice, 20 * DECIMALS);
 
         vm.prank(alice);
-        uint256 firstRequestId = vault.requestRedeem(6 * DECIMALS, bob);
+        uint256 firstRequestId = vault.requestRedeem(6 * DECIMALS, bob, alice);
         vm.prank(alice);
-        uint256 secondRequestId = vault.requestRedeem(4 * DECIMALS, alice);
+        uint256 secondRequestId = vault.requestRedeem(4 * DECIMALS, alice, alice);
 
         uint256[] memory activeRequests = vault.activeRequestIds(alice);
         assertEq(activeRequests.length, 2, "active request count");
@@ -246,7 +246,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         uint256 shares = 5 * DECIMALS;
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, alice);
+        uint256 requestId = vault.requestRedeem(shares, alice, alice);
 
         assertEq(requestId, 1, "request id should start at 1");
     }
@@ -282,9 +282,9 @@ contract OllaCoreWithdrawalTest is Test {
         uint256 sharesSecond = 4 * DECIMALS;
 
         vm.prank(alice);
-        uint256 firstRequestId = vault.requestRedeem(sharesFirst, bob);
+        uint256 firstRequestId = vault.requestRedeem(sharesFirst, bob, alice);
         vm.prank(alice);
-        uint256 secondRequestId = vault.requestRedeem(sharesSecond, alice);
+        uint256 secondRequestId = vault.requestRedeem(sharesSecond, alice, alice);
 
         IWithdrawalQueue.WithdrawalRequest memory firstRequest = withdrawalQueue.getRequest(firstRequestId);
         IWithdrawalQueue.WithdrawalRequest memory secondRequest = withdrawalQueue.getRequest(secondRequestId);
@@ -321,7 +321,7 @@ contract OllaCoreWithdrawalTest is Test {
         uint256 assetsExpected = shares * rate / DECIMALS;
 
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, bob);
+        uint256 requestId = vault.requestRedeem(shares, bob, alice);
 
         uint256 balanceBefore = asset.balanceOf(bob);
 
@@ -390,7 +390,7 @@ contract OllaCoreWithdrawalTest is Test {
         IERC20Permit(address(stAztec)).permit(permitOwner, address(vault), shares, deadline, v, r, s);
 
         vm.prank(permitOwner);
-        vault.requestRedeem(actualShares, permitOwner);
+        vault.requestRedeem(actualShares, permitOwner, permitOwner);
 
         assertEq(stAztec.allowance(permitOwner, address(vault)), type(uint256).max, "allowance remains max");
     }
@@ -478,7 +478,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         // Request redeem and check assetsExpected stored in the queue
         vm.prank(alice);
-        vault.requestRedeem(sharesToRedeem, bob);
+        vault.requestRedeem(sharesToRedeem, bob, alice);
 
         (, uint256 recordedShares, uint256 recordedAssets,) = _queueRequestSnapshot();
         assertEq(recordedShares, sharesToRedeem, "shares match");
@@ -501,7 +501,7 @@ contract OllaCoreWithdrawalTest is Test {
         uint256 sharesBefore = stAztec.balanceOf(alice);
 
         vm.prank(alice);
-        vault.requestRedeem(shares, alice);
+        vault.requestRedeem(shares, alice, alice);
 
         (, uint256 recordedShares, uint256 recordedAssets,) = _queueRequestSnapshot();
         assertEq(recordedShares, shares, "recorded shares match");

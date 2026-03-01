@@ -8,11 +8,11 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -34,7 +34,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
     MockAztecRollup internal rollup;
     MockAztecRollupRegistry internal rollupRegistry;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
@@ -59,7 +59,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
         vault = OllaVault(address(vaultProxy));
 
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
@@ -81,7 +81,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
         stakingManager.initialize(
             IERC20(address(asset)),
             address(rollupRegistry),
-            address(rewardsVault),
+            address(rewardsCollector),
             address(core),
             address(stakingProviderRegistry),
             defaultAdmin
@@ -89,7 +89,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
 
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 

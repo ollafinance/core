@@ -8,12 +8,12 @@ import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.so
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
@@ -45,7 +45,7 @@ contract OllaCoreAccessControlTest is Test {
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     address internal governance;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal alice;
@@ -70,7 +70,7 @@ contract OllaCoreAccessControlTest is Test {
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
@@ -81,7 +81,7 @@ contract OllaCoreAccessControlTest is Test {
             INITIAL_PROTOCOL_FEE_BP,
             INITIAL_TREASURY_SPLIT_BP,
             governance,
-            rewardsVault,
+            rewardsCollector,
             address(safetyModule)
         );
 

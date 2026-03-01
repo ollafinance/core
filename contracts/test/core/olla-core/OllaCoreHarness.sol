@@ -11,13 +11,13 @@ contract OllaCoreHarness is OllaCore {
 
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
-        uint256 newRewardsVaultBalance,
+        uint256 newRewardsCollectorBalance,
         uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
         _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsVaultBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+            newStakedPrincipal, newRewardsCollectorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
         );
     }
 

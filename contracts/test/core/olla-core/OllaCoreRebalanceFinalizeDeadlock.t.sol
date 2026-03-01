@@ -7,13 +7,13 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
@@ -44,7 +44,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
@@ -79,14 +79,14 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsCollector(address(rewardsCollector));
         stakingManager.setUnstakedToken(asset);
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -127,7 +127,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         returns (uint256 requestId, uint256 assetsExpected)
     {
         vm.prank(owner);
-        requestId = vault.requestRedeem(shares, recipient);
+        requestId = vault.requestRedeem(shares, recipient, owner);
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);

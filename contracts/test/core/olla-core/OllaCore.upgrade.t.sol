@@ -12,13 +12,13 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 
 contract OllaCoreUpgradeHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
@@ -27,13 +27,13 @@ contract OllaCoreUpgradeHarness is OllaCore {
 
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
-        uint256 newRewardsVaultBalance,
+        uint256 newRewardsCollectorBalance,
         uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
         _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsVaultBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+            newStakedPrincipal, newRewardsCollectorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
         );
     }
 }
@@ -86,7 +86,7 @@ contract OllaCoreUpgradeTest is Test {
     address internal alice;
     address internal bob;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -108,7 +108,7 @@ contract OllaCoreUpgradeTest is Test {
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
+        rewardsCollector = new MockRewardsCollector(asset, address(coreImplementation));
         safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
@@ -123,7 +123,7 @@ contract OllaCoreUpgradeTest is Test {
             protocolFeeBP,
             treasuryFeeSplitBP,
             governance,
-            rewardsVault,
+            rewardsCollector,
             address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
@@ -208,7 +208,7 @@ contract OllaCoreUpgradeTest is Test {
         uint256 expectedAssets = queueShares * rateBefore / 1e18;
 
         vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(queueShares, bob);
+        uint256 requestId = vault.requestRedeem(queueShares, bob, alice);
         assertEq(requestId, 1, "request id starts at 1");
 
         vm.prank(operator);
@@ -235,7 +235,7 @@ contract OllaCoreUpgradeTest is Test {
         // bufferedAssets is now on vault, not in core's AccountingState
         assertEq(vault.bufferedAssets(), vault.bufferedAssets(), "buffered preserved");
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked preserved");
-        assertEq(accountingAfter.rewardsVaultBalance, accountingBefore.rewardsVaultBalance, "rewards vault preserved");
+        assertEq(accountingAfter.rewardsCollectorBalance, accountingBefore.rewardsCollectorBalance, "rewards vault preserved");
         assertEq(accountingAfter.claimableRewards, accountingBefore.claimableRewards, "claimable rewards preserved");
         assertEq(accountingAfter.rewardsDelta, accountingBefore.rewardsDelta, "rewards delta preserved");
         assertEq(accountingAfter.slashingDelta, accountingBefore.slashingDelta, "slashing delta preserved");

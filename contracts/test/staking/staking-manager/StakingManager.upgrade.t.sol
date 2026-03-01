@@ -13,7 +13,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { MockOllaCoreGovernance } from "test/mocks/MockOllaCoreGovernance.sol";
 
@@ -37,7 +37,7 @@ contract StakingManagerUpgradeTest is Test {
     MockAztec internal aztec;
     MockAztecRollup internal rollup;
     MockAztecRollupRegistry internal rollupRegistry;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
 
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
@@ -58,7 +58,7 @@ contract StakingManagerUpgradeTest is Test {
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
-        rewardsVault = new MockRewardsVault(IERC20(address(aztec)), core);
+        rewardsCollector = new MockRewardsCollector(IERC20(address(aztec)), core);
 
         StakingManager implementation = new StakingManager();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
@@ -73,7 +73,7 @@ contract StakingManagerUpgradeTest is Test {
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            address(rewardsVault),
+            address(rewardsCollector),
             core,
             address(stakingProviderRegistry),
             defaultAdmin
@@ -162,7 +162,7 @@ contract StakingManagerUpgradeTest is Test {
         IStakingManager.ProviderConfig memory providerBefore = stakingManager.getProviderConfig();
         address assetBefore = address(stakingManager.stakingAsset());
         address rollupRegistryBefore = address(stakingManager.rollupRegistry());
-        address rewardsVaultBefore = address(stakingManager.rewardsVault());
+        address rewardsCollectorBefore = address(stakingManager.rewardsCollector());
         address coreBefore = stakingManager.core();
         address ownerBefore = mockCore.owner();
 
@@ -184,7 +184,7 @@ contract StakingManagerUpgradeTest is Test {
         assertEq(providerAfter.rewardsRecipient, providerBefore.rewardsRecipient, "rewards recipient preserved");
         assertEq(address(v2.stakingAsset()), assetBefore, "asset preserved");
         assertEq(address(v2.rollupRegistry()), rollupRegistryBefore, "rollup registry preserved");
-        assertEq(address(v2.rewardsVault()), rewardsVaultBefore, "rewards vault preserved");
+        assertEq(address(v2.rewardsCollector()), rewardsCollectorBefore, "rewards vault preserved");
         assertEq(v2.core(), coreBefore, "core preserved");
         assertEq(mockCore.owner(), ownerBefore, "owner preserved");
 

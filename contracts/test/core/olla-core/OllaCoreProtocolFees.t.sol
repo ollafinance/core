@@ -7,12 +7,12 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
@@ -58,7 +58,7 @@ contract OllaCoreProtocolFeesTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal operator;
@@ -85,7 +85,7 @@ contract OllaCoreProtocolFeesTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
@@ -99,7 +99,7 @@ contract OllaCoreProtocolFeesTest is Test {
             PROTOCOL_FEE_BP,
             TREASURY_FEE_SPLIT_BP,
             governance,
-            IRewardsVault(address(rewardsVault)),
+            IRewardsCollector(address(rewardsCollector)),
             address(safetyModule)
         );
 
@@ -279,7 +279,7 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 rate = core.exchangeRate();
         uint256 assetsExpected = sharesToRedeem * rate / DECIMALS;
         vm.prank(alice);
-        vault.requestRedeem(sharesToRedeem, alice);
+        vault.requestRedeem(sharesToRedeem, alice, alice);
 
         uint256 oldSupply = stAztec.totalSupply();
         uint256 oldGovShares = stAztec.balanceOf(governance);

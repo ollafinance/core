@@ -10,12 +10,12 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 
 contract ReconcileSafetyModule is ISafetyModule {
@@ -174,7 +174,7 @@ contract OllaCoreReconcileTest is Test {
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal governance;
@@ -200,12 +200,12 @@ contract OllaCoreReconcileTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
         operator = makeAddr("operator");
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsVault, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
         vm.prank(governance);

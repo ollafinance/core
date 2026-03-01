@@ -5,8 +5,8 @@ import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 contract WithdrawalQueueTest is Test {
     /*//////////////////////////////////////////////////////////////

@@ -27,11 +27,11 @@ import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 
@@ -64,7 +64,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsCollector internal rewardsCollector;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal alice;
@@ -87,7 +87,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(core));
+        rewardsCollector = new MockRewardsCollector(asset, address(core));
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
@@ -107,7 +107,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
             500,
             5_000,
             governance,
-            IRewardsVault(address(rewardsVault)),
+            IRewardsCollector(address(rewardsCollector)),
             address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
