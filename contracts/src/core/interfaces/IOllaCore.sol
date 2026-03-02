@@ -329,62 +329,85 @@ interface IOllaCore {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the underlying asset address.
+    /// @return The underlying asset address.
     function asset() external view returns (address);
 
     /// @notice Returns the OllaVault address.
+    /// @return The OllaVault address.
     function vault() external view returns (address);
 
     /// @notice Returns the stAztec share token address.
+    /// @return The stAztec share token address.
     function stAztec() external view returns (address);
 
     /// @notice Returns the staking manager address.
+    /// @return The staking manager address.
     function stakingManager() external view returns (address);
 
     /// @notice Returns the rewards vault module address.
+    /// @return The rewards vault module address.
     function rewardsCollector() external view returns (address);
 
     /// @notice Returns the safety module address.
+    /// @return The safety module address.
     function safetyModule() external view returns (address);
 
     /// @notice Returns the target liquid assets buffer.
+    /// @return The target liquid assets buffer.
     function targetBufferedAssets() external view returns (uint256);
 
     /// @notice Returns the rebalance gas threshold.
+    /// @return The rebalance gas threshold.
     function rebalanceGasThreshold() external view returns (uint256);
 
     /// @notice Returns the latest accounting report snapshot.
+    /// @return The latest accounting report snapshot.
     function latestReport() external view returns (LatestReport memory);
 
     /// @notice Returns the current rebalance progress snapshot.
+    /// @return The current rebalance progress snapshot.
     function rebalanceProgress() external view returns (RebalanceProgress memory);
 
     /// @notice Returns the flow counter snapshots.
+    /// @return The flow counter snapshots.
     function flowCounters() external view returns (FlowCounters memory);
 
     /// @notice Returns the accounting buckets snapshot.
+    /// @return The accounting buckets snapshot.
     function accountingState() external view returns (AccountingState memory);
 
     /// @notice Returns the current total assets held by the protocol.
+    /// @return The current total assets held by the protocol.
     function totalAssets() external view returns (uint256);
 
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
+    /// @return The current exchange rate in 18-decimal fixed-point units.
     function exchangeRate() external view returns (uint256);
 
     /// @notice Computes the shares for an asset amount.
+    /// @param assets The amount of assets to convert.
+    /// @return shares The computed share amount.
     function convertToShares(uint256 assets) external view returns (uint256 shares);
 
     /// @notice Computes the assets for a share amount (rounds down).
+    /// @param shares The amount of shares to convert.
+    /// @return assets The computed asset amount (rounds down).
     function convertToAssets(uint256 shares) external view returns (uint256 assets);
 
     /// @notice Computes the assets for a share amount (rounds up).
+    /// @param shares The amount of shares to convert.
+    /// @return assets The computed asset amount (rounds up).
     function convertToAssetsCeil(uint256 shares) external view returns (uint256 assets);
 
     /// @notice Returns the rebalance cooldown in seconds.
+    /// @return The rebalance cooldown in seconds.
     function rebalanceCooldown() external view returns (uint256);
 
     /// @notice Returns the protocol fee in basis points.
+    /// @return The protocol fee in basis points.
     function protocolFeeBP() external view returns (uint256);
 
     /// @notice Returns the treasury fee split in basis points.
+    /// @return The treasury fee split in basis points.
     function treasuryFeeSplitBP() external view returns (uint256);
 }

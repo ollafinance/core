@@ -223,16 +223,6 @@ contract OllaVault is
         return _instantRedeem(shares, recipient, minAssetsOut);
     }
 
-    function _instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut)
-        private
-        returns (uint256 assetsAfterFee)
-    {
-        assetsAfterFee = _redeem(msg.sender, shares, recipient);
-        // slither-disable-next-line timestamp
-        if (assetsAfterFee < minAssetsOut) revert OllaVault__SlippageExceeded(assetsAfterFee, minAssetsOut);
-        return assetsAfterFee;
-    }
-
     /*//////////////////////////////////////////////////////////////
                         ERC-4626/7575 SURFACE
     //////////////////////////////////////////////////////////////*/
@@ -240,6 +230,9 @@ contract OllaVault is
     /// @notice Deposits assets and mints shares to receiver (ERC-4626).
     /// @dev This standard overload has NO slippage protection. Prefer the 3-arg
     ///      `deposit(assets, receiver, minSharesOut)` variant for front-run safety.
+    /// @param assets The amount of underlying assets to deposit.
+    /// @param receiver The address that will receive the minted shares.
+    /// @return shares The amount of shares minted.
     function deposit(uint256 assets, address receiver)
         external
         override(IOllaVault)
@@ -252,6 +245,9 @@ contract OllaVault is
     }
 
     /// @notice Mints exact shares to receiver by depositing assets (ERC-4626).
+    /// @param shares The exact amount of shares to mint.
+    /// @param receiver The address that will receive the minted shares.
+    /// @return assets The amount of underlying assets deposited.
     function mint(uint256 shares, address receiver)
         external
         override
@@ -267,6 +263,10 @@ contract OllaVault is
     }
 
     /// @notice Claims a finalized async redeem request (ERC-4626/ERC-7540).
+    /// @param shares The amount of shares to redeem.
+    /// @param receiver The address that will receive the redeemed assets.
+    /// @param controller The controller whose request is being claimed.
+    /// @return assets The amount of underlying assets returned.
     function redeem(uint256 shares, address receiver, address controller)
         external
         override
@@ -286,6 +286,9 @@ contract OllaVault is
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Sets or removes an operator for the caller (ERC-7540).
+    /// @param operator The address to set as operator.
+    /// @param approved Whether the operator is approved.
+    /// @return Whether the call succeeded.
     function setOperator(address operator, bool approved) external override whenNotPaused returns (bool) {
         if (operator == msg.sender) revert OllaVault__InvalidParameter();
         _operators[msg.sender][operator] = approved;
@@ -294,6 +297,10 @@ contract OllaVault is
     }
 
     /// @notice Requests an async redemption (ERC-7540).
+    /// @param shares The amount of shares to redeem.
+    /// @param controller The controller address for the request.
+    /// @param owner The owner of the shares being redeemed.
+    /// @return requestId The id of the created withdrawal request.
     function requestRedeem(uint256 shares, address controller, address owner)
         external
         override(IOllaVault)
@@ -331,27 +338,31 @@ contract OllaVault is
     /// @dev Callers MUST `safeTransfer` exactly `amount` to this contract before
     ///      calling this function. Fee-on-transfer tokens are not supported.
     function receiveUnstaked(uint256 amount) external override onlyRole(CORE_ROLE) {
-        _bufferedAssets += amount;
+        uint256 newBuffered = _bufferedAssets + amount;
+        _bufferedAssets = newBuffered;
 
         // Defense-in-depth: verify the real balance backs the updated accounting.
         uint256 actual = _modules.asset.balanceOf(address(this));
-        uint256 required = _finalizedUnclaimedAssets + _bufferedAssets;
+        uint256 required = _finalizedUnclaimedAssets + newBuffered;
         if (actual < required) {
-            revert OllaVault__BufferedBalanceMismatch(_bufferedAssets, actual - _finalizedUnclaimedAssets);
+            revert OllaVault__BufferedBalanceMismatch(newBuffered, actual - _finalizedUnclaimedAssets);
         }
 
         emit UnstakedAssetsReceived(amount);
     }
 
-    /// @inheritdoc IOllaVault
     // solhint-disable-next-line function-max-lines
-    // slither-disable-next-line reentrancy-events
+    /// @notice Finalizes pending withdrawal requests using available liquidity.
+    /// @param availableAssets Max assets to use for finalization.
+    /// @return finalizedAmount Actual assets used.
+    /// @return finalizedCount Number of requests finalized.
     function finalizeWithdrawals(uint256 availableAssets)
         external
         override
         onlyRole(CORE_ROLE)
         returns (uint256 finalizedAmount, uint256 finalizedCount)
     {
+        // slither-disable-start reentrancy-events,reentrancy-no-eth,reentrancy-benign
         // slither-disable-next-line timestamp,incorrect-equality
         if (availableAssets == 0) return (0, 0);
 
@@ -360,7 +371,6 @@ contract OllaVault is
         // slither-disable-next-line timestamp,incorrect-equality
         if (queued == 0) return (0, 0);
 
-        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
         (finalizedAmount, finalizedCount) = queue.finalizeWithdrawals(availableAssets);
 
         uint256 queuedAfter = queue.totalPendingAssets();
@@ -384,24 +394,29 @@ contract OllaVault is
         _bufferedAssets = buffered - finalizedAmount;
         _finalizedUnclaimedAssets += finalizedAmount;
 
-        // slither-disable-next-line reentrancy-events
         // CORE_ROLE only; external call to trusted WithdrawalQueue.
         emit WithdrawalFinalized(availableAssets, finalizedAmount);
         return (finalizedAmount, finalizedCount);
+        // slither-disable-end reentrancy-events,reentrancy-no-eth,reentrancy-benign
     }
 
-    /// @inheritdoc IOllaVault
-    // slither-disable-next-line reentrancy-events
+    /// @notice Mints fee shares to treasury and provider.
+    /// @param treasury The treasury address.
+    /// @param treasuryShares Shares to mint to treasury.
+    /// @param provider The provider rewards recipient address.
+    /// @param providerShares Shares to mint to provider.
     function mintFees(address treasury, uint256 treasuryShares, address provider, uint256 providerShares)
         external
         override
         onlyRole(CORE_ROLE)
     {
+        // slither-disable-start reentrancy-events
         IStAztec stAztecRef = _modules.stAztec;
         // CORE_ROLE only; stAztec.mint() is a trusted internal token.
         if (treasuryShares > 0) stAztecRef.mint(treasury, treasuryShares);
         if (providerShares > 0) stAztecRef.mint(provider, providerShares);
         emit FeesMinted(treasuryShares, providerShares);
+        // slither-disable-end reentrancy-events
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -459,11 +474,14 @@ contract OllaVault is
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the share token address (ERC-7575).
+    /// @return The share token address.
     function share() external view override returns (address) {
         return address(_modules.stAztec);
     }
 
     /// @notice Returns max depositable assets (ERC-4626).
+    /// @return The max depositable assets.
+    // solhint-disable-next-line use-natspec
     function maxDeposit(address) external view override returns (uint256) {
         if (paused()) return 0;
         ISafetyModule sm = ISafetyModule(_modules.safetyModule);
@@ -475,6 +493,8 @@ contract OllaVault is
     }
 
     /// @notice Returns max mintable shares (ERC-4626).
+    /// @return The max mintable shares.
+    // solhint-disable-next-line use-natspec
     function maxMint(address) external view override returns (uint256) {
         if (paused()) return 0;
         ISafetyModule sm = ISafetyModule(_modules.safetyModule);
@@ -487,6 +507,8 @@ contract OllaVault is
     }
 
     /// @notice Returns total claimable shares for controller (ERC-4626).
+    /// @param controller The controller address.
+    /// @return maxShares The total claimable shares.
     function maxRedeem(address controller) external view override returns (uint256 maxShares) {
         uint256[] storage requestIds = _ownerRequestIds[controller];
         uint256 len = requestIds.length;
@@ -504,21 +526,31 @@ contract OllaVault is
     }
 
     /// @notice Returns shares previewed for a deposit (ERC-4626).
+    /// @param assets The deposit amount.
+    /// @return The shares previewed.
     function previewDeposit(uint256 assets) external view override returns (uint256) {
         return IOllaCore(_modules.core).convertToShares(assets);
     }
 
     /// @notice Returns assets needed to mint exact shares (ERC-4626).
+    /// @param shares The share amount.
+    /// @return The assets needed.
     function previewMint(uint256 shares) external view override returns (uint256) {
         return IOllaCore(_modules.core).convertToAssetsCeil(shares);
     }
 
     /// @notice Returns whether an operator is approved for a controller (ERC-7540).
+    /// @param controller The controller address.
+    /// @param operator The operator address.
+    /// @return Whether the operator is approved.
     function isOperator(address controller, address operator) external view override returns (bool) {
         return _operators[controller][operator];
     }
 
     /// @notice Returns pending (unfinalized) shares for a request (ERC-7540).
+    /// @param requestId The withdrawal request id.
+    /// @param controller The controller address.
+    /// @return pendingShares The pending (unfinalized) shares.
     function pendingRedeemRequest(uint256 requestId, address controller)
         external
         view
@@ -532,6 +564,9 @@ contract OllaVault is
     }
 
     /// @notice Returns claimable (finalized, unclaimed) shares for a request (ERC-7540).
+    /// @param requestId The withdrawal request id.
+    /// @param controller The controller address.
+    /// @return claimableShares The claimable (finalized, unclaimed) shares.
     function claimableRedeemRequest(uint256 requestId, address controller)
         external
         view
@@ -549,56 +584,72 @@ contract OllaVault is
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the underlying asset address.
+    /// @return The underlying asset address.
     function asset() external view override returns (address) {
         return address(_modules.asset);
     }
 
     /// @notice Returns the OllaCore address.
+    /// @return The OllaCore address.
     function core() external view override returns (address) {
         return _modules.core;
     }
 
     /// @notice Returns the withdrawal queue module address.
+    /// @return The withdrawal queue address.
     function withdrawalQueue() external view override returns (address) {
         return address(_modules.withdrawalQueue);
     }
 
     /// @notice Returns the safety module address.
+    /// @return The safety module address.
     function safetyModule() external view override returns (address) {
         return _modules.safetyModule;
     }
 
     /// @notice Returns the recorded owner for a withdrawal request id.
+    /// @param requestId The withdrawal request id.
+    /// @return owner The recorded owner address.
     function requestOwner(uint256 requestId) external view override returns (address owner) {
         return _requestOwners[requestId];
     }
 
     /// @notice Returns the active withdrawal request ids for an owner.
+    /// @param owner The owner address.
+    /// @return requestIds The active withdrawal request ids.
     function activeRequestIds(address owner) external view override returns (uint256[] memory requestIds) {
         return _ownerRequestIds[owner];
     }
 
     /// @notice Returns current buffered (liquid) assets held by the Vault.
+    /// @return The current buffered assets.
     function bufferedAssets() external view override returns (uint256) {
         return _bufferedAssets;
     }
 
     /// @notice Returns current pending withdrawal assets.
+    /// @return The current pending withdrawal assets.
     function pendingWithdrawalAssets() external view override returns (uint256) {
         return _modules.withdrawalQueue.totalPendingAssets();
     }
 
     /// @notice Converts assets to shares (delegates to Core).
+    /// @param assets The amount of assets to convert.
+    /// @return The computed share amount.
     function convertToShares(uint256 assets) external view override returns (uint256) {
         return IOllaCore(_modules.core).convertToShares(assets);
     }
 
     /// @notice Converts shares to assets (delegates to Core).
+    /// @param shares The amount of shares to convert.
+    /// @return The computed asset amount.
     function convertToAssets(uint256 shares) external view override returns (uint256) {
         return IOllaCore(_modules.core).convertToAssets(shares);
     }
 
     /// @notice Returns the net assets previewed for an instant redemption.
+    /// @param shares The amount of shares to redeem.
+    /// @return assetsAfterFee The net assets after fee deduction.
     function previewInstantRedeem(uint256 shares) external view override returns (uint256 assetsAfterFee) {
         uint256 grossAssets = IOllaCore(_modules.core).convertToAssets(shares);
         uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
@@ -611,21 +662,29 @@ contract OllaVault is
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Withdraw is not supported for async vaults (ERC-7540).
+    /// @return Always reverts.
+    // solhint-disable-next-line use-natspec
     function withdraw(uint256, address, address) external pure override returns (uint256) {
         revert OllaVault__NotSupported();
     }
 
     /// @notice Returns 0 — withdraw is async (ERC-7540).
+    /// @return Always 0.
+    // solhint-disable-next-line use-natspec
     function maxWithdraw(address) external pure override returns (uint256) {
         return 0;
     }
 
     /// @notice Preview withdraw is not supported for async vaults (ERC-7540).
+    /// @return Always reverts.
+    // solhint-disable-next-line use-natspec
     function previewWithdraw(uint256) external pure override returns (uint256) {
         revert OllaVault__NotSupported();
     }
 
     /// @notice Preview redeem is not supported for async vaults (ERC-7540).
+    /// @return Always reverts.
+    // solhint-disable-next-line use-natspec
     function previewRedeem(uint256) external pure override returns (uint256) {
         revert OllaVault__NotSupported();
     }
@@ -635,6 +694,8 @@ contract OllaVault is
     //////////////////////////////////////////////////////////////*/
 
     /// @notice ERC-165 interface detection, extended for ERC-7540/ERC-7575.
+    /// @param interfaceId The interface identifier to check.
+    /// @return Whether the interface is supported.
     function supportsInterface(bytes4 interfaceId) public view override(AccessControlUpgradeable) returns (bool) {
         return interfaceId == type(IERC7540Redeem).interfaceId || interfaceId == type(IERC7540Operator).interfaceId
             || interfaceId == type(IERC7575).interfaceId || super.supportsInterface(interfaceId);
@@ -642,11 +703,13 @@ contract OllaVault is
 
     /// @notice Returns the total assets attributable to shareholders (ERC-4626).
     /// @dev Proxies to Core.totalAssets() — Core owns the pricing computation.
+    /// @return The total assets.
     function totalAssets() public view override returns (uint256) {
         return IOllaCore(_modules.core).totalAssets();
     }
 
     /// @notice Returns the maximum assets currently available for instant redemptions.
+    /// @return The maximum assets available.
     function availableForInstantRedemption() public view override returns (uint256) {
         return _bufferedAssets;
     }
@@ -654,6 +717,16 @@ contract OllaVault is
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    function _instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut)
+        internal
+        returns (uint256 assetsAfterFee)
+    {
+        assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        // slither-disable-next-line timestamp
+        if (assetsAfterFee < minAssetsOut) revert OllaVault__SlippageExceeded(assetsAfterFee, minAssetsOut);
+        return assetsAfterFee;
+    }
 
     function _deposit(address caller, uint256 assets, address recipient) internal returns (uint256 shares) {
         if (recipient == address(0)) revert OllaVault__ZeroAddress("recipient");
@@ -683,12 +756,14 @@ contract OllaVault is
         return shares;
     }
 
-    /// @dev Shared logic for all async redemption paths.
+    /// @notice Executes the shared logic for all async redemption paths.
     /// @param shareOwner  Address whose stAztec shares are burned.
     /// @param controller  Address that owns the withdrawal request (bookkeeping).
     /// @param recipient   Address passed to the WithdrawalQueue as the payout destination.
+    /// @param shares      The amount of shares to redeem.
+    /// @return requestId  The withdrawal request id.
     function _executeRedeemRequest(address shareOwner, address controller, address recipient, uint256 shares)
-        private
+        internal
         returns (uint256 requestId)
     {
         if (shares == 0) revert OllaVault__InvalidAmount();

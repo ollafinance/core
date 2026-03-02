@@ -298,21 +298,42 @@ interface IOllaVault {
     /// @notice Deposits assets and mints shares (ERC-4626).
     /// @dev This standard overload has NO slippage protection. Prefer the 3-arg
     ///      `deposit(assets, receiver, minSharesOut)` variant for front-run safety.
+    /// @param assets The amount of assets to deposit.
+    /// @param receiver The recipient of the minted shares.
+    /// @return shares The shares minted to the receiver.
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
 
     /// @notice Mints exact shares (ERC-4626).
+    /// @param shares The exact number of shares to mint.
+    /// @param receiver The recipient of the minted shares.
+    /// @return assets The assets deposited.
     function mint(uint256 shares, address receiver) external returns (uint256 assets);
 
     /// @notice Withdraw is not supported for async vaults (ERC-7540).
+    /// @param assets The amount of assets to withdraw.
+    /// @param receiver The recipient of the assets.
+    /// @param owner The owner of the shares.
+    /// @return shares The shares burned.
     function withdraw(uint256 assets, address receiver, address owner) external returns (uint256 shares);
 
     /// @notice Claims a finalized async redeem request (ERC-4626/ERC-7540).
+    /// @param shares The number of shares to redeem.
+    /// @param receiver The recipient of the assets.
+    /// @param controller The controller of the redeem request.
+    /// @return assets The assets claimed.
     function redeem(uint256 shares, address receiver, address controller) external returns (uint256 assets);
 
     /// @notice Sets or removes an operator for the caller (ERC-7540).
+    /// @param operator The operator address to set.
+    /// @param approved Whether the operator is approved.
+    /// @return Whether the call succeeded.
     function setOperator(address operator, bool approved) external returns (bool);
 
     /// @notice Requests an async redemption (ERC-7540 3-arg version).
+    /// @param shares The number of shares to redeem.
+    /// @param controller The controller of the request who receives the assets.
+    /// @param owner The source of the shares.
+    /// @return requestId The withdrawal request id.
     function requestRedeem(uint256 shares, address controller, address owner) external returns (uint256 requestId);
 
     /*//////////////////////////////////////////////////////////////
@@ -378,42 +399,65 @@ interface IOllaVault {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the underlying asset address (ERC-4626).
+    /// @return The underlying asset address.
     function asset() external view returns (address);
 
     /// @notice Returns the share token address (ERC-7575).
+    /// @return The share token address.
     function share() external view returns (address);
 
     /// @notice Returns the total assets attributable to shareholders (ERC-4626).
+    /// @return The total assets attributable to shareholders.
     function totalAssets() external view returns (uint256);
 
     /// @notice Converts assets to shares (ERC-4626).
+    /// @param assets The amount of assets to convert.
+    /// @return The computed share amount.
     function convertToShares(uint256 assets) external view returns (uint256);
 
     /// @notice Converts shares to assets (ERC-4626).
+    /// @param shares The amount of shares to convert.
+    /// @return The computed asset amount.
     function convertToAssets(uint256 shares) external view returns (uint256);
 
     /// @notice Returns max depositable assets (ERC-4626).
+    /// @return The max depositable assets.
+    // solhint-disable-next-line use-natspec
     function maxDeposit(address) external view returns (uint256);
 
     /// @notice Returns max mintable shares (ERC-4626).
+    /// @return The max mintable shares.
+    // solhint-disable-next-line use-natspec
     function maxMint(address) external view returns (uint256);
 
     /// @notice Returns 0 — withdraw is async (ERC-7540).
+    /// @return Always 0 for async vaults.
+    // solhint-disable-next-line use-natspec
     function maxWithdraw(address) external view returns (uint256);
 
     /// @notice Returns total claimable shares for controller (ERC-4626).
+    /// @param controller The controller address.
+    /// @return The total claimable shares.
     function maxRedeem(address controller) external view returns (uint256);
 
     /// @notice Returns shares previewed for a deposit (ERC-4626).
+    /// @param assets The deposit amount.
+    /// @return The shares previewed.
     function previewDeposit(uint256 assets) external view returns (uint256);
 
     /// @notice Returns assets needed to mint exact shares (ERC-4626).
+    /// @param shares The share amount.
+    /// @return The assets needed.
     function previewMint(uint256 shares) external view returns (uint256);
 
     /// @notice Preview withdraw is not supported (ERC-7540).
+    /// @param assets The asset amount.
+    /// @return Not supported.
     function previewWithdraw(uint256 assets) external view returns (uint256);
 
     /// @notice Preview redeem is not supported (ERC-7540).
+    /// @param shares The share amount.
+    /// @return Not supported.
     function previewRedeem(uint256 shares) external view returns (uint256);
 
     /*//////////////////////////////////////////////////////////////
@@ -421,12 +465,21 @@ interface IOllaVault {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns claimable (finalized, unclaimed) shares for a request (ERC-7540).
+    /// @param requestId The withdrawal request id.
+    /// @param controller The controller address.
+    /// @return The claimable shares.
     function claimableRedeemRequest(uint256 requestId, address controller) external view returns (uint256);
 
     /// @notice Returns whether an operator is approved for a controller (ERC-7540).
+    /// @param controller The controller address.
+    /// @param operator The operator address.
+    /// @return Whether the operator is approved.
     function isOperator(address controller, address operator) external view returns (bool);
 
     /// @notice Returns pending (unfinalized) shares for a request (ERC-7540).
+    /// @param requestId The withdrawal request id.
+    /// @param controller The controller address.
+    /// @return The pending shares.
     function pendingRedeemRequest(uint256 requestId, address controller) external view returns (uint256);
 
     /*//////////////////////////////////////////////////////////////
@@ -434,38 +487,53 @@ interface IOllaVault {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns current buffered (liquid) assets held by the Vault.
+    /// @return The current buffered assets.
     function bufferedAssets() external view returns (uint256);
 
     /// @notice Returns current pending withdrawal assets.
+    /// @return The current pending withdrawal assets.
     function pendingWithdrawalAssets() external view returns (uint256);
 
     /// @notice Returns cumulative deposits tracked by the vault.
+    /// @return The cumulative deposits.
     function cumulativeDeposits() external view returns (uint256);
 
     /// @notice Returns cumulative withdrawals tracked by the vault.
+    /// @return The cumulative withdrawals.
     function cumulativeWithdrawals() external view returns (uint256);
 
     /// @notice Returns the withdrawal queue module address.
+    /// @return The withdrawal queue address.
     function withdrawalQueue() external view returns (address);
 
     /// @notice Returns the safety module address.
+    /// @return The safety module address.
     function safetyModule() external view returns (address);
 
     /// @notice Returns the OllaCore address.
+    /// @return The OllaCore address.
     function core() external view returns (address);
 
     /// @notice Returns the instant redemption fee in basis points.
+    /// @return The instant redemption fee in basis points.
     function instantRedemptionFeeBP() external view returns (uint256);
 
     /// @notice Returns the maximum assets currently available for instant redemptions.
+    /// @return The maximum assets available for instant redemptions.
     function availableForInstantRedemption() external view returns (uint256);
 
     /// @notice Returns the net assets previewed for an instant redemption.
+    /// @param shares The share amount.
+    /// @return The net assets previewed.
     function previewInstantRedeem(uint256 shares) external view returns (uint256);
 
     /// @notice Returns the recorded owner for a withdrawal request id.
+    /// @param requestId The request id.
+    /// @return owner The recorded owner.
     function requestOwner(uint256 requestId) external view returns (address owner);
 
     /// @notice Returns the active withdrawal request ids for an owner.
+    /// @param owner The owner address.
+    /// @return The active request ids.
     function activeRequestIds(address owner) external view returns (uint256[] memory);
 }

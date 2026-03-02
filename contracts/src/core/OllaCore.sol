@@ -212,7 +212,7 @@ contract OllaCore is
         emit RebalanceReset();
     }
 
-    /// @notice Sets the protocol fee in basis points.
+    /// @inheritdoc IOllaCore
     function setProtocolFeeBP(uint256 newFeeBP) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (newFeeBP > MAX_PROTOCOL_FEE_BP) revert OllaCore__InvalidFeeBP(newFeeBP);
         uint256 oldFeeBP = protocolFeeBP;
@@ -220,7 +220,7 @@ contract OllaCore is
         emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
     }
 
-    /// @notice Sets the treasury fee split in basis points.
+    /// @inheritdoc IOllaCore
     function setTreasuryFeeSplitBP(uint256 newSplitBP) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (newSplitBP < MIN_TREASURY_SPLIT_BP || newSplitBP > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(newSplitBP);
@@ -230,13 +230,13 @@ contract OllaCore is
         emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
     }
 
-    /// @notice Sets the safety module address.
+    /// @inheritdoc IOllaCore
     function setSafetyModule(address newSafetyModule) external override onlyOwner whenNotPaused whenRebalanceDone {
         address oldSafetyModule = GovernanceLib.setSafetyModule(_modules, newSafetyModule);
         emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
     }
 
-    /// @notice Sets the target buffer used to reserve liquid assets.
+    /// @inheritdoc IOllaCore
     function setTargetBufferedAssets(uint256 newBuffer) external override onlyOwner whenNotPaused whenRebalanceDone {
         uint256 oldBuffer = targetBufferedAssets;
         targetBufferedAssets = newBuffer;
@@ -244,7 +244,7 @@ contract OllaCore is
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
     }
 
-    /// @notice Sets the gas threshold used for rebalance step gating.
+    /// @inheritdoc IOllaCore
     function setRebalanceGasThreshold(uint256 newThreshold)
         external
         override
@@ -261,7 +261,7 @@ contract OllaCore is
         GovernanceLib.propagateGasThreshold(_modules, newThreshold);
     }
 
-    /// @notice Sets the rebalance cooldown.
+    /// @inheritdoc IOllaCore
     function setRebalanceCooldown(uint256 cooldown_) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (cooldown_ < MIN_REBALANCE_COOLDOWN || cooldown_ > MAX_REBALANCE_COOLDOWN) {
             revert OllaCore__InvalidParameter();
@@ -287,7 +287,7 @@ contract OllaCore is
     // slither-disable-start pess-multiple-storage-read
     // slither-disable-start incorrect-equality,timestamp
     // solhint-disable function-max-lines
-    /// @notice Permissionless rebalance flow.
+    /// @inheritdoc IOllaCore
     function rebalance()
         external
         override
@@ -498,42 +498,42 @@ contract OllaCore is
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the underlying asset address.
+    /// @inheritdoc IOllaCore
     function asset() external view override returns (address) {
         return address(_modules.asset);
     }
 
-    /// @notice Returns the OllaVault address.
+    /// @inheritdoc IOllaCore
     function vault() external view override returns (address) {
         return _modules.vault;
     }
 
-    /// @notice Returns the stAztec share token address.
+    /// @inheritdoc IOllaCore
     function stAztec() external view override returns (address) {
         return address(_modules.stAztec);
     }
 
-    /// @notice Returns the staking manager address.
+    /// @inheritdoc IOllaCore
     function stakingManager() external view override returns (address) {
         return address(_modules.stakingManager);
     }
 
-    /// @notice Returns the rewards vault module address.
+    /// @inheritdoc IOllaCore
     function rewardsCollector() external view override returns (address) {
         return address(_modules.rewardsCollector);
     }
 
-    /// @notice Returns the safety module address.
+    /// @inheritdoc IOllaCore
     function safetyModule() external view override returns (address) {
         return _modules.safetyModule;
     }
 
-    /// @notice Returns the latest accounting report snapshot.
+    /// @inheritdoc IOllaCore
     function latestReport() external view override returns (IOllaCore.LatestReport memory) {
         return _latestReport;
     }
 
-    /// @notice Returns the current rebalance progress snapshot.
+    /// @inheritdoc IOllaCore
     function rebalanceProgress() external view override returns (IOllaCore.RebalanceProgress memory) {
         return IOllaCore.RebalanceProgress({
             step: _rebalanceProgress.step,
@@ -542,7 +542,7 @@ contract OllaCore is
         });
     }
 
-    /// @notice Returns the flow counter snapshots.
+    /// @inheritdoc IOllaCore
     function flowCounters() external view override returns (IOllaCore.FlowCounters memory) {
         IOllaCore.FlowCounters memory flows = _flowCounters;
         IOllaVault vaultRef = IOllaVault(_modules.vault);
@@ -551,32 +551,32 @@ contract OllaCore is
         return flows;
     }
 
-    /// @notice Returns the accounting buckets snapshot.
+    /// @inheritdoc IOllaCore
     function accountingState() external view override returns (IOllaCore.AccountingState memory) {
         return _accountingState;
     }
 
-    /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
+    /// @inheritdoc IOllaCore
     function exchangeRate() external view override returns (uint256) {
         return _exchangeRate();
     }
 
-    /// @notice Computes the shares for an asset amount.
+    /// @inheritdoc IOllaCore
     function convertToShares(uint256 assets) external view override returns (uint256 shares) {
         return _convertToShares(assets, Math.Rounding.Floor);
     }
 
-    /// @notice Computes the assets for a share amount (rounds down).
+    /// @inheritdoc IOllaCore
     function convertToAssets(uint256 shares) external view override returns (uint256 assets) {
         return _convertToAssets(shares);
     }
 
-    /// @notice Computes the assets for a share amount (rounds up).
+    /// @inheritdoc IOllaCore
     function convertToAssetsCeil(uint256 shares) external view override returns (uint256 assets) {
         return shares.mulDiv(totalAssets() + 1, _modules.stAztec.totalSupply() + 1, Math.Rounding.Ceil);
     }
 
-    /// @notice Returns the current total assets attributable to shareholders.
+    /// @inheritdoc IOllaCore
     function totalAssets() public view override returns (uint256) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         return _computeTotalAssets(_accountingState, vaultRef.bufferedAssets(), vaultRef.pendingWithdrawalAssets());
@@ -777,6 +777,10 @@ contract OllaCore is
     // slither-disable-end pess-unprotected-initialize
 
     /// @notice Payout protocol fees through minting shares via Vault.
+    /// @param grossAssetRewards The gross asset rewards to base fees on.
+    /// @return ollaProtocolFeeAssets The protocol fee amount in assets.
+    /// @return treasuryShares The shares minted to treasury.
+    /// @return providerShares The shares minted to the provider.
     function _payoutOllaProtocolFees(uint256 grossAssetRewards)
         internal
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
