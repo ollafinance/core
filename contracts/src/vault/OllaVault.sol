@@ -185,7 +185,10 @@ contract OllaVault is
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
-        requestId = _executeRedeemRequest(msg.sender, controller, controller, shares);
+        uint256 assets;
+        (requestId, assets) = _executeRedeemRequest(msg.sender, controller, controller, shares);
+
+        emit RedeemRequest(controller, msg.sender, requestId, msg.sender, assets);
         return requestId;
     }
 
@@ -314,8 +317,8 @@ contract OllaVault is
         }
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
 
-        uint256 assets = IOllaCore(_modules.core).convertToAssets(shares);
-        requestId = _executeRedeemRequest(owner, controller, controller, shares);
+        uint256 assets;
+        (requestId, assets) = _executeRedeemRequest(owner, controller, controller, shares);
 
         emit RedeemRequest(controller, owner, requestId, msg.sender, assets);
         return requestId;
@@ -763,9 +766,10 @@ contract OllaVault is
     /// @param recipient   Address passed to the WithdrawalQueue as the payout destination.
     /// @param shares      The amount of shares to redeem.
     /// @return requestId  The withdrawal request id.
+    /// @return assetsExpected The expected asset amount for the redeemed shares.
     function _executeRedeemRequest(address shareOwner, address controller, address recipient, uint256 shares)
         internal
-        returns (uint256 requestId)
+        returns (uint256 requestId, uint256 assetsExpected)
     {
         if (shares == 0) revert OllaVault__InvalidAmount();
 
@@ -773,7 +777,7 @@ contract OllaVault is
         IOllaCore coreRef = IOllaCore(modules.core);
 
         uint256 rate = coreRef.exchangeRate();
-        uint256 assetsExpected = coreRef.convertToAssets(shares);
+        assetsExpected = coreRef.convertToAssets(shares);
         ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
         uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
 
@@ -791,7 +795,7 @@ contract OllaVault is
         }
 
         emit WithdrawalRequested(requestId, shareOwner, recipient, shares, assetsExpected, rate);
-        return requestId;
+        return (requestId, assetsExpected);
     }
 
     function _redeem(address owner, uint256 shares, address recipient) internal returns (uint256 netAssets) {
