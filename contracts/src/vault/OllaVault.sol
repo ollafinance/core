@@ -318,8 +318,9 @@ contract OllaVault is
     /// @inheritdoc IOllaVault
     function transferToCore(uint256 amount) external override onlyRole(CORE_ROLE) {
         if (amount == 0) revert OllaVault__InvalidAmount();
-        if (amount > _bufferedAssets) revert OllaVault__InsufficientBuffer(amount, _bufferedAssets);
-        _bufferedAssets -= amount;
+        uint256 buffered = _bufferedAssets;
+        if (amount > buffered) revert OllaVault__InsufficientBuffer(amount, buffered);
+        _bufferedAssets = buffered - amount;
         _modules.asset.safeTransfer(msg.sender, amount);
         emit AssetsTransferredToStaking(amount);
     }
@@ -332,6 +333,7 @@ contract OllaVault is
 
     /// @inheritdoc IOllaVault
     // solhint-disable-next-line function-max-lines
+    // slither-disable-next-line reentrancy-events
     function finalizeWithdrawals(uint256 availableAssets)
         external
         override
@@ -354,8 +356,9 @@ contract OllaVault is
             revert OllaVault__FinalizeAmountMismatch(queued - queuedAfter, finalizedAmount);
         }
 
-        if (finalizedAmount > _bufferedAssets) {
-            revert OllaVault__InsufficientBufferedAssets(finalizedAmount, _bufferedAssets);
+        uint256 buffered = _bufferedAssets;
+        if (finalizedAmount > buffered) {
+            revert OllaVault__InsufficientBufferedAssets(finalizedAmount, buffered);
         }
 
         // slither-disable-next-line incorrect-equality
@@ -366,20 +369,24 @@ contract OllaVault is
         // slither-disable-next-line incorrect-equality
         if (finalizedAmount == 0) return (0, 0);
 
-        _bufferedAssets -= finalizedAmount;
+        _bufferedAssets = buffered - finalizedAmount;
         _finalizedUnclaimedAssets += finalizedAmount;
 
+        // slither-disable-next-line reentrancy-events
+        // CORE_ROLE only; external call to trusted WithdrawalQueue.
         emit WithdrawalFinalized(availableAssets, finalizedAmount);
         return (finalizedAmount, finalizedCount);
     }
 
     /// @inheritdoc IOllaVault
+    // slither-disable-next-line reentrancy-events
     function mintFees(address treasury, uint256 treasuryShares, address provider, uint256 providerShares)
         external
         override
         onlyRole(CORE_ROLE)
     {
         IStAztec stAztecRef = _modules.stAztec;
+        // CORE_ROLE only; stAztec.mint() is a trusted internal token.
         if (treasuryShares > 0) stAztecRef.mint(treasury, treasuryShares);
         if (providerShares > 0) stAztecRef.mint(provider, providerShares);
         emit FeesMinted(treasuryShares, providerShares);
@@ -472,12 +479,15 @@ contract OllaVault is
         uint256[] storage requestIds = _ownerRequestIds[controller];
         uint256 len = requestIds.length;
         IWithdrawalQueue queue = _modules.withdrawalQueue;
+        // slither-disable-start calls-loop
+        // Bounded by controller's own request count; users should prefer claimRequestById() for O(1) claims.
         for (uint256 i = 0; i < len; ++i) {
             IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(requestIds[i]);
             if (req.finalized && !req.claimed) {
                 maxShares += req.shares;
             }
         }
+        // slither-disable-end calls-loop
         return maxShares;
     }
 
@@ -814,6 +824,8 @@ contract OllaVault is
         uint256[] storage requestIds = _ownerRequestIds[controller];
         uint256 len = requestIds.length;
         IWithdrawalQueue queue = _modules.withdrawalQueue;
+        // slither-disable-start calls-loop
+        // Bounded by controller's own request count; ERC-7540 compat only.
         for (uint256 i = 0; i < len; ++i) {
             uint256 id = requestIds[i];
             IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(id);
@@ -821,6 +833,7 @@ contract OllaVault is
                 return id;
             }
         }
+        // slither-disable-end calls-loop
         revert OllaVault__RequestNotFound(0);
     }
 

@@ -285,7 +285,7 @@ contract OllaCore is
 
     // slither-disable-start cyclomatic-complexity
     // slither-disable-start pess-multiple-storage-read
-    // slither-disable-start incorrect-equality
+    // slither-disable-start incorrect-equality,timestamp
     // solhint-disable function-max-lines
     /// @notice Permissionless rebalance flow.
     function rebalance()
@@ -301,11 +301,13 @@ contract OllaCore is
         safetyModuleRef.checkAccountingLiveness();
         IOllaCore.RebalanceProgress memory progress = _rebalanceProgress;
 
-        // slither-disable-next-line incorrect-equality,timestamp
+        // slither-disable-next-line incorrect-equality
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             {
                 uint256 cooldown_ = rebalanceCooldown;
                 uint256 elapsed = block.timestamp - _lastRebalanceTimestamp;
+                // slither-disable-next-line timestamp
+                // Standard cooldown check; miner manipulation (~15s) is negligible for this use case.
                 if (elapsed < cooldown_) revert OllaCore__RebalanceCooldownActive(elapsed, cooldown_);
             }
 
@@ -479,7 +481,7 @@ contract OllaCore is
 
     // slither-disable-end pess-multiple-storage-read
     // slither-disable-end cyclomatic-complexity
-    // slither-disable-end incorrect-equality
+    // slither-disable-end incorrect-equality,timestamp
     // solhint-enable function-max-lines
 
     // slither-disable-start pess-multiple-storage-read
@@ -625,18 +627,19 @@ contract OllaCore is
     }
 
     function _pullRewardsCollectorFunds() internal returns (uint256 pulledAmount) {
-        IRewardsCollector rewardsCollectorRef = _modules.rewardsCollector;
+        CoreModules memory modules = _modules;
+        IRewardsCollector rewardsCollectorRef = modules.rewardsCollector;
         uint256 rewardsCollectorBalance = rewardsCollectorRef.balance();
 
         // slither-disable-next-line timestamp,incorrect-equality
         if (rewardsCollectorBalance == 0) return 0;
 
-        IOllaVault vaultRef = IOllaVault(_modules.vault);
+        IOllaVault vaultRef = IOllaVault(modules.vault);
 
         // slither-disable-next-line reentrancy-benign
         rewardsCollectorRef.withdrawToCore();
         // Forward received funds to Vault
-        _modules.asset.safeTransfer(address(vaultRef), rewardsCollectorBalance);
+        modules.asset.safeTransfer(address(vaultRef), rewardsCollectorBalance);
         vaultRef.receiveUnstaked(rewardsCollectorBalance);
 
         _accountingState.rewardsCollectorBalance = 0;
@@ -703,7 +706,8 @@ contract OllaCore is
         return finalizedAmount;
     }
 
-    // slither-disable-start pess-multiple-storage-read
+    // slither-disable-start pess-multiple-storage-read,reentrancy-benign
+    // Benign reentrancy: calls go to trusted vault/stakingManager within nonReentrant rebalance().
     function _stakeSurplus(uint256 stakeable) internal returns (uint256 totalStaked) {
         // slither-disable-next-line incorrect-equality,timestamp
         if (stakeable == 0) return 0;
@@ -737,7 +741,8 @@ contract OllaCore is
             vaultRef.receiveUnstaked(excess);
         }
 
-        // slither-disable-next-line timestamp
+        // slither-disable-next-line timestamp,reentrancy-benign
+        // Benign: calls go to trusted vault/stakingManager within nonReentrant rebalance().
         if (totalStaked > 0) {
             _accountingState.stakedPrincipal += totalStaked;
         }
@@ -745,7 +750,7 @@ contract OllaCore is
         return totalStaked;
     }
 
-    // slither-disable-end pess-multiple-storage-read
+    // slither-disable-end pess-multiple-storage-read,reentrancy-benign
 
     // slither-disable-start pess-unprotected-initialize
     function _initiateUnstake(uint256 requested) internal returns (uint256 initiated) {
