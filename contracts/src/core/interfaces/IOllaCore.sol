@@ -3,8 +3,8 @@ pragma solidity 0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
-import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 
 /// @title IOllaCore
 /// @notice Interface for OllaCore — orchestration + accounting layer.

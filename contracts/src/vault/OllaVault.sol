@@ -13,12 +13,12 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 /// @title OllaVault
 /// @notice User-facing ERC-7540/ERC-7575/ERC-4626 vault.
@@ -327,8 +327,18 @@ contract OllaVault is
     }
 
     /// @inheritdoc IOllaVault
+    /// @dev Callers MUST `safeTransfer` exactly `amount` to this contract before
+    ///      calling this function. Fee-on-transfer tokens are not supported.
     function receiveUnstaked(uint256 amount) external override onlyRole(CORE_ROLE) {
         _bufferedAssets += amount;
+
+        // Defense-in-depth: verify the real balance backs the updated accounting.
+        uint256 actual = _modules.asset.balanceOf(address(this));
+        uint256 required = _finalizedUnclaimedAssets + _bufferedAssets;
+        if (actual < required) {
+            revert OllaVault__BufferedBalanceMismatch(_bufferedAssets, actual - _finalizedUnclaimedAssets);
+        }
+
         emit UnstakedAssetsReceived(amount);
     }
 
