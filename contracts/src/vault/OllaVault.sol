@@ -258,7 +258,8 @@ contract OllaVault is
         if (receiver == address(0)) revert OllaVault__ZeroAddress("receiver");
         if (shares == 0) revert OllaVault__InvalidAmount();
         assets = IOllaCore(_modules.core).convertToAssetsCeil(shares);
-        _deposit(msg.sender, assets, receiver);
+        uint256 actualShares = _deposit(msg.sender, assets, receiver);
+        if (actualShares != shares) revert OllaVault__SharesMismatch(shares, actualShares);
         return assets;
     }
 

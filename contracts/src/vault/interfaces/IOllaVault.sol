@@ -195,6 +195,9 @@ interface IOllaVault {
     /// @notice Thrown when claiming a withdrawal request that is not yet finalized.
     error OllaVault__NotFinalized(uint256 requestId);
 
+    /// @notice Thrown when mint() produces a different share count than requested.
+    error OllaVault__SharesMismatch(uint256 expected, uint256 actual);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
