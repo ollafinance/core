@@ -72,6 +72,10 @@ export class Logger {
   logTick(result: TickResult, scenarios: ScenarioConfig[]): void {
     const actions = result.actions;
     const errorCount = actions.filter((a) => !a.success).length;
+    const gasBumped = actions.some(
+      (action) => action.scenario === "rebalance" && action.data?.gasBumped === true
+    );
+    const gasMarker = gasBumped ? "❗" : "";
 
     // Build scenario pattern: ✓=run, .=skipped, d=disabled, ⚠️=error
     const pattern = scenarios.map((scenario) => {
@@ -86,7 +90,7 @@ export class Logger {
       `Tick ${result.tick.toString().padStart(3, "0")} ` +
         `| actions: ${pattern} ` +
         `| ${result.durationMs}ms ` +
-        `| ${status}`
+        `| ${status}${gasMarker}`
     );
 
     // Log all accountingState values in compact format
@@ -106,7 +110,7 @@ export class Logger {
       result.tick,
       "tick_complete",
       undefined,
-      `actions: ${pattern} | ${result.durationMs}ms | bufferedAssets: ${accounting.bufferedAssets}, stakedPrincipal: ${accounting.stakedPrincipal}, rewardsVaultBalance: ${accounting.rewardsVaultBalance}, claimableRewards: ${accounting.claimableRewards}, rewardsDelta: ${accounting.rewardsDelta}, slashingDelta: ${accounting.slashingDelta}, cumulativeRewards: ${accounting.cumulativeRewards}`
+      `actions: ${pattern} | ${result.durationMs}ms | status: ${status}${gasMarker} | bufferedAssets: ${accounting.bufferedAssets}, stakedPrincipal: ${accounting.stakedPrincipal}, rewardsVaultBalance: ${accounting.rewardsVaultBalance}, claimableRewards: ${accounting.claimableRewards}, rewardsDelta: ${accounting.rewardsDelta}, slashingDelta: ${accounting.slashingDelta}, cumulativeRewards: ${accounting.cumulativeRewards}`
     );
     this.output.logLine(line);
   }

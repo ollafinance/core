@@ -16,6 +16,7 @@ import type {
 
 // Import scenario executors
 import { executeProviderKeys } from "./lib/scenarios/provider-keys.js";
+import { executeRefillKeys } from "./lib/scenarios/refill-keys.js";
 import { executeMockRewards } from "./lib/scenarios/mock-rewards.js";
 import { executeUserDeposit } from "./lib/scenarios/user-deposit.js";
 import { executeRebalance } from "./lib/scenarios/rebalance.js";
@@ -23,6 +24,9 @@ import { executeAccounting } from "./lib/scenarios/accounting.js";
 import { executeUserInitiateWithdraw } from "./lib/scenarios/user-initiate-withdraw.js";
 import { executeUserClaim } from "./lib/scenarios/user-claim.js";
 import { executeGovernanceChange } from "./lib/scenarios/governance-change.js";
+import { executeSlashing } from "./lib/scenarios/slashing.js";
+import { executeExternalExit } from "./lib/scenarios/external-exit.js";
+import { executeSafetyModule } from "./lib/scenarios/safety-module.js";
 import { executeTimeAdvance } from "./lib/scenarios/time-advance.js";
 import { executeFinalizeExits } from "./lib/scenarios/finalize-exits.js";
 import { executeExchangeRateCheck } from "./lib/scenarios/exchange-rate-check.js";
@@ -78,6 +82,8 @@ async function executeScenario(
   switch (scenario.type) {
     case "provider-keys":
       return executeProviderKeys(scenario, tick, clients, addresses, runState);
+    case "refill-keys":
+      return executeRefillKeys(scenario, tick, clients, addresses, runState);
     case "mock-rewards":
       return executeMockRewards(scenario, tick, clients, addresses, scenarioState, runState);
     case "user-deposit":
@@ -92,6 +98,12 @@ async function executeScenario(
       return executeUserClaim(scenario, tick, clients, addresses);
     case "governance-change":
       return executeGovernanceChange(scenario, tick, clients, addresses);
+    case "slashing":
+      return executeSlashing(scenario, tick, clients, addresses, scenarioState, runState);
+    case "external-exit":
+      return executeExternalExit(scenario, tick, clients, addresses, scenarioState, runState);
+    case "safety-module":
+      return executeSafetyModule(scenario, tick, clients, addresses, scenarioState, runState);
     case "time-advance":
       return executeTimeAdvance(scenario, tick, clients, addresses);
     case "finalize-exits":

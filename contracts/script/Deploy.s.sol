@@ -7,7 +7,7 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
-import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
@@ -167,11 +167,23 @@ contract DeployScript is BaseDeployer {
             json = _addAddressToJson(json, "MockAztecRollup", rollup, false);
             json = _addAddressToJson(json, "MockAztecRollupRegistry", rollupRegistry, false);
 
-            // Local safety module stub: allows deposits/withdrawals without role setup.
+            // Deploy real SafetyModule with generous local-dev defaults.
+            // CORE must be the proxy (not impl) so onlyCore modifier works.
             vm.startBroadcast(config.deployerPrivateKey);
-            safetyModule = address(new MockSafetyModule(ollaCoreProxy, address(0)));
+            safetyModule = address(
+                new SafetyModule(
+                    config.deployer, // admin
+                    config.deployer, // guardian (deployer can pause/unpause locally)
+                    ollaCoreProxy, // core — must match OllaCore proxy address
+                    ollaVaultProxy, // vault — must match OllaVault proxy address
+                    1_000_000_000e18, // depositCap — 1B tokens, effectively unlimited
+                    500, // minRateDropBps — 5% rate drop triggers breaker
+                    5_000, // maxQueueRatioBps — 50% queue ratio triggers breaker
+                    1 hours // maxAccountingDelay — minimum allowed, easy to test liveness breaker
+                )
+            );
             vm.stopBroadcast();
-            _logDeployment("MockSafetyModule", safetyModule);
+            _logDeployment("SafetyModule", safetyModule);
         }
 
         // Always write StakingManager to JSON once known
