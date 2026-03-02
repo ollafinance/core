@@ -35,6 +35,9 @@ contract OllaCoreWithdrawalTest is Test {
         uint256 assetsExpected,
         uint256 exchangeRate
     );
+    event RedeemRequest(
+        address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 assets
+    );
     event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
     event AccountingUpdated(
         uint256 totalAssets,
@@ -198,6 +201,8 @@ contract OllaCoreWithdrawalTest is Test {
 
         vm.expectEmit(true, true, true, true, address(vault));
         emit WithdrawalRequested(1, alice, bob, shares, expectedAssets, rate);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RedeemRequest(bob, alice, 1, alice, expectedAssets);
 
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, bob, alice);
@@ -366,6 +371,8 @@ contract OllaCoreWithdrawalTest is Test {
 
         vm.expectEmit(true, true, true, true, address(vault));
         emit WithdrawalRequested(1, permitOwner, bob, shares, assetsExpected, rate);
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit RedeemRequest(bob, permitOwner, 1, permitOwner, assetsExpected);
 
         vm.prank(permitOwner);
         uint256 requestId = vault.requestRedeemWithPermit(shares, bob, deadline, v, r, s);
