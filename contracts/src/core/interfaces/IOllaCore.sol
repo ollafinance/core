@@ -2,7 +2,7 @@
 pragma solidity 0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 
@@ -27,7 +27,7 @@ interface IOllaCore {
 
     struct AccountingState {
         uint256 stakedPrincipal;
-        uint256 rewardsCollectorBalance;
+        uint256 rewardsAccumulatorBalance;
         uint256 claimableRewards;
         uint256 rewardsDelta;
         uint256 slashingDelta;
@@ -61,7 +61,7 @@ interface IOllaCore {
         address vault;
         IStAztec stAztec;
         IStakingManager stakingManager;
-        IRewardsCollector rewardsCollector;
+        IRewardsAccumulator rewardsAccumulator;
         address safetyModule;
     }
 
@@ -140,7 +140,7 @@ interface IOllaCore {
 
     /// @notice Emitted when rewards vault funds are pulled during rebalance.
     /// @param amount The amount of rewards vault funds received.
-    event RewardsCollectorFundsPulled(uint256 amount);
+    event RewardsAccumulatorFundsPulled(uint256 amount);
 
     /// @notice Emitted when withdrawal finalization is executed during rebalance.
     /// @param available Amount of assets available for finalization.
@@ -250,7 +250,7 @@ interface IOllaCore {
     /// @param protocolFeeBP_ The protocol fee in basis points.
     /// @param treasuryFeeSplitBP_ The treasury fee split in basis points.
     /// @param governanceContract_ The OllaGovernance contract address (set as owner).
-    /// @param rewardsCollector_ The rewards vault module address.
+    /// @param rewardsAccumulator_ The rewards vault module address.
     /// @param safetyModule_ The safety module address.
     function initialize(
         IERC20 asset_,
@@ -259,7 +259,7 @@ interface IOllaCore {
         uint256 protocolFeeBP_,
         uint256 treasuryFeeSplitBP_,
         address governanceContract_,
-        IRewardsCollector rewardsCollector_,
+        IRewardsAccumulator rewardsAccumulator_,
         address safetyModule_
     ) external;
 
@@ -346,7 +346,7 @@ interface IOllaCore {
 
     /// @notice Returns the rewards vault module address.
     /// @return The rewards vault module address.
-    function rewardsCollector() external view returns (address);
+    function rewardsAccumulator() external view returns (address);
 
     /// @notice Returns the safety module address.
     /// @return The safety module address.

@@ -247,8 +247,8 @@ export interface DeploymentAddresses {
   StAztec: string;
   WithdrawalQueueImplementation: string;
   WithdrawalQueueProxy: string;
-  RewardsCollectorImplementation: string;
-  RewardsCollectorProxy: string;
+  RewardsAccumulatorImplementation: string;
+  RewardsAccumulatorProxy: string;
   StakingManagerImplementation: string;
   StakingManagerProxy: string;
   StakingProviderRegistryImplementation: string;

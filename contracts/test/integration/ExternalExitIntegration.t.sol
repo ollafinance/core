@@ -20,7 +20,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -60,7 +60,7 @@ contract ExternalExitIntegrationTest is Test {
     MockAztec internal aztec;
     MockAztecRollup internal rollup;
     MockAztecRollupRegistry internal rollupRegistry;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     // Addresses
@@ -118,7 +118,7 @@ contract ExternalExitIntegrationTest is Test {
 
         // Deploy supporting contracts
         stAztec = new StAztec(address(vault));
-        rewardsCollector = new MockRewardsCollector(IERC20(address(aztec)), address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Initialize stakingProviderRegistry (needs stakingManager address)
@@ -133,7 +133,7 @@ contract ExternalExitIntegrationTest is Test {
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            address(rewardsCollector),
+            address(rewardsAccumulator),
             address(core),
             address(stakingProviderRegistry),
             defaultAdmin
@@ -150,7 +150,7 @@ contract ExternalExitIntegrationTest is Test {
             0, // protocolFeeBP
             5_000, // treasuryFeeSplitBP
             governance,
-            rewardsCollector,
+            rewardsAccumulator,
             address(safetyModule)
         );
 

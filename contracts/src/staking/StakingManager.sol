@@ -50,7 +50,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     IAztecRollupRegistry public rollupRegistry;
 
     /// @notice The rewards vault contract.
-    address public rewardsCollector;
+    address public rewardsAccumulator;
 
     /// @notice The OllaCore contract address.
     address public core;
@@ -148,7 +148,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function initialize(
         IERC20 stakingAsset_,
         address rollupRegistry_,
-        address rewardsCollector_,
+        address rewardsAccumulator_,
         address core_,
         address stakingProviderRegistry_,
         address defaultAdmin_
@@ -159,8 +159,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (rollupRegistry_ == address(0)) {
             revert StakingManager__ZeroAddress("rollupRegistry");
         }
-        if (rewardsCollector_ == address(0)) {
-            revert StakingManager__ZeroAddress("rewardsCollector");
+        if (rewardsAccumulator_ == address(0)) {
+            revert StakingManager__ZeroAddress("rewardsAccumulator");
         }
         if (core_ == address(0)) {
             revert StakingManager__ZeroAddress("core");
@@ -176,7 +176,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         stakingAsset = stakingAsset_;
         rollupRegistry = IAztecRollupRegistry(rollupRegistry_);
-        rewardsCollector = rewardsCollector_;
+        rewardsAccumulator = rewardsAccumulator_;
         core = core_;
         stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
         gasThreshold = 50_000;
@@ -238,7 +238,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyCore nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
-        harvested = rollup.claimSequencerRewards(rewardsCollector);
+        harvested = rollup.claimSequencerRewards(rewardsAccumulator);
         emit RewardsHarvested(harvested);
         return harvested;
     }
@@ -324,7 +324,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @return claimableRewards The total rewards claimable to rewards recipient.
     function getClaimableRewards() external view override onlyCore returns (uint256 claimableRewards) {
         (, IAztecRollup rollup) = _getRollup();
-        return rollup.getSequencerRewards(address(rewardsCollector));
+        return rollup.getSequencerRewards(address(rewardsAccumulator));
     }
 
     /// @inheritdoc IStakingManager

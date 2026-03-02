@@ -13,7 +13,7 @@ import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
@@ -40,7 +40,7 @@ contract OllaCoreRecoverStAztecTest is Test {
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal governance;
@@ -64,11 +64,11 @@ contract OllaCoreRecoverStAztecTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
         vm.prank(governance);

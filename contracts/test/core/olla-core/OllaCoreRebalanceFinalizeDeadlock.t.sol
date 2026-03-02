@@ -12,7 +12,7 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
@@ -44,7 +44,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
@@ -79,14 +79,14 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setUnstakedToken(asset);
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 

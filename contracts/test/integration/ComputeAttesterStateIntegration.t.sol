@@ -7,7 +7,7 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
-import { RewardsCollector } from "src/core/RewardsCollector.sol";
+import { RewardsAccumulator } from "src/core/RewardsAccumulator.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
@@ -66,7 +66,7 @@ contract ComputeAttesterStateIntegration is Test {
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
     WithdrawalQueue internal withdrawalQueue;
-    RewardsCollector internal rewardsCollector;
+    RewardsAccumulator internal rewardsAccumulator;
     SafetyModule internal safetyModule;
     MockAztecRollup internal mockRollup;
     MockAztecRollupRegistry internal mockRollupRegistry;
@@ -96,11 +96,11 @@ contract ComputeAttesterStateIntegration is Test {
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        // Deploy RewardsCollector
-        RewardsCollector rewardsImplementation = new RewardsCollector();
+        // Deploy RewardsAccumulator
+        RewardsAccumulator rewardsImplementation = new RewardsAccumulator();
         ERC1967Proxy rewardsProxy = new ERC1967Proxy(address(rewardsImplementation), "");
-        rewardsCollector = RewardsCollector(address(rewardsProxy));
-        rewardsCollector.initialize(IERC20(asset), address(core), governance);
+        rewardsAccumulator = RewardsAccumulator(address(rewardsProxy));
+        rewardsAccumulator.initialize(IERC20(asset), address(core), governance);
 
         // Deploy Mock Rollup and Registry
         mockRollup = new MockAztecRollup(IERC20(asset), 0);
@@ -128,7 +128,7 @@ contract ComputeAttesterStateIntegration is Test {
         stakingManager.initialize(
             IERC20(asset),
             address(mockRollupRegistry),
-            address(rewardsCollector),
+            address(rewardsAccumulator),
             address(core),
             address(stakingProviderRegistry),
             governance
@@ -140,7 +140,7 @@ contract ComputeAttesterStateIntegration is Test {
         );
 
         // Initialize OllaCore
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         // Initialize OllaVault
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);

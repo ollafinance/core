@@ -33,7 +33,7 @@ contract PrintState is BaseScript {
         IOllaCore c = IOllaCore(core);
 
         address asset = c.asset();
-        address rewardsCollector = c.rewardsCollector();
+        address rewardsAccumulator = c.rewardsAccumulator();
         address stAztec = c.stAztec();
         address stakingManager = c.stakingManager();
         address vaultAddr = c.vault();
@@ -43,7 +43,7 @@ contract PrintState is BaseScript {
         console2.log("core", core);
         console2.log("asset", asset);
         console2.log("stAztec", stAztec);
-        console2.log("rewardsCollector", rewardsCollector);
+        console2.log("rewardsAccumulator", rewardsAccumulator);
         console2.log("vault", vaultAddr);
         console2.log("stakingManager", stakingManager);
         console2.log("owner (governance)", owner);
@@ -62,7 +62,7 @@ contract PrintState is BaseScript {
 
         IOllaCore.AccountingState memory a = c.accountingState();
         console2.log("accounting.stakedPrincipal", a.stakedPrincipal);
-        console2.log("accounting.rewardsCollectorBalance", a.rewardsCollectorBalance);
+        console2.log("accounting.rewardsAccumulatorBalance", a.rewardsAccumulatorBalance);
         console2.log("accounting.claimableRewards", a.claimableRewards);
         console2.log("accounting.rewardsDelta", a.rewardsDelta);
         console2.log("accounting.slashingDelta", a.slashingDelta);
@@ -82,7 +82,7 @@ contract PrintState is BaseScript {
         }
 
         console2.log("asset.balance(core)", IERC20(asset).balanceOf(core));
-        console2.log("asset.balance(rewardsCollector)", IERC20(asset).balanceOf(rewardsCollector));
+        console2.log("asset.balance(rewardsAccumulator)", IERC20(asset).balanceOf(rewardsAccumulator));
 
         console2.log("stAztec.totalSupply", IERC20(stAztec).totalSupply());
 
@@ -90,8 +90,8 @@ contract PrintState is BaseScript {
         if (rollup != address(0)) {
             console2.log("rollup", rollup);
             console2.log(
-                "rollup.pendingRewards(rewardsCollector)",
-                IMockAztecRollup(rollup).getSequencerRewards(rewardsCollector)
+                "rollup.pendingRewards(rewardsAccumulator)",
+                IMockAztecRollup(rollup).getSequencerRewards(rewardsAccumulator)
             );
         }
     }

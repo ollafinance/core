@@ -17,7 +17,7 @@ import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -80,7 +80,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     uint256 internal permitOwnerKey;
     uint256 internal permitAttackerKey;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     /*//////////////////////////////////////////////////////////////
@@ -101,14 +101,14 @@ contract OllaCoreInstantRedemptionTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
         vm.prank(governance);
@@ -830,12 +830,12 @@ contract OllaCoreInstantRedemptionTest is Test {
 
         MockAccountingStakingManager malStakingManager = new MockAccountingStakingManager();
         StAztec malStAztec = new StAztec(address(malVault));
-        MockRewardsCollector malRewardsCollector = new MockRewardsCollector(IERC20(address(malAsset)), address(malCore));
+        MockRewardsAccumulator malRewardsAccumulator = new MockRewardsAccumulator(IERC20(address(malAsset)), address(malCore));
         MockSafetyModule malSafetyModule = new MockSafetyModule(address(malCoreImpl), address(malVault));
         MockWithdrawalQueue malWithdrawalQueue = new MockWithdrawalQueue();
 
         malStakingManager.setRewardsToken(IERC20(address(malAsset)));
-        malStakingManager.setRewardsCollector(address(malRewardsCollector));
+        malStakingManager.setRewardsAccumulator(address(malRewardsAccumulator));
 
         malCore.initialize(
             IERC20(address(malAsset)),
@@ -844,7 +844,7 @@ contract OllaCoreInstantRedemptionTest is Test {
             0,
             5_000,
             governance,
-            malRewardsCollector,
+            malRewardsAccumulator,
             address(malSafetyModule)
         );
         malVault.initialize(

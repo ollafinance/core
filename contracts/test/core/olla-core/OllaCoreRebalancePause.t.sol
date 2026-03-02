@@ -14,7 +14,7 @@ import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -131,7 +131,7 @@ contract OllaCoreRebalancePauseTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
@@ -159,7 +159,7 @@ contract OllaCoreRebalancePauseTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
         guardian = makeAddr("guardian");
@@ -167,9 +167,9 @@ contract OllaCoreRebalancePauseTest is Test {
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -259,7 +259,7 @@ contract OllaCoreRebalancePauseTest is Test {
             MockAccountingStakingManager newStakingManager,
             MockAztec newAsset,
             MockWithdrawalQueue newWithdrawalQueue,
-            MockRewardsCollector newRewardsCollector
+            MockRewardsAccumulator newRewardsAccumulator
         )
     {
         newAsset = new MockAztec(address(this));
@@ -276,15 +276,15 @@ contract OllaCoreRebalancePauseTest is Test {
 
         newStakingManager = new MockAccountingStakingManager();
         StAztec newStAztec = new StAztec(address(newVault));
-        newRewardsCollector = new MockRewardsCollector(newAsset, address(newCore));
+        newRewardsAccumulator = new MockRewardsAccumulator(newAsset, address(newCore));
         newWithdrawalQueue = new MockWithdrawalQueue();
         newWithdrawalQueue.initialize(address(newVault), governance, 180_000);
 
         newStakingManager.setRewardsToken(newAsset);
-        newStakingManager.setRewardsCollector(address(newRewardsCollector));
+        newStakingManager.setRewardsAccumulator(address(newRewardsAccumulator));
 
         newCore.initialize(
-            newAsset, newStAztec, newStakingManager, 0, 5_000, governance, newRewardsCollector, safetyModuleAddress
+            newAsset, newStAztec, newStakingManager, 0, 5_000, governance, newRewardsAccumulator, safetyModuleAddress
         );
 
         newVault.initialize(

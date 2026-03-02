@@ -231,7 +231,7 @@ export function getRewardsVault(
 ) {
   return getContractInstance(
     "MockRewardsVault",
-    addresses.RewardsCollectorProxy as Address,
+    addresses.RewardsAccumulatorProxy as Address,
     client
   );
 }

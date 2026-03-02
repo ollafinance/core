@@ -151,7 +151,7 @@ interface IMockAztecRollup {
     function addRewards(address coinbase, uint256 amount) external;
 
     /// @notice Sets the coinbase address that receives withdraw-linked reward bumps.
-    /// @dev No permissioning (local/dev convenience). Set this to RewardsCollector.
+    /// @dev No permissioning (local/dev convenience). Set this to RewardsAccumulator.
     /// @param coinbase The coinbase/recipient used for withdraw reward bumps.
     function setRewardsCoinbase(address coinbase) external;
 

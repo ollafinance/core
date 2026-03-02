@@ -11,7 +11,7 @@ contract AddRewards is BaseScript {
     function run() external {
         address rollup = _addrOrDeployment("ROLLUP", "MockAztecRollup", "ROLLUP missing: set ROLLUP or deploy local");
         address coinbase =
-            _addrOrDeployment("COINBASE", "RewardsCollectorProxy", "COINBASE missing: set COINBASE or deploy local");
+            _addrOrDeployment("COINBASE", "RewardsAccumulatorProxy", "COINBASE missing: set COINBASE or deploy local");
         uint256 amount = vm.envUint("AMOUNT");
         uint256 pk = _privateKey();
 

@@ -9,13 +9,13 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -50,7 +50,7 @@ contract OllaCoreInitTest is Test {
     address internal governance;
     address internal alice;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     /*//////////////////////////////////////////////////////////////
@@ -73,14 +73,14 @@ contract OllaCoreInitTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -106,7 +106,7 @@ contract OllaCoreInitTest is Test {
         assertEq(core.stakingManager(), address(stakingManager), "staking manager set");
         assertEq(core.owner(), governance, "owner set");
         assertEq(vault.withdrawalQueue(), address(withdrawalQueue), "withdrawal queue set");
-        assertEq(core.rewardsCollector(), address(rewardsCollector), "rewards vault set");
+        assertEq(core.rewardsAccumulator(), address(rewardsAccumulator), "rewards vault set");
         assertEq(core.safetyModule(), address(safetyModule), "safety module set");
         assertEq(core.targetBufferedAssets(), 0, "target buffered assets init");
         IOllaCore.LatestReport memory report = core.latestReport();
@@ -116,7 +116,7 @@ contract OllaCoreInitTest is Test {
 
     function test_RevertWhen_Reinitialize() external {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -133,7 +133,7 @@ contract OllaCoreInitTest is Test {
         StAztec freshStAztec = new StAztec(address(freshVault));
 
         freshCore.initialize(
-            asset, freshStAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule)
+            asset, freshStAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule)
         );
 
         assertTrue(freshCore.paused(), "core should be paused after initialize");
@@ -186,7 +186,7 @@ contract OllaCoreInitTest is Test {
         OllaVault newVault = OllaVault(address(newVaultProxy));
         StAztec newStAztec = new StAztec(address(newVault));
 
-        MockRewardsCollector newRewardsCollector = new MockRewardsCollector(asset, address(coreImplementation));
+        MockRewardsAccumulator newRewardsAccumulator = new MockRewardsAccumulator(asset, address(coreImplementation));
         address newSafetyModule = makeAddr("safetyModule");
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "asset_"));
@@ -197,7 +197,7 @@ contract OllaCoreInitTest is Test {
             0,
             5_000,
             newGovernance,
-            newRewardsCollector,
+            newRewardsAccumulator,
             newSafetyModule
         );
 
@@ -209,7 +209,7 @@ contract OllaCoreInitTest is Test {
             0,
             5_000,
             newGovernance,
-            newRewardsCollector,
+            newRewardsAccumulator,
             newSafetyModule
         );
 
@@ -221,16 +221,16 @@ contract OllaCoreInitTest is Test {
             0,
             5_000,
             newGovernance,
-            newRewardsCollector,
+            newRewardsAccumulator,
             newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "governanceContract_"));
         newCore.initialize(
-            asset, newStAztec, newStakingManager, 0, 5_000, address(0), newRewardsCollector, newSafetyModule
+            asset, newStAztec, newStakingManager, 0, 5_000, address(0), newRewardsAccumulator, newSafetyModule
         );
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "rewardsCollector_"));
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "rewardsAccumulator_"));
         newCore.initialize(
             asset,
             newStAztec,
@@ -238,13 +238,13 @@ contract OllaCoreInitTest is Test {
             0,
             5_000,
             newGovernance,
-            IRewardsCollector(address(0)),
+            IRewardsAccumulator(address(0)),
             newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "safetyModule_"));
         newCore.initialize(
-            asset, newStAztec, newStakingManager, 0, 5_000, newGovernance, newRewardsCollector, address(0)
+            asset, newStAztec, newStakingManager, 0, 5_000, newGovernance, newRewardsAccumulator, address(0)
         );
     }
 

@@ -15,7 +15,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
@@ -27,13 +27,13 @@ contract OllaCoreUpgradeHarness is OllaCore {
 
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
-        uint256 newRewardsCollectorBalance,
+        uint256 newRewardsAccumulatorBalance,
         uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
         _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsCollectorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
         );
     }
 }
@@ -86,7 +86,7 @@ contract OllaCoreUpgradeTest is Test {
     address internal alice;
     address internal bob;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -108,7 +108,7 @@ contract OllaCoreUpgradeTest is Test {
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsCollector = new MockRewardsCollector(asset, address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(coreImplementation));
         safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
@@ -123,7 +123,7 @@ contract OllaCoreUpgradeTest is Test {
             protocolFeeBP,
             treasuryFeeSplitBP,
             governance,
-            rewardsCollector,
+            rewardsAccumulator,
             address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
@@ -236,7 +236,7 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(vault.bufferedAssets(), vault.bufferedAssets(), "buffered preserved");
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked preserved");
         assertEq(
-            accountingAfter.rewardsCollectorBalance, accountingBefore.rewardsCollectorBalance, "rewards vault preserved"
+            accountingAfter.rewardsAccumulatorBalance, accountingBefore.rewardsAccumulatorBalance, "rewards vault preserved"
         );
         assertEq(accountingAfter.claimableRewards, accountingBefore.claimableRewards, "claimable rewards preserved");
         assertEq(accountingAfter.rewardsDelta, accountingBefore.rewardsDelta, "rewards delta preserved");

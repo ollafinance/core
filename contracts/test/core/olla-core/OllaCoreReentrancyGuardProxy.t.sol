@@ -28,8 +28,8 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
@@ -64,7 +64,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal alice;
@@ -87,7 +87,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
@@ -107,7 +107,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
             500,
             5_000,
             governance,
-            IRewardsCollector(address(rewardsCollector)),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);

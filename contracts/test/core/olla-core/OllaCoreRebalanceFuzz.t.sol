@@ -8,11 +8,11 @@ import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -36,7 +36,7 @@ contract OllaCoreRebalanceFuzzHandler is Test {
     OllaVault public vault;
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
-    MockRewardsCollector public rewardsCollector;
+    MockRewardsAccumulator public rewardsAccumulator;
     MockWithdrawalQueue public withdrawalQueue;
     address public operator;
     address public governance;
@@ -64,7 +64,7 @@ contract OllaCoreRebalanceFuzzHandler is Test {
         OllaVault _vault,
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
-        MockRewardsCollector _rewardsCollector,
+        MockRewardsAccumulator _rewardsAccumulator,
         MockWithdrawalQueue _withdrawalQueue,
         address _operator,
         address _governance
@@ -74,7 +74,7 @@ contract OllaCoreRebalanceFuzzHandler is Test {
         vault = _vault;
         stAztec = _stAztec;
         stakingManager = _stakingManager;
-        rewardsCollector = _rewardsCollector;
+        rewardsAccumulator = _rewardsAccumulator;
         withdrawalQueue = _withdrawalQueue;
         operator = _operator;
         governance = _governance;
@@ -181,7 +181,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
     MockAccountingStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreRebalanceFuzzHandler internal handler;
     address internal operator;
     address internal governance;
@@ -207,13 +207,13 @@ contract OllaCoreRebalanceFuzzTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
 
         address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
         core.initialize(
             asset,
@@ -222,7 +222,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
             0,
             5_000,
             governance,
-            IRewardsCollector(address(rewardsCollector)),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
 
@@ -244,7 +244,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
         vm.stopPrank();
 
         handler = new OllaCoreRebalanceFuzzHandler(
-            asset, core, vault, stAztec, stakingManager, rewardsCollector, withdrawalQueue, operator, governance
+            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator, governance
         );
 
         targetContract(address(handler));
@@ -256,7 +256,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
 
     function invariant_TotalAssetsEqualBuckets() external view {
         IOllaCore.AccountingState memory accounting = core.accountingState();
-        uint256 expectedTotal = vault.bufferedAssets() + accounting.stakedPrincipal + accounting.rewardsCollectorBalance
+        uint256 expectedTotal = vault.bufferedAssets() + accounting.stakedPrincipal + accounting.rewardsAccumulatorBalance
             + accounting.claimableRewards - accounting.slashingDelta;
 
         assertEq(core.totalAssets(), expectedTotal, "totalAssets must equal sum of buckets");

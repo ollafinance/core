@@ -14,9 +14,9 @@ This serves two purposes:
 | T-1 | `BURNER_ROLE` is held exclusively by OllaCore | StAztec | Any other holder can burn arbitrary users' stAztec without allowance, effectively confiscating their staking position |
 | T-2 | `MINTER_ROLE` is held exclusively by OllaCore | StAztec | Any other holder can mint unbacked stAztec, diluting all existing holders |
 | T-3 | `OPERATOR_ROLE` can set attester-state staleness window | StakingManager | A malicious operator can set an excessively large `attesterStateMaxAge`, allowing stale slashing/staking data to persist and delaying accurate accounting |
-| T-4 | `DEFAULT_ADMIN_ROLE` (governance) can upgrade all UUPS proxies | OllaCore, WithdrawalQueue, RewardsVault, StakingManager, StakingProviderRegistry | A compromised governance key can replace any implementation — full protocol rug |
+| T-4 | `DEFAULT_ADMIN_ROLE` (governance) can upgrade all UUPS proxies | OllaCore, WithdrawalQueue, RewardsAccumulator, StakingManager, StakingProviderRegistry | A compromised governance key can replace any implementation — full protocol rug |
 | T-5 | Governance can set protocol fees up to 100% | OllaCore | Fee misconfiguration can extract all yield from stakers |
-| T-6 | Governance can hot-swap modules (StakingManager, RewardsVault, WithdrawalQueue, SafetyModule) | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
+| T-6 | Governance can hot-swap modules (StakingManager, RewardsAccumulator, WithdrawalQueue, SafetyModule) | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
 | T-7 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
 | T-8 | `GUARDIAN_ROLE` can pause/unpause and force-reset a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-resetting mid-rebalance discards in-progress work (unharvested rewards wait for next cycle, partial unstakes are tracked on-chain) |
 
@@ -35,7 +35,7 @@ SafetyModule uses plain `AccessControl` (not upgradeable) with an `immutable COR
 1. **Trust anchor**: SafetyModule is the protocol's circuit breaker / pause mechanism. Making it silently upgradeable would undermine its purpose — users must be able to reason about what can pause the protocol without worrying about implementation swaps.
 2. **Simple logic, small attack surface**: Its functionality (deposit caps, rate-drop breakers, queue-ratio breakers, accounting liveness) is straightforward and unlikely to need in-place patching.
 3. **Setter escape hatch**: `OllaCore.setSafetyModule()` (admin-only, requires unpaused + no active rebalance) allows replacing the module without a full UUPS upgrade of the core proxy.
-4. **No funds, no cross-contract references**: SafetyModule holds no assets and is only referenced by OllaCore, so swapping it carries no consistency risk (contrast with RewardsVault, which holds funds and is referenced by StakingManager).
+4. **No funds, no cross-contract references**: SafetyModule holds no assets and is only referenced by OllaCore, so swapping it carries no consistency risk (contrast with RewardsAccumulator, which holds funds and is referenced by StakingManager).
 
 ## Mitigations
 

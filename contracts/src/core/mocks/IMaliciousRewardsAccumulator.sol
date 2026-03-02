@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 
-/// @title IMaliciousRewardsCollector
+/// @title IMaliciousRewardsAccumulator
 /// @notice Test-only interface for configuring reentrancy behavior on a rewards vault.
 /// @author Olla Core contributors
-interface IMaliciousRewardsCollector is IRewardsCollector {
+interface IMaliciousRewardsAccumulator is IRewardsAccumulator {
     /// @notice Thrown when initialize is called (not allowed in mock).
-    error MaliciousRewardsCollector__NoInitializer();
+    error MaliciousRewardsAccumulator__NoInitializer();
 
     /// @notice Configure the call to perform during a reentrancy attempt.
     /// @param target The contract to call.

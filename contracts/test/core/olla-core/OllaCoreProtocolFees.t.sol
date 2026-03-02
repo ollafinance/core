@@ -7,10 +7,10 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -58,7 +58,7 @@ contract OllaCoreProtocolFeesTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal operator;
@@ -85,7 +85,7 @@ contract OllaCoreProtocolFeesTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
@@ -99,7 +99,7 @@ contract OllaCoreProtocolFeesTest is Test {
             PROTOCOL_FEE_BP,
             TREASURY_FEE_SPLIT_BP,
             governance,
-            IRewardsCollector(address(rewardsCollector)),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
 

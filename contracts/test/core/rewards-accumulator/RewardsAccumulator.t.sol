@@ -8,11 +8,11 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-import { RewardsCollector } from "src/core/RewardsCollector.sol";
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { RewardsAccumulator } from "src/core/RewardsAccumulator.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 
-contract RewardsCollectorTest is Test {
+contract RewardsAccumulatorTest is Test {
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -25,7 +25,7 @@ contract RewardsCollectorTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal aztec;
-    RewardsCollector internal vault;
+    RewardsAccumulator internal vault;
 
     address internal core;
     address internal defaultAdmin;
@@ -37,24 +37,24 @@ contract RewardsCollectorTest is Test {
         alice = makeAddr("alice");
 
         aztec = new MockAztec(address(this));
-        vault = _deployRewardsCollector(IERC20(address(aztec)), core, defaultAdmin);
+        vault = _deployRewardsAccumulator(IERC20(address(aztec)), core, defaultAdmin);
     }
 
-    function _deployRewardsCollector(IERC20 rewardsToken_, address core_, address defaultAdmin_)
+    function _deployRewardsAccumulator(IERC20 rewardsToken_, address core_, address defaultAdmin_)
         internal
-        returns (RewardsCollector)
+        returns (RewardsAccumulator)
     {
-        RewardsCollector implementation = new RewardsCollector();
+        RewardsAccumulator implementation = new RewardsAccumulator();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        RewardsCollector deployed = RewardsCollector(address(proxy));
+        RewardsAccumulator deployed = RewardsAccumulator(address(proxy));
         deployed.initialize(rewardsToken_, core_, defaultAdmin_);
         return deployed;
     }
 
-    function _deployUninitializedRewardsCollector() internal returns (RewardsCollector) {
-        RewardsCollector implementation = new RewardsCollector();
+    function _deployUninitializedRewardsAccumulator() internal returns (RewardsAccumulator) {
+        RewardsAccumulator implementation = new RewardsAccumulator();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        return RewardsCollector(address(proxy));
+        return RewardsAccumulator(address(proxy));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -69,26 +69,26 @@ contract RewardsCollectorTest is Test {
     }
 
     function test_RevertWhen_Initialize_RewardsTokenZeroAddress() external {
-        RewardsCollector v = _deployUninitializedRewardsCollector();
+        RewardsAccumulator v = _deployUninitializedRewardsAccumulator();
 
         vm.expectRevert(
-            abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "rewardsToken")
+            abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__ZeroAddress.selector, "rewardsToken")
         );
         v.initialize(IERC20(address(0)), core, defaultAdmin);
     }
 
     function test_RevertWhen_Initialize_CoreZeroAddress() external {
-        RewardsCollector v = _deployUninitializedRewardsCollector();
+        RewardsAccumulator v = _deployUninitializedRewardsAccumulator();
 
-        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "core"));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__ZeroAddress.selector, "core"));
         v.initialize(IERC20(address(aztec)), address(0), defaultAdmin);
     }
 
     function test_RevertWhen_Initialize_DefaultAdminZeroAddress() external {
-        RewardsCollector v = _deployUninitializedRewardsCollector();
+        RewardsAccumulator v = _deployUninitializedRewardsAccumulator();
 
         vm.expectRevert(
-            abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "defaultAdmin")
+            abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__ZeroAddress.selector, "defaultAdmin")
         );
         v.initialize(IERC20(address(aztec)), core, address(0));
     }
@@ -103,7 +103,7 @@ contract RewardsCollectorTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_PostReceiveFundsHook_Unauthorized() external {
-        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__UnauthorizedCore.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         vault.recordBalance();
     }
@@ -153,7 +153,7 @@ contract RewardsCollectorTest is Test {
         vm.prank(address(vault));
         aztec.transfer(alice, 10 ether);
 
-        vm.expectRevert(IRewardsCollector.RewardsCollector__BalanceMismatch.selector);
+        vm.expectRevert(IRewardsAccumulator.RewardsAccumulator__BalanceMismatch.selector);
         vm.prank(core);
         vault.recordBalance();
     }
@@ -163,13 +163,13 @@ contract RewardsCollectorTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_WithdrawToCore_Unauthorized() external {
-        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__UnauthorizedCore.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__UnauthorizedCore.selector, alice));
         vm.prank(alice);
         vault.withdrawToCore();
     }
 
     function test_RevertWhen_WithdrawToCore_ZeroBalance() external {
-        vm.expectRevert(IRewardsCollector.RewardsCollector__ZeroAmount.selector);
+        vm.expectRevert(IRewardsAccumulator.RewardsAccumulator__ZeroAmount.selector);
         vm.prank(core);
         vault.withdrawToCore();
     }
@@ -177,7 +177,7 @@ contract RewardsCollectorTest is Test {
     function test_RevertWhen_WithdrawToCore_BalanceMismatch_WhenNotRecorded() external {
         aztec.mint(address(vault), 1 ether);
 
-        vm.expectRevert(IRewardsCollector.RewardsCollector__BalanceMismatch.selector);
+        vm.expectRevert(IRewardsAccumulator.RewardsAccumulator__BalanceMismatch.selector);
         vm.prank(core);
         vault.withdrawToCore();
     }
@@ -235,7 +235,7 @@ contract RewardsCollectorTest is Test {
         uint256 extraAmount = 5 ether;
         aztec.mint(address(vault), extraAmount);
 
-        vm.expectRevert(IRewardsCollector.RewardsCollector__BalanceMismatch.selector);
+        vm.expectRevert(IRewardsAccumulator.RewardsAccumulator__BalanceMismatch.selector);
         vm.prank(core);
         vault.withdrawToCore();
     }

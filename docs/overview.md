@@ -49,7 +49,7 @@ subgraph "Olla Core"
     withdrawQ[WithdrawalQueue]
 end
 subgraph "Olla Staking Components"
-    rewards[RewardsVault]
+    rewards[RewardsAccumulator]
     stkMan[StakingManager]
     spr[StakingProviderRegistry]
 end
@@ -157,7 +157,7 @@ subgraph "Olla Core"
 end
 
 subgraph "Olla Staking Components"
-    rewards[RewardsVault]
+    rewards[RewardsAccumulator]
     stkMan[StakingManager]
     spr[StakingProviderRegistry]
 end
@@ -361,7 +361,7 @@ subgraph "Olla Core"
     withdrawQ[WithdrawalQueue]
 end
 subgraph "Olla Staking Components"
-    rewards[RewardsVault]
+    rewards[RewardsAccumulator]
     stkMan[StakingManager]
     spr[StakingProviderRegistry]
 end

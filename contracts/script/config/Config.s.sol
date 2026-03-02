@@ -25,7 +25,7 @@ struct DeployConfig {
     uint256 timelockMinDelay; // minimum timelock delay in seconds
     // Satellite addresses (populated during deployment)
     address withdrawalQueue;
-    address rewardsCollector;
+    address rewardsAccumulator;
     address safetyModule;
 }
 

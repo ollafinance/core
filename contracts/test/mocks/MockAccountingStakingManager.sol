@@ -17,7 +17,7 @@ contract MockAccountingStakingManager is IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     IERC20 public rewardsToken;
-    address public rewardsCollector;
+    address public rewardsAccumulator;
     uint256 public claimableRewards;
     uint256 public slashingDelta;
     uint256 public totalStakedAmount;
@@ -51,8 +51,8 @@ contract MockAccountingStakingManager is IStakingManager {
         rewardsToken = token;
     }
 
-    function setRewardsCollector(address vault) external {
-        rewardsCollector = vault;
+    function setRewardsAccumulator(address vault) external {
+        rewardsAccumulator = vault;
     }
 
     function setClaimableRewards(uint256 value) external {
@@ -249,10 +249,10 @@ contract MockAccountingStakingManager is IStakingManager {
     function harvestRewards() external override returns (uint256 harvested) {
         harvested = harvestedRewards;
         // Actually transfer tokens to rewards vault to simulate real harvest
-        if (harvested > 0 && address(rewardsToken) != address(0) && rewardsCollector != address(0)) {
+        if (harvested > 0 && address(rewardsToken) != address(0) && rewardsAccumulator != address(0)) {
             // Cast to MockAztec and mint tokens to this contract first, then transfer to vault
             MockAztec(address(rewardsToken)).mint(address(this), harvested);
-            rewardsToken.safeTransfer(rewardsCollector, harvested);
+            rewardsToken.safeTransfer(rewardsAccumulator, harvested);
         }
         return harvested;
     }

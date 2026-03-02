@@ -11,10 +11,10 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -28,13 +28,13 @@ contract OllaCoreSafetyModuleHarness is OllaCore {
 
     function exposedApplyAccountingUpdates(
         uint256 newStakedPrincipal,
-        uint256 newRewardsCollectorBalance,
+        uint256 newRewardsAccumulatorBalance,
         uint256 newClaimableRewards,
         uint256 newRewardsDelta,
         uint256 newSlashingDelta
     ) external {
         _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsCollectorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
+            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
         );
     }
 }
@@ -66,7 +66,7 @@ contract OllaCoreSafetyModuleTest is Test {
     address internal governance;
     address internal admin;
     address internal guardian;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     address internal operator;
     address internal alice;
     address internal providerRewardsRecipient;
@@ -92,7 +92,7 @@ contract OllaCoreSafetyModuleTest is Test {
         stAztec = new StAztec(address(vault));
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         operator = makeAddr("operator");
         alice = makeAddr("alice");
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
@@ -108,7 +108,7 @@ contract OllaCoreSafetyModuleTest is Test {
             0,
             5_000,
             governance,
-            IRewardsCollector(address(rewardsCollector)),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
 

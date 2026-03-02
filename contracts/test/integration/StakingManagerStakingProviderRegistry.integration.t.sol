@@ -14,7 +14,7 @@ import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProvide
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title StakingManagerStakingProviderRegistryIntegrationTest
@@ -37,7 +37,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
     MockAztecRollupRegistry internal rollupRegistry;
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
 
     address internal core;
     address internal providerAdmin;
@@ -72,7 +72,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
-        rewardsCollector = new MockRewardsCollector(IERC20(address(aztec)), core);
+        rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy StakingProviderRegistry first
         StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
@@ -96,7 +96,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            address(rewardsCollector),
+            address(rewardsAccumulator),
             core,
             address(stakingProviderRegistry),
             defaultAdmin
@@ -298,7 +298,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
 
         uint256 rewardAmount = 10 ether;
         aztec.mint(address(rollup), rewardAmount);
-        rollup.setRewards(address(rewardsCollector), rewardAmount);
+        rollup.setRewards(address(rewardsAccumulator), rewardAmount);
 
         vm.prank(core);
         uint256 harvested = stakingManager.harvestRewards();

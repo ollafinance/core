@@ -12,7 +12,7 @@ import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -41,7 +41,7 @@ abstract contract OllaGovernanceSetup is Test {
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     address internal admin; // proposer / executor / canceller
@@ -84,7 +84,7 @@ abstract contract OllaGovernanceSetup is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Initialize OllaCore with OllaGovernance as owner
@@ -95,7 +95,7 @@ abstract contract OllaGovernanceSetup is Test {
             PROTOCOL_FEE_BP,
             TREASURY_FEE_SPLIT_BP,
             address(gov),
-            rewardsCollector,
+            rewardsAccumulator,
             address(safetyModule)
         );
 

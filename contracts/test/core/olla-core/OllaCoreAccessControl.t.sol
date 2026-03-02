@@ -11,7 +11,7 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -45,7 +45,7 @@ contract OllaCoreAccessControlTest is Test {
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     address internal governance;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal alice;
@@ -70,7 +70,7 @@ contract OllaCoreAccessControlTest is Test {
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
@@ -81,7 +81,7 @@ contract OllaCoreAccessControlTest is Test {
             INITIAL_PROTOCOL_FEE_BP,
             INITIAL_TREASURY_SPLIT_BP,
             governance,
-            rewardsCollector,
+            rewardsAccumulator,
             address(safetyModule)
         );
 

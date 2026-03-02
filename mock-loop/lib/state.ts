@@ -47,7 +47,7 @@ export async function readFullState(
     bigint,
     {
       stakedPrincipal: bigint;
-      rewardsCollectorBalance: bigint;
+      rewardsAccumulatorBalance: bigint;
       claimableRewards: bigint;
       rewardsDelta: bigint;
       slashingDelta: bigint;
@@ -69,11 +69,11 @@ export async function readFullState(
   ] as const) as [bigint, bigint];
 
   // Read token balances (assets are held by OllaVault, not OllaCore)
-  const [vaultBalance, stakingManagerBalance, rewardsCollectorBalance] =
+  const [vaultBalance, stakingManagerBalance, rewardsAccumulatorBalance] =
     await Promise.all([
       asset.read.balanceOf([addresses.OllaVaultProxy]),
       asset.read.balanceOf([addresses.StakingManagerProxy]),
-      asset.read.balanceOf([addresses.RewardsCollectorProxy]),
+      asset.read.balanceOf([addresses.RewardsAccumulatorProxy]),
     ] as const) as [bigint, bigint, bigint];
 
   // Read provider registry state
@@ -121,7 +121,7 @@ export async function readFullState(
       accountingState: {
         bufferedAssets: toString(bufferedAssets),
         stakedPrincipal: toString(accountingState.stakedPrincipal),
-        rewardsVaultBalance: toString(accountingState.rewardsCollectorBalance),
+        rewardsVaultBalance: toString(accountingState.rewardsAccumulatorBalance),
         claimableRewards: toString(accountingState.claimableRewards),
         rewardsDelta: toString(accountingState.rewardsDelta),
         slashingDelta: toString(accountingState.slashingDelta),
@@ -140,7 +140,7 @@ export async function readFullState(
       core: toString(vaultBalance),
       stakingManager: toString(stakingManagerBalance),
       rollup: "0", // Placeholder - would need rollup contract
-      rewardsVault: toString(rewardsCollectorBalance),
+      rewardsVault: toString(rewardsAccumulatorBalance),
     },
     users: uniqueUsers,
     providerRegistry: {

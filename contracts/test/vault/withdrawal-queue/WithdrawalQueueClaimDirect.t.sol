@@ -12,7 +12,7 @@ import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -39,7 +39,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
     StAztec internal stAztec;
     WithdrawalQueue internal withdrawalQueue;
     MockAccountingStakingManager internal stakingManager;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     address internal governance;
@@ -70,11 +70,11 @@ contract WithdrawalQueueClaimDirectTest is Test {
 
         // Deploy supporting modules
         stAztec = new StAztec(address(vault));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         stakingManager = new MockAccountingStakingManager();
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
         // Deploy WithdrawalQueue behind a UUPS proxy
@@ -94,7 +94,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
             0, // protocolFeeBP
             5_000, // treasuryFeeSplitBP
             governance,
-            rewardsCollector,
+            rewardsAccumulator,
             address(safetyModule)
         );
 

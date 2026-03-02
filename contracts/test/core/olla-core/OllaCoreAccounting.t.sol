@@ -8,11 +8,11 @@ import { Math } from "@oz/utils/math/Math.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -61,7 +61,7 @@ contract OllaCoreAccountingTest is Test {
     address internal governance;
     address internal alice;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
     address internal providerRewardsRecipient;
@@ -86,7 +86,7 @@ contract OllaCoreAccountingTest is Test {
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
@@ -94,9 +94,9 @@ contract OllaCoreAccountingTest is Test {
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -140,28 +140,28 @@ contract OllaCoreAccountingTest is Test {
     function test_BucketGettersReflectState() external {
         uint256 assets = 10 * DECIMALS;
         uint256 staked = 6 * DECIMALS;
-        uint256 rewardsCollectorBalance = 4 * DECIMALS;
+        uint256 rewardsAccumulatorBalance = 4 * DECIMALS;
         uint256 claimableRewards = 3 * DECIMALS;
         uint256 rewardsDelta = 2 * DECIMALS;
         uint256 slashingDelta = 1 * DECIMALS;
 
         _performDeposit(alice, assets);
         core.exposedApplyAccountingUpdates(
-            staked, rewardsCollectorBalance, claimableRewards, rewardsDelta, slashingDelta
+            staked, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
         );
 
         IOllaCore.AccountingState memory accounting = core.accountingState();
         assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
         assertEq(accounting.stakedPrincipal, staked, "stakedPrincipal matches staked amount");
         assertEq(
-            accounting.rewardsCollectorBalance, rewardsCollectorBalance, "rewardsCollectorBalance matches rewards vault"
+            accounting.rewardsAccumulatorBalance, rewardsAccumulatorBalance, "rewardsAccumulatorBalance matches rewards vault"
         );
         assertEq(accounting.claimableRewards, claimableRewards, "claimableRewards matches claimable rewards");
         assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
         assertEq(
             core.totalAssets(),
-            assets + staked + rewardsCollectorBalance + claimableRewards - slashingDelta,
+            assets + staked + rewardsAccumulatorBalance + claimableRewards - slashingDelta,
             "totalAssets sums buckets"
         );
     }
@@ -188,7 +188,7 @@ contract OllaCoreAccountingTest is Test {
     function test_ComputeTotalAssets() external view {
         IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             stakedPrincipal: 4 * DECIMALS,
-            rewardsCollectorBalance: 2 * DECIMALS,
+            rewardsAccumulatorBalance: 2 * DECIMALS,
             claimableRewards: 5 * DECIMALS,
             rewardsDelta: 1 * DECIMALS,
             slashingDelta: 5 * DECIMALS,
@@ -339,7 +339,7 @@ contract OllaCoreAccountingTest is Test {
         IOllaCore.AccountingState memory accountingAfterRebalance = core.accountingState();
         IOllaCore.LatestReport memory reportBefore = core.latestReport();
         IOllaCore.FlowCounters memory flowsBefore = core.flowCounters();
-        uint256 rvBalance = rewardsCollector.balance();
+        uint256 rvBalance = rewardsAccumulator.balance();
         uint256 currentRewards = accountingAfterRebalance.cumulativeRewards + claimableRewards;
         uint256 rDelta =
             currentRewards > reportBefore.rewardsSnapshot ? currentRewards - reportBefore.rewardsSnapshot : 0;
@@ -501,12 +501,12 @@ contract OllaCoreAccountingTest is Test {
         uint256 rewardAmount = 5 * DECIMALS;
         stakingManager.setHarvestedRewards(rewardAmount);
 
-        uint256 totalReceivedBefore = rewardsCollector.totalReceived();
+        uint256 totalReceivedBefore = rewardsAccumulator.totalReceived();
 
         vm.prank(operator);
         core.rebalance();
 
-        uint256 totalReceivedAfter = rewardsCollector.totalReceived();
+        uint256 totalReceivedAfter = rewardsAccumulator.totalReceived();
         assertEq(
             totalReceivedAfter - totalReceivedBefore, rewardAmount, "recordBalance should be called with correct amount"
         );
@@ -546,19 +546,19 @@ contract OllaCoreAccountingTest is Test {
     function testFuzz_TotalAssetsComposition(
         uint96 buffered,
         uint96 staked,
-        uint96 rewardsCollectorBalance,
+        uint96 rewardsAccumulatorBalance,
         uint96 claimableRewards,
         uint96 rewardsDelta,
         uint96 slashingDeltaSeed
     ) external {
         buffered = uint96(bound(buffered, 1, type(uint96).max));
         staked = uint96(bound(staked, 1, type(uint96).max));
-        rewardsCollectorBalance = uint96(bound(rewardsCollectorBalance, 1, type(uint96).max));
+        rewardsAccumulatorBalance = uint96(bound(rewardsAccumulatorBalance, 1, type(uint96).max));
         claimableRewards = uint96(bound(claimableRewards, 0, type(uint96).max));
         rewardsDelta = uint96(bound(rewardsDelta, 0, type(uint96).max));
 
         uint256 positiveTotal =
-            uint256(buffered) + uint256(staked) + uint256(rewardsCollectorBalance) + uint256(claimableRewards);
+            uint256(buffered) + uint256(staked) + uint256(rewardsAccumulatorBalance) + uint256(claimableRewards);
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
         // Mint assets to vault to simulate buffered assets
@@ -567,7 +567,7 @@ contract OllaCoreAccountingTest is Test {
         vm.prank(governance);
         vault.reconcileBufferedAssets();
         core.exposedApplyAccountingUpdates(
-            staked, rewardsCollectorBalance, claimableRewards, rewardsDelta, slashingDelta
+            staked, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
         );
 
         assertEq(core.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
@@ -802,7 +802,7 @@ contract OllaCoreAccountingTest is Test {
     function test_ComputeTotalAssets_ClampsToZero_WhenSlashingDeltaExceedsSum() external view {
         IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             stakedPrincipal: 4 * DECIMALS,
-            rewardsCollectorBalance: 2 * DECIMALS,
+            rewardsAccumulatorBalance: 2 * DECIMALS,
             claimableRewards: 1 * DECIMALS,
             rewardsDelta: 0,
             slashingDelta: 20 * DECIMALS,
@@ -861,7 +861,7 @@ contract OllaCoreAccountingTest is Test {
 
         IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             stakedPrincipal: staked,
-            rewardsCollectorBalance: rvBalance,
+            rewardsAccumulatorBalance: rvBalance,
             claimableRewards: claimable,
             rewardsDelta: 0,
             slashingDelta: slashing,

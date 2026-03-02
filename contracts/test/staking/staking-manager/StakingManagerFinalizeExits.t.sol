@@ -11,7 +11,7 @@ import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MaliciousAztecRollup } from "src/staking/mocks/MaliciousAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
@@ -160,7 +160,7 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         // Deploy a malicious rollup that re-enters during finalizeWithdraw
         MaliciousAztecRollup maliciousRollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         MockAztecRollupRegistry maliciousRegistry = new MockAztecRollupRegistry(address(maliciousRollup));
-        MockRewardsCollector maliciousRewardsCollector = new MockRewardsCollector(IERC20(address(aztec)), core);
+        MockRewardsAccumulator maliciousRewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy a fresh StakingManager wired to the malicious rollup
         StakingManager maliciousSM = StakingManager(address(new ERC1967Proxy(address(new StakingManager()), "")));
@@ -172,7 +172,7 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         maliciousSM.initialize(
             IERC20(address(aztec)),
             address(maliciousRegistry),
-            address(maliciousRewardsCollector),
+            address(maliciousRewardsAccumulator),
             core,
             address(maliciousRegistry2),
             defaultAdmin

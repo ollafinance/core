@@ -3,10 +3,10 @@ pragma solidity 0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-/// @title IRewardsCollector
+/// @title IRewardsAccumulator
 /// @notice Interface for rewards and fee management vault.
 /// @author Olla Core contributors
-interface IRewardsCollector {
+interface IRewardsAccumulator {
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -24,16 +24,16 @@ interface IRewardsCollector {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when address is zero.
-    error RewardsCollector__ZeroAddress(string param);
+    error RewardsAccumulator__ZeroAddress(string param);
 
     /// @notice Thrown when amount is zero.
-    error RewardsCollector__ZeroAmount();
+    error RewardsAccumulator__ZeroAmount();
 
     /// @notice Thrown when there is a balance mismatch.
-    error RewardsCollector__BalanceMismatch();
+    error RewardsAccumulator__BalanceMismatch();
 
     /// @notice Thrown when caller is not authorized core.
-    error RewardsCollector__UnauthorizedCore(address caller);
+    error RewardsAccumulator__UnauthorizedCore(address caller);
 
     /*//////////////////////////////////////////////////////////////
                                  FUNCTIONS

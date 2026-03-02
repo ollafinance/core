@@ -14,7 +14,7 @@ import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MaliciousReentrantStakingManager } from "test/mocks/MaliciousReentrantStakingManager.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -179,7 +179,7 @@ contract OllaCoreRebalanceTest is Test {
     address internal governance;
     address internal alice;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -210,14 +210,14 @@ contract OllaCoreRebalanceTest is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Configure staking manager to mint rewards directly to rewards vault
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -1407,7 +1407,7 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     InconsistentWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
@@ -1427,16 +1427,16 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         withdrawalQueue = new InconsistentWithdrawalQueue();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -1483,7 +1483,7 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     MismatchWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
@@ -1503,16 +1503,16 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         withdrawalQueue = new MismatchWithdrawalQueue();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -1563,7 +1563,7 @@ contract OllaCoreRebalanceReentrancyTest is Test {
     MaliciousReentrantStakingManager internal stakingManager;
     address internal governance;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -1592,13 +1592,13 @@ contract OllaCoreRebalanceReentrancyTest is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -1706,7 +1706,7 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     RevertingSafetyModule internal safetyModule;
     address internal operator;
 
@@ -1731,13 +1731,13 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new RevertingSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -1971,7 +1971,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
     StAztec internal stAztec;
     UnstakeRevertingStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     address internal governance;
@@ -1995,11 +1995,11 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         vault = OllaVault(address(vaultProxy));
 
         stAztec = new StAztec(address(vault));
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -2029,7 +2029,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         return shares;
     }
 
-    function test_Rebalance_HandlesWithdrawalsBackedByRewardsCollectorLiquidity() external {
+    function test_Rebalance_HandlesWithdrawalsBackedByRewardsAccumulatorLiquidity() external {
         uint256 principal = 200_000 * DECIMALS;
         _performDeposit(alice, principal);
 
@@ -2040,13 +2040,13 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
 
         // Simulate rewards sitting in the rewards vault (counted in totalAssets via accounting).
         uint256 rewards = 69 * DECIMALS;
-        asset.mint(address(rewardsCollector), rewards);
+        asset.mint(address(rewardsAccumulator), rewards);
 
         // Advance past rebalance cooldown after first cycle completion
         uint256 t1 = block.timestamp + 1 hours;
         vm.warp(t1);
 
-        // Persist rewardsCollectorBalance into accounting so exchangeRate/totalAssets includes it.
+        // Persist rewardsAccumulatorBalance into accounting so exchangeRate/totalAssets includes it.
         vm.prank(operator);
         core.updateAccounting();
 
@@ -2058,7 +2058,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         // Advance past rebalance cooldown after updateAccounting updated _latestReport.timestamp
         vm.warp(t1 + 1 hours);
 
-        // Rebalance should use rewards-collector funds as liquidity and avoid over-unstaking.
+        // Rebalance should use rewards-accumulator funds as liquidity and avoid over-unstaking.
         // Previously this would revert with StakingManager__InsufficientStake because
         // _initiateUnstake sized against bufferedAssets only.
         vm.prank(operator);
@@ -2074,7 +2074,7 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         assertEq(vault.bufferedAssets(), 0, "buffer should be zero after stake");
 
         // Set rewards recipient so harvest actually transfers tokens to rewards vault
-        stakingManager.setRewardsRecipient(address(rewardsCollector));
+        stakingManager.setRewardsRecipient(address(rewardsAccumulator));
 
         // Advance past rebalance cooldown after first cycle completion
         uint256 t1 = block.timestamp + 1 hours;

@@ -9,7 +9,7 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsCollector } from "src/core/mocks/MockRewardsCollector.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -34,7 +34,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
     address internal governance;
     address internal alice;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsCollector internal rewardsCollector;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -56,13 +56,13 @@ contract OllaCoreRebalanceIdleGuard is Test {
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
-        rewardsCollector = new MockRewardsCollector(asset, address(core));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsCollector(address(rewardsCollector));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsCollector, address(safetyModule));
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 
@@ -173,14 +173,14 @@ contract OllaCoreRebalanceIdleGuard is Test {
     }
 
     /// @notice Ensures the idle-buffer guard does not block starting a new cycle when
-    ///         new work becomes available via external state changes (e.g. RewardsCollector
+    ///         new work becomes available via external state changes (e.g. RewardsAccumulator
     ///         receives funds).
     ///
     ///         This currently fails because _rebalanceIdleBuffer can be set based only
     ///         on the final call's (stakedAmount, finalizedAmount), even if the cycle did
     ///         productive work in prior calls (e.g. staking). Once set, rebalance() may
     ///         incorrectly no-op and skip harvesting/pulling newly available funds.
-    function test_RebalanceIdleGuardDoesNotBlockPullingNewRewardsCollectorFunds() external {
+    function test_RebalanceIdleGuardDoesNotBlockPullingNewRewardsAccumulatorFunds() external {
         vm.prank(governance);
         core.setTargetBufferedAssets(0);
 
@@ -204,8 +204,8 @@ contract OllaCoreRebalanceIdleGuard is Test {
 
         // Simulate out-of-band rewards arriving to the rewards vault.
         uint256 newRewards = 1 * DECIMALS;
-        asset.mint(address(rewardsCollector), newRewards);
-        assertEq(rewardsCollector.balance(), newRewards, "rewards vault funded");
+        asset.mint(address(rewardsAccumulator), newRewards);
+        assertEq(rewardsAccumulator.balance(), newRewards, "rewards vault funded");
 
         // Advance past rebalance cooldown after cycle completion
         vm.warp(block.timestamp + 1 hours);
@@ -215,7 +215,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
         core.rebalance();
 
         assertEq(vault.bufferedAssets(), bufferedBefore + newRewards, "rebalance should pull new rewards vault funds");
-        assertEq(rewardsCollector.balance(), 0, "rewards vault should be emptied");
+        assertEq(rewardsAccumulator.balance(), 0, "rewards vault should be emptied");
     }
 
     /// @notice Tests that repeatedly calling rebalance does not trigger unnecessary cycles.
@@ -291,7 +291,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
         assertEq(uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
 
         // Ensure rewards vault is empty but claimable rewards exist on the staking manager.
-        assertEq(rewardsCollector.balance(), 0, "setup: rewards vault empty");
+        assertEq(rewardsAccumulator.balance(), 0, "setup: rewards vault empty");
         stakingManager.setClaimableRewards(1 * DECIMALS);
 
         // Advance past rebalance cooldown after cycle completion

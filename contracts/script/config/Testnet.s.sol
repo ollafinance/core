@@ -35,7 +35,7 @@ contract TestnetConfig is ConfigHelper {
             timelockMinDelay: 1 days,
             // Satellite addresses - TODO: replace with real addresses
             withdrawalQueue: deployer, // TODO: Set real withdrawal queue address
-            rewardsCollector: deployer, // TODO: Set real rewards vault address
+            rewardsAccumulator: deployer, // TODO: Set real rewards vault address
             safetyModule: deployer // TODO: Set real safety module address
         });
     }

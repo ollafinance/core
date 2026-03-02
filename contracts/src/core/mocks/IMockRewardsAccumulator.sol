@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
-import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 
-/// @title IMockRewardsCollector
-/// @notice Interface for MockRewardsCollector test helper contract.
-/// @dev Extends IRewardsCollector with test-specific functions.
+/// @title IMockRewardsAccumulator
+/// @notice Interface for MockRewardsAccumulator test helper contract.
+/// @dev Extends IRewardsAccumulator with test-specific functions.
 /// @author Olla Core contributors
-interface IMockRewardsCollector is IRewardsCollector {
+interface IMockRewardsAccumulator is IRewardsAccumulator {
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when hook should fail (for testing).
-    error MockRewardsCollector__HookFailed();
+    error MockRewardsAccumulator__HookFailed();
 
     /// @notice Thrown when initialize is called (not allowed in mock).
-    error MockRewardsCollector__NoInitializer();
+    error MockRewardsAccumulator__NoInitializer();
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPER FUNCTIONS
