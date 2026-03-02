@@ -558,7 +558,7 @@ contract OllaCoreSlippageTest is Test {
                     BACKWARDS COMPATIBILITY TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice 17. Original 2-arg deposit works unchanged.
+    /// @notice 17. Original 2-arg ERC-4626 deposit works unchanged.
     function test_OriginalDeposit_StillWorks() external {
         uint256 assets = 9 * DECIMALS;
         asset.mint(alice, assets);
@@ -566,7 +566,7 @@ contract OllaCoreSlippageTest is Test {
         asset.approve(address(vault), assets);
 
         vm.prank(alice);
-        uint256 shares = vault.deposit(assets, alice, 0);
+        uint256 shares = vault.deposit(assets, alice);
 
         assertEq(shares, assets, "deposit shares at 1:1");
         assertEq(stAztec.balanceOf(alice), assets, "shares minted");

@@ -174,7 +174,7 @@ contract OllaCoreDepositTest is Test {
         assertEq(flows.cumulativeDeposits, 10 * DECIMALS, "cumulative deposits updated");
     }
 
-    function test_Deposit_StillWorks() external {
+    function test_Deposit3Arg_WithZeroMinShares() external {
         uint256 assets = 9 * DECIMALS;
         asset.mint(alice, assets);
         vm.prank(alice);
@@ -185,6 +185,81 @@ contract OllaCoreDepositTest is Test {
 
         assertEq(shares, assets, "deposit shares");
         assertEq(stAztec.balanceOf(alice), assets, "shares minted");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ERC-4626 2-ARG DEPOSIT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The standard ERC-4626 deposit(assets, receiver) works.
+    function test_Deposit2Arg_ERC4626() external {
+        uint256 assets = 10 * DECIMALS;
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+
+        vm.prank(alice);
+        uint256 shares = vault.deposit(assets, alice);
+
+        assertEq(shares, assets, "shares minted at 1:1");
+        assertEq(stAztec.balanceOf(alice), assets, "shares balance");
+        assertEq(core.totalAssets(), assets, "assets buffered");
+    }
+
+    /// @notice 2-arg and 3-arg deposit produce identical results.
+    function testFuzz_Deposit2Arg_Matches3Arg(uint96 assetsSeed) external {
+        uint256 assets = bound(uint256(assetsSeed), 1, type(uint96).max);
+
+        // 2-arg deposit for alice
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+        vm.prank(alice);
+        uint256 shares2Arg = vault.deposit(assets, alice);
+
+        // 3-arg deposit for bob (same amount, minSharesOut = 0)
+        asset.mint(bob, assets);
+        vm.prank(bob);
+        asset.approve(address(vault), assets);
+        vm.prank(bob);
+        uint256 shares3Arg = vault.deposit(assets, bob, 0);
+
+        assertEq(shares2Arg, shares3Arg, "2-arg and 3-arg deposit produce same shares");
+    }
+
+    /// @notice 2-arg deposit works at a non-trivial exchange rate.
+    function test_Deposit2Arg_AtNonTrivialRate() external {
+        // Seed initial deposit + rewards to move rate off 1:1
+        _performDeposit(alice, 100 * DECIMALS);
+        stakingManager.setClaimableRewards(50 * DECIMALS);
+        bytes32 operatorRole = core.OPERATOR_ROLE();
+        vm.prank(governance);
+        core.grantRole(operatorRole, address(this));
+        core.updateAccounting();
+
+        uint256 expectedShares = core.convertToShares(25 * DECIMALS);
+
+        asset.mint(bob, 25 * DECIMALS);
+        vm.prank(bob);
+        asset.approve(address(vault), 25 * DECIMALS);
+        vm.prank(bob);
+        uint256 shares = vault.deposit(25 * DECIMALS, bob);
+
+        assertEq(shares, expectedShares, "2-arg deposit follows exchange rate");
+    }
+
+    /// @notice 2-arg deposit emits the correct ERC-4626 Deposit event.
+    function test_Deposit2Arg_EmitsEvent() external {
+        uint256 assets = 5 * DECIMALS;
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Deposit(alice, alice, assets, assets);
+
+        vm.prank(alice);
+        vault.deposit(assets, alice);
     }
 
     /*//////////////////////////////////////////////////////////////

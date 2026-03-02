@@ -288,6 +288,8 @@ interface IOllaVault {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Deposits assets and mints shares (ERC-4626).
+    /// @dev This standard overload has NO slippage protection. Prefer the 3-arg
+    ///      `deposit(assets, receiver, minSharesOut)` variant for front-run safety.
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
 
     /// @notice Mints exact shares (ERC-4626).
