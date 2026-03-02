@@ -24,7 +24,7 @@ contract WithdrawalQueueTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     WithdrawalQueue internal queue;
-    address internal core;
+    address internal vault;
     address internal admin;
 
     /*//////////////////////////////////////////////////////////////
@@ -32,13 +32,13 @@ contract WithdrawalQueueTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function setUp() public {
-        core = makeAddr("core");
+        vault = makeAddr("vault");
         admin = makeAddr("admin");
 
         WithdrawalQueue implementation = new WithdrawalQueue();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         queue = WithdrawalQueue(address(proxy));
-        queue.initialize(core, admin, 50_000);
+        queue.initialize(vault, admin, 50_000);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -80,7 +80,7 @@ contract WithdrawalQueueTest is Test {
         address alice = makeAddr("alice");
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__ZeroAmount.selector, "shares"));
-        vm.prank(core);
+        vm.prank(vault);
         queue.requestWithdrawal(alice, 0, 10, 1e18);
     }
 
@@ -88,7 +88,7 @@ contract WithdrawalQueueTest is Test {
         address alice = makeAddr("alice");
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__ZeroAmount.selector, "assetsExpected"));
-        vm.prank(core);
+        vm.prank(vault);
         queue.requestWithdrawal(alice, 10, 0, 1e18);
     }
 
@@ -108,7 +108,7 @@ contract WithdrawalQueueTest is Test {
         vm.expectEmit(true, false, false, true, address(queue));
         emit WithdrawalFinalized(1, 100);
 
-        vm.prank(core);
+        vm.prank(vault);
         (uint256 used, uint256 finalizedCount) = queue.finalizeWithdrawals(250);
 
         assertEq(used, 100, "finalization should only use available FIFO liquidity");
@@ -135,7 +135,7 @@ contract WithdrawalQueueTest is Test {
         _request(bob, 10, assetsExpected, 1e18);
         _request(carol, 10, assetsExpected, 1e18);
 
-        vm.prank(core);
+        vm.prank(vault);
         (uint256 used, uint256 finalizedCount) = queue.finalizeWithdrawals(assetsExpected * 2);
 
         assertEq(used, finalizedCount * assetsExpected, "used should equal count times assetsExpected");
@@ -162,7 +162,7 @@ contract WithdrawalQueueTest is Test {
 
         for (uint256 i = 0; i < gasOptions.length; i++) {
             vm.revertToState(snapshotId);
-            vm.prank(core);
+            vm.prank(vault);
             (bool success, bytes memory data) =
                 address(queue).call{ gas: gasOptions[i] }(abi.encodeCall(queue.finalizeWithdrawals, (available)));
 
@@ -182,7 +182,7 @@ contract WithdrawalQueueTest is Test {
         assertGt(selectedGas, 0, "should find gas stipend for partial finalization");
 
         vm.revertToState(snapshotId);
-        vm.prank(core);
+        vm.prank(vault);
         (uint256 usedObserved, uint256 finalizedCountObserved) =
             queue.finalizeWithdrawals{ gas: selectedGas }(available);
 
@@ -198,7 +198,7 @@ contract WithdrawalQueueTest is Test {
             "pending assets track remaining"
         );
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(available);
 
         assertEq(queue.nextPendingId(), totalRequests + 1, "next pending id reaches end");
@@ -214,7 +214,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 10, 100, 1e18);
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__NotFinalized.selector, 1));
-        vm.prank(core);
+        vm.prank(vault);
         queue.claimWithdrawal(1);
     }
 
@@ -222,14 +222,14 @@ contract WithdrawalQueueTest is Test {
         address alice = makeAddr("alice");
         _request(alice, 10, 100, 1e18);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(200);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.claimWithdrawal(1);
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__AlreadyClaimed.selector, 1));
-        vm.prank(core);
+        vm.prank(vault);
         queue.claimWithdrawal(1);
     }
 
@@ -237,13 +237,13 @@ contract WithdrawalQueueTest is Test {
         address alice = makeAddr("alice");
         _request(alice, 10, 150, 1e18);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(200);
 
         vm.expectEmit(true, true, false, true, address(queue));
         emit WithdrawalClaimed(1, alice, 150);
 
-        vm.prank(core);
+        vm.prank(vault);
         uint256 assets = queue.claimWithdrawal(1);
 
         assertEq(assets, 150, "claim should return the expected assets");
@@ -259,10 +259,10 @@ contract WithdrawalQueueTest is Test {
         address attacker = makeAddr("attacker");
         _request(alice, 10, 100, 1e18);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(200);
 
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, attacker));
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, attacker));
         vm.prank(attacker);
         queue.claimWithdrawal(1);
     }
@@ -271,10 +271,10 @@ contract WithdrawalQueueTest is Test {
         address alice = makeAddr("alice");
         _request(alice, 10, 100, 1e18);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(200);
 
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, admin));
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, admin));
         vm.prank(admin);
         queue.claimWithdrawal(1);
     }
@@ -283,24 +283,24 @@ contract WithdrawalQueueTest is Test {
         address alice = makeAddr("alice");
         _request(alice, 10, 100, 1e18);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(200);
 
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, alice));
         vm.prank(alice);
         queue.claimWithdrawal(1);
     }
 
-    function testFuzz_ClaimWithdrawal_RevertWhen_NotCore(address caller) public {
-        vm.assume(caller != core);
+    function testFuzz_ClaimWithdrawal_RevertWhen_NotVault(address caller) public {
+        vm.assume(caller != vault);
 
         address alice = makeAddr("alice");
         _request(alice, 10, 100, 1e18);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(200);
 
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, caller));
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, caller));
         vm.prank(caller);
         queue.claimWithdrawal(1);
     }
@@ -336,7 +336,7 @@ contract WithdrawalQueueTest is Test {
             finalizedCount++;
         }
 
-        vm.prank(core);
+        vm.prank(vault);
         (uint256 used, uint256 finalizedCountObserved) = queue.finalizeWithdrawals(available);
 
         assertEq(used, expectedUsed, "used assets should match FIFO fill");
@@ -362,7 +362,7 @@ contract WithdrawalQueueTest is Test {
         internal
         returns (uint256 requestId)
     {
-        vm.prank(core);
+        vm.prank(vault);
         requestId = queue.requestWithdrawal(user, shares, assetsExpected, rate);
         return requestId;
     }

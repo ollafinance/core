@@ -14,16 +14,16 @@ contract WithdrawalQueueHandler is Test {
     //////////////////////////////////////////////////////////////*/
 
     WithdrawalQueue public queue;
-    address public core;
+    address public vault;
     address[] public actors;
 
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(WithdrawalQueue _queue, address _core) {
+    constructor(WithdrawalQueue _queue, address _vault) {
         queue = _queue;
-        core = _core;
+        vault = _vault;
 
         for (uint256 i = 0; i < 5; i++) {
             actors.push(makeAddr(string(abi.encode("actor", i))));
@@ -43,13 +43,13 @@ contract WithdrawalQueueHandler is Test {
         uint256 assets = uint256(bound(assetsRaw, 1, 1e18));
         address user = actors[bound(actorSeed, 0, actors.length - 1)];
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.requestWithdrawal(user, shares, assets, 1e18);
     }
 
     function finalizeWithdrawals(uint96 availableRaw) external {
         uint256 available = uint256(bound(availableRaw, 0, queue.totalPendingAssets()));
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(available);
     }
 
@@ -65,7 +65,7 @@ contract WithdrawalQueueHandler is Test {
             return;
         }
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.claimWithdrawal(id);
     }
 }
@@ -77,7 +77,7 @@ contract WithdrawalQueueInvariantTest is Test {
 
     WithdrawalQueue internal queue;
     WithdrawalQueueHandler internal handler;
-    address internal core;
+    address internal vault;
     address internal admin;
 
     /*//////////////////////////////////////////////////////////////
@@ -85,15 +85,15 @@ contract WithdrawalQueueInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
-        core = makeAddr("core");
+        vault = makeAddr("vault");
         admin = makeAddr("admin");
 
         WithdrawalQueue implementation = new WithdrawalQueue();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         queue = WithdrawalQueue(address(proxy));
-        queue.initialize(core, admin, 50_000);
+        queue.initialize(vault, admin, 50_000);
 
-        handler = new WithdrawalQueueHandler(queue, core);
+        handler = new WithdrawalQueueHandler(queue, vault);
         targetContract(address(handler));
     }
 

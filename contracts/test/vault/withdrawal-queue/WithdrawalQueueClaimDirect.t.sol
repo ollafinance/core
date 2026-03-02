@@ -19,9 +19,9 @@ import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title WithdrawalQueueClaimDirectTest
-/// @notice Verifies the S-1 fix: direct claimWithdrawal calls from non-core addresses must revert.
+/// @notice Verifies the S-1 fix: direct claimWithdrawal calls from non-vault addresses must revert.
 /// @dev Uses a real OllaCore and real WithdrawalQueue (both behind UUPS proxies) so the
-///      onlyCore modifier is exercised end-to-end.
+///      onlyVault modifier is exercised end-to-end.
 contract WithdrawalQueueClaimDirectTest is Test {
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -82,7 +82,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
 
-        // Initialize WithdrawalQueue with OllaVault as the core address
+        // Initialize WithdrawalQueue with OllaVault as the authorized vault address
         // (must happen before vault.initialize which calls setGasThreshold on WQ)
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
@@ -159,23 +159,23 @@ contract WithdrawalQueueClaimDirectTest is Test {
                     DIRECT CLAIM ACCESS CONTROL
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice A non-core address calling claimWithdrawal directly on WithdrawalQueue must revert.
-    function test_RevertWhen_ClaimWithdrawal_DirectCallFromNonCore() external {
+    /// @notice A non-vault address calling claimWithdrawal directly on WithdrawalQueue must revert.
+    function test_RevertWhen_ClaimWithdrawal_DirectCallFromNonVault() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 redeemShares = 5 * DECIMALS;
 
         // Create and finalize a request via the core flow
         uint256 requestId = _createAndFinalizeRequest(alice, depositAmount, redeemShares);
 
-        // Alice (not core) calls claimWithdrawal directly on the queue -- must revert
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, alice));
+        // Alice (not vault) calls claimWithdrawal directly on the queue -- must revert
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, alice));
         vm.prank(alice);
         withdrawalQueue.claimWithdrawal(requestId);
     }
 
     /// @notice Claiming through OllaVault.claimRequestById succeeds because OllaVault is the
-    ///         authorized core address on the WithdrawalQueue.
-    function test_ClaimWithdrawal_SucceedsFromCore() external {
+    ///         authorized vault address on the WithdrawalQueue.
+    function test_ClaimWithdrawal_SucceedsFromVault() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 redeemShares = 5 * DECIMALS;
 
@@ -189,7 +189,7 @@ contract WithdrawalQueueClaimDirectTest is Test {
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         uint256 expectedAssets = request.assetsExpected;
 
-        // Claim via OllaVault (which is the authorized core on the queue)
+        // Claim via OllaVault (which is the authorized vault on the queue)
         vm.prank(alice);
         uint256 claimed = vault.claimRequestById(requestId);
 

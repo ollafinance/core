@@ -54,8 +54,8 @@ interface IWithdrawalQueue {
                                   ERRORS
      //////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when caller is not core.
-    error WithdrawalQueue__UnauthorizedCore(address caller);
+    /// @notice Thrown when caller is not the vault.
+    error WithdrawalQueue__UnauthorizedVault(address caller);
 
     /// @notice Thrown when a zero address is provided.
     error WithdrawalQueue__ZeroAddress(string param);
@@ -76,14 +76,14 @@ interface IWithdrawalQueue {
     error WithdrawalQueue__InvalidParameter();
 
     /*//////////////////////////////////////////////////////////////
-                              CORE FUNCTIONS
+                              VAULT FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the queue.
-    /// @param core_ OllaCore address.
+    /// @param vault_ OllaVault address.
     /// @param admin_ Default admin role address.
     /// @param gasThreshold_ Initial gas threshold for finalization loop.
-    function initialize(address core_, address admin_, uint256 gasThreshold_) external;
+    function initialize(address vault_, address admin_, uint256 gasThreshold_) external;
 
     /// @notice Sets the gas threshold used for the finalization loop.
     /// @param threshold The new gas threshold.
@@ -143,7 +143,7 @@ interface IWithdrawalQueue {
     /// @return The gas threshold.
     function gasThreshold() external view returns (uint256);
 
-    /// @notice Returns the core address.
-    /// @return The core contract address.
-    function core() external view returns (address);
+    /// @notice Returns the vault address.
+    /// @return The vault contract address.
+    function vault() external view returns (address);
 }

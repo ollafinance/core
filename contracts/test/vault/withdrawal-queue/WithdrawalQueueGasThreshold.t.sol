@@ -20,7 +20,7 @@ contract WithdrawalQueueGasThresholdTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     WithdrawalQueue internal queue;
-    address internal core;
+    address internal vault;
     address internal admin;
 
     /*//////////////////////////////////////////////////////////////
@@ -28,13 +28,13 @@ contract WithdrawalQueueGasThresholdTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function setUp() public {
-        core = makeAddr("core");
+        vault = makeAddr("vault");
         admin = makeAddr("admin");
 
         WithdrawalQueue implementation = new WithdrawalQueue();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         queue = WithdrawalQueue(address(proxy));
-        queue.initialize(core, admin, 50_000);
+        queue.initialize(vault, admin, 50_000);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -53,23 +53,23 @@ contract WithdrawalQueueGasThresholdTest is Test {
         vm.expectEmit(false, false, false, true, address(queue));
         emit GasThresholdUpdated(50_000, 100_000);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.setGasThreshold(100_000);
 
         assertEq(queue.gasThreshold(), 100_000, "gas threshold should be updated");
     }
 
-    function test_RevertWhen_SetGasThreshold_NotCore() public {
-        address notCore = makeAddr("notCore");
+    function test_RevertWhen_SetGasThreshold_NotVault() public {
+        address notVault = makeAddr("notVault");
 
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore.selector, notCore));
-        vm.prank(notCore);
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, notVault));
+        vm.prank(notVault);
         queue.setGasThreshold(100_000);
     }
 
     function test_RevertWhen_SetGasThreshold_ZeroThreshold() public {
         vm.expectRevert(IWithdrawalQueue.WithdrawalQueue__InvalidParameter.selector);
-        vm.prank(core);
+        vm.prank(vault);
         queue.setGasThreshold(0);
     }
 
@@ -79,12 +79,12 @@ contract WithdrawalQueueGasThresholdTest is Test {
         WithdrawalQueue q = WithdrawalQueue(address(proxy));
 
         vm.expectRevert(IWithdrawalQueue.WithdrawalQueue__InvalidParameter.selector);
-        q.initialize(core, admin, 0);
+        q.initialize(vault, admin, 0);
     }
 
     function test_RevertWhen_SetGasThreshold_ExceedsMax() public {
         vm.expectRevert(IWithdrawalQueue.WithdrawalQueue__InvalidParameter.selector);
-        vm.prank(core);
+        vm.prank(vault);
         queue.setGasThreshold(30_000_001);
     }
 
@@ -92,7 +92,7 @@ contract WithdrawalQueueGasThresholdTest is Test {
         vm.expectEmit(false, false, false, true, address(queue));
         emit GasThresholdUpdated(50_000, 30_000_000);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.setGasThreshold(30_000_000);
 
         assertEq(queue.gasThreshold(), 30_000_000, "gas threshold should be set to max");
@@ -103,7 +103,7 @@ contract WithdrawalQueueGasThresholdTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_GasThreshold_ReturnsValue() public {
-        vm.prank(core);
+        vm.prank(vault);
         queue.setGasThreshold(200_000);
 
         assertEq(queue.gasThreshold(), 200_000, "gasThreshold() should return updated value");

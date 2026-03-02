@@ -38,9 +38,9 @@ contract WithdrawalQueueUpgradeTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     WithdrawalQueue internal queue;
-    address internal core;
+    address internal vault;
     address internal admin;
-    MockOllaCoreGovernance internal mockCore;
+    MockOllaCoreGovernance internal mockVault;
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP
@@ -49,13 +49,13 @@ contract WithdrawalQueueUpgradeTest is Test {
     function setUp() external {
         admin = makeAddr("admin");
 
-        mockCore = new MockOllaCoreGovernance(admin);
-        core = address(mockCore);
+        mockVault = new MockOllaCoreGovernance(admin);
+        vault = address(mockVault);
 
         WithdrawalQueue implementation = new WithdrawalQueue();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         queue = WithdrawalQueue(address(proxy));
-        queue.initialize(core, admin, 50_000);
+        queue.initialize(vault, admin, 50_000);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -122,10 +122,10 @@ contract WithdrawalQueueUpgradeTest is Test {
         uint256 aliceId = _request(alice, 10, aliceAssets, 1e18);
         uint256 bobId = _request(bob, 20, bobAssets, 1.1e18);
 
-        vm.prank(core);
+        vm.prank(vault);
         queue.finalizeWithdrawals(aliceAssets);
 
-        address coreBefore = queue.core();
+        address vaultBefore = queue.vault();
         uint256 nextRequestIdBefore = queue.nextRequestId();
         uint256 nextPendingIdBefore = queue.nextPendingId();
         uint256 totalPendingAssetsBefore = queue.totalPendingAssets();
@@ -142,7 +142,7 @@ contract WithdrawalQueueUpgradeTest is Test {
 
         WithdrawalQueueUpgradeMock v2 = WithdrawalQueueUpgradeMock(address(queue));
         assertEq(v2.version(), 2, "upgrade applied");
-        assertEq(v2.core(), coreBefore, "core preserved");
+        assertEq(v2.vault(), vaultBefore, "vault preserved");
         assertEq(v2.nextRequestId(), nextRequestIdBefore, "next request id preserved");
         assertEq(v2.nextPendingId(), nextPendingIdBefore, "next pending id preserved");
         assertEq(v2.totalPendingAssets(), totalPendingAssetsBefore, "total pending assets preserved");
@@ -176,7 +176,7 @@ contract WithdrawalQueueUpgradeTest is Test {
         internal
         returns (uint256 requestId)
     {
-        vm.prank(core);
+        vm.prank(vault);
         requestId = queue.requestWithdrawal(user, shares, assetsExpected, rate);
         return requestId;
     }

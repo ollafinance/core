@@ -10,8 +10,8 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @notice Last finalize available value observed.
     uint256 public lastAvailable;
 
-    /// @notice Mocked core address.
-    address public override core;
+    /// @notice Mocked vault address.
+    address public override vault;
 
     /// @notice Next request id to assign.
     uint256 public override nextRequestId = 1;
@@ -32,15 +32,15 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     uint256 private _gasThresholdValue;
 
     /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
+                             VAULT FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the mock with a core address.
-    /// @param core_ OllaCore address.
+    /// @notice Initializes the mock with a vault address.
+    /// @param vault_ OllaVault address.
     /// @param admin_ Unused admin address.
     /// @param gasThreshold_ Initial gas threshold.
-    function initialize(address core_, address admin_, uint256 gasThreshold_) external override {
-        core = core_;
+    function initialize(address vault_, address admin_, uint256 gasThreshold_) external override {
+        vault = vault_;
         _gasThresholdValue = gasThreshold_;
         admin_;
     }

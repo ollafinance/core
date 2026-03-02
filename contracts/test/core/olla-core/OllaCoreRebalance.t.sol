@@ -79,7 +79,7 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
         return 1;
     }
 
-    function core() external view override returns (address) {
+    function vault() external view override returns (address) {
         return _core;
     }
 }
@@ -144,7 +144,7 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
         return 1;
     }
 
-    function core() external view override returns (address) {
+    function vault() external view override returns (address) {
         return _core;
     }
 }

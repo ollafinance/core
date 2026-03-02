@@ -34,8 +34,8 @@ contract WithdrawalQueue is
                                    STATE
      //////////////////////////////////////////////////////////////*/
 
-    /// @notice OllaCore address.
-    address public override core;
+    /// @notice OllaVault address.
+    address public override vault;
 
     /// @notice Next request id to assign.
     uint256 public override nextRequestId;
@@ -68,9 +68,9 @@ contract WithdrawalQueue is
                                  MODIFIERS
     //////////////////////////////////////////////////////////////*/
 
-    modifier onlyCore() {
-        if (msg.sender != core) {
-            revert IWithdrawalQueue.WithdrawalQueue__UnauthorizedCore(msg.sender);
+    modifier onlyVault() {
+        if (msg.sender != vault) {
+            revert IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault(msg.sender);
         }
         _;
     }
@@ -84,16 +84,16 @@ contract WithdrawalQueue is
     }
 
     /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
+                             VAULT FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Initializes the queue and roles.
-    /// @param core_ OllaCore address.
+    /// @param vault_ OllaVault address.
     /// @param admin_ Default admin role address.
     /// @param gasThreshold_ Initial gas threshold for the finalization loop.
-    function initialize(address core_, address admin_, uint256 gasThreshold_) external override initializer {
-        if (core_ == address(0)) {
-            revert WithdrawalQueue__ZeroAddress("core_");
+    function initialize(address vault_, address admin_, uint256 gasThreshold_) external override initializer {
+        if (vault_ == address(0)) {
+            revert WithdrawalQueue__ZeroAddress("vault_");
         }
         if (admin_ == address(0)) {
             revert WithdrawalQueue__ZeroAddress("admin_");
@@ -104,7 +104,7 @@ contract WithdrawalQueue is
 
         __AccessControl_init();
 
-        core = core_;
+        vault = vault_;
         nextRequestId = 1;
         nextPendingId = 1;
         _gasThreshold = gasThreshold_;
@@ -114,7 +114,7 @@ contract WithdrawalQueue is
 
     /// @notice Sets the gas threshold used for the finalization loop.
     /// @param threshold The new gas threshold.
-    function setGasThreshold(uint256 threshold) external override onlyCore {
+    function setGasThreshold(uint256 threshold) external override onlyVault {
         if (threshold == 0) {
             revert WithdrawalQueue__InvalidParameter();
         }
@@ -135,7 +135,7 @@ contract WithdrawalQueue is
     function requestWithdrawal(address recipient, uint256 shares, uint256 assetsExpected, uint256 rate)
         external
         override
-        onlyCore
+        onlyVault
         nonReentrant
         returns (uint256 requestId)
     {
@@ -178,7 +178,7 @@ contract WithdrawalQueue is
     function finalizeWithdrawals(uint256 available)
         external
         override
-        onlyCore
+        onlyVault
         nonReentrant
         returns (uint256 used, uint256 finalizedCount)
     {
@@ -221,7 +221,7 @@ contract WithdrawalQueue is
     /// @notice Marks a finalized request as claimed.
     /// @param id The request id.
     /// @return assetsExpected The assets expected for the request.
-    function claimWithdrawal(uint256 id) external override onlyCore nonReentrant returns (uint256 assetsExpected) {
+    function claimWithdrawal(uint256 id) external override onlyVault nonReentrant returns (uint256 assetsExpected) {
         WithdrawalRequest storage request = _requests[id];
         if (request.recipient == address(0)) {
             revert WithdrawalQueue__InvalidRequest(id);
@@ -273,7 +273,7 @@ contract WithdrawalQueue is
     //////////////////////////////////////////////////////////////*/
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != OwnableUpgradeable(core).owner()) {
+        if (msg.sender != OwnableUpgradeable(vault).owner()) {
             revert WithdrawalQueue__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {
