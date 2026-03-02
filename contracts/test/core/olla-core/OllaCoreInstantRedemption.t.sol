@@ -54,11 +54,11 @@ contract OllaCoreInstantRedemptionTest is Test {
         keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
     /// @dev Storage slot for OllaVault._bufferedAssets (from `forge inspect OllaVault storage-layout`).
-    uint256 internal constant VAULT_BUFFERED_ASSETS_SLOT = 5;
+    uint256 internal constant VAULT_BUFFERED_ASSETS_SLOT = 4;
     /// @dev Storage slot for OllaCore._accountingState.stakedPrincipal (slot 6).
     uint256 internal constant CORE_STAKED_PRINCIPAL_SLOT = 6;
     /// @dev Storage slot for OllaVault._finalizedUnclaimedAssets (from `forge inspect OllaVault storage-layout`).
-    uint256 internal constant VAULT_FINALIZED_UNCLAIMED_SLOT = 6;
+    uint256 internal constant VAULT_FINALIZED_UNCLAIMED_SLOT = 5;
     /// @dev Storage slot for OllaCore._rebalanceIdleBuffer.
     uint256 internal constant CORE_REBALANCE_IDLE_BUFFER_SLOT = 29;
     /// @dev Storage slot for OllaCore._rebalanceProgress (struct at slot 22).
@@ -109,7 +109,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -849,12 +849,7 @@ contract OllaCoreInstantRedemptionTest is Test {
             address(malSafetyModule)
         );
         malVault.initialize(
-            IERC20(address(malAsset)),
-            malStAztec,
-            address(malWithdrawalQueue),
-            address(malSafetyModule),
-            address(malCore),
-            governance
+            IERC20(address(malAsset)), malStAztec, address(malWithdrawalQueue), address(malCore), governance
         );
 
         vm.prank(governance);

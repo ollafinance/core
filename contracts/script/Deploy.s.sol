@@ -205,9 +205,7 @@ contract DeployScript is BaseDeployer {
         _ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager, safetyModule);
 
         // 6.1 Initialize OllaVault with all dependencies
-        _ollaVaultDeployer.initialize(
-            config, ollaVaultProxy, asset, stAztec, withdrawalQueue, safetyModule, ollaCoreProxy, ollaGovProxy
-        );
+        _ollaVaultDeployer.initialize(config, ollaVaultProxy, asset, stAztec, withdrawalQueue, ollaCoreProxy, ollaGovProxy);
 
         // 6.2 Wire OllaGovernance → OllaCore
         _ollaGovernanceDeployer.setCore(config, ollaGovProxy, ollaCoreProxy);

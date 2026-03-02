@@ -19,7 +19,6 @@ interface IOllaVault {
         IERC20 asset;
         IStAztec stAztec;
         IWithdrawalQueue withdrawalQueue;
-        address safetyModule;
         address core;
     }
 
@@ -125,11 +124,6 @@ interface IOllaVault {
     /// @param providerShares Shares minted to provider.
     event FeesMinted(uint256 treasuryShares, uint256 providerShares);
 
-    /// @notice Emitted when the safety module address is updated.
-    /// @param oldSafetyModule The old safety module address.
-    /// @param newSafetyModule The new safety module address.
-    event SafetyModuleUpdated(address oldSafetyModule, address newSafetyModule);
-
     /// @notice Emitted when the vault is paused.
     event Paused();
 
@@ -206,14 +200,12 @@ interface IOllaVault {
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
     /// @param withdrawalQueue_ The withdrawal queue module address.
-    /// @param safetyModule_ The safety module address.
-    /// @param core_ The OllaCore contract address (for pricing).
+    /// @param core_ The OllaCore contract address (for pricing and safetyModule).
     /// @param governanceContract_ The OllaGovernance contract address (set as owner).
     function initialize(
         IERC20 asset_,
         IStAztec stAztec_,
         address withdrawalQueue_,
-        address safetyModule_,
         address core_,
         address governanceContract_
     ) external;
@@ -384,10 +376,6 @@ interface IOllaVault {
     /// @param newFeeBP The new fee (0-2000).
     function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
 
-    /// @notice Sets the safety module address on the vault.
-    /// @param newSafetyModule The new safety module address.
-    function setSafetyModule(address newSafetyModule) external;
-
     /// @notice Reconciles buffered assets with the actual balance.
     /// @return delta The amount added to buffered assets.
     function reconcileBufferedAssets() external returns (uint256 delta);
@@ -509,7 +497,7 @@ interface IOllaVault {
     /// @return The withdrawal queue address.
     function withdrawalQueue() external view returns (address);
 
-    /// @notice Returns the safety module address.
+    /// @notice Returns the safety module address (reads canonical reference from Core).
     /// @return The safety module address.
     function safetyModule() external view returns (address);
 

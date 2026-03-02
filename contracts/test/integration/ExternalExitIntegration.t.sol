@@ -155,9 +155,7 @@ contract ExternalExitIntegrationTest is Test {
         );
 
         // Initialize vault
-        vault.initialize(
-            IERC20(address(aztec)), stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance
-        );
+        vault.initialize(IERC20(address(aztec)), stAztec, address(withdrawalQueue), address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));

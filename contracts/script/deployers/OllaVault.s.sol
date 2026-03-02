@@ -37,7 +37,6 @@ contract OllaVaultDeployer is BaseDeployer {
     /// @param asset The asset token address
     /// @param stAztec The StAztec token address
     /// @param withdrawalQueue The WithdrawalQueue proxy address
-    /// @param safetyModule The safety module address
     /// @param core The OllaCore proxy address
     /// @param governance The OllaGovernance proxy address (set as owner)
     function initialize(
@@ -46,14 +45,12 @@ contract OllaVaultDeployer is BaseDeployer {
         address asset,
         address stAztec,
         address withdrawalQueue,
-        address safetyModule,
         address core,
         address governance
     ) external {
         vm.startBroadcast(config.deployerPrivateKey);
 
-        OllaVault(proxyAddress)
-            .initialize(IERC20(asset), IStAztec(stAztec), withdrawalQueue, safetyModule, core, governance);
+        OllaVault(proxyAddress).initialize(IERC20(asset), IStAztec(stAztec), withdrawalQueue, core, governance);
 
         if (config.deployMocks) {
             IERC20(asset).approve(proxyAddress, type(uint256).max);

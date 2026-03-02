@@ -305,7 +305,7 @@ contract OllaCoreInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -508,7 +508,7 @@ contract OllaCoreDepositInvariantTest is Test {
             IRewardsAccumulator(rewardsAccumulator),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -801,7 +801,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -1306,7 +1306,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);

@@ -100,7 +100,7 @@ abstract contract OllaGovernanceSetup is Test {
         );
 
         // Initialize OllaVault
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), address(gov));
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
 
         // Wire core -> vault
         vm.prank(address(gov));

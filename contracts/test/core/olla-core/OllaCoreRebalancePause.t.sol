@@ -171,7 +171,7 @@ contract OllaCoreRebalancePauseTest is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -287,9 +287,7 @@ contract OllaCoreRebalancePauseTest is Test {
             newAsset, newStAztec, newStakingManager, 0, 5_000, governance, newRewardsAccumulator, safetyModuleAddress
         );
 
-        newVault.initialize(
-            newAsset, newStAztec, address(newWithdrawalQueue), safetyModuleAddress, address(newCore), governance
-        );
+        newVault.initialize(newAsset, newStAztec, address(newWithdrawalQueue), address(newCore), governance);
 
         vm.prank(governance);
         newCore.setVault(address(newVault));

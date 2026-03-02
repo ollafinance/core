@@ -143,7 +143,7 @@ contract ComputeAttesterStateIntegration is Test {
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         // Initialize OllaVault
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));

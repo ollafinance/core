@@ -110,14 +110,12 @@ contract OllaVault is
         IERC20 asset_,
         IStAztec stAztec_,
         address withdrawalQueue_,
-        address safetyModule_,
         address core_,
         address governanceContract_
     ) external override initializer {
         if (address(asset_) == address(0)) revert OllaVault__ZeroAddress("asset_");
         if (address(stAztec_) == address(0)) revert OllaVault__ZeroAddress("stAztec_");
         if (withdrawalQueue_ == address(0)) revert OllaVault__ZeroAddress("withdrawalQueue_");
-        if (safetyModule_ == address(0)) revert OllaVault__ZeroAddress("safetyModule_");
         if (core_ == address(0)) revert OllaVault__ZeroAddress("core_");
         if (governanceContract_ == address(0)) revert OllaVault__ZeroAddress("governanceContract_");
 
@@ -130,7 +128,6 @@ contract OllaVault is
             asset: asset_,
             stAztec: stAztec_,
             withdrawalQueue: IWithdrawalQueue(withdrawalQueue_),
-            safetyModule: safetyModule_,
             core: core_
         });
 
@@ -452,14 +449,6 @@ contract OllaVault is
     }
 
     /// @inheritdoc IOllaVault
-    function setSafetyModule(address newSafetyModule) external override onlyOwner whenNotPaused {
-        if (newSafetyModule == address(0)) revert OllaVault__ZeroAddress("newSafetyModule");
-        address oldSafetyModule = _modules.safetyModule;
-        _modules.safetyModule = newSafetyModule;
-        emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
-    }
-
-    /// @inheritdoc IOllaVault
     function reconcileBufferedAssets() external override onlyOwner whenNotPaused returns (uint256 delta) {
         delta = _reconcileBufferedAssets(address(this));
         return delta;
@@ -488,7 +477,7 @@ contract OllaVault is
     // solhint-disable-next-line use-natspec
     function maxDeposit(address) external view override returns (uint256) {
         if (paused()) return 0;
-        ISafetyModule sm = ISafetyModule(_modules.safetyModule);
+        ISafetyModule sm = ISafetyModule(_safetyModule());
         if (sm.isPaused()) return 0;
         uint256 cap = sm.depositCap();
         uint256 current = totalAssets();
@@ -501,7 +490,7 @@ contract OllaVault is
     // solhint-disable-next-line use-natspec
     function maxMint(address) external view override returns (uint256) {
         if (paused()) return 0;
-        ISafetyModule sm = ISafetyModule(_modules.safetyModule);
+        ISafetyModule sm = ISafetyModule(_safetyModule());
         if (sm.isPaused()) return 0;
         uint256 cap = sm.depositCap();
         uint256 current = totalAssets();
@@ -605,10 +594,10 @@ contract OllaVault is
         return address(_modules.withdrawalQueue);
     }
 
-    /// @notice Returns the safety module address.
+    /// @notice Returns the safety module address (reads canonical reference from Core).
     /// @return The safety module address.
     function safetyModule() external view override returns (address) {
-        return _modules.safetyModule;
+        return _safetyModule();
     }
 
     /// @notice Returns the recorded owner for a withdrawal request id.
@@ -737,7 +726,7 @@ contract OllaVault is
         if (assets == 0) revert OllaVault__InvalidAmount();
 
         VaultModules memory modules = _modules;
-        ISafetyModule sm = ISafetyModule(modules.safetyModule);
+        ISafetyModule sm = ISafetyModule(_safetyModule());
 
         if (sm.isPaused()) revert OllaVault__SafetyModulePaused();
 
@@ -778,7 +767,7 @@ contract OllaVault is
 
         uint256 rate = coreRef.exchangeRate();
         assetsExpected = coreRef.convertToAssets(shares);
-        ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
+        ISafetyModule(_safetyModule()).checkWithdrawalMinimum(shares);
         uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
 
         _requestOwners[expectedRequestId] = controller;
@@ -803,12 +792,13 @@ contract OllaVault is
         if (shares == 0) revert OllaVault__InvalidAmount();
 
         VaultModules memory modules = _modules;
+        ISafetyModule sm = ISafetyModule(_safetyModule());
 
-        if (ISafetyModule(modules.safetyModule).isPaused()) revert OllaVault__SafetyModulePaused();
+        if (sm.isPaused()) revert OllaVault__SafetyModulePaused();
 
         _syncBufferedWithBalance();
 
-        ISafetyModule(modules.safetyModule).checkWithdrawalMinimum(shares);
+        sm.checkWithdrawalMinimum(shares);
 
         IOllaCore coreRef = IOllaCore(modules.core);
         uint256 rate = coreRef.exchangeRate();
@@ -924,6 +914,10 @@ contract OllaVault is
         }
         // slither-disable-end calls-loop
         revert OllaVault__RequestNotFound(0);
+    }
+
+    function _safetyModule() internal view returns (address) {
+        return IOllaCore(_modules.core).safetyModule();
     }
 
     function _treasury() internal view returns (address) {
