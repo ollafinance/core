@@ -566,9 +566,14 @@ contract OllaCore is
         return _convertToShares(assets, Math.Rounding.Floor);
     }
 
-    /// @notice Computes the assets for a share amount.
+    /// @notice Computes the assets for a share amount (rounds down).
     function convertToAssets(uint256 shares) external view override returns (uint256 assets) {
         return _convertToAssets(shares);
+    }
+
+    /// @notice Computes the assets for a share amount (rounds up).
+    function convertToAssetsCeil(uint256 shares) external view override returns (uint256 assets) {
+        return shares.mulDiv(totalAssets() + 1, _modules.stAztec.totalSupply() + 1, Math.Rounding.Ceil);
     }
 
     /// @notice Returns the current total assets attributable to shareholders.

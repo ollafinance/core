@@ -373,8 +373,11 @@ interface IOllaCore {
     /// @notice Computes the shares for an asset amount.
     function convertToShares(uint256 assets) external view returns (uint256 shares);
 
-    /// @notice Computes the assets for a share amount.
+    /// @notice Computes the assets for a share amount (rounds down).
     function convertToAssets(uint256 shares) external view returns (uint256 assets);
+
+    /// @notice Computes the assets for a share amount (rounds up).
+    function convertToAssetsCeil(uint256 shares) external view returns (uint256 assets);
 
     /// @notice Returns the rebalance cooldown in seconds.
     function rebalanceCooldown() external view returns (uint256);

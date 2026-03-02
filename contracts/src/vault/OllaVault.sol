@@ -11,7 +11,6 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-import { Math } from "@oz/utils/math/Math.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
@@ -36,7 +35,6 @@ contract OllaVault is
     IOllaVault
 {
     using SafeERC20 for IERC20;
-    using Math for uint256;
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
@@ -258,8 +256,7 @@ contract OllaVault is
     {
         if (receiver == address(0)) revert OllaVault__ZeroAddress("receiver");
         if (shares == 0) revert OllaVault__InvalidAmount();
-        IOllaCore coreRef = IOllaCore(_modules.core);
-        assets = shares.mulDiv(coreRef.totalAssets() + 1, _modules.stAztec.totalSupply() + 1, Math.Rounding.Ceil);
+        assets = IOllaCore(_modules.core).convertToAssetsCeil(shares);
         _deposit(msg.sender, assets, receiver);
         return assets;
     }
@@ -498,9 +495,7 @@ contract OllaVault is
 
     /// @notice Returns assets needed to mint exact shares (ERC-4626).
     function previewMint(uint256 shares) external view override returns (uint256) {
-        return shares.mulDiv(
-            IOllaCore(_modules.core).totalAssets() + 1, _modules.stAztec.totalSupply() + 1, Math.Rounding.Ceil
-        );
+        return IOllaCore(_modules.core).convertToAssetsCeil(shares);
     }
 
     /// @notice Returns whether an operator is approved for a controller (ERC-7540).

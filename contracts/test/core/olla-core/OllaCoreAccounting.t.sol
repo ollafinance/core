@@ -700,6 +700,67 @@ contract OllaCoreAccountingTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                   CONVERT TO ASSETS CEIL
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ConvertToAssetsCeil_RoundsUp() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Add rewards to create a non-trivial exchange rate (totalAssets > totalSupply)
+        stakingManager.setClaimableRewards(50 * DECIMALS);
+        vm.prank(operator);
+        core.updateAccounting();
+
+        // Pick a share amount that triggers a non-integer result
+        uint256 shares = 1;
+        uint256 assetsFloor = core.convertToAssets(shares);
+        uint256 assetsCeil = core.convertToAssetsCeil(shares);
+
+        assertGe(assetsCeil, assetsFloor, "ceil >= floor");
+    }
+
+    function test_ConvertToAssetsCeil_MatchesFloor_WhenExact() external {
+        // 1:1 rate — both rounding modes yield the same result
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 shares = 10 * DECIMALS;
+        uint256 assetsFloor = core.convertToAssets(shares);
+        uint256 assetsCeil = core.convertToAssetsCeil(shares);
+
+        assertEq(assetsCeil, assetsFloor, "ceil == floor when division is exact");
+    }
+
+    function test_ConvertToAssetsCeil_ZeroShares() external {
+        _performDeposit(alice, 100 * DECIMALS);
+
+        assertEq(core.convertToAssetsCeil(0), 0, "zero shares -> zero assets");
+        assertEq(core.convertToAssets(0), 0, "zero shares -> zero assets (floor)");
+    }
+
+    function testFuzz_ConvertToAssetsCeil_AlwaysGteFloor(uint96 depositSeed, uint96 rewardsSeed, uint96 sharesSeed)
+        external
+    {
+        uint256 depositAmount = bound(uint256(depositSeed), 1e18, type(uint96).max);
+        uint256 rewards = bound(uint256(rewardsSeed), 1, type(uint96).max / 2);
+
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setClaimableRewards(rewards);
+        vm.prank(operator);
+        core.updateAccounting();
+
+        uint256 shares = bound(uint256(sharesSeed), 0, type(uint96).max);
+
+        uint256 assetsFloor = core.convertToAssets(shares);
+        uint256 assetsCeil = core.convertToAssetsCeil(shares);
+
+        assertGe(assetsCeil, assetsFloor, "ceil must always be >= floor");
+        assertLe(assetsCeil - assetsFloor, 1, "ceil and floor differ by at most 1 wei");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                         SLASHING DELTA UNDERFLOW
     //////////////////////////////////////////////////////////////*/
 
