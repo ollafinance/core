@@ -260,6 +260,65 @@ contract OllaVaultViewsTest is Test {
         assertEq(vault.maxRedeem(alice), totalDeposit, "maxRedeem sums multiple finalized");
     }
 
+    /// @notice maxRedeem returns zero after all requests are claimed.
+    function test_MaxRedeem_ReturnsZeroAfterAllClaimed() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 shares = _performDeposit(alice, depositAmount);
+        uint256 requestId = _performRequestRedeem(alice, shares);
+
+        _finalizeAll(depositAmount);
+        assertEq(vault.maxRedeem(alice), shares, "maxRedeem before claim");
+
+        vm.prank(alice);
+        vault.claimRequestById(requestId);
+
+        assertEq(vault.maxRedeem(alice), 0, "maxRedeem zero after all claimed");
+    }
+
+    /// @notice maxRedeem only counts finalized requests in a partial finalization.
+    function test_MaxRedeem_PartialFinalization() external {
+        uint256 amount1 = 5 * DECIMALS;
+        uint256 amount2 = 7 * DECIMALS;
+        uint256 totalDeposit = amount1 + amount2;
+
+        _performDeposit(alice, totalDeposit);
+
+        vm.prank(alice);
+        vault.requestRedeem(amount1, alice, alice);
+        vm.prank(alice);
+        vault.requestRedeem(amount2, alice, alice);
+
+        // Only finalize enough for the first request
+        _finalizeAll(amount1);
+
+        assertEq(vault.maxRedeem(alice), amount1, "maxRedeem only counts finalized");
+    }
+
+    /// @notice maxRedeem tracks independent counters per user.
+    function test_MaxRedeem_MultiUserIndependent() external {
+        uint256 aliceAmount = 5 * DECIMALS;
+        uint256 bobAmount = 8 * DECIMALS;
+        uint256 totalDeposit = aliceAmount + bobAmount;
+
+        _performDeposit(alice, aliceAmount);
+        _performDeposit(bob, bobAmount);
+
+        _performRequestRedeem(alice, aliceAmount);
+        uint256 bobRequestId = _performRequestRedeem(bob, bobAmount);
+
+        _finalizeAll(totalDeposit);
+
+        assertEq(vault.maxRedeem(alice), aliceAmount, "alice maxRedeem");
+        assertEq(vault.maxRedeem(bob), bobAmount, "bob maxRedeem");
+
+        // Bob claims, alice's counter stays
+        vm.prank(bob);
+        vault.claimRequestById(bobRequestId);
+
+        assertEq(vault.maxRedeem(alice), aliceAmount, "alice unchanged after bob claims");
+        assertEq(vault.maxRedeem(bob), 0, "bob zero after claim");
+    }
+
     /*//////////////////////////////////////////////////////////////
                     PURE REVERT / ZERO FUNCTION TESTS
     //////////////////////////////////////////////////////////////*/

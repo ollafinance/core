@@ -224,4 +224,31 @@ contract OllaVaultMintTest is Test {
 
         assertEq(actualShares, shares, "exact shares minted at non-trivial rate");
     }
+
+    /// @notice mint() works when totalAssets < totalSupply (post-slashing).
+    function test_Mint_PostSlashing_ExactShares() external {
+        // Seed deposit so totalSupply > 0
+        uint256 initialDeposit = 100 * DECIMALS;
+        _performDeposit(alice, initialDeposit);
+
+        // Simulate slashing: set slashingDelta > 0 so totalAssets drops below totalSupply
+        bytes32 operatorRole = core.OPERATOR_ROLE();
+        vm.prank(governance);
+        core.grantRole(operatorRole, address(this));
+        stakingManager.setSlashingDelta(60 * DECIMALS);
+        core.updateAccounting();
+
+        uint256 totalAssets = core.totalAssets();
+        uint256 totalSupply = stAztec.totalSupply();
+        assertTrue(totalAssets < totalSupply, "precondition: rate below 1:1");
+
+        // mint() should succeed and mint exact shares
+        uint256 sharesToMint = 10 * DECIMALS;
+        uint256 balanceBefore = stAztec.balanceOf(bob);
+        uint256 assets = _performMint(bob, sharesToMint);
+        uint256 actualShares = stAztec.balanceOf(bob) - balanceBefore;
+
+        assertEq(actualShares, sharesToMint, "exact shares minted post-slashing");
+        assertEq(assets, core.convertToAssetsCeil(sharesToMint), "assets match ceil conversion");
+    }
 }

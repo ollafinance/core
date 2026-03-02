@@ -86,7 +86,8 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         lastAvailable = available;
         used = 0;
         finalizedCount = 0;
-        for (uint256 id = nextPendingId; id < nextRequestId; ++id) {
+        uint256 id = nextPendingId;
+        for (; id < nextRequestId; ++id) {
             WithdrawalRequest storage request = _requests[id];
             if (request.finalized || request.assetsExpected == 0) continue;
             if (used + request.assetsExpected > available) break;
@@ -94,6 +95,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
             used += request.assetsExpected;
             ++finalizedCount;
         }
+        nextPendingId = id;
         if (totalPendingAssets >= used) {
             totalPendingAssets -= used;
         }

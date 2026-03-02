@@ -82,6 +82,9 @@ contract OllaVault is
     /// @notice Cumulative withdrawals tracked for Core accounting.
     uint256 public cumulativeWithdrawals;
 
+    /// @notice Cached claimable shares per controller for O(1) maxRedeem.
+    mapping(address controller => uint256 shares) private _claimableShares;
+
     /// @notice Storage gap for upgradability.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
@@ -257,9 +260,20 @@ contract OllaVault is
     {
         if (receiver == address(0)) revert OllaVault__ZeroAddress("receiver");
         if (shares == 0) revert OllaVault__InvalidAmount();
-        assets = IOllaCore(_modules.core).convertToAssetsCeil(shares);
-        uint256 actualShares = _deposit(msg.sender, assets, receiver);
-        if (actualShares != shares) revert OllaVault__SharesMismatch(shares, actualShares);
+
+        ISafetyModule sm = ISafetyModule(_safetyModule());
+        if (sm.isPaused()) revert OllaVault__SafetyModulePaused();
+        _syncBufferedWithBalance();
+
+        IOllaCore coreRef = IOllaCore(_modules.core);
+        assets = coreRef.convertToAssetsCeil(shares);
+
+        uint256 currentTotalAssets = coreRef.totalAssets();
+        if (!sm.checkDepositAllowed(assets, currentTotalAssets)) {
+            revert OllaVault__DepositCapExceeded(assets, currentTotalAssets);
+        }
+
+        _processDeposit(msg.sender, assets, shares, receiver);
         return assets;
     }
 
@@ -372,6 +386,7 @@ contract OllaVault is
         // slither-disable-next-line timestamp,incorrect-equality
         if (queued == 0) return (0, 0);
 
+        uint256 prevPending = queue.nextUnfinalized();
         (finalizedAmount, finalizedCount) = queue.finalizeWithdrawals(availableAssets);
 
         uint256 queuedAfter = queue.totalPendingAssets();
@@ -394,6 +409,18 @@ contract OllaVault is
 
         _bufferedAssets = buffered - finalizedAmount;
         _finalizedUnclaimedAssets += finalizedAmount;
+
+        // Update per-controller claimable shares for O(1) maxRedeem.
+        // slither-disable-start calls-loop
+        // Bounded by finalizedCount; same requests the queue already processed.
+        uint256 newPending = queue.nextUnfinalized();
+        for (uint256 id = prevPending; id < newPending; ++id) {
+            IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(id);
+            if (req.finalized) {
+                _claimableShares[_requestOwners[id]] += req.shares;
+            }
+        }
+        // slither-disable-end calls-loop
 
         // CORE_ROLE only; external call to trusted WithdrawalQueue.
         emit WithdrawalFinalized(availableAssets, finalizedAmount);
@@ -503,19 +530,7 @@ contract OllaVault is
     /// @param controller The controller address.
     /// @return maxShares The total claimable shares.
     function maxRedeem(address controller) external view override returns (uint256 maxShares) {
-        uint256[] storage requestIds = _ownerRequestIds[controller];
-        uint256 len = requestIds.length;
-        IWithdrawalQueue queue = _modules.withdrawalQueue;
-        // slither-disable-start calls-loop
-        // Bounded by controller's own request count; users should prefer claimRequestById() for O(1) claims.
-        for (uint256 i = 0; i < len; ++i) {
-            IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(requestIds[i]);
-            if (req.finalized && !req.claimed) {
-                maxShares += req.shares;
-            }
-        }
-        // slither-disable-end calls-loop
-        return maxShares;
+        return _claimableShares[controller];
     }
 
     /// @notice Returns shares previewed for a deposit (ERC-4626).
@@ -725,20 +740,23 @@ contract OllaVault is
         if (recipient == address(0)) revert OllaVault__ZeroAddress("recipient");
         if (assets == 0) revert OllaVault__InvalidAmount();
 
-        VaultModules memory modules = _modules;
         ISafetyModule sm = ISafetyModule(_safetyModule());
-
         if (sm.isPaused()) revert OllaVault__SafetyModulePaused();
-
         _syncBufferedWithBalance();
 
-        IOllaCore coreRef = IOllaCore(modules.core);
+        IOllaCore coreRef = IOllaCore(_modules.core);
         uint256 currentTotalAssets = coreRef.totalAssets();
         if (!sm.checkDepositAllowed(assets, currentTotalAssets)) {
             revert OllaVault__DepositCapExceeded(assets, currentTotalAssets);
         }
 
         shares = coreRef.convertToShares(assets);
+        _processDeposit(caller, assets, shares, recipient);
+        return shares;
+    }
+
+    function _processDeposit(address caller, uint256 assets, uint256 shares, address recipient) internal {
+        VaultModules memory modules = _modules;
         modules.asset.safeTransferFrom(caller, address(this), assets);
         _bufferedAssets += assets;
         _syncBufferedWithBalance();
@@ -746,7 +764,6 @@ contract OllaVault is
 
         modules.stAztec.mint(recipient, shares);
         emit Deposit(caller, recipient, assets, shares);
-        return shares;
     }
 
     /// @notice Executes the shared logic for all async redemption paths.
@@ -839,6 +856,7 @@ contract OllaVault is
         assets = request.assetsExpected;
         address requestOwnerAddr = _requestOwners[requestId];
 
+        _claimableShares[requestOwnerAddr] -= request.shares;
         _removeOwnerRequest(requestOwnerAddr, requestId);
         delete _requestOwners[requestId];
 
