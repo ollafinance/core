@@ -190,6 +190,8 @@ contract OllaVault is
 
     /// @inheritdoc IOllaVault
     function claimRequestById(uint256 requestId) external override nonReentrant whenNotPaused returns (uint256 assets) {
+        address requestOwnerAddr = _requestOwners[requestId];
+        _checkControllerOrOperator(requestOwnerAddr);
         assets = _claimWithdrawal(requestId, address(0));
         return assets;
     }
