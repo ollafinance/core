@@ -21,6 +21,7 @@ contract MocksDeployer is BaseDeployer {
         address rewardsCollector;
         address asset;
         address rollupRegistry;
+        address governance;
     }
 
     /// @notice Deploy the local staking asset and Aztec-side mocks.
@@ -58,7 +59,8 @@ contract MocksDeployer is BaseDeployer {
         address core,
         address rewardsCollector,
         address asset,
-        address rollupRegistry
+        address rollupRegistry,
+        address governance
     )
         external
         returns (
@@ -69,7 +71,12 @@ contract MocksDeployer is BaseDeployer {
         )
     {
         StakingStackParams memory params = StakingStackParams({
-            config: config, core: core, rewardsCollector: rewardsCollector, asset: asset, rollupRegistry: rollupRegistry
+            config: config,
+            core: core,
+            rewardsCollector: rewardsCollector,
+            asset: asset,
+            rollupRegistry: rollupRegistry,
+            governance: governance
         });
 
         return _deployStakingStackInternal(params);
@@ -90,6 +97,7 @@ contract MocksDeployer is BaseDeployer {
         require(params.rewardsCollector != address(0), "MocksDeployer: rewardsCollector required");
         require(params.asset != address(0), "MocksDeployer: asset required");
         require(params.rollupRegistry != address(0), "MocksDeployer: rollupRegistry required");
+        require(params.governance != address(0), "MocksDeployer: governance required");
 
         vm.startBroadcast(params.config.deployerPrivateKey);
 
@@ -116,11 +124,15 @@ contract MocksDeployer is BaseDeployer {
         address rewardsCollector = params.rewardsCollector;
         address core = params.core;
 
+        address governance = params.governance;
+
         // Initialize StakingProviderRegistry first (needs stakingManager address)
-        StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, deployer, deployer, deployer);
+        // defaultAdmin is governance so OllaGovernance can propagate admin role changes.
+        StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, deployer, deployer, governance);
 
         // Initialize StakingManager
-        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsCollector, core, sprProxyAddr, deployer);
+        // defaultAdmin is governance so OllaGovernance can propagate admin role changes.
+        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsCollector, core, sprProxyAddr, governance);
 
         vm.stopBroadcast();
 

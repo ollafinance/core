@@ -192,6 +192,9 @@ interface IOllaVault {
     /// @notice Thrown when finalized amounts are inconsistent with count.
     error OllaVault__FinalizeInconsistent(uint256 finalizedAmount, uint256 finalizedCount);
 
+    /// @notice Thrown when claiming a withdrawal request that is not yet finalized.
+    error OllaVault__NotFinalized(uint256 requestId);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/

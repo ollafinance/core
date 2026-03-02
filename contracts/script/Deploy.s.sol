@@ -137,7 +137,7 @@ contract DeployScript is BaseDeployer {
         if (config.deployMocks) {
             // Deploy + init StakingManager + StakingProviderRegistry behind proxies
             (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
-                _mocksDeployer.deployStakingStack(config, ollaCoreProxy, rewardsCollector, asset, rollupRegistry);
+                _mocksDeployer.deployStakingStack(config, ollaCoreProxy, rewardsCollector, asset, rollupRegistry, ollaGovProxy);
             json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
             json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
             json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);

@@ -751,6 +751,7 @@ contract OllaVault is
     function _claimWithdrawal(uint256 requestId, address receiverOverride) internal returns (uint256 assets) {
         IWithdrawalQueue queue = _modules.withdrawalQueue;
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        if (!request.finalized) revert OllaVault__NotFinalized(requestId);
         address receiver = receiverOverride == address(0) ? request.recipient : receiverOverride;
         assets = request.assetsExpected;
         address requestOwnerAddr = _requestOwners[requestId];
@@ -761,9 +762,7 @@ contract OllaVault is
         uint256 assetsClaimed = queue.claimWithdrawal(requestId);
         if (assetsClaimed != assets) revert OllaVault__ClaimAssetsMismatch(requestId, assets, assetsClaimed);
 
-        if (request.finalized) {
-            _finalizedUnclaimedAssets -= assets;
-        }
+        _finalizedUnclaimedAssets -= assets;
         _modules.asset.safeTransfer(receiver, assets);
         emit WithdrawalClaimed(requestId, receiver, assets);
         return assets;
