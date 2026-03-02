@@ -52,7 +52,10 @@ export async function executeRebalance(
       };
     }
     const gasThreshold = await ollaCoreRead.read.rebalanceGasThreshold() as bigint;
-    const minGasLimit = 1_000_000n;
+    // The rebalance function may complete an entire cycle (harvest → stake → compute → accounting)
+    // in a single call. With staking, a single cycle can exceed 1M gas (observed: ~985k for 1 attester).
+    // Use 3M as the minimum to handle multi-attester staking with headroom.
+    const minGasLimit = 3_000_000n;
     gasLimit = gasThreshold + 300_000n;
     if (gasLimit < minGasLimit) {
       gasLimit = minGasLimit;
