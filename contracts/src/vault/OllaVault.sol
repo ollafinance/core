@@ -174,13 +174,14 @@ contract OllaVault is
     }
 
     /// @inheritdoc IOllaVault
-    function requestRedeemWithPermit(uint256 shares, address controller, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        override
-        nonReentrant
-        whenNotPaused
-        returns (uint256 requestId)
-    {
+    function requestRedeemWithPermit(
+        uint256 shares,
+        address controller,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override nonReentrant whenNotPaused returns (uint256 requestId) {
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);

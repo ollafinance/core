@@ -137,7 +137,9 @@ contract DeployScript is BaseDeployer {
         if (config.deployMocks) {
             // Deploy + init StakingManager + StakingProviderRegistry behind proxies
             (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
-                _mocksDeployer.deployStakingStack(config, ollaCoreProxy, rewardsCollector, asset, rollupRegistry, ollaGovProxy);
+                _mocksDeployer.deployStakingStack(
+                    config, ollaCoreProxy, rewardsCollector, asset, rollupRegistry, ollaGovProxy
+                );
             json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
             json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
             json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);
@@ -220,34 +222,25 @@ contract DeployScript is BaseDeployer {
             // setVault on OllaCore (onlyOwner → must go through governance timelock)
             bytes memory setVaultData = abi.encodeCall(OllaCore.setVault, (ollaVaultProxy));
             vm.startBroadcast(config.deployerPrivateKey);
-            OllaGovernance(payable(ollaGovProxy)).schedule(
-                ollaCoreProxy, 0, setVaultData, bytes32(0), bytes32(0), config.timelockMinDelay
-            );
-            OllaGovernance(payable(ollaGovProxy)).execute(
-                ollaCoreProxy, 0, setVaultData, bytes32(0), bytes32(0)
-            );
+            OllaGovernance(payable(ollaGovProxy))
+                .schedule(ollaCoreProxy, 0, setVaultData, bytes32(0), bytes32(0), config.timelockMinDelay);
+            OllaGovernance(payable(ollaGovProxy)).execute(ollaCoreProxy, 0, setVaultData, bytes32(0), bytes32(0));
             vm.stopBroadcast();
 
             // Unpause OllaCore
             bytes memory unpauseCoreData = abi.encodeCall(OllaCore.unpause, ());
             vm.startBroadcast(config.deployerPrivateKey);
-            OllaGovernance(payable(ollaGovProxy)).schedule(
-                ollaCoreProxy, 0, unpauseCoreData, bytes32(0), bytes32(0), config.timelockMinDelay
-            );
-            OllaGovernance(payable(ollaGovProxy)).execute(
-                ollaCoreProxy, 0, unpauseCoreData, bytes32(0), bytes32(0)
-            );
+            OllaGovernance(payable(ollaGovProxy))
+                .schedule(ollaCoreProxy, 0, unpauseCoreData, bytes32(0), bytes32(0), config.timelockMinDelay);
+            OllaGovernance(payable(ollaGovProxy)).execute(ollaCoreProxy, 0, unpauseCoreData, bytes32(0), bytes32(0));
             vm.stopBroadcast();
 
             // Unpause OllaVault (GUARDIAN_ROLE granted to governance during vault init)
             bytes memory unpauseVaultData = abi.encodeCall(OllaVault.unpause, ());
             vm.startBroadcast(config.deployerPrivateKey);
-            OllaGovernance(payable(ollaGovProxy)).schedule(
-                ollaVaultProxy, 0, unpauseVaultData, bytes32(0), bytes32(0), config.timelockMinDelay
-            );
-            OllaGovernance(payable(ollaGovProxy)).execute(
-                ollaVaultProxy, 0, unpauseVaultData, bytes32(0), bytes32(0)
-            );
+            OllaGovernance(payable(ollaGovProxy))
+                .schedule(ollaVaultProxy, 0, unpauseVaultData, bytes32(0), bytes32(0), config.timelockMinDelay);
+            OllaGovernance(payable(ollaGovProxy)).execute(ollaVaultProxy, 0, unpauseVaultData, bytes32(0), bytes32(0));
             vm.stopBroadcast();
         }
 

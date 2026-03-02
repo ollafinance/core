@@ -191,29 +191,61 @@ contract OllaCoreInitTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "asset_"));
         newCore.initialize(
-            IERC20(address(0)), newStAztec, newStakingManager, 0, 5_000, newGovernance, newRewardsCollector, newSafetyModule
+            IERC20(address(0)),
+            newStAztec,
+            newStakingManager,
+            0,
+            5_000,
+            newGovernance,
+            newRewardsCollector,
+            newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "stAztec_"));
         newCore.initialize(
-            asset, IStAztec(address(0)), newStakingManager, 0, 5_000, newGovernance, newRewardsCollector, newSafetyModule
+            asset,
+            IStAztec(address(0)),
+            newStakingManager,
+            0,
+            5_000,
+            newGovernance,
+            newRewardsCollector,
+            newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "stakingManager_"));
         newCore.initialize(
-            asset, newStAztec, IStakingManager(address(0)), 0, 5_000, newGovernance, newRewardsCollector, newSafetyModule
+            asset,
+            newStAztec,
+            IStakingManager(address(0)),
+            0,
+            5_000,
+            newGovernance,
+            newRewardsCollector,
+            newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "governanceContract_"));
-        newCore.initialize(asset, newStAztec, newStakingManager, 0, 5_000, address(0), newRewardsCollector, newSafetyModule);
+        newCore.initialize(
+            asset, newStAztec, newStakingManager, 0, 5_000, address(0), newRewardsCollector, newSafetyModule
+        );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "rewardsCollector_"));
         newCore.initialize(
-            asset, newStAztec, newStakingManager, 0, 5_000, newGovernance, IRewardsCollector(address(0)), newSafetyModule
+            asset,
+            newStAztec,
+            newStakingManager,
+            0,
+            5_000,
+            newGovernance,
+            IRewardsCollector(address(0)),
+            newSafetyModule
         );
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "safetyModule_"));
-        newCore.initialize(asset, newStAztec, newStakingManager, 0, 5_000, newGovernance, newRewardsCollector, address(0));
+        newCore.initialize(
+            asset, newStAztec, newStakingManager, 0, 5_000, newGovernance, newRewardsCollector, address(0)
+        );
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -120,9 +120,7 @@ contract OllaVaultReceiveUnstakedTest is Test {
         uint256 amount = 10 * DECIMALS;
 
         vm.prank(address(core));
-        vm.expectRevert(
-            abi.encodeWithSelector(IOllaVault.OllaVault__BufferedBalanceMismatch.selector, amount, 0)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__BufferedBalanceMismatch.selector, amount, 0));
         vault.receiveUnstaked(amount);
     }
 
@@ -134,9 +132,7 @@ contract OllaVaultReceiveUnstakedTest is Test {
         asset.mint(address(vault), actual);
 
         vm.prank(address(core));
-        vm.expectRevert(
-            abi.encodeWithSelector(IOllaVault.OllaVault__BufferedBalanceMismatch.selector, claimed, actual)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__BufferedBalanceMismatch.selector, claimed, actual));
         vault.receiveUnstaked(claimed);
     }
 
@@ -153,9 +149,7 @@ contract OllaVaultReceiveUnstakedTest is Test {
 
         // Second call without additional transfer.
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IOllaVault.OllaVault__BufferedBalanceMismatch.selector, first + second, first
-            )
+            abi.encodeWithSelector(IOllaVault.OllaVault__BufferedBalanceMismatch.selector, first + second, first)
         );
         vault.receiveUnstaked(second);
         vm.stopPrank();
@@ -202,9 +196,7 @@ contract OllaVaultReceiveUnstakedTest is Test {
 
         vm.prank(address(core));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IOllaVault.OllaVault__BufferedBalanceMismatch.selector, amount, transferred
-            )
+            abi.encodeWithSelector(IOllaVault.OllaVault__BufferedBalanceMismatch.selector, amount, transferred)
         );
         vault.receiveUnstaked(amount);
     }

@@ -249,9 +249,14 @@ interface IOllaVault {
     /// @param r The permit signature r.
     /// @param s The permit signature s.
     /// @return requestId The withdrawal request id.
-    function requestRedeemWithPermit(uint256 shares, address controller, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
-        external
-        returns (uint256 requestId);
+    function requestRedeemWithPermit(
+        uint256 shares,
+        address controller,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external returns (uint256 requestId);
 
     /// @notice Claims a finalized withdrawal request by id.
     /// @param requestId The withdrawal request id.

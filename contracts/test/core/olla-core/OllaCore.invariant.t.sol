@@ -498,7 +498,14 @@ contract OllaCoreDepositInvariantTest is Test {
         address rewardsCollector = makeAddr("rewardsCollector");
         safetyModule = new MockSafetyModule(address(core), address(vault));
         core.initialize(
-            asset, stAztec, stakingManager, 0, 5_000, governance, IRewardsCollector(rewardsCollector), address(safetyModule)
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            5_000,
+            governance,
+            IRewardsCollector(rewardsCollector),
+            address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
         vm.prank(governance);

@@ -71,7 +71,9 @@ contract RewardsCollectorTest is Test {
     function test_RevertWhen_Initialize_RewardsTokenZeroAddress() external {
         RewardsCollector v = _deployUninitializedRewardsCollector();
 
-        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "rewardsToken"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "rewardsToken")
+        );
         v.initialize(IERC20(address(0)), core, defaultAdmin);
     }
 
@@ -85,7 +87,9 @@ contract RewardsCollectorTest is Test {
     function test_RevertWhen_Initialize_DefaultAdminZeroAddress() external {
         RewardsCollector v = _deployUninitializedRewardsCollector();
 
-        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "defaultAdmin"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "defaultAdmin")
+        );
         v.initialize(IERC20(address(aztec)), core, address(0));
     }
 

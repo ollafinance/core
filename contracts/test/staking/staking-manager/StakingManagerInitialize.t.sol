@@ -144,7 +144,12 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
                 abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "stakingProviderRegistry")
             );
             mgr.initialize(
-                IERC20(address(aztec)), address(rollupRegistry), address(rewardsCollector), core, address(0), defaultAdmin
+                IERC20(address(aztec)),
+                address(rollupRegistry),
+                address(rewardsCollector),
+                core,
+                address(0),
+                defaultAdmin
             );
         }
 

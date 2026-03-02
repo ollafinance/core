@@ -587,7 +587,14 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         withdrawalQueue = new MockWithdrawalQueue();
 
         core.initialize(
-            asset, stAztec, stakingManager, 500, 5_000, governance, IRewardsCollector(rewardsCollector), address(safetyModule)
+            asset,
+            stAztec,
+            stakingManager,
+            500,
+            5_000,
+            governance,
+            IRewardsCollector(rewardsCollector),
+            address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(safetyModule), address(core), governance);
 

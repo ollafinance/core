@@ -85,13 +85,17 @@ contract RewardsCollectorUpgradeTest is Test {
         vm.prank(defaultAdmin);
         vault.grantRole(defaultAdminRole, otherAdmin);
 
-        vm.expectRevert(abi.encodeWithSelector(RewardsCollector.RewardsCollector__UnauthorizedGovernance.selector, otherAdmin));
+        vm.expectRevert(
+            abi.encodeWithSelector(RewardsCollector.RewardsCollector__UnauthorizedGovernance.selector, otherAdmin)
+        );
         vm.prank(otherAdmin);
         vault.upgradeToAndCall(address(newImplementation), "");
     }
 
     function test_RevertWhen_UpgradeToZeroImplementation() external {
-        vm.expectRevert(abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "newImplementation"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRewardsCollector.RewardsCollector__ZeroAddress.selector, "newImplementation")
+        );
         vm.prank(defaultAdmin);
         vault.upgradeToAndCall(address(0), "");
     }

@@ -146,12 +146,16 @@ contract OllaCoreAccountingTest is Test {
         uint256 slashingDelta = 1 * DECIMALS;
 
         _performDeposit(alice, assets);
-        core.exposedApplyAccountingUpdates(staked, rewardsCollectorBalance, claimableRewards, rewardsDelta, slashingDelta);
+        core.exposedApplyAccountingUpdates(
+            staked, rewardsCollectorBalance, claimableRewards, rewardsDelta, slashingDelta
+        );
 
         IOllaCore.AccountingState memory accounting = core.accountingState();
         assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
         assertEq(accounting.stakedPrincipal, staked, "stakedPrincipal matches staked amount");
-        assertEq(accounting.rewardsCollectorBalance, rewardsCollectorBalance, "rewardsCollectorBalance matches rewards vault");
+        assertEq(
+            accounting.rewardsCollectorBalance, rewardsCollectorBalance, "rewardsCollectorBalance matches rewards vault"
+        );
         assertEq(accounting.claimableRewards, claimableRewards, "claimableRewards matches claimable rewards");
         assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
@@ -562,7 +566,9 @@ contract OllaCoreAccountingTest is Test {
         // Use reconcileBufferedAssets to sync the vault's buffer
         vm.prank(governance);
         vault.reconcileBufferedAssets();
-        core.exposedApplyAccountingUpdates(staked, rewardsCollectorBalance, claimableRewards, rewardsDelta, slashingDelta);
+        core.exposedApplyAccountingUpdates(
+            staked, rewardsCollectorBalance, claimableRewards, rewardsDelta, slashingDelta
+        );
 
         assertEq(core.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
     }
@@ -582,8 +588,7 @@ contract OllaCoreAccountingTest is Test {
 
         (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
-        uint256 expectedNetDeposits =
-            cumulativeDeposits > latestReportCumulativeDeposits
+        uint256 expectedNetDeposits = cumulativeDeposits > latestReportCumulativeDeposits
             ? cumulativeDeposits - latestReportCumulativeDeposits
             : 0;
         uint256 expectedNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals

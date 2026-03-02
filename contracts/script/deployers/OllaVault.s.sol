@@ -52,9 +52,8 @@ contract OllaVaultDeployer is BaseDeployer {
     ) external {
         vm.startBroadcast(config.deployerPrivateKey);
 
-        OllaVault(proxyAddress).initialize(
-            IERC20(asset), IStAztec(stAztec), withdrawalQueue, safetyModule, core, governance
-        );
+        OllaVault(proxyAddress)
+            .initialize(IERC20(asset), IStAztec(stAztec), withdrawalQueue, safetyModule, core, governance);
 
         if (config.deployMocks) {
             IERC20(asset).approve(proxyAddress, type(uint256).max);

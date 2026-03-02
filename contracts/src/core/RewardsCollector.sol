@@ -13,7 +13,13 @@ import { IRewardsCollector } from "src/core/interfaces/IRewardsCollector.sol";
 /// @title RewardsCollector
 /// @notice Base implementation for rewards and fee management vault.
 /// @author Olla Core contributors
-contract RewardsCollector is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuard, IRewardsCollector {
+contract RewardsCollector is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard,
+    IRewardsCollector
+{
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////

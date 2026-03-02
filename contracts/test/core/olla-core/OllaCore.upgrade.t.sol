@@ -235,7 +235,9 @@ contract OllaCoreUpgradeTest is Test {
         // bufferedAssets is now on vault, not in core's AccountingState
         assertEq(vault.bufferedAssets(), vault.bufferedAssets(), "buffered preserved");
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked preserved");
-        assertEq(accountingAfter.rewardsCollectorBalance, accountingBefore.rewardsCollectorBalance, "rewards vault preserved");
+        assertEq(
+            accountingAfter.rewardsCollectorBalance, accountingBefore.rewardsCollectorBalance, "rewards vault preserved"
+        );
         assertEq(accountingAfter.claimableRewards, accountingBefore.claimableRewards, "claimable rewards preserved");
         assertEq(accountingAfter.rewardsDelta, accountingBefore.rewardsDelta, "rewards delta preserved");
         assertEq(accountingAfter.slashingDelta, accountingBefore.slashingDelta, "slashing delta preserved");

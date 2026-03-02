@@ -90,7 +90,8 @@ contract PrintState is BaseScript {
         if (rollup != address(0)) {
             console2.log("rollup", rollup);
             console2.log(
-                "rollup.pendingRewards(rewardsCollector)", IMockAztecRollup(rollup).getSequencerRewards(rewardsCollector)
+                "rollup.pendingRewards(rewardsCollector)",
+                IMockAztecRollup(rollup).getSequencerRewards(rewardsCollector)
             );
         }
     }
