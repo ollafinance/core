@@ -333,11 +333,15 @@ contract OllaCoreReentrancyTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, bob, alice);
 
+        // Finalize the request so the claim path reaches the queue callback
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
         withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.claimRequestById, (requestId)));
         withdrawalQueue.setReenterOnClaim(true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        vm.prank(alice);
+        vm.prank(bob);
         vault.claimRequestById(requestId);
     }
 
@@ -348,15 +352,19 @@ contract OllaCoreReentrancyTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, bob, alice);
 
-        withdrawalQueue.setReentry(address(this), abi.encodeCall(this.assertRequestCleared, (alice, requestId)));
+        // Finalize the request so the claim path reaches the queue callback
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
+        withdrawalQueue.setReentry(address(this), abi.encodeCall(this.assertRequestCleared, (bob, requestId)));
         withdrawalQueue.setReenterOnClaim(true);
 
-        vm.prank(alice);
+        vm.prank(bob);
         vault.claimRequestById(requestId);
     }
 
-    function assertRequestCleared(address owner, uint256 requestId) external view {
-        uint256[] memory activeRequests = vault.activeRequestIds(owner);
+    function assertRequestCleared(address controller, uint256 requestId) external view {
+        uint256[] memory activeRequests = vault.activeRequestIds(controller);
         require(activeRequests.length == 0, "request still active");
         require(vault.requestOwner(requestId) == address(0), "request owner not cleared");
     }

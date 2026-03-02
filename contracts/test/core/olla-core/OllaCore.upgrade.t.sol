@@ -240,7 +240,11 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(accountingAfter.rewardsDelta, accountingBefore.rewardsDelta, "rewards delta preserved");
         assertEq(accountingAfter.slashingDelta, accountingBefore.slashingDelta, "slashing delta preserved");
 
-        vm.prank(alice);
+        // Finalize the request before claiming (ERC-7540 requires finalization)
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
+        vm.prank(bob);
         uint256 claimedAssets = vault.claimRequestById(requestId);
         assertEq(claimedAssets, expectedAssets, "request assets preserved");
         assertEq(asset.balanceOf(bob) - bobBalanceBefore, expectedAssets, "recipient receives assets");

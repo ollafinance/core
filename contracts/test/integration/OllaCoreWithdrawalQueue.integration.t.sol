@@ -253,7 +253,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
         (uint256 requestId,) = _requestRedeem(alice, 5 ether, alice);
 
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__NotFinalized.selector, requestId));
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__NotFinalized.selector, requestId));
         vm.prank(alice);
         vault.claimRequestById(requestId);
     }
@@ -280,7 +280,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
         uint256 receiverBalanceBefore = asset.balanceOf(bob);
 
-        vm.prank(alice);
+        vm.prank(bob);
         uint256 claimed = vault.claimRequestById(requestId);
 
         uint256 receiverBalanceAfter = asset.balanceOf(bob);
@@ -288,7 +288,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(receiverBalanceAfter - receiverBalanceBefore, assetsExpected, "receiver gets expected assets");
     }
 
-    function test_ClaimRequestById_ByOwnerClaimsFullRequest() external {
+    function test_ClaimRequestById_ByControllerClaimsFullRequest() external {
         _deposit(alice, 14 ether);
 
         (uint256 requestId, uint256 assetsExpected) = _requestRedeem(alice, 7 ether, bob);
@@ -296,7 +296,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
         uint256 receiverBalanceBefore = asset.balanceOf(bob);
 
-        vm.prank(alice);
+        vm.prank(bob);
         uint256 claimed = vault.claimRequestById(requestId);
 
         uint256 receiverBalanceAfter = asset.balanceOf(bob);

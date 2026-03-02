@@ -179,9 +179,9 @@ contract RebalanceInProgressIntegrationTest is Test {
         vm.prank(user);
         vault.requestRedeem(1 * DECIMALS, user, user);
 
-        // Claims revert if not yet finalized (rebalance stopped before FinalizeWithdrawals),
-        // but this is a queue error, not a rebalance-pause error.
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__NotFinalized.selector, requestId));
+        // Claims revert if not yet finalized (rebalance stopped before FinalizeWithdrawals).
+        // The vault checks finalization before delegating to the queue.
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__NotFinalized.selector, requestId));
         vm.prank(user);
         vault.claimRequestById(requestId);
 

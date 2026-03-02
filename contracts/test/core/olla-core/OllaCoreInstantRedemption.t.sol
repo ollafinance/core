@@ -699,6 +699,10 @@ contract OllaCoreInstantRedemptionTest is Test {
         assertGt(requestId, 0, "async request created");
         assertEq(vault.requestOwner(requestId), alice, "request owner is alice");
 
+        // Finalize the request before claiming
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
         // Claim should work
         vm.prank(alice);
         uint256 claimed = vault.claimRequestById(requestId);

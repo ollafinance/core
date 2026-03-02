@@ -237,6 +237,10 @@ contract OllaCoreWithdrawalTest is Test {
         assertEq(aliceRequests.length, 1, "alice active request count");
         assertEq(aliceRequests[0], secondRequestId, "alice owns second request");
 
+        // Finalize requests before claiming
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
         vm.prank(alice);
         vault.claimRequestById(secondRequestId);
 
@@ -297,10 +301,15 @@ contract OllaCoreWithdrawalTest is Test {
         assertEq(firstRequestId, 1, "first request id");
         assertEq(secondRequestId, 2, "second request id");
 
+        // Finalize requests before claiming
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
         uint256 bobBalanceBefore = asset.balanceOf(bob);
         uint256 aliceBalanceBefore = asset.balanceOf(alice);
 
-        vm.prank(alice);
+        // bob is the controller of the first request (ERC-7540)
+        vm.prank(bob);
         uint256 claimedFirst = vault.claimRequestById(firstRequestId);
         vm.prank(alice);
         uint256 claimedSecond = vault.claimRequestById(secondRequestId);
@@ -325,6 +334,10 @@ contract OllaCoreWithdrawalTest is Test {
 
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, bob, alice);
+
+        // Finalize request before claiming
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
 
         uint256 balanceBefore = asset.balanceOf(bob);
 

@@ -134,9 +134,19 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
             return (0, 0);
         }
 
-        used = available > totalPendingAssets ? totalPendingAssets : available;
-        totalPendingAssets -= used;
-        finalizedCount = 1;
+        used = 0;
+        finalizedCount = 0;
+        for (uint256 id = nextPendingId; id < nextRequestId; ++id) {
+            WithdrawalRequest storage request = _requests[id];
+            if (request.finalized || request.assetsExpected == 0) continue;
+            if (used + request.assetsExpected > available) break;
+            request.finalized = true;
+            used += request.assetsExpected;
+            ++finalizedCount;
+        }
+        if (totalPendingAssets >= used) {
+            totalPendingAssets -= used;
+        }
         return (used, finalizedCount);
     }
 

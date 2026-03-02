@@ -816,10 +816,14 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(3 * DECIMALS, bob, alice);
 
+        // Finalize request before entering partial rebalance
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
         _enterRebalanceInProgress();
 
         uint256 bobBalanceBefore = asset.balanceOf(bob);
-        vm.prank(alice);
+        vm.prank(bob);
         uint256 claimed = vault.claimRequestById(requestId);
 
         assertGt(claimed, 0, "claim should return assets");
@@ -835,10 +839,14 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(alice);
         uint256 requestId2 = vault.requestRedeem(3 * DECIMALS, alice, alice);
 
+        // Finalize requests before entering partial rebalance
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
         _enterRebalanceInProgress();
 
         uint256 bobBalanceBefore = asset.balanceOf(bob);
-        vm.prank(alice);
+        vm.prank(bob);
         uint256 claimed1 = vault.claimRequestById(requestId1);
         assertGt(claimed1, 0, "first claim should return assets");
         assertEq(asset.balanceOf(bob) - bobBalanceBefore, claimed1, "bob receives first claim");
@@ -862,12 +870,16 @@ contract OllaCoreRebalancePauseTest is Test {
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
         uint256 assetsExpected = request.assetsExpected;
 
+        // Finalize request before entering partial rebalance
+        vm.prank(address(core));
+        vault.finalizeWithdrawals(type(uint256).max);
+
         _enterRebalanceInProgress();
 
         uint256 vaultBalanceBefore = asset.balanceOf(address(vault));
         uint256 bobBalanceBefore = asset.balanceOf(bob);
 
-        vm.prank(alice);
+        vm.prank(bob);
         uint256 claimed = vault.claimRequestById(requestId);
 
         assertEq(claimed, assetsExpected, "claimed matches expected assets");
