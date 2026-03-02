@@ -1,6 +1,6 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { UserClaimScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { createUserWallet, getOllaCore } from "../client.js";
+import { createUserWallet, getOllaVault } from "../client.js";
 
 export async function executeUserClaim(
   _scenario: UserClaimScenario,
@@ -21,11 +21,11 @@ export async function executeUserClaim(
   }
 
   try {
-    const ollaCore = getOllaCore(addresses, clients.publicClient);
-    const userOllaCore = getOllaCore(addresses, userWallet);
+    const ollaVault = getOllaVault(addresses, clients.publicClient);
+    const userOllaVault = getOllaVault(addresses, userWallet);
 
     // Get user's active request IDs
-    const activeRequestIds = await ollaCore.read.activeRequestIds([userAddress]) as bigint[];
+    const activeRequestIds = await ollaVault.read.activeRequestIds([userAddress]) as bigint[];
 
     // Filter to only finalized requests (we'd need to check each request status)
     // For now, we'll attempt to claim all active requests
@@ -34,7 +34,7 @@ export async function executeUserClaim(
 
     for (const requestId of activeRequestIds) {
       try {
-        const txHash = await userOllaCore.write.claimRequestById([requestId]);
+        const txHash = await userOllaVault.write.claimRequestById([requestId]);
         claimedRequests.push(`${requestId.toString()}:${txHash}`);
       } catch (error) {
         // Request may not be finalized yet
