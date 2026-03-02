@@ -830,7 +830,8 @@ contract OllaCoreInstantRedemptionTest is Test {
 
         MockAccountingStakingManager malStakingManager = new MockAccountingStakingManager();
         StAztec malStAztec = new StAztec(address(malVault));
-        MockRewardsAccumulator malRewardsAccumulator = new MockRewardsAccumulator(IERC20(address(malAsset)), address(malCore));
+        MockRewardsAccumulator malRewardsAccumulator =
+            new MockRewardsAccumulator(IERC20(address(malAsset)), address(malCore));
         MockSafetyModule malSafetyModule = new MockSafetyModule(address(malCoreImpl), address(malVault));
         MockWithdrawalQueue malWithdrawalQueue = new MockWithdrawalQueue();
 

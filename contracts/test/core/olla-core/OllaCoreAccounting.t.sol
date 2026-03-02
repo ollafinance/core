@@ -154,7 +154,9 @@ contract OllaCoreAccountingTest is Test {
         assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
         assertEq(accounting.stakedPrincipal, staked, "stakedPrincipal matches staked amount");
         assertEq(
-            accounting.rewardsAccumulatorBalance, rewardsAccumulatorBalance, "rewardsAccumulatorBalance matches rewards vault"
+            accounting.rewardsAccumulatorBalance,
+            rewardsAccumulatorBalance,
+            "rewardsAccumulatorBalance matches rewards vault"
         );
         assertEq(accounting.claimableRewards, claimableRewards, "claimableRewards matches claimable rewards");
         assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");

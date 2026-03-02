@@ -142,7 +142,8 @@ contract MocksDeployer is BaseDeployer {
 
         // Initialize StakingManager
         // defaultAdmin is governance so OllaGovernance can propagate admin role changes.
-        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsAccumulator, core, sprProxyAddr, governance);
+        StakingManager(smProxyAddr)
+            .initialize(asset, rollupRegistry, rewardsAccumulator, core, sprProxyAddr, governance);
 
         vm.stopBroadcast();
 

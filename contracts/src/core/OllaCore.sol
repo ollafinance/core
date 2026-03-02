@@ -605,7 +605,9 @@ contract OllaCore is
 
         uint256 rewardsAccumulatorBalance = _getRewardsAccumulatorBalance();
 
-        _applyAccountingUpdates(stakedPrincipal, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta);
+        _applyAccountingUpdates(
+            stakedPrincipal, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
+        );
 
         _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
         // slither-disable-end reentrancy-events
@@ -1092,7 +1094,9 @@ contract OllaCore is
         IRewardsAccumulator rewardsAccumulator_,
         address safetyModule_
     ) internal pure {
-        if (address(asset_) == address(0)) revert OllaCore__ZeroAddress("asset_");
+        if (address(asset_) == address(0)) {
+            revert OllaCore__ZeroAddress("asset_");
+        }
         if (address(stAztec_) == address(0)) revert OllaCore__ZeroAddress("stAztec_");
         if (address(stakingManager_) == address(0)) revert OllaCore__ZeroAddress("stakingManager_");
         if (protocolFeeBP_ > MAX_PROTOCOL_FEE_BP) revert OllaCore__InvalidFeeBP(protocolFeeBP_);

@@ -80,7 +80,9 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         uint256 harvested = stakingManager.harvestRewards();
 
         assertEq(harvested, rewardAmount, "Should harvest full reward amount");
-        assertEq(rollup.getSequencerRewards(address(rewardsAccumulator)), 0, "Vault rewards should be zero after harvest");
+        assertEq(
+            rollup.getSequencerRewards(address(rewardsAccumulator)), 0, "Vault rewards should be zero after harvest"
+        );
     }
 
     function test_HarvestRewards_ClaimsMultipleAttesterRewards() external {

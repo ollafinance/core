@@ -236,7 +236,9 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(vault.bufferedAssets(), vault.bufferedAssets(), "buffered preserved");
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked preserved");
         assertEq(
-            accountingAfter.rewardsAccumulatorBalance, accountingBefore.rewardsAccumulatorBalance, "rewards vault preserved"
+            accountingAfter.rewardsAccumulatorBalance,
+            accountingBefore.rewardsAccumulatorBalance,
+            "rewards vault preserved"
         );
         assertEq(accountingAfter.claimableRewards, accountingBefore.claimableRewards, "claimable rewards preserved");
         assertEq(accountingAfter.rewardsDelta, accountingBefore.rewardsDelta, "rewards delta preserved");

@@ -103,7 +103,9 @@ contract RewardsAccumulatorTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_PostReceiveFundsHook_Unauthorized() external {
-        vm.expectRevert(abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__UnauthorizedCore.selector, alice));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__UnauthorizedCore.selector, alice)
+        );
         vm.prank(alice);
         vault.recordBalance();
     }
@@ -163,7 +165,9 @@ contract RewardsAccumulatorTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_WithdrawToCore_Unauthorized() external {
-        vm.expectRevert(abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__UnauthorizedCore.selector, alice));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRewardsAccumulator.RewardsAccumulator__UnauthorizedCore.selector, alice)
+        );
         vm.prank(alice);
         vault.withdrawToCore();
     }
