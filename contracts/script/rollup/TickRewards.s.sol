@@ -11,7 +11,7 @@ contract TickRewards is BaseScript {
     function run() external {
         address rollup = _addrOrDeployment("ROLLUP", "MockAztecRollup", "ROLLUP missing: set ROLLUP or deploy local");
         address coinbase =
-            _addrOrDeployment("COINBASE", "RewardsVaultProxy", "COINBASE missing: set COINBASE or deploy local");
+            _addrOrDeployment("COINBASE", "RewardsAccumulatorProxy", "COINBASE missing: set COINBASE or deploy local");
         uint256 pk = _privateKey();
 
         vm.startBroadcast(pk);

@@ -25,11 +25,13 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 
@@ -54,12 +56,15 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
 
     MaliciousAztec internal asset;
     OllaCore internal implementation;
-    ERC1967Proxy internal proxy;
-    OllaCore internal vault;
+    ERC1967Proxy internal coreProxy;
+    OllaCore internal core;
+    OllaVault internal vaultImplementation;
+    OllaVault internal vault;
+    ERC1967Proxy internal vaultProxy;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal alice;
@@ -72,14 +77,18 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         asset = new MaliciousAztec();
 
         implementation = new OllaCore();
-        proxy = new ERC1967Proxy(address(implementation), "");
-        vault = OllaCore(address(proxy));
+        coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        vaultImplementation = new OllaVault();
+        vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(implementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         alice = makeAddr("alice");
@@ -91,18 +100,22 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
 
     /// @dev Initializes the vault proxy with standard test parameters.
     function _initializeVault() internal {
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
-            500, // protocolFeeBP
-            5_000, // treasuryFeeSplitBP
+            500,
+            5_000,
             governance,
-            address(withdrawalQueue),
-            IRewardsVault(address(rewardsVault)),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
@@ -118,7 +131,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     ///         `_reentrancyGuardEntered()` checks `value == ENTERED (2)`, so
     ///         `0` passes just like `1`.
     function test_ReentrancyGuardSlot_IsZeroBeforeInitialize() external view {
-        bytes32 slotValue = vm.load(address(proxy), REENTRANCY_GUARD_SLOT);
+        bytes32 slotValue = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(slotValue), 0, "slot should be 0 (uninitialized) on fresh proxy");
     }
 
@@ -132,7 +145,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     function test_ReentrancyGuardSlot_RemainsZeroAfterInitialize() external {
         _initializeVault();
 
-        bytes32 slotValue = vm.load(address(proxy), REENTRANCY_GUARD_SLOT);
+        bytes32 slotValue = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(slotValue), 0, "slot should still be 0 after initialize()");
     }
 
@@ -159,7 +172,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         assertEq(stAztec.balanceOf(alice), shares, "alice should hold minted shares");
 
         // After the call, the slot must be normalised to NOT_ENTERED (1)
-        bytes32 slotValue = vm.load(address(proxy), REENTRANCY_GUARD_SLOT);
+        bytes32 slotValue = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(slotValue), NOT_ENTERED, "slot should be NOT_ENTERED (1) after first call");
     }
 
@@ -183,7 +196,11 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         // deposit (transferFrom hook calls deposit before completing)
         asset.mint(address(asset), amount);
         asset.setSelfAllowance(amount);
-        asset.configureReentry(address(vault), abi.encodeCall(vault.deposit, (amount, alice, 0)), true);
+        asset.configureReentry(
+            address(vault),
+            abi.encodeWithSelector(bytes4(keccak256("deposit(uint256,address,uint256)")), amount, alice, 0),
+            true
+        );
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
@@ -200,11 +217,11 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     ///         storage, which the ERC-7201 + stateless pattern handles safely.
     function test_ReentrancyGuardSlot_ImplementationVsProxy() external view {
         // Implementation slot — set to 1 by the constructor
-        bytes32 implSlot = vm.load(address(implementation), REENTRANCY_GUARD_SLOT);
+        bytes32 implSlot = vm.load(address(vaultImplementation), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(implSlot), NOT_ENTERED, "implementation slot should be NOT_ENTERED (1)");
 
         // Proxy slot — uninitialised, defaults to 0
-        bytes32 proxySlot = vm.load(address(proxy), REENTRANCY_GUARD_SLOT);
+        bytes32 proxySlot = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(proxySlot), 0, "proxy slot should be 0 (uninitialized)");
     }
 
@@ -220,7 +237,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         _initializeVault();
 
         // Before any call: slot is 0
-        assertEq(uint256(vm.load(address(proxy), REENTRANCY_GUARD_SLOT)), 0, "pre-call: slot should be 0");
+        assertEq(uint256(vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT)), 0, "pre-call: slot should be 0");
 
         // First deposit
         uint256 amount = 1 * DECIMALS;
@@ -232,7 +249,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
 
         // After first call: slot is 1
         assertEq(
-            uint256(vm.load(address(proxy), REENTRANCY_GUARD_SLOT)),
+            uint256(vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT)),
             NOT_ENTERED,
             "post-first-call: slot should be NOT_ENTERED (1)"
         );
@@ -247,7 +264,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
 
         // Slot remains NOT_ENTERED after the second call
         assertEq(
-            uint256(vm.load(address(proxy), REENTRANCY_GUARD_SLOT)),
+            uint256(vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT)),
             NOT_ENTERED,
             "post-second-call: slot should still be NOT_ENTERED (1)"
         );

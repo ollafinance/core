@@ -7,12 +7,14 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaCoreRebalanceIdleGuard
 /// @notice Tests that rebalance does not enter an infinite restart loop when there is an
@@ -25,53 +27,59 @@ contract OllaCoreRebalanceIdleGuard is Test {
     uint256 internal constant DECIMALS = 1e18;
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
@@ -97,7 +105,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
     function test_RebalanceDoesNotInfinitelyRestart() external {
         // Target buffer = 0, so all buffered assets are "surplus" to stake
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
         _performDeposit(alice, 200_002 * DECIMALS);
@@ -107,9 +115,9 @@ contract OllaCoreRebalanceIdleGuard is Test {
         stakingManager.setAllowStakeReturnExceeds(true);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory p1 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p1 = core.rebalanceProgress();
         // After call 1: stuck at StakeSurplus with 2 AZTEC remaining
         assertEq(uint256(p1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "call 1: should be StakeSurplus");
         assertEq(p1.stakeRemaining, 2 * DECIMALS, "call 1: 2 AZTEC remaining");
@@ -119,9 +127,9 @@ contract OllaCoreRebalanceIdleGuard is Test {
         stakingManager.setStakeReturnAmount(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory p2 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p2 = core.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "call 2: should be Done");
         assertEq(p2.stakeRemaining, 0, "call 2: stakeRemaining should be 0");
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "call 2: should be Done");
@@ -131,9 +139,9 @@ contract OllaCoreRebalanceIdleGuard is Test {
 
         // --- Rebalance call 3: should be a no-op due to idle buffer ---
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory p3 = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory p3 = core.rebalanceProgress();
 
         // First verify call 3 ended at Done
         assertEq(uint256(p3.step), uint256(IOllaCore.RebalanceStep.Done), "call 3: should be Done");
@@ -144,7 +152,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
         vm.recordLogs();
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Check if a new Rebalanced event was emitted — this means a full cycle ran unnecessarily
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -165,16 +173,16 @@ contract OllaCoreRebalanceIdleGuard is Test {
     }
 
     /// @notice Ensures the idle-buffer guard does not block starting a new cycle when
-    ///         new work becomes available via external state changes (e.g. RewardsVault
+    ///         new work becomes available via external state changes (e.g. RewardsAccumulator
     ///         receives funds).
     ///
     ///         This currently fails because _rebalanceIdleBuffer can be set based only
     ///         on the final call's (stakedAmount, finalizedAmount), even if the cycle did
     ///         productive work in prior calls (e.g. staking). Once set, rebalance() may
     ///         incorrectly no-op and skip harvesting/pulling newly available funds.
-    function test_RebalanceIdleGuardDoesNotBlockPullingNewRewardsVaultFunds() external {
+    function test_RebalanceIdleGuardDoesNotBlockPullingNewRewardsAccumulatorFunds() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _performDeposit(alice, 200_002 * DECIMALS);
 
@@ -182,44 +190,39 @@ contract OllaCoreRebalanceIdleGuard is Test {
         stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Call 2: stake returns 0, completing the cycle and (currently) recording an idle buffer snapshot.
         stakingManager.setStakeReturnAmount(0);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        assertEq(uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
+        assertEq(uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        assertEq(accountingBefore.bufferedAssets, 2 * DECIMALS, "setup: 2 AZTEC buffered");
+        uint256 bufferedBefore = vault.bufferedAssets();
+        assertEq(bufferedBefore, 2 * DECIMALS, "setup: 2 AZTEC buffered");
 
         // Simulate out-of-band rewards arriving to the rewards vault.
         uint256 newRewards = 1 * DECIMALS;
-        asset.mint(address(rewardsVault), newRewards);
-        assertEq(rewardsVault.balance(), newRewards, "rewards vault funded");
+        asset.mint(address(rewardsAccumulator), newRewards);
+        assertEq(rewardsAccumulator.balance(), newRewards, "rewards vault funded");
 
         // Advance past rebalance cooldown after cycle completion
         vm.warp(block.timestamp + 1 hours);
 
         // Expected behavior: rebalance should start a new cycle and pull rewards vault funds into the buffer.
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(
-            accountingAfter.bufferedAssets,
-            accountingBefore.bufferedAssets + newRewards,
-            "rebalance should pull new rewards vault funds"
-        );
-        assertEq(rewardsVault.balance(), 0, "rewards vault should be emptied");
+        assertEq(vault.bufferedAssets(), bufferedBefore + newRewards, "rebalance should pull new rewards vault funds");
+        assertEq(rewardsAccumulator.balance(), 0, "rewards vault should be emptied");
     }
 
     /// @notice Tests that repeatedly calling rebalance does not trigger unnecessary cycles.
     ///         The idle buffer guard prevents starting new cycles when no productive work is possible.
     function test_RebalanceRepeatedCycling() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
         _performDeposit(alice, 200_002 * DECIMALS);
@@ -228,16 +231,16 @@ contract OllaCoreRebalanceIdleGuard is Test {
         stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Second rebalance: complete the cycle (stake returns 0, proving 2 AZTEC can't be staked)
         stakingManager.setStakeReturnAmount(0);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Now vault is at step=Done, buffered=2 AZTEC (the unstakeable remainder)
         assertEq(
-            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step should be Done"
+            uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step should be Done"
         );
 
         // Advance past rebalance cooldown after cycle completion
@@ -250,7 +253,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
         for (uint256 i = 0; i < 5; i++) {
             vm.recordLogs();
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
 
             Vm.Log[] memory logs = vm.getRecordedLogs();
             for (uint256 j = 0; j < logs.length; j++) {
@@ -270,7 +273,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
     ///         even when rewards vault balance is still zero.
     function test_RebalanceIdleGuardDoesNotBlockClaimableRewards() external {
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         _performDeposit(alice, 200_002 * DECIMALS);
 
@@ -278,29 +281,29 @@ contract OllaCoreRebalanceIdleGuard is Test {
         stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Call 2: stake returns 0, completing the cycle and recording idle buffer snapshot.
         stakingManager.setStakeReturnAmount(0);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        assertEq(uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
+        assertEq(uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
 
         // Ensure rewards vault is empty but claimable rewards exist on the staking manager.
-        assertEq(rewardsVault.balance(), 0, "setup: rewards vault empty");
+        assertEq(rewardsAccumulator.balance(), 0, "setup: rewards vault empty");
         stakingManager.setClaimableRewards(1 * DECIMALS);
 
         // Advance past rebalance cooldown after cycle completion
         vm.warp(block.timestamp + 1 hours);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Rebalance should have run harvest; mock keeps claimableRewards as a stub value,
         // but the key property is that the call does not no-op due to idle buffer guard.
         assertEq(
-            uint256(vault.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+            uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
         );
     }
 }

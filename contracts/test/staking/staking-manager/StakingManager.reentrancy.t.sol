@@ -13,7 +13,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
 import { MaliciousAztecRollup } from "src/staking/mocks/MaliciousAztecRollup.sol";
-import { MaliciousRewardsVault } from "src/core/mocks/MaliciousRewardsVault.sol";
+import { MaliciousRewardsAccumulator } from "src/core/mocks/MaliciousRewardsAccumulator.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 contract StakingManagerReentrancyTest is Test {
@@ -22,7 +22,7 @@ contract StakingManagerReentrancyTest is Test {
     MockAztec internal aztec;
     MaliciousAztecRollup internal rollup;
     MockAztecRollupRegistry internal rollupRegistry;
-    MaliciousRewardsVault internal rewardsVault;
+    MaliciousRewardsAccumulator internal rewardsAccumulator;
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
 
@@ -38,7 +38,7 @@ contract StakingManagerReentrancyTest is Test {
         aztec = new MockAztec(address(this));
         rollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
-        rewardsVault = new MaliciousRewardsVault(IERC20(address(aztec)), core);
+        rewardsAccumulator = new MaliciousRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy StakingManager behind proxy
         StakingManager stakingManagerImpl = new StakingManager();
@@ -57,7 +57,7 @@ contract StakingManagerReentrancyTest is Test {
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            address(rewardsVault),
+            address(rewardsAccumulator),
             core,
             address(stakingProviderRegistry),
             defaultAdmin

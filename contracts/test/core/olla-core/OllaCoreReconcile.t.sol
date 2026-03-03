@@ -8,12 +8,14 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 
 contract ReconcileSafetyModule is ISafetyModule {
@@ -28,6 +30,7 @@ contract ReconcileSafetyModule is ISafetyModule {
     //////////////////////////////////////////////////////////////*/
 
     address public immutable CORE_ADDRESS;
+    address public immutable VAULT_ADDRESS;
     IERC20 public immutable ASSET;
 
     /*//////////////////////////////////////////////////////////////
@@ -40,8 +43,9 @@ contract ReconcileSafetyModule is ISafetyModule {
                                 CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(address coreAddress, IERC20 asset) {
+    constructor(address coreAddress, address vaultAddress, IERC20 asset) {
         CORE_ADDRESS = coreAddress;
+        VAULT_ADDRESS = vaultAddress;
         ASSET = asset;
     }
 
@@ -63,6 +67,10 @@ contract ReconcileSafetyModule is ISafetyModule {
 
     function CORE() external view override returns (address) {
         return CORE_ADDRESS;
+    }
+
+    function VAULT() external view override returns (address) {
+        return VAULT_ADDRESS;
     }
 
     function checkRateDrop(uint256 oldRate, uint256 nextRate) external pure override {
@@ -122,6 +130,10 @@ contract ReconcileSafetyModule is ISafetyModule {
         _noop(shares);
     }
 
+    function depositCap() external pure override returns (uint256) {
+        return type(uint256).max;
+    }
+
     /*//////////////////////////////////////////////////////////////
                              INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -158,10 +170,11 @@ contract OllaCoreReconcileTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal governance;
@@ -177,39 +190,38 @@ contract OllaCoreReconcileTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
         operator = makeAddr("operator");
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
-        vault.grantRole(operatorRole, address(this));
+        core.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, address(this));
         vm.stopPrank();
     }
 
@@ -239,11 +251,11 @@ contract OllaCoreReconcileTest is Test {
         vm.prank(bob);
         asset.transfer(address(vault), bonus);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        assertEq(accountingBefore.bufferedAssets, depositAmount, "buffered assets before reconcile");
+        uint256 bufferedBefore = vault.bufferedAssets();
+        assertEq(bufferedBefore, depositAmount, "buffered assets before reconcile");
         assertEq(asset.balanceOf(address(vault)), depositAmount + bonus, "actual balance includes forced transfer");
 
-        IOllaCore.FlowCounters memory flowsBefore = vault.flowCounters();
+        IOllaCore.FlowCounters memory flowsBefore = core.flowCounters();
 
         vm.expectEmit(true, true, true, true, address(vault));
         emit BufferedAssetsReconciled(bonus, depositAmount + bonus, address(vault));
@@ -252,10 +264,10 @@ contract OllaCoreReconcileTest is Test {
         uint256 delta = vault.reconcileBufferedAssets();
 
         assertEq(delta, bonus, "reconcile delta");
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(accountingAfter.bufferedAssets, depositAmount + bonus, "buffered assets reconciled");
+        uint256 bufferedAfter = vault.bufferedAssets();
+        assertEq(bufferedAfter, depositAmount + bonus, "buffered assets reconciled");
 
-        IOllaCore.FlowCounters memory flowsAfter = vault.flowCounters();
+        IOllaCore.FlowCounters memory flowsAfter = core.flowCounters();
         assertEq(flowsAfter.cumulativeDeposits, flowsBefore.cumulativeDeposits, "cumulative deposits unchanged");
         assertEq(
             flowsAfter.cumulativeWithdrawals, flowsBefore.cumulativeWithdrawals, "cumulative withdrawals unchanged"
@@ -332,8 +344,8 @@ contract OllaCoreReconcileTest is Test {
         asset.transfer(address(vault), donationAmount);
 
         // Buffered assets have not been reconciled yet
-        IOllaCore.AccountingState memory accountingPreVictim = vault.accountingState();
-        assertEq(accountingPreVictim.bufferedAssets, 1, "buffered should still be 1 before reconcile");
+        uint256 bufferedPreVictim = vault.bufferedAssets();
+        assertEq(bufferedPreVictim, 1, "buffered should still be 1 before reconcile");
 
         // Step 3: Victim deposits 9_999e18
         // The deposit flow calls _syncBufferedWithBalance first, which reconciles the donation.

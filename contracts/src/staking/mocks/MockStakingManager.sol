@@ -56,21 +56,21 @@ contract MockStakingManager is IStakingManager {
     /// @notice No-op initializer for interface compatibility.
     /// @param stakingAsset Unused.
     /// @param rollupRegistry Unused.
-    /// @param rewardsVault Unused.
+    /// @param rewardsAccumulator Unused.
     /// @param core_ The core contract address.
     /// @param stakingProviderRegistry_ The staking provider registry address.
     /// @param defaultAdmin Unused.
     function initialize(
         IERC20 stakingAsset,
         address rollupRegistry,
-        address rewardsVault,
+        address rewardsAccumulator,
         address core_,
         address stakingProviderRegistry_,
         address defaultAdmin
     ) external override {
         stakingAsset;
         rollupRegistry;
-        rewardsVault;
+        rewardsAccumulator;
         core = core_;
         _stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
         defaultAdmin;

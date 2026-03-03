@@ -8,11 +8,13 @@ import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
@@ -34,7 +36,8 @@ contract OllaCoreSlippageTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreHarness internal vault;
+    OllaCoreHarness internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
@@ -43,7 +46,7 @@ contract OllaCoreSlippageTest is Test {
     address internal permitOwner;
     uint256 internal permitOwnerKey;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     /*//////////////////////////////////////////////////////////////
@@ -54,31 +57,30 @@ contract OllaCoreSlippageTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCoreHarness coreImplementation = new OllaCoreHarness();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCoreHarness(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCoreHarness(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
@@ -149,14 +151,14 @@ contract OllaCoreSlippageTest is Test {
         shares = abi.decode(data, (uint256));
     }
 
-    /// @dev Calls the 3-arg redeem(uint256,address,uint256) overload via low-level call.
+    /// @dev Calls the 3-arg instantRedeem(uint256,address,uint256) overload via low-level call.
     function _redeemWithSlippage(address caller, uint256 shares, address recipient, uint256 minAssetsOut)
         internal
         returns (uint256 assetsAfterFee)
     {
         vm.prank(caller);
         (bool success, bytes memory data) = address(vault)
-            .call(abi.encodeWithSignature("redeem(uint256,address,uint256)", shares, recipient, minAssetsOut));
+            .call(abi.encodeWithSignature("instantRedeem(uint256,address,uint256)", shares, recipient, minAssetsOut));
         if (!success) {
             assembly {
                 revert(add(data, 32), mload(data))
@@ -198,7 +200,7 @@ contract OllaCoreSlippageTest is Test {
         shares = abi.decode(data, (uint256));
     }
 
-    /// @dev Calls the 7-arg redeemWithPermit overload with slippage protection.
+    /// @dev Calls the 7-arg instantRedeemWithPermit overload with slippage protection.
     function _redeemWithPermitAndSlippage(
         address owner,
         uint256 ownerKey,
@@ -213,7 +215,7 @@ contract OllaCoreSlippageTest is Test {
         (bool success, bytes memory data) = address(vault)
             .call(
                 abi.encodeWithSignature(
-                    "redeemWithPermit(uint256,address,uint256,uint256,uint8,bytes32,bytes32)",
+                    "instantRedeemWithPermit(uint256,address,uint256,uint256,uint8,bytes32,bytes32)",
                     shares,
                     recipient,
                     minAssetsOut,
@@ -269,7 +271,7 @@ contract OllaCoreSlippageTest is Test {
         _performDeposit(alice, 100 * DECIMALS);
 
         // Simulate rewards accrual to change the exchange rate (makes shares worth more)
-        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
 
         // Bob wants to deposit 50 tokens, expecting old 1:1 rate
         uint256 bobAssets = 50 * DECIMALS;
@@ -284,7 +286,7 @@ contract OllaCoreSlippageTest is Test {
         assertGt(staleMinSharesOut, actualExpected, "stale expectation exceeds actual shares");
 
         vm.expectRevert(
-            abi.encodeWithSelector(IOllaCore.OllaCore__SlippageExceeded.selector, actualExpected, staleMinSharesOut)
+            abi.encodeWithSelector(IOllaVault.OllaVault__SlippageExceeded.selector, actualExpected, staleMinSharesOut)
         );
         _depositWithSlippage(bob, bobAssets, bob, staleMinSharesOut);
     }
@@ -325,7 +327,7 @@ contract OllaCoreSlippageTest is Test {
     function test_RevertWhen_DepositWithPermitAndMinShares_SlippageExceeded() external {
         // Initial deposit to set up non-1:1 rate
         _performDeposit(alice, 100 * DECIMALS);
-        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
 
         uint256 assets = 50 * DECIMALS;
         asset.mint(permitOwner, assets);
@@ -340,7 +342,7 @@ contract OllaCoreSlippageTest is Test {
             _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IOllaCore.OllaCore__SlippageExceeded.selector, actualExpected, staleMinSharesOut)
+            abi.encodeWithSelector(IOllaVault.OllaVault__SlippageExceeded.selector, actualExpected, staleMinSharesOut)
         );
         vm.prank(permitOwner);
         (bool success,) = address(vault)
@@ -370,7 +372,7 @@ contract OllaCoreSlippageTest is Test {
         _performDeposit(alice, depositAmount);
 
         uint256 sharesToRedeem = 50 * DECIMALS;
-        uint256 expectedNet = vault.previewRedeem(sharesToRedeem);
+        uint256 expectedNet = vault.previewInstantRedeem(sharesToRedeem);
 
         uint256 netAssets = _redeemWithSlippage(alice, sharesToRedeem, bob, expectedNet);
 
@@ -396,10 +398,12 @@ contract OllaCoreSlippageTest is Test {
         _performDeposit(alice, depositAmount);
 
         uint256 sharesToRedeem = 50 * DECIMALS;
-        uint256 expectedNet = vault.previewRedeem(sharesToRedeem);
+        uint256 expectedNet = vault.previewInstantRedeem(sharesToRedeem);
         uint256 tooHighMin = expectedNet + 1;
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__SlippageExceeded.selector, expectedNet, tooHighMin));
+        vm.expectRevert(
+            abi.encodeWithSelector(IOllaVault.OllaVault__SlippageExceeded.selector, expectedNet, tooHighMin)
+        );
         _redeemWithSlippage(alice, sharesToRedeem, bob, tooHighMin);
     }
 
@@ -410,13 +414,13 @@ contract OllaCoreSlippageTest is Test {
 
         uint256 shares = stAztec.balanceOf(alice);
         uint256 available = vault.availableForInstantRedemption();
-        uint256 rate = vault.exchangeRate();
+        uint256 rate = core.exchangeRate();
         uint256 maxSharesByLiquidity = available.mulDiv(DECIMALS, rate, Math.Rounding.Floor);
         uint256 upperBound = shares < maxSharesByLiquidity ? shares : maxSharesByLiquidity;
         vm.assume(upperBound > 0);
         redeemShares = uint96(bound(redeemShares, 1, upperBound));
 
-        uint256 expectedNet = vault.previewRedeem(redeemShares);
+        uint256 expectedNet = vault.previewInstantRedeem(redeemShares);
 
         uint256 netAssets = _redeemWithSlippage(alice, redeemShares, bob, expectedNet);
 
@@ -434,7 +438,7 @@ contract OllaCoreSlippageTest is Test {
         _performDeposit(permitOwner, depositAmount);
 
         uint256 sharesToRedeem = 30 * DECIMALS;
-        uint256 expectedNet = vault.previewRedeem(sharesToRedeem);
+        uint256 expectedNet = vault.previewInstantRedeem(sharesToRedeem);
 
         uint256 netAssets = _redeemWithPermitAndSlippage(permitOwner, permitOwnerKey, sharesToRedeem, bob, expectedNet);
 
@@ -449,7 +453,7 @@ contract OllaCoreSlippageTest is Test {
         _performDeposit(permitOwner, depositAmount);
 
         uint256 sharesToRedeem = 30 * DECIMALS;
-        uint256 expectedNet = vault.previewRedeem(sharesToRedeem);
+        uint256 expectedNet = vault.previewInstantRedeem(sharesToRedeem);
         uint256 tooHighMin = expectedNet + 1;
 
         uint256 deadline = block.timestamp + 1 days;
@@ -457,12 +461,14 @@ contract OllaCoreSlippageTest is Test {
             IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), sharesToRedeem, deadline
         );
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__SlippageExceeded.selector, expectedNet, tooHighMin));
+        vm.expectRevert(
+            abi.encodeWithSelector(IOllaVault.OllaVault__SlippageExceeded.selector, expectedNet, tooHighMin)
+        );
         vm.prank(permitOwner);
         (bool success,) = address(vault)
             .call(
                 abi.encodeWithSignature(
-                    "redeemWithPermit(uint256,address,uint256,uint256,uint8,bytes32,bytes32)",
+                    "instantRedeemWithPermit(uint256,address,uint256,uint256,uint8,bytes32,bytes32)",
                     sharesToRedeem,
                     bob,
                     tooHighMin,
@@ -485,7 +491,7 @@ contract OllaCoreSlippageTest is Test {
         _performDeposit(alice, 200 * DECIMALS);
 
         uint256 sharesToPreview = 100 * DECIMALS;
-        uint256 previewNet = vault.previewRedeem(sharesToPreview);
+        uint256 previewNet = vault.previewInstantRedeem(sharesToPreview);
 
         // At 1:1 rate: grossAssets = 100e18, fee = 100e18 * 500 / 10000 = 5e18, net = 95e18
         assertEq(previewNet, 95 * DECIMALS, "previewRedeem returns 95e18 at 1:1 with 5% fee");
@@ -496,18 +502,18 @@ contract OllaCoreSlippageTest is Test {
         _performDeposit(alice, 100 * DECIMALS);
 
         // Simulate rewards to change the exchange rate
-        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
 
         uint256 sharesToPreview = 50 * DECIMALS;
 
         // totalAssets = 100 + 50 = 150, supply = 100
         // grossAssets = 50 * (150 + 1) / (100 + 1) = floor(7550/101) = 74 (with virtual offset)
         uint256 grossAssets =
-            sharesToPreview.mulDiv(vault.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
+            sharesToPreview.mulDiv(core.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
         uint256 expectedFee = grossAssets * 500 / BP_DIVISOR;
         uint256 expectedNet = grossAssets - expectedFee;
 
-        uint256 previewNet = vault.previewRedeem(sharesToPreview);
+        uint256 previewNet = vault.previewInstantRedeem(sharesToPreview);
 
         assertEq(previewNet, expectedNet, "previewRedeem returns correct net at higher rate");
         assertGt(grossAssets, sharesToPreview, "grossAssets > shares at rate > 1");
@@ -520,9 +526,9 @@ contract OllaCoreSlippageTest is Test {
 
         uint256 sharesToPreview = 50 * DECIMALS;
         uint256 grossAssets =
-            sharesToPreview.mulDiv(vault.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
+            sharesToPreview.mulDiv(core.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
 
-        uint256 previewNet = vault.previewRedeem(sharesToPreview);
+        uint256 previewNet = vault.previewInstantRedeem(sharesToPreview);
 
         assertEq(previewNet, grossAssets, "previewRedeem returns gross when fee is 0");
     }
@@ -534,16 +540,16 @@ contract OllaCoreSlippageTest is Test {
 
         uint256 shares = stAztec.balanceOf(alice);
         uint256 available = vault.availableForInstantRedemption();
-        uint256 rate = vault.exchangeRate();
+        uint256 rate = core.exchangeRate();
         uint256 maxSharesByLiquidity = available.mulDiv(DECIMALS, rate, Math.Rounding.Floor);
         uint256 upperBound = shares < maxSharesByLiquidity ? shares : maxSharesByLiquidity;
         vm.assume(upperBound > 0);
         redeemShares = uint96(bound(redeemShares, 1, upperBound));
 
-        uint256 preview = vault.previewRedeem(redeemShares);
+        uint256 preview = vault.previewInstantRedeem(redeemShares);
 
         vm.prank(alice);
-        uint256 actual = vault.redeem(redeemShares, bob, 0);
+        uint256 actual = vault.instantRedeem(redeemShares, bob, 0);
 
         assertEq(actual, preview, "previewRedeem matches actual redeem output");
     }
@@ -552,7 +558,7 @@ contract OllaCoreSlippageTest is Test {
                     BACKWARDS COMPATIBILITY TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice 17. Original 2-arg deposit works unchanged.
+    /// @notice 17. Original 2-arg ERC-4626 deposit works unchanged.
     function test_OriginalDeposit_StillWorks() external {
         uint256 assets = 9 * DECIMALS;
         asset.mint(alice, assets);
@@ -560,7 +566,7 @@ contract OllaCoreSlippageTest is Test {
         asset.approve(address(vault), assets);
 
         vm.prank(alice);
-        uint256 shares = vault.deposit(assets, alice, 0);
+        uint256 shares = vault.deposit(assets, alice);
 
         assertEq(shares, assets, "deposit shares at 1:1");
         assertEq(stAztec.balanceOf(alice), assets, "shares minted");
@@ -572,13 +578,13 @@ contract OllaCoreSlippageTest is Test {
         _performDeposit(alice, depositAmount);
 
         uint256 sharesToRedeem = 50 * DECIMALS;
-        uint256 rate = vault.exchangeRate();
+        uint256 rate = core.exchangeRate();
         uint256 grossAssets = sharesToRedeem.mulDiv(rate, DECIMALS, Math.Rounding.Floor);
         uint256 fee = grossAssets * 500 / BP_DIVISOR;
         uint256 expectedNet = grossAssets - fee;
 
         vm.prank(alice);
-        uint256 netAssets = vault.redeem(sharesToRedeem, bob, 0);
+        uint256 netAssets = vault.instantRedeem(sharesToRedeem, bob, 0);
 
         assertEq(netAssets, expectedNet, "2-arg redeem returns expected net");
         assertEq(asset.balanceOf(bob), expectedNet, "bob receives net assets");

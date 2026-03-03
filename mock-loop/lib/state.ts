@@ -8,6 +8,7 @@ import type {
 } from "./types.js";
 import {
   getOllaCore,
+  getOllaVault,
   getStakingManager,
   getWithdrawalQueue,
   getAsset,
@@ -28,29 +29,31 @@ export async function readFullState(
 
   // Get contract instances
   const ollaCore = getOllaCore(addresses, publicClient);
+  const ollaVault = getOllaVault(addresses, publicClient);
   const stakingManager = getStakingManager(addresses, publicClient);
   const withdrawalQueue = getWithdrawalQueue(addresses, publicClient);
   const asset = getAsset(addresses, publicClient);
   const stAztec = getStAztec(addresses, publicClient);
   const providerRegistry = getStakingProviderRegistry(addresses, publicClient);
 
-  // Read OllaCore state
-  const [totalAssets, exchangeRate, accountingState] = await Promise.all([
+  // Read OllaCore + OllaVault state
+  const [totalAssets, exchangeRate, accountingState, bufferedAssets] = await Promise.all([
     ollaCore.read.totalAssets(),
     ollaCore.read.exchangeRate(),
     ollaCore.read.accountingState(),
+    ollaVault.read.bufferedAssets(),
   ] as const) as [
     bigint,
     bigint,
     {
-      bufferedAssets: bigint;
       stakedPrincipal: bigint;
-      rewardsVaultBalance: bigint;
+      rewardsAccumulatorBalance: bigint;
       claimableRewards: bigint;
       rewardsDelta: bigint;
       slashingDelta: bigint;
       cumulativeRewards: bigint;
     },
+    bigint,
   ];
 
   // Read StakingManager state
@@ -65,12 +68,12 @@ export async function readFullState(
     withdrawalQueue.read.nextRequestId(),
   ] as const) as [bigint, bigint];
 
-  // Read token balances
-  const [coreBalance, stakingManagerBalance, rewardsVaultBalance] =
+  // Read token balances (assets are held by OllaVault, not OllaCore)
+  const [vaultBalance, stakingManagerBalance, rewardsAccumulatorBalance] =
     await Promise.all([
-      asset.read.balanceOf([addresses.OllaCoreProxy]),
+      asset.read.balanceOf([addresses.OllaVaultProxy]),
       asset.read.balanceOf([addresses.StakingManagerProxy]),
-      asset.read.balanceOf([addresses.RewardsVaultProxy]),
+      asset.read.balanceOf([addresses.RewardsAccumulatorProxy]),
     ] as const) as [bigint, bigint, bigint];
 
   // Read provider registry state
@@ -92,7 +95,7 @@ export async function readFullState(
       await Promise.all([
         asset.read.balanceOf([userAddress]),
         stAztec.read.balanceOf([userAddress]),
-        ollaCore.read.activeRequestIds([userAddress]),
+        ollaVault.read.activeRequestIds([userAddress]),
       ] as const) as [bigint, bigint, bigint[]];
 
     userStates.push({
@@ -116,9 +119,9 @@ export async function readFullState(
       totalAssets: toString(totalAssets),
       exchangeRate: toString(exchangeRate),
       accountingState: {
-        bufferedAssets: toString(accountingState.bufferedAssets),
+        bufferedAssets: toString(bufferedAssets),
         stakedPrincipal: toString(accountingState.stakedPrincipal),
-        rewardsVaultBalance: toString(accountingState.rewardsVaultBalance),
+        rewardsVaultBalance: toString(accountingState.rewardsAccumulatorBalance),
         claimableRewards: toString(accountingState.claimableRewards),
         rewardsDelta: toString(accountingState.rewardsDelta),
         slashingDelta: toString(accountingState.slashingDelta),
@@ -134,10 +137,10 @@ export async function readFullState(
       nextRequestId: toString(nextRequestId),
     },
     balances: {
-      core: toString(coreBalance),
+      core: toString(vaultBalance),
       stakingManager: toString(stakingManagerBalance),
       rollup: "0", // Placeholder - would need rollup contract
-      rewardsVault: toString(rewardsVaultBalance),
+      rewardsVault: toString(rewardsAccumulatorBalance),
     },
     users: uniqueUsers,
     providerRegistry: {
