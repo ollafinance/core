@@ -44,7 +44,7 @@ export const defaultConfig: RunConfig = {
       type: "time-advance",
       enabled: true,
       shouldRun: (_state, tick) => (tick - 2) % 10 === 0 && tick >= 2,
-      seconds: 3601, // 1 hour + 1 second (matches local rebalance cooldown of 1 hour)
+      seconds: 3601, // 1 hour + 1 second — clears rebalance cooldown (1h); well within accounting staleness limit (2h)
     },
     {
       type: "rebalance",
