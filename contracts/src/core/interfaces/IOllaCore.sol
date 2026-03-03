@@ -296,11 +296,11 @@ interface IOllaCore {
     function setVault(address vault_) external;
 
     /// @notice Sets the protocol fee in basis points.
-    /// @param newFeeBP The new fee (0-5000).
+    /// @param newFeeBP The new fee.
     function setProtocolFeeBP(uint256 newFeeBP) external;
 
     /// @notice Sets the treasury fee split in basis points.
-    /// @param newSplitBP The new split (1000-9000).
+    /// @param newSplitBP The new split.
     function setTreasuryFeeSplitBP(uint256 newSplitBP) external;
 
     /// @notice Sets the safety module address.
