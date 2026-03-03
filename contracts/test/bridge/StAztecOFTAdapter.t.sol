@@ -12,12 +12,13 @@ import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/Opti
 // Project imports
 import { StAztec } from "src/vault/StAztec.sol";
 import { StAztecOFTAdapter } from "src/bridge/StAztecOFTAdapter.sol";
-import { StAztecOFT } from "src/bridge/StAztecOFT.sol";
+import { OFTMock } from "@lz-oft/test/mocks/OFTMock.sol";
 
 /// @title StAztecOFTAdapterTest
-/// @notice Foundry tests for the StAztec LayerZero V2 OFT bridge (adapter + OFT).
+/// @notice Foundry tests for the StAztecOFTAdapter (lock/unlock on home chain).
 /// @dev Uses LayerZero's TestHelperOz5 to simulate a two-chain environment with
-///      UltraLightNode message verification.
+///      UltraLightNode message verification. An OFTMock stands in as the
+///      destination-chain OFT counterpart.
 contract StAztecOFTAdapterTest is TestHelperOz5 {
     using OptionsBuilder for bytes;
 
@@ -42,8 +43,8 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
     /// @dev OFTAdapter on the home chain (locks/unlocks stAztec).
     StAztecOFTAdapter private adapter;
 
-    /// @dev Bridged OFT representation on the destination chain.
-    StAztecOFT private oft;
+    /// @dev Mock OFT on the destination chain (stands in for the real bridged token).
+    OFTMock private oft;
 
     /// @dev Test users.
     address private userA;
@@ -78,11 +79,11 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
             )
         );
 
-        // Deploy StAztecOFT on the destination chain.
+        // Deploy OFTMock on the destination chain.
         // Use address(this) as delegate so wireOApps() can call setPeer.
-        oft = StAztecOFT(
+        oft = OFTMock(
             _deployOApp(
-                type(StAztecOFT).creationCode,
+                type(OFTMock).creationCode,
                 abi.encode("stAztec", "stAZTEC", address(endpoints[DEST_EID]), address(this))
             )
         );
@@ -141,12 +142,6 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
         assertEq(adapter.token(), address(stAztec), "adapter.token should be stAztec");
         assertEq(adapter.owner(), address(this), "adapter owner should be test contract (delegate)");
         assertTrue(adapter.approvalRequired(), "adapter requires token approval");
-    }
-
-    function test_constructor_oft() public view {
-        assertEq(oft.token(), address(oft), "oft.token should be itself");
-        assertEq(oft.owner(), address(this), "oft owner should be test contract (delegate)");
-        assertFalse(oft.approvalRequired(), "OFT does not require approval");
     }
 
     function test_initial_balances() public view {
@@ -254,18 +249,6 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
 
         // Owner (address(this)) can set peer.
         adapter.setPeer(999, fakePeer);
-    }
-
-    function test_setPeer_onlyOwner_oft() public {
-        bytes32 fakePeer = bytes32(uint256(1));
-
-        // Non-owner cannot set peer.
-        vm.prank(userA);
-        vm.expectRevert();
-        oft.setPeer(999, fakePeer);
-
-        // Owner (address(this)) can set peer.
-        oft.setPeer(999, fakePeer);
     }
 
     /*//////////////////////////////////////////////////////////////
