@@ -51,14 +51,11 @@ contract SafetyModule is AccessControl, ISafetyModule {
                                    STATE
     //////////////////////////////////////////////////////////////*/
 
-    // by convention, the other contracts has "core" as non-immutable
-    // slither-disable-start immutable-states
     /// @notice The core address allowed to call checks.
     address public immutable CORE;
 
     /// @notice The vault address allowed to call user-facing checks.
     address public immutable VAULT;
-    // slither-disable-end immutable-states
 
     /// @notice Maximum total assets allowed.
     uint256 public depositCap;
@@ -201,6 +198,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
     /// @inheritdoc ISafetyModule
     function checkAccountingLiveness() external override onlyCoreOrVault {
+        // Liveness check: compare current time against last accounting update.
         // slither-disable-next-line timestamp
         // solhint-disable-next-line gas-strict-inequalities
         if (block.timestamp <= lastAccountingTimestamp) {
@@ -208,6 +206,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         }
 
         uint256 elapsed = block.timestamp - lastAccountingTimestamp;
+        // Staleness detection; triggers circuit breaker if accounting is overdue.
         // slither-disable-next-line timestamp
         if (elapsed > maxAccountingDelay) {
             _triggerBreaker(ISafetyModule.BreakerReason.AccountingStale);
@@ -265,6 +264,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
     /// @inheritdoc ISafetyModule
     function setLatestAccountingTimestamp(uint256 latestAccountingTimestamp_) external override onlyCoreOrVault {
+        // Reject future timestamps; block.timestamp comparison is intentional.
         // slither-disable-next-line timestamp
         if (latestAccountingTimestamp_ > block.timestamp) revert SafetyModule__InvalidParameter();
         lastAccountingTimestamp = latestAccountingTimestamp_;
@@ -323,6 +323,8 @@ contract SafetyModule is AccessControl, ISafetyModule {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Emits the circuit breaker event and pauses the module if not already paused.
+    /// @param reason The breaker reason to emit.
     function _triggerBreaker(ISafetyModule.BreakerReason reason) internal {
         emit CircuitBreakerTriggered(reason);
         if (!paused) {

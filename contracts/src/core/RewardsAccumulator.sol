@@ -38,6 +38,7 @@ contract RewardsAccumulator is
     /// @notice Storage gap for future upgrades.
     /// @dev State variables occupy 3 slots. When adding new state variables, append them above
     ///      this gap and reduce its length by the number of slots consumed.
+    // Reserved storage gap for future upgrades; intentionally unused.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
 
@@ -114,10 +115,12 @@ contract RewardsAccumulator is
     /// @inheritdoc IRewardsAccumulator
     function withdrawToCore() external override onlyCore nonReentrant {
         uint256 availableBalance = rewardsToken.balanceOf(address(this));
+        // Zero-balance guard; must have funds to withdraw.
         // slither-disable-next-line incorrect-equality
         if (availableBalance == 0) {
             revert RewardsAccumulator__ZeroAmount();
         }
+        // Staleness guard: forces recordBalance() in the same tx before withdrawal.
         // slither-disable-next-line incorrect-equality
         if (availableBalance != latestRecordedRewardsAmount) {
             // NOTE: this practically forces to run recordBalance in same tx before withdrawing

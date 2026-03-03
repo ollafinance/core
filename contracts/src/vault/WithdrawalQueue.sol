@@ -55,6 +55,7 @@ contract WithdrawalQueue is
     /// @notice Storage gap for upgradability.
     /// @dev State variables occupy 6 slots. When adding new state variables, append them above
     ///      this gap and reduce its length by the number of slots consumed.
+    // Reserved storage gap for future upgrades; intentionally unused.
     // slither-disable-next-line unused-state
     uint256[44] private __gap;
 
@@ -87,10 +88,7 @@ contract WithdrawalQueue is
                              VAULT FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Initializes the queue and roles.
-    /// @param vault_ OllaVault address.
-    /// @param admin_ Default admin role address.
-    /// @param gasThreshold_ Initial gas threshold for the finalization loop.
+    /// @inheritdoc IWithdrawalQueue
     function initialize(address vault_, address admin_, uint256 gasThreshold_) external override initializer {
         if (vault_ == address(0)) {
             revert WithdrawalQueue__ZeroAddress("vault_");
@@ -112,8 +110,7 @@ contract WithdrawalQueue is
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, admin_);
     }
 
-    /// @notice Sets the gas threshold used for the finalization loop.
-    /// @param threshold The new gas threshold.
+    /// @inheritdoc IWithdrawalQueue
     function setGasThreshold(uint256 threshold) external override onlyVault {
         if (threshold == 0) {
             revert WithdrawalQueue__InvalidParameter();
@@ -126,12 +123,7 @@ contract WithdrawalQueue is
         emit GasThresholdUpdated(oldThreshold, threshold);
     }
 
-    /// @notice Enqueues a new withdrawal request.
-    /// @param recipient The request owner.
-    /// @param shares The shares burned for the request.
-    /// @param assetsExpected The assets expected when finalized.
-    /// @param rate The exchange rate locked at request time.
-    /// @return requestId The request id.
+    /// @inheritdoc IWithdrawalQueue
     function requestWithdrawal(address recipient, uint256 shares, uint256 assetsExpected, uint256 rate)
         external
         override
@@ -167,14 +159,12 @@ contract WithdrawalQueue is
     }
 
     // slither-disable-start pess-multiple-storage-read
-    /// @notice Finalizes withdrawals using available liquidity.
+    // FIFO loop reads request storage sequentially; caching is impractical for a variable-length loop.
+    /// @inheritdoc IWithdrawalQueue
     /// @dev The loop processes requests in strict FIFO order and breaks (does not skip) when a request's
     ///      `assetsExpected` exceeds the remaining `available` liquidity. This means a single large
     ///      unfinalizable request at the head blocks all subsequent requests, even smaller ones with
     ///      sufficient liquidity. This is a known limitation.
-    /// @param available The available assets to finalize.
-    /// @return used The assets used for finalization.
-    /// @return finalizedCount The number of requests finalized.
     function finalizeWithdrawals(uint256 available)
         external
         override
@@ -218,9 +208,8 @@ contract WithdrawalQueue is
     // slither-disable-end pess-multiple-storage-read
 
     // slither-disable-start pess-multiple-storage-read
-    /// @notice Marks a finalized request as claimed.
-    /// @param id The request id.
-    /// @return assetsExpected The assets expected for the request.
+    // Reads and mutates a single request struct; multiple field accesses are required.
+    /// @inheritdoc IWithdrawalQueue
     function claimWithdrawal(uint256 id) external override onlyVault nonReentrant returns (uint256 assetsExpected) {
         WithdrawalRequest storage request = _requests[id];
         if (request.recipient == address(0)) {
@@ -245,9 +234,7 @@ contract WithdrawalQueue is
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Returns the request struct for a given id.
-    /// @param id The request id.
-    /// @return request The request struct.
+    /// @inheritdoc IWithdrawalQueue
     function getRequest(uint256 id) external view override returns (WithdrawalRequest memory request) {
         request = _requests[id];
         if (request.recipient == address(0)) {
@@ -256,14 +243,12 @@ contract WithdrawalQueue is
         return request;
     }
 
-    /// @notice Returns the next unfinalized request id.
-    /// @return requestId The next unfinalized request id.
+    /// @inheritdoc IWithdrawalQueue
     function nextUnfinalized() external view override returns (uint256 requestId) {
         return nextPendingId;
     }
 
-    /// @notice Returns the gas threshold for the finalization loop.
-    /// @return The gas threshold.
+    /// @inheritdoc IWithdrawalQueue
     function gasThreshold() external view override returns (uint256) {
         return _gasThreshold;
     }
@@ -272,6 +257,8 @@ contract WithdrawalQueue is
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Authorizes a UUPS upgrade; requires DEFAULT_ADMIN_ROLE and vault owner match.
+    /// @param newImplementation The address of the new implementation contract.
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (msg.sender != OwnableUpgradeable(vault).owner()) {
             revert WithdrawalQueue__UnauthorizedGovernance(msg.sender);

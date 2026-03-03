@@ -29,8 +29,8 @@ contract OllaCoreInitTest is Test {
                                EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event Paused();
-    event Unpaused();
+    event Paused(address account);
+    event Unpaused(address account);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTANTS
@@ -141,12 +141,12 @@ contract OllaCoreInitTest is Test {
 
     function test_GuardianCanPauseAndUnpause() external {
         vm.expectEmit(true, true, true, true, address(core));
-        emit Paused();
+        emit Paused(governance);
         vm.prank(governance);
         core.pause();
 
         vm.expectEmit(true, true, true, true, address(core));
-        emit Unpaused();
+        emit Unpaused(governance);
         vm.prank(governance);
         core.unpause();
     }

@@ -124,11 +124,6 @@ interface IOllaVault {
     /// @param providerShares Shares minted to provider.
     event FeesMinted(uint256 treasuryShares, uint256 providerShares);
 
-    /// @notice Emitted when the vault is paused.
-    event Paused();
-
-    /// @notice Emitted when the vault is unpaused.
-    event Unpaused();
     // solhint-enable gas-indexed-events
 
     /*//////////////////////////////////////////////////////////////
@@ -185,6 +180,9 @@ interface IOllaVault {
 
     /// @notice Thrown when finalized amounts are inconsistent with count.
     error OllaVault__FinalizeInconsistent(uint256 finalizedAmount, uint256 finalizedCount);
+
+    /// @notice Thrown when a finalization exceeds available buffered assets.
+    error OllaVault__InsufficientBufferedAssets(uint256 amount, uint256 available);
 
     /// @notice Thrown when claiming a withdrawal request that is not yet finalized.
     error OllaVault__NotFinalized(uint256 requestId);

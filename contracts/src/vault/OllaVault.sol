@@ -86,15 +86,11 @@ contract OllaVault is
     mapping(address controller => uint256 shares) private _claimableShares;
 
     /// @notice Storage gap for upgradability.
+    /// @dev State variables occupy 14 slots. When adding new state variables, append them above
+    ///      this gap and reduce its length by the number of slots consumed.
+    // Reserved storage gap for future upgrades; intentionally unused.
     // slither-disable-next-line unused-state
     uint256[49] private __gap;
-
-    /*//////////////////////////////////////////////////////////////
-                                ERRORS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Thrown when a finalization exceeds available buffered assets.
-    error OllaVault__InsufficientBufferedAssets(uint256 amount, uint256 available);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -150,6 +146,7 @@ contract OllaVault is
         returns (uint256 shares)
     {
         shares = _deposit(msg.sender, assets, recipient);
+        // Slippage bound check; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (shares < minSharesOut) revert OllaVault__SlippageExceeded(shares, minSharesOut);
         return shares;
@@ -165,9 +162,11 @@ contract OllaVault is
         bytes32 r,
         bytes32 s
     ) external override nonReentrant whenNotPaused returns (uint256 shares) {
+        // ERC-20 permit call on trusted asset token; sets allowance only.
         // slither-disable-next-line reentrancy-benign
         IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
         shares = _deposit(msg.sender, assets, recipient);
+        // Slippage bound check; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (shares < minSharesOut) revert OllaVault__SlippageExceeded(shares, minSharesOut);
         return shares;
@@ -183,6 +182,7 @@ contract OllaVault is
         bytes32 s
     ) external override nonReentrant whenNotPaused returns (uint256 requestId) {
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
+        // ERC-20 permit call on trusted stAztec token; sets allowance only.
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
         uint256 assets;
@@ -221,6 +221,7 @@ contract OllaVault is
         bytes32 r,
         bytes32 s
     ) external override nonReentrant whenNotPaused returns (uint256 assetsAfterFee) {
+        // ERC-20 permit call on trusted stAztec token; sets allowance only.
         // slither-disable-next-line reentrancy-benign
         _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
         return _instantRedeem(shares, recipient, minAssetsOut);
@@ -366,11 +367,8 @@ contract OllaVault is
         emit UnstakedAssetsReceived(amount);
     }
 
-    // solhint-disable-next-line function-max-lines
-    /// @notice Finalizes pending withdrawal requests using available liquidity.
-    /// @param availableAssets Max assets to use for finalization.
-    /// @return finalizedAmount Actual assets used.
-    /// @return finalizedCount Number of requests finalized.
+    // solhint-disable function-max-lines
+    /// @inheritdoc IOllaVault
     function finalizeWithdrawals(uint256 availableAssets)
         external
         override
@@ -378,11 +376,14 @@ contract OllaVault is
         returns (uint256 finalizedAmount, uint256 finalizedCount)
     {
         // slither-disable-start reentrancy-events,reentrancy-no-eth,reentrancy-benign
+        // CORE_ROLE only; all external calls target trusted WithdrawalQueue.
+        // Zero-amount short circuit; not a timestamp concern.
         // slither-disable-next-line timestamp,incorrect-equality
         if (availableAssets == 0) return (0, 0);
 
         IWithdrawalQueue queue = _modules.withdrawalQueue;
         uint256 queued = queue.totalPendingAssets();
+        // No pending requests; not a timestamp concern.
         // slither-disable-next-line timestamp,incorrect-equality
         if (queued == 0) return (0, 0);
 
@@ -399,11 +400,13 @@ contract OllaVault is
             revert OllaVault__InsufficientBufferedAssets(finalizedAmount, buffered);
         }
 
+        // Consistency invariant: both must be zero or both non-zero.
         // slither-disable-next-line incorrect-equality
         if ((finalizedAmount == 0) != (finalizedCount == 0)) {
             revert OllaVault__FinalizeInconsistent(finalizedAmount, finalizedCount);
         }
 
+        // Nothing finalized; short circuit.
         // slither-disable-next-line incorrect-equality
         if (finalizedAmount == 0) return (0, 0);
 
@@ -428,19 +431,17 @@ contract OllaVault is
         // slither-disable-end reentrancy-events,reentrancy-no-eth,reentrancy-benign
     }
 
-    /// @notice Mints fee shares to treasury and provider.
-    /// @param treasury The treasury address.
-    /// @param treasuryShares Shares to mint to treasury.
-    /// @param provider The provider rewards recipient address.
-    /// @param providerShares Shares to mint to provider.
+    // solhint-enable function-max-lines
+
+    /// @inheritdoc IOllaVault
     function mintFees(address treasury, uint256 treasuryShares, address provider, uint256 providerShares)
         external
         override
         onlyRole(CORE_ROLE)
     {
         // slither-disable-start reentrancy-events
-        IStAztec stAztecRef = _modules.stAztec;
         // CORE_ROLE only; stAztec.mint() is a trusted internal token.
+        IStAztec stAztecRef = _modules.stAztec;
         if (treasuryShares > 0) stAztecRef.mint(treasury, treasuryShares);
         if (providerShares > 0) stAztecRef.mint(provider, providerShares);
         emit FeesMinted(treasuryShares, providerShares);
@@ -451,16 +452,14 @@ contract OllaVault is
                       PROVIDER AND ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Pauses the vault.
+    /// @inheritdoc IOllaVault
     function pause() external override onlyRole(GUARDIAN_ROLE) {
         _pause();
-        emit Paused();
     }
 
-    /// @notice Unpauses the vault.
+    /// @inheritdoc IOllaVault
     function unpause() external override onlyRole(GUARDIAN_ROLE) {
         _unpause();
-        emit Unpaused();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -726,16 +725,27 @@ contract OllaVault is
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Executes an instant redemption and checks slippage.
+    /// @param shares The amount of shares to redeem.
+    /// @param recipient The address that will receive the redeemed assets.
+    /// @param minAssetsOut The minimum acceptable net assets after fee.
+    /// @return assetsAfterFee The net assets received after fee deduction.
     function _instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut)
         internal
         returns (uint256 assetsAfterFee)
     {
         assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        // Slippage bound check; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (assetsAfterFee < minAssetsOut) revert OllaVault__SlippageExceeded(assetsAfterFee, minAssetsOut);
         return assetsAfterFee;
     }
 
+    /// @notice Validates deposit preconditions (safety module, cap) and computes shares.
+    /// @param caller The depositor address.
+    /// @param assets The amount of assets to deposit.
+    /// @param recipient The receiver of the minted shares.
+    /// @return shares The amount of shares minted.
     function _deposit(address caller, uint256 assets, address recipient) internal returns (uint256 shares) {
         if (recipient == address(0)) revert OllaVault__ZeroAddress("recipient");
         if (assets == 0) revert OllaVault__InvalidAmount();
@@ -755,6 +765,11 @@ contract OllaVault is
         return shares;
     }
 
+    /// @notice Transfers assets from caller, updates buffered accounting, mints shares, and emits Deposit.
+    /// @param caller The address providing the assets.
+    /// @param assets The amount of assets transferred in.
+    /// @param shares The amount of shares to mint.
+    /// @param recipient The receiver of the minted shares.
     function _processDeposit(address caller, uint256 assets, uint256 shares, address recipient) internal {
         VaultModules memory modules = _modules;
         modules.asset.safeTransferFrom(caller, address(this), assets);
@@ -795,6 +810,7 @@ contract OllaVault is
         modules.stAztec.burn(shareOwner, shares);
 
         requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
+        // Request ID consistency check; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (requestId != expectedRequestId) {
             revert OllaVault__UnexpectedRequestId(expectedRequestId, requestId);
@@ -804,6 +820,11 @@ contract OllaVault is
         return (requestId, assetsExpected);
     }
 
+    /// @notice Burns shares, deducts instant redemption fee, transfers net assets, and sends fee to treasury.
+    /// @param owner The address whose shares are burned.
+    /// @param shares The amount of shares to redeem.
+    /// @param recipient The address that receives the net assets.
+    /// @return netAssets The amount of assets transferred after fee deduction.
     function _redeem(address owner, uint256 shares, address recipient) internal returns (uint256 netAssets) {
         if (recipient == address(0)) revert OllaVault__ZeroAddress("recipient");
         if (shares == 0) revert OllaVault__InvalidAmount();
@@ -824,9 +845,11 @@ contract OllaVault is
         netAssets = grossAssets - fee;
 
         uint256 available = availableForInstantRedemption();
+        // Liquidity sufficiency check; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (grossAssets > available) revert OllaVault__InsufficientLiquidity(grossAssets, available);
 
+        // Trusted stAztec token; burn reduces supply before asset transfer.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
         modules.stAztec.burn(owner, shares);
 
@@ -834,6 +857,7 @@ contract OllaVault is
 
         modules.asset.safeTransfer(recipient, netAssets);
 
+        // Skip treasury transfer when fee is zero.
         // slither-disable-next-line incorrect-equality
         if (fee != 0) {
             address treasuryAddr = _treasury();
@@ -847,6 +871,7 @@ contract OllaVault is
     }
 
     /// @dev Claims a withdrawal request. If receiverOverride is address(0), uses the request's recipient.
+    // Trusted WithdrawalQueue; marks request as claimed and returns asset amount.
     // slither-disable-next-line reentrancy-benign
     function _claimWithdrawal(uint256 requestId, address receiverOverride) internal returns (uint256 assets) {
         IWithdrawalQueue queue = _modules.withdrawalQueue;
@@ -869,6 +894,9 @@ contract OllaVault is
         return assets;
     }
 
+    /// @notice Removes a request from the owner's tracked array using swap-and-pop.
+    /// @param requestOwnerAddr The owner of the request.
+    /// @param requestId The withdrawal request id to remove.
     function _removeOwnerRequest(address requestOwnerAddr, uint256 requestId) internal {
         uint256 index = _ownerRequestIndex[requestId];
         if (index == 0) revert OllaVault__RequestNotFound(requestId);
@@ -887,6 +915,9 @@ contract OllaVault is
         delete _ownerRequestIndex[requestId];
     }
 
+    /// @notice Reconciles internal buffered accounting with actual token balance, absorbing any positive delta.
+    /// @param recipient The address associated with the reconciliation event.
+    /// @return delta The positive difference absorbed into buffered assets.
     function _reconcileBufferedAssets(address recipient) internal returns (uint256 delta) {
         uint256 buffered = _bufferedAssets;
         uint256 actual = _modules.asset.balanceOf(address(this));
@@ -894,6 +925,7 @@ contract OllaVault is
             revert OllaVault__BufferedBalanceMismatch(buffered, actual);
         }
         uint256 available = actual - _finalizedUnclaimedAssets;
+        // Balance integrity check; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (available < buffered) {
             revert OllaVault__BufferedBalanceMismatch(buffered, available);
@@ -906,10 +938,13 @@ contract OllaVault is
         return delta;
     }
 
+    /// @notice Convenience wrapper: reconciles buffered assets without emitting a recipient-specific event.
     function _syncBufferedWithBalance() internal {
         _reconcileBufferedAssets(address(this));
     }
 
+    /// @notice Reverts unless msg.sender is the controller or an approved operator.
+    /// @param controller The controller address to check against.
     function _checkControllerOrOperator(address controller) internal view {
         if (msg.sender != controller && !_operators[controller][msg.sender]) {
             revert OllaVault__Unauthorized();
@@ -922,7 +957,7 @@ contract OllaVault is
         uint256 len = requestIds.length;
         IWithdrawalQueue queue = _modules.withdrawalQueue;
         // slither-disable-start calls-loop
-        // Bounded by controller's own request count; ERC-7540 compat only.
+        // Bounded by the controller's own request count; ERC-7540 redeem() compat path only.
         for (uint256 i = 0; i < len; ++i) {
             uint256 id = requestIds[i];
             IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(id);
@@ -934,14 +969,20 @@ contract OllaVault is
         revert OllaVault__RequestNotFound(0);
     }
 
+    /// @notice Returns the canonical SafetyModule address from Core.
+    /// @return The safety module address.
     function _safetyModule() internal view returns (address) {
         return IOllaCore(_modules.core).safetyModule();
     }
 
+    /// @notice Returns the treasury address from the OllaGovernance owner.
+    /// @return The treasury address.
     function _treasury() internal view returns (address) {
         return IOllaGovernance(owner()).treasury();
     }
 
+    /// @notice Authorizes a UUPS upgrade; reverts if newImplementation is zero.
+    /// @param newImplementation The address of the new implementation contract.
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         if (newImplementation == address(0)) revert OllaVault__ZeroAddress("newImplementation");
     }
