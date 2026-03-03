@@ -3,10 +3,10 @@ pragma solidity ^0.8.27;
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { IStAztec } from "src/core/interfaces/IStAztec.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 import { BaseDeployer } from "./../base/BaseDeployer.s.sol";
 import { DeployConfig } from "./../config/Config.s.sol";
 
@@ -58,8 +58,7 @@ contract OllaCoreDeployer is BaseDeployer {
                 config.protocolFeeBP,
                 config.treasuryFeeSplitBP,
                 config.governance,
-                config.withdrawalQueue,
-                IRewardsVault(config.rewardsVault),
+                IRewardsAccumulator(config.rewardsAccumulator),
                 safetyModule
             );
 

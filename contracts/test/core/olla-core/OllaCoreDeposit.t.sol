@@ -10,13 +10,15 @@ import { ECDSA } from "@oz/utils/cryptography/ECDSA.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract OllaCoreDepositTest is Test {
     using Math for uint256;
@@ -40,7 +42,8 @@ contract OllaCoreDepositTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreHarness internal vault;
+    OllaCoreHarness internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
@@ -50,7 +53,7 @@ contract OllaCoreDepositTest is Test {
     uint256 internal permitOwnerKey;
     uint256 internal permitAttackerKey;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     /*//////////////////////////////////////////////////////////////
@@ -60,31 +63,35 @@ contract OllaCoreDepositTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCoreHarness coreImplementation = new OllaCoreHarness();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCoreHarness(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCoreHarness(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
 
         vm.prank(governance);
         vault.unpause();
@@ -145,9 +152,9 @@ contract OllaCoreDepositTest is Test {
         uint256 firstShares = _performDeposit(alice, depositAssetAmountAlice);
         assertEq(firstShares, depositAssetAmountAlice, "first deposit: 1:1 shares at zero supply");
 
-        vault.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
 
-        uint256 totalAssetsBeforeSecondDeposit = vault.totalAssets();
+        uint256 totalAssetsBeforeSecondDeposit = core.totalAssets();
         uint256 totalSharesBeforeSecondDeposit = stAztec.totalSupply();
 
         uint256 depositAssetAmountBob = 50 * DECIMALS;
@@ -162,12 +169,12 @@ contract OllaCoreDepositTest is Test {
         uint256 shares = _performDeposit(alice, 10 * DECIMALS);
 
         assertEq(stAztec.balanceOf(alice), shares, "shares minted");
-        assertEq(vault.totalAssets(), 10 * DECIMALS, "assets buffered");
-        IOllaCore.FlowCounters memory flows = vault.flowCounters();
+        assertEq(core.totalAssets(), 10 * DECIMALS, "assets buffered");
+        IOllaCore.FlowCounters memory flows = core.flowCounters();
         assertEq(flows.cumulativeDeposits, 10 * DECIMALS, "cumulative deposits updated");
     }
 
-    function test_Deposit_StillWorks() external {
+    function test_Deposit3Arg_WithZeroMinShares() external {
         uint256 assets = 9 * DECIMALS;
         asset.mint(alice, assets);
         vm.prank(alice);
@@ -178,6 +185,81 @@ contract OllaCoreDepositTest is Test {
 
         assertEq(shares, assets, "deposit shares");
         assertEq(stAztec.balanceOf(alice), assets, "shares minted");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        ERC-4626 2-ARG DEPOSIT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The standard ERC-4626 deposit(assets, receiver) works.
+    function test_Deposit2Arg_ERC4626() external {
+        uint256 assets = 10 * DECIMALS;
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+
+        vm.prank(alice);
+        uint256 shares = vault.deposit(assets, alice);
+
+        assertEq(shares, assets, "shares minted at 1:1");
+        assertEq(stAztec.balanceOf(alice), assets, "shares balance");
+        assertEq(core.totalAssets(), assets, "assets buffered");
+    }
+
+    /// @notice 2-arg and 3-arg deposit produce identical results.
+    function testFuzz_Deposit2Arg_Matches3Arg(uint96 assetsSeed) external {
+        uint256 assets = bound(uint256(assetsSeed), 1, type(uint96).max);
+
+        // 2-arg deposit for alice
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+        vm.prank(alice);
+        uint256 shares2Arg = vault.deposit(assets, alice);
+
+        // 3-arg deposit for bob (same amount, minSharesOut = 0)
+        asset.mint(bob, assets);
+        vm.prank(bob);
+        asset.approve(address(vault), assets);
+        vm.prank(bob);
+        uint256 shares3Arg = vault.deposit(assets, bob, 0);
+
+        assertEq(shares2Arg, shares3Arg, "2-arg and 3-arg deposit produce same shares");
+    }
+
+    /// @notice 2-arg deposit works at a non-trivial exchange rate.
+    function test_Deposit2Arg_AtNonTrivialRate() external {
+        // Seed initial deposit + rewards to move rate off 1:1
+        _performDeposit(alice, 100 * DECIMALS);
+        stakingManager.setClaimableRewards(50 * DECIMALS);
+        bytes32 operatorRole = core.OPERATOR_ROLE();
+        vm.prank(governance);
+        core.grantRole(operatorRole, address(this));
+        core.updateAccounting();
+
+        uint256 expectedShares = core.convertToShares(25 * DECIMALS);
+
+        asset.mint(bob, 25 * DECIMALS);
+        vm.prank(bob);
+        asset.approve(address(vault), 25 * DECIMALS);
+        vm.prank(bob);
+        uint256 shares = vault.deposit(25 * DECIMALS, bob);
+
+        assertEq(shares, expectedShares, "2-arg deposit follows exchange rate");
+    }
+
+    /// @notice 2-arg deposit emits the correct ERC-4626 Deposit event.
+    function test_Deposit2Arg_EmitsEvent() external {
+        uint256 assets = 5 * DECIMALS;
+        asset.mint(alice, assets);
+        vm.prank(alice);
+        asset.approve(address(vault), assets);
+
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit Deposit(alice, alice, assets, assets);
+
+        vm.prank(alice);
+        vault.deposit(assets, alice);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -278,7 +360,7 @@ contract OllaCoreDepositTest is Test {
 
         assertEq(shares, assets, "shares minted at 1:1");
         assertEq(stAztec.balanceOf(alice), shares, "shares balance");
-        assertEq(vault.totalAssets(), assets, "assets buffered");
+        assertEq(core.totalAssets(), assets, "assets buffered");
     }
 
     function testFuzz_MultiDepositorAtDifferentRates(uint96 deposit1, uint96 deposit2, uint96 rewards) external {
@@ -291,14 +373,14 @@ contract OllaCoreDepositTest is Test {
 
         // Simulate rewards to change the exchange rate
         stakingManager.setClaimableRewards(rewards);
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.prank(governance);
-        vault.grantRole(operatorRole, address(this));
-        vault.updateAccounting();
+        core.grantRole(operatorRole, address(this));
+        core.updateAccounting();
 
         // Snapshot state before Bob's deposit
         uint256 supplyBeforeBob = stAztec.totalSupply();
-        uint256 totalAssetsBeforeBob = vault.totalAssets();
+        uint256 totalAssetsBeforeBob = core.totalAssets();
 
         // Bob deposits at new rate
         uint256 bobShares = _performDeposit(bob, deposit2);

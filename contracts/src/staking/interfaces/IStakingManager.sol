@@ -168,14 +168,14 @@ interface IStakingManager {
     /// @notice Initializes the StakingManager behind a proxy.
     /// @param stakingAsset_ The staking asset token.
     /// @param rollupRegistry_ The Aztec rollup registry contract.
-    /// @param rewardsVault_ The rewards vault address.
+    /// @param rewardsAccumulator_ The rewards vault address.
     /// @param core_ The OllaCore contract address.
     /// @param stakingProviderRegistry_ The StakingProviderRegistry contract address.
     /// @param defaultAdmin_ The default admin for role management.
     function initialize(
         IERC20 stakingAsset_,
         address rollupRegistry_,
-        address rewardsVault_,
+        address rewardsAccumulator_,
         address core_,
         address stakingProviderRegistry_,
         address defaultAdmin_
@@ -205,7 +205,7 @@ interface IStakingManager {
     /// @return hasRemainingExits True if there are still attesters in exiting state after finalization.
     function getUnstakedFunds() external returns (uint256 received, uint256 exitAmount, bool hasRemainingExits);
 
-    /// @notice Claims sequencer rewards to RewardsVault.
+    /// @notice Claims sequencer rewards to RewardsAccumulator.
     /// @return harvested The amount of rewards harvested.
     function harvestRewards() external returns (uint256 harvested);
 

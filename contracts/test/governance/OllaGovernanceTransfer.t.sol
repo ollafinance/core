@@ -31,7 +31,8 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         );
 
         // Mock grantRole / revokeRole on all 4 satellite addresses
-        address[4] memory sats = [address(withdrawalQueue), address(rewardsVault), address(stakingManager), sprMock];
+        address[4] memory sats =
+            [address(withdrawalQueue), address(rewardsAccumulator), address(stakingManager), sprMock];
         for (uint256 i; i < sats.length; i++) {
             vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
             vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");

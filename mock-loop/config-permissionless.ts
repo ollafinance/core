@@ -119,7 +119,7 @@ const config: RunConfig = {
       type: "time-advance",
       enabled: true,
       shouldRun: isRebalanceTick,
-      seconds: 3601, // 1 hour + 1 second
+      seconds: 601, // 10 minutes + 1 second (matches local rebalance cooldown)
     },
 
     // --- Permissionless finalize-exits (between unstake and pull cycles) ---

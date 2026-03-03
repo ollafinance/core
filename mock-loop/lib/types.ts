@@ -241,12 +241,14 @@ export interface DeploymentAddresses {
   OllaGovernanceProxy: string;
   OllaCoreImplementation: string;
   OllaCoreProxy: string;
+  OllaVaultImplementation: string;
+  OllaVaultProxy: string;
   Asset: string;
   StAztec: string;
   WithdrawalQueueImplementation: string;
   WithdrawalQueueProxy: string;
-  RewardsVaultImplementation: string;
-  RewardsVaultProxy: string;
+  RewardsAccumulatorImplementation: string;
+  RewardsAccumulatorProxy: string;
   StakingManagerImplementation: string;
   StakingManagerProxy: string;
   StakingProviderRegistryImplementation: string;

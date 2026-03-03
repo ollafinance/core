@@ -76,7 +76,7 @@ contract OllaGovernanceTreasuryTest is OllaGovernanceSetup {
         // Perform instant redemption
         uint256 treasuryBalanceBefore = asset.balanceOf(treasuryAddr);
         vm.prank(alice);
-        vault.redeem(shares, alice, 0);
+        vault.instantRedeem(shares, alice, 0);
 
         uint256 treasuryBalanceAfter = asset.balanceOf(treasuryAddr);
         assertGt(treasuryBalanceAfter, treasuryBalanceBefore, "treasury received fees");

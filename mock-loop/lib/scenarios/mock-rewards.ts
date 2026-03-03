@@ -28,7 +28,7 @@ export async function executeMockRewards(
     }
 
     // Each tick: call tick() on the rollup
-    const tickTx = await rollup.write.tick([addresses.RewardsVaultProxy]);
+    const tickTx = await rollup.write.tick([addresses.RewardsAccumulatorProxy]);
     actions.push(`tick: ${tickTx}`);
 
     return {

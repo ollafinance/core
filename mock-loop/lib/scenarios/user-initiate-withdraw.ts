@@ -1,6 +1,6 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { UserInitiateWithdrawScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { createUserWallet, getStAztec, getOllaCore } from "../client.js";
+import { createUserWallet, getStAztec, getOllaVault } from "../client.js";
 
 export async function executeUserInitiateWithdraw(
   _scenario: UserInitiateWithdrawScenario,
@@ -22,7 +22,7 @@ export async function executeUserInitiateWithdraw(
 
   try {
     const stAztec = getStAztec(addresses, userWallet);
-    const ollaCore = getOllaCore(addresses, userWallet);
+    const ollaVault = getOllaVault(addresses, userWallet);
 
     // Get user's full stAztec balance
     const shares = await stAztec.read.balanceOf([userAddress]) as bigint;
@@ -39,8 +39,8 @@ export async function executeUserInitiateWithdraw(
       };
     }
 
-    // Call requestRedeem for full balance
-    const txHash = await ollaCore.write.requestRedeem([shares, userAddress]);
+    // Call requestRedeem for full balance (ERC-7540: shares, controller, owner)
+    const txHash = await ollaVault.write.requestRedeem([shares, userAddress, userAddress]);
 
     return {
       scenario: "user-initiate-withdraw",

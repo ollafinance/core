@@ -159,6 +159,13 @@ export function getOllaCore(
   return getContractInstance("OllaCore", addresses.OllaCoreProxy as Address, client);
 }
 
+export function getOllaVault(
+  addresses: DeploymentAddresses,
+  client: PublicClient | WalletClient
+) {
+  return getContractInstance("OllaVault", addresses.OllaVaultProxy as Address, client);
+}
+
 export function getStakingManager(
   addresses: DeploymentAddresses,
   client: PublicClient | WalletClient
@@ -224,7 +231,7 @@ export function getRewardsVault(
 ) {
   return getContractInstance(
     "MockRewardsVault",
-    addresses.RewardsVaultProxy as Address,
+    addresses.RewardsAccumulatorProxy as Address,
     client
   );
 }

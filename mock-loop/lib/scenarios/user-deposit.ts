@@ -1,6 +1,6 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { UserDepositScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { createUserWallet, getAsset, getOllaCore } from "../client.js";
+import { createUserWallet, getAsset, getOllaVault } from "../client.js";
 
 export async function executeUserDeposit(
   scenario: UserDepositScenario,
@@ -26,13 +26,13 @@ export async function executeUserDeposit(
     const amount = BigInt(scenario.amount);
     const mintTx = await assetOperator.write.mint([userAddress, amount]);
 
-    // Step 1: Approve OllaCore to spend user's assets
+    // Step 1: Approve OllaVault to spend user's assets
     const asset = getAsset(addresses, userWallet);
-    const ollaCore = getOllaCore(addresses, userWallet);
-    const approveTx = await asset.write.approve([addresses.OllaCoreProxy, amount]);
+    const ollaVault = getOllaVault(addresses, userWallet);
+    const approveTx = await asset.write.approve([addresses.OllaVaultProxy, amount]);
 
-    // Step 2: Deposit
-    const depositTx = await ollaCore.write.deposit([amount, userAddress, 0n], { gas: 500_000n });
+    // Step 2: Deposit via OllaVault
+    const depositTx = await ollaVault.write.deposit([amount, userAddress, 0n], { gas: 500_000n });
 
     return {
       scenario: "user-deposit",

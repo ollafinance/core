@@ -8,7 +8,7 @@ import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
 /// @title StakingManagerHarvestTest
 /// @notice Comprehensive tests for StakingManager.harvestRewards() functionality.
-/// @dev Uses MockRewardsVault to properly test reward harvesting flow.
+/// @dev Uses MockRewardsAccumulator to properly test reward harvesting flow.
 contract StakingManagerHarvestTest is StakingManagerBaseTest {
     /*//////////////////////////////////////////////////////////////
                                 HELPERS
@@ -42,7 +42,7 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         aztec.mint(address(rollup), totalRewards);
 
         // Set rewards for the rewards vault address (new logic)
-        rollup.setRewards(address(rewardsVault), totalRewards);
+        rollup.setRewards(address(rewardsAccumulator), totalRewards);
 
         return keys;
     }
@@ -63,7 +63,7 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         aztec.mint(address(rollup), totalRewards);
 
         // Set total rewards for the rewards vault address (new logic)
-        rollup.setRewards(address(rewardsVault), totalRewards);
+        rollup.setRewards(address(rewardsAccumulator), totalRewards);
 
         return keys;
     }
@@ -80,7 +80,9 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         uint256 harvested = stakingManager.harvestRewards();
 
         assertEq(harvested, rewardAmount, "Should harvest full reward amount");
-        assertEq(rollup.getSequencerRewards(address(rewardsVault)), 0, "Vault rewards should be zero after harvest");
+        assertEq(
+            rollup.getSequencerRewards(address(rewardsAccumulator)), 0, "Vault rewards should be zero after harvest"
+        );
     }
 
     function test_HarvestRewards_ClaimsMultipleAttesterRewards() external {
@@ -95,17 +97,17 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         assertEq(harvested, expectedTotal, "Should harvest all attesters' rewards");
     }
 
-    function test_HarvestRewards_IncreasesRewardsVaultBalance() external {
+    function test_HarvestRewards_IncreasesRewardsAccumulatorBalance() external {
         uint256 rewardAmount = 10 ether;
         _setupAttestersWithRewards(1, rewardAmount);
 
-        uint256 vaultBalanceBefore = aztec.balanceOf(address(rewardsVault));
+        uint256 vaultBalanceBefore = aztec.balanceOf(address(rewardsAccumulator));
 
         vm.prank(core);
         stakingManager.harvestRewards();
 
-        uint256 vaultBalanceAfter = aztec.balanceOf(address(rewardsVault));
-        // Rewards are paid directly to the RewardsVault by the rollup claim.
+        uint256 vaultBalanceAfter = aztec.balanceOf(address(rewardsAccumulator));
+        // Rewards are paid directly to the RewardsAccumulator by the rollup claim.
         assertEq(vaultBalanceAfter - vaultBalanceBefore, rewardAmount, "Vault balance should increase by rewards");
     }
 
@@ -262,12 +264,12 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         uint256 rewardAmount = 10 ether;
         _setupAttestersWithRewards(1, rewardAmount);
 
-        uint256 vaultBalanceBefore = aztec.balanceOf(address(rewardsVault));
+        uint256 vaultBalanceBefore = aztec.balanceOf(address(rewardsAccumulator));
 
         vm.prank(core);
         stakingManager.getClaimableRewards();
 
-        uint256 vaultBalanceAfter = aztec.balanceOf(address(rewardsVault));
+        uint256 vaultBalanceAfter = aztec.balanceOf(address(rewardsAccumulator));
         assertEq(vaultBalanceAfter, vaultBalanceBefore, "Get claimable rewards should not modify state");
     }
 

@@ -7,14 +7,16 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaGovernanceSetup
 /// @notice Shared base test fixture for OllaGovernance test suites.
@@ -33,12 +35,13 @@ abstract contract OllaGovernanceSetup is Test {
     //////////////////////////////////////////////////////////////*/
 
     OllaGovernance internal gov;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     MockAztec internal asset;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     address internal admin; // proposer / executor / canceller
@@ -71,32 +74,45 @@ abstract contract OllaGovernanceSetup is Test {
         // ---- Deploy OllaCore (impl + proxy) ----
         OllaCore coreImpl = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImpl), "");
-        vault = OllaCore(address(coreProxy));
+        core = OllaCore(address(coreProxy));
+
+        // ---- Deploy OllaVault (impl + proxy) ----
+        OllaVault vaultImpl = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImpl), "");
+        vault = OllaVault(address(vaultProxy));
 
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Initialize OllaCore with OllaGovernance as owner
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             PROTOCOL_FEE_BP,
             TREASURY_FEE_SPLIT_BP,
             address(gov),
-            address(withdrawalQueue),
-            rewardsVault,
+            rewardsAccumulator,
             address(safetyModule)
         );
 
-        // Wire OllaGovernance → OllaCore
+        // Initialize OllaVault
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
+
+        // Wire core -> vault
+        vm.prank(address(gov));
+        core.setVault(address(vault));
+
+        // Wire OllaGovernance -> OllaCore
         vm.prank(admin);
-        gov.setCore(address(vault));
+        gov.setCore(address(core));
 
         // Unpause (gov contract holds GUARDIAN_ROLE from OllaCore.initialize)
+        vm.prank(address(gov));
+        core.unpause();
         vm.prank(address(gov));
         vault.unpause();
     }

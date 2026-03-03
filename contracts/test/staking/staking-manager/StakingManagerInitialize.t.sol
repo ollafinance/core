@@ -18,7 +18,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
     function test_Initialize_SetsConfig() external view {
         assertEq(address(stakingManager.stakingAsset()), address(aztec));
         assertEq(address(stakingManager.rollupRegistry()), address(rollupRegistry));
-        assertEq(address(stakingManager.rewardsVault()), address(rewardsVault));
+        assertEq(address(stakingManager.rewardsAccumulator()), address(rewardsAccumulator));
         assertEq(stakingManager.core(), core);
     }
 
@@ -55,7 +55,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
         mgr.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            address(rewardsVault),
+            address(rewardsAccumulator),
             core,
             address(registry),
             defaultAdmin
@@ -79,7 +79,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
             mgr.initialize(
                 IERC20(address(0)),
                 address(rollupRegistry),
-                address(rewardsVault),
+                address(rewardsAccumulator),
                 core,
                 address(registry),
                 defaultAdmin
@@ -98,7 +98,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
                 abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rollupRegistry")
             );
             mgr.initialize(
-                IERC20(address(aztec)), address(0), address(rewardsVault), core, address(registry), defaultAdmin
+                IERC20(address(aztec)), address(0), address(rewardsAccumulator), core, address(registry), defaultAdmin
             );
         }
 
@@ -111,7 +111,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
             StakingProviderRegistry registry = StakingProviderRegistry(address(registryProxy));
             registry.initialize(address(mgr), providerAdmin, providerAdmin, defaultAdmin);
             vm.expectRevert(
-                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsVault")
+                abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "rewardsAccumulator")
             );
             mgr.initialize(
                 IERC20(address(aztec)), address(rollupRegistry), address(0), core, address(registry), defaultAdmin
@@ -130,7 +130,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
             mgr.initialize(
                 IERC20(address(aztec)),
                 address(rollupRegistry),
-                address(rewardsVault),
+                address(rewardsAccumulator),
                 address(0),
                 address(registry),
                 defaultAdmin
@@ -144,7 +144,12 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
                 abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAddress.selector, "stakingProviderRegistry")
             );
             mgr.initialize(
-                IERC20(address(aztec)), address(rollupRegistry), address(rewardsVault), core, address(0), defaultAdmin
+                IERC20(address(aztec)),
+                address(rollupRegistry),
+                address(rewardsAccumulator),
+                core,
+                address(0),
+                defaultAdmin
             );
         }
 
@@ -162,7 +167,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
             mgr.initialize(
                 IERC20(address(aztec)),
                 address(rollupRegistry),
-                address(rewardsVault),
+                address(rewardsAccumulator),
                 core,
                 address(registry),
                 address(0)

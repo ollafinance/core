@@ -6,12 +6,14 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 
 contract OllaCoreBoundsValidationTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -33,11 +35,12 @@ contract OllaCoreBoundsValidationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     address internal governance;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
 
@@ -49,28 +52,36 @@ contract OllaCoreBoundsValidationTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(coreImplementation));
+        safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             INITIAL_PROTOCOL_FEE_BP,
             INITIAL_TREASURY_SPLIT_BP,
             governance,
-            address(withdrawalQueue),
-            rewardsVault,
+            rewardsAccumulator,
             address(safetyModule)
         );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
     }
@@ -82,7 +93,7 @@ contract OllaCoreBoundsValidationTest is Test {
     function test_RevertWhen_SetInstantRedemptionFeeBP_ExceedsMax() external {
         uint256 aboveMax = vault.MAX_INSTANT_REDEMPTION_FEE_BP() + 1;
         vm.prank(governance);
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, aboveMax));
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__InvalidFeeBP.selector, aboveMax));
         vault.setInstantRedemptionFeeBP(aboveMax);
     }
 
@@ -127,7 +138,7 @@ contract OllaCoreBoundsValidationTest is Test {
         newFeeBP = bound(newFeeBP, maxFee + 1, type(uint256).max);
 
         vm.prank(governance);
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, newFeeBP));
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__InvalidFeeBP.selector, newFeeBP));
         vault.setInstantRedemptionFeeBP(newFeeBP);
     }
 
@@ -136,17 +147,17 @@ contract OllaCoreBoundsValidationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_SetRebalanceGasThreshold_ExceedsMax() external {
-        uint256 aboveMax = vault.MAX_REBALANCE_GAS_THRESHOLD() + 1;
+        uint256 aboveMax = core.MAX_REBALANCE_GAS_THRESHOLD() + 1;
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidGasThreshold.selector, aboveMax));
-        vault.setRebalanceGasThreshold(aboveMax);
+        core.setRebalanceGasThreshold(aboveMax);
     }
 
     function test_RevertWhen_SetRebalanceGasThreshold_BelowMin() external {
-        uint256 belowMin = vault.MIN_REBALANCE_GAS_THRESHOLD() - 1;
+        uint256 belowMin = core.MIN_REBALANCE_GAS_THRESHOLD() - 1;
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidGasThreshold.selector, belowMin));
-        vault.setRebalanceGasThreshold(belowMin);
+        core.setRebalanceGasThreshold(belowMin);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -154,17 +165,17 @@ contract OllaCoreBoundsValidationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_SetRebalanceGasThreshold_AllowsMin() external {
-        uint256 minThreshold = vault.MIN_REBALANCE_GAS_THRESHOLD();
+        uint256 minThreshold = core.MIN_REBALANCE_GAS_THRESHOLD();
         vm.prank(governance);
-        vault.setRebalanceGasThreshold(minThreshold);
-        assertEq(vault.rebalanceGasThreshold(), minThreshold, "gas threshold set to min");
+        core.setRebalanceGasThreshold(minThreshold);
+        assertEq(core.rebalanceGasThreshold(), minThreshold, "gas threshold set to min");
     }
 
     function test_SetRebalanceGasThreshold_AllowsMax() external {
-        uint256 maxThreshold = vault.MAX_REBALANCE_GAS_THRESHOLD();
+        uint256 maxThreshold = core.MAX_REBALANCE_GAS_THRESHOLD();
         vm.prank(governance);
-        vault.setRebalanceGasThreshold(maxThreshold);
-        assertEq(vault.rebalanceGasThreshold(), maxThreshold, "gas threshold set to max");
+        core.setRebalanceGasThreshold(maxThreshold);
+        assertEq(core.rebalanceGasThreshold(), maxThreshold, "gas threshold set to max");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -172,36 +183,36 @@ contract OllaCoreBoundsValidationTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function testFuzz_SetRebalanceGasThreshold_ValidRange(uint256 newThreshold) external {
-        uint256 minThreshold = vault.MIN_REBALANCE_GAS_THRESHOLD();
-        uint256 maxThreshold = vault.MAX_REBALANCE_GAS_THRESHOLD();
+        uint256 minThreshold = core.MIN_REBALANCE_GAS_THRESHOLD();
+        uint256 maxThreshold = core.MAX_REBALANCE_GAS_THRESHOLD();
         newThreshold = bound(newThreshold, minThreshold, maxThreshold);
 
-        uint256 oldThreshold = vault.rebalanceGasThreshold();
+        uint256 oldThreshold = core.rebalanceGasThreshold();
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
 
         vm.prank(governance);
-        vault.setRebalanceGasThreshold(newThreshold);
+        core.setRebalanceGasThreshold(newThreshold);
 
-        assertEq(vault.rebalanceGasThreshold(), newThreshold, "gas threshold fuzz");
+        assertEq(core.rebalanceGasThreshold(), newThreshold, "gas threshold fuzz");
     }
 
     function testFuzz_SetRebalanceGasThreshold_InvalidRange_AboveMax(uint256 newThreshold) external {
-        uint256 maxThreshold = vault.MAX_REBALANCE_GAS_THRESHOLD();
+        uint256 maxThreshold = core.MAX_REBALANCE_GAS_THRESHOLD();
         newThreshold = bound(newThreshold, maxThreshold + 1, type(uint256).max);
 
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidGasThreshold.selector, newThreshold));
-        vault.setRebalanceGasThreshold(newThreshold);
+        core.setRebalanceGasThreshold(newThreshold);
     }
 
     function testFuzz_SetRebalanceGasThreshold_InvalidRange_BelowMin(uint256 newThreshold) external {
-        uint256 minThreshold = vault.MIN_REBALANCE_GAS_THRESHOLD();
+        uint256 minThreshold = core.MIN_REBALANCE_GAS_THRESHOLD();
         newThreshold = bound(newThreshold, 0, minThreshold - 1);
 
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidGasThreshold.selector, newThreshold));
-        vault.setRebalanceGasThreshold(newThreshold);
+        core.setRebalanceGasThreshold(newThreshold);
     }
 }

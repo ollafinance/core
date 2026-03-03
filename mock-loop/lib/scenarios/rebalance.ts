@@ -54,7 +54,15 @@ export async function executeRebalance(
       chain: null,
       account: callerWallet.account,
     } as any);
-    await clients.publicClient.waitForTransactionReceipt({ hash: preComputeTx });
+    const preComputeReceipt = await clients.publicClient.waitForTransactionReceipt({ hash: preComputeTx });
+    if (preComputeReceipt.status === "reverted") {
+      return {
+        scenario: "rebalance",
+        success: false,
+        error: `pre-compute computeAttesterState reverted in tx ${preComputeTx}`,
+        data: { iterationsCompleted: 0, stepHistory },
+      };
+    }
     const gasThreshold = await ollaCoreRead.read.rebalanceGasThreshold() as bigint;
     const minGasLimit = gasBumpSteps[0];
     gasLimit = gasThreshold + 300_000n;

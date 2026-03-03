@@ -1,6 +1,6 @@
 # Olla Protocol Overview
 
-Olla Core is the on-chain vault and staking coordinator for liquid staking on Aztec. It accepts user deposits, manages async withdrawals, and delegates staking operations to Aztec rollup contracts via the staking manager.
+Olla is a liquid staking protocol for Aztec. It is split into two main contract groups: **OllaVault** (ERC-7540/ERC-4626 vault that holds user assets, mints stAztec, and manages async withdrawals) and **OllaCore** (orchestration and accounting engine that coordinates rebalancing, staking, and fee computation). OllaCore instructs OllaVault via `CORE_ROLE` during rebalance cycles, while OllaVault delegates pricing to OllaCore via view calls.
 
 ## Architecture overview
 
@@ -43,13 +43,23 @@ end
 
 governanceAdminWallet -->|"proposer/executor/canceller"| ollaGov
 
+subgraph "Olla Vault"
+    vault[OllaVault]
+    stAztec[StAztec]
+    withdrawQ[WithdrawalQueue]
+end
+
+subgraph "Cross-Chain Bridge"
+    oftAdapter["StAztecOFTAdapter (home chain)"]
+    oftDest["StAztecOFT (destination chains)"]
+end
+
 subgraph "Olla Core"
     core[OllaCore]
     safety[SafetyModule]
-    withdrawQ[WithdrawalQueue]
+    rewards[RewardsAccumulator]
 end
 subgraph "Olla Staking Components"
-    rewards[RewardsVault]
     stkMan[StakingManager]
     spr[StakingProviderRegistry]
 end
@@ -61,17 +71,15 @@ subgraph "Aztec Contracts"
     rollup["AztecRollup (canonical)"]
 end
 
-subgraph "Cross-Chain Bridge"
-    oftAdapter["StAztecOFTAdapter (home chain)"]
-    oftDest["StAztecOFT (destination chains)"]
-end
-
 guardianWallet -. "GUARDIAN_ROLE" .-> core
+guardianWallet -. "GUARDIAN_ROLE" .-> vault
 guardianWallet -. "GUARDIAN_ROLE" .-> safety
 
 stakingProviderAdminWallet -. "STAKING_PROVIDER_ADMIN_ROLE" .-> spr
 ollaGov -->|"owner (Ownable2Step)"| core
+ollaGov -->|"owner (Ownable2Step)"| vault
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> core
+ollaGov -. "DEFAULT_ADMIN_ROLE" .-> vault
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> safety
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> rewards
@@ -79,11 +87,12 @@ ollaGov -. "DEFAULT_ADMIN_ROLE" .-> stkMan
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> spr
 
 %% User flows (asset + call-path)
-userWallet -->|"deposit/requestRedeem/claimActiveRequest"| core
+userWallet -->|"deposit/requestRedeem/claimRequestById/instantRedeem"| vault
 
-core -->|"request-,claim-,finalize-withdrawal"| withdrawQ
-
-core -->|"checkDepositAllowed / checkWithdrawalMinimum / checkQueueRatio / checkAccountingLiveness"| safety
+vault -->|"convertToShares / convertToAssets / totalAssets"| core
+vault -->|"requestWithdrawal / claimWithdrawal / finalizeWithdrawals"| withdrawQ
+vault -->|"mint / burn"| stAztec
+vault -->|"checkDepositAllowed / checkWithdrawalMinimum"| safety
 
 %% Permissionless operations (anyone can call)
 anyone -->|"finalizeExits()"| stkMan
@@ -92,42 +101,44 @@ anyone -->|"rebalance() (cooldown-gated)"| core
 anyone -->|"updateAccounting()"| core
 
 %% Operator-only
-ollaOperatorWallet -->|"setRebalanceGasThreshold()"| core
 ollaOperatorWallet -->|"setAttesterStateMaxAge()"| stkMan
 
 %% Guardian control
 guardianWallet -->|"forceRebalanceReset()"| core
 
+%% Core instructs Vault via CORE_ROLE during rebalance
+core -->|"transferToCore / receiveUnstaked / finalizeWithdrawals / mintFees (CORE_ROLE)"| vault
+
+%% Core <-> SafetyModule
+core -->|"checkQueueRatio / checkAccountingLiveness / checkRateDrop"| safety
+
 %% Staking principal (AZTEC token) movements
-core -->|"stake >Aztec< transferFrom(core, StakingManager, stakeAmount)"| stkMan
+core -->|"stake >Aztec< transferFrom(vault, StakingManager, stakeAmount)"| stkMan
 stkMan -->|"getAttesterKeystore()"| spr
 stkMan -->|"deposit >Aztec< transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
 
 core -->|"unstake(amount)"| stkMan
 stkMan -->|"initiateWithdraw"| rollup
 
-core -->|"claimUnstakedFunds >Aztec< transferFrom(StakingManager, core, unstakedAmount)"| stkMan
+core -->|"claimUnstakedFunds >Aztec< transferFrom(StakingManager, vault, unstakedAmount)"| stkMan
 stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, unstakedAmount)"| rollup
 
 core -->|"harvestRewards()"| stkMan
 stkMan -->|"getCanonicalRollup()"| rollupRegistry
 rollupRegistry -->|"canonical rollup"| rollup
-stkMan -->|"claimSequencerRewards(coinbase=rewardsVault)"| rollup
-rollup -->|"rewards >Aztec< transferFrom(rollup, rewardsVault, amount)"| rewards
+stkMan -->|"claimSequencerRewards(coinbase=rewardsAccumulator)"| rollup
+rollup -->|"rewards >Aztec< transferFrom(rollup, rewardsAccumulator, amount)"| rewards
 core -->|"recordBalance(expectedRewards)"| rewards
-
-core -->|"finalizeWithdrawals(available)"| withdrawQ
-
 core -->|"balance()"| rewards
 
-core -->|"pay staking fees >StAztec< mint(treasury, treasuryShares)"| treasury
-core -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
+%% Fee minting (Core calculates, Vault mints via CORE_ROLE)
+vault -->|"pay staking fees >StAztec< mint(treasury, treasuryShares)"| treasury
+vault -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
 
 %% Cross-chain bridge (LayerZero V2)
 userWallet -->|"approve + send (bridge out)"| oftAdapter
 oftAdapter <-->|"LayerZero messages"| oftDest
 
-%% Staking provider admin (control-plane)
 
 style user fill:#900
 style anyone fill:#555
@@ -135,6 +146,8 @@ style ollaOperatorActor stroke:#050,stroke-width:2px
 style stakingProviderActor fill:#009
 style rollup stroke:#ff6,stroke-width:2px
 style core stroke:#090,stroke-width:4px
+style vault stroke:#090,stroke-width:4px
+style stAztec stroke:#090,stroke-width:3px
 style safety stroke:#090,stroke-width:3px
 style rewards stroke:#090,stroke-width:3px
 style stkMan stroke:#090,stroke-width:3px
@@ -161,14 +174,24 @@ subgraph "Olla Governance"
     ollaGov["OllaGovernance (timelock)"]
 end
 
-subgraph "Olla Core"
-    core[OllaCore]
-    safety[SafetyModule]
+subgraph "Olla Vault"
+    vault[OllaVault]
+    stAztec[StAztec]
     withdrawQ[WithdrawalQueue]
 end
 
+subgraph "Cross-Chain Bridge (LayerZero V2)"
+    oftAdapter["StAztecOFTAdapter (Ethereum)"]
+    oftDest["StAztecOFT (destination chains)"]
+end
+
+subgraph "Olla Core"
+    core[OllaCore]
+    safety[SafetyModule]
+    rewards[RewardsAccumulator]
+end
+
 subgraph "Olla Staking Components"
-    rewards[RewardsVault]
     stkMan[StakingManager]
     spr[StakingProviderRegistry]
 end
@@ -178,27 +201,35 @@ subgraph "Aztec Contracts"
     rollup["AztecRollup (canonical)"]
 end
 
-subgraph "Cross-Chain Bridge (LayerZero V2)"
-    oftAdapter["StAztecOFTAdapter (Ethereum)"]
-    oftDest["StAztecOFT (destination chains)"]
-end
-
 %% Governance -> contracts
 ollaGov -->|"owner (Ownable2Step)"| core
+ollaGov -->|"owner (Ownable2Step)"| vault
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> safety
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> withdrawQ
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> rewards
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> stkMan
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> spr
 
-%% OllaCore <-> WithdrawalQueue
-core -->|"request-,claim-,finalize-withdrawal"| withdrawQ
+%% Vault <-> Core pricing
+vault -->|"convertToShares / convertToAssets / totalAssets"| core
 
-%% OllaCore <-> SafetyModule
-core -->|"checkDepositAllowed / checkWithdrawalMinimum / checkQueueRatio / checkAccountingLiveness"| safety
+%% Core instructs Vault via CORE_ROLE
+core -->|"transferToCore / receiveUnstaked / finalizeWithdrawals / mintFees (CORE_ROLE)"| vault
+
+%% Vault <-> WithdrawalQueue
+vault -->|"requestWithdrawal / claimWithdrawal / finalizeWithdrawals"| withdrawQ
+
+%% Vault <-> StAztec
+vault -->|"mint / burn"| stAztec
+
+%% Vault <-> SafetyModule
+vault -->|"checkDepositAllowed / checkWithdrawalMinimum"| safety
+
+%% Core <-> SafetyModule
+core -->|"checkQueueRatio / checkAccountingLiveness / checkRateDrop"| safety
 
 %% Staking: stake flow
-core -->|"stake >Aztec< transferFrom(core, StakingManager, stakeAmount)"| stkMan
+core -->|"stake >Aztec< transferFrom(vault, StakingManager, stakeAmount)"| stkMan
 stkMan -->|"getAttesterKeystore()"| spr
 stkMan -->|"deposit >Aztec< transferFrom(StakingManager, AztecRollup, stakeAmount)"| rollup
 
@@ -210,19 +241,16 @@ stkMan -->|"initiateWithdraw"| rollup
 stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, exitAmount)"| rollup
 
 %% Sweep unstaked funds during rebalance
-core -->|"getUnstakedFunds >Aztec< transferFrom(StakingManager, core, balance)"| stkMan
+core -->|"claimUnstakedFunds >Aztec< transferFrom(StakingManager, vault, balance)"| stkMan
 
 %% Rewards harvesting
 core -->|"harvestRewards()"| stkMan
 stkMan -->|"getCanonicalRollup()"| rollupRegistry
 rollupRegistry -->|"canonical rollup"| rollup
-stkMan -->|"claimSequencerRewards(coinbase=rewardsVault)"| rollup
-rollup -->|"rewards >Aztec< transferFrom(rollup, rewardsVault, amount)"| rewards
+stkMan -->|"claimSequencerRewards(coinbase=rewardsAccumulator)"| rollup
+rollup -->|"rewards >Aztec< transferFrom(rollup, rewardsAccumulator, amount)"| rewards
 core -->|"recordBalance(expectedRewards)"| rewards
 core -->|"balance()"| rewards
-
-%% Finalize withdrawals
-core -->|"finalizeWithdrawals(available)"| withdrawQ
 
 %% Cross-chain bridge
 oftAdapter <-->|"LayerZero V2 messages"| oftDest
@@ -230,6 +258,8 @@ ollaGov -. "owner (setPeer, DVN config)" .-> oftAdapter
 
 style ollaGov stroke:#090,stroke-width:3px
 style core stroke:#090,stroke-width:4px
+style vault stroke:#090,stroke-width:4px
+style stAztec stroke:#090,stroke-width:3px
 style safety stroke:#090,stroke-width:3px
 style rewards stroke:#090,stroke-width:3px
 style stkMan stroke:#090,stroke-width:3px
@@ -243,23 +273,24 @@ style oftDest stroke:#09f,stroke-width:3px
 
 ## User
 
-No special role required. Any address can call these functions.
+No special role required. Any address can call these functions. Users interact with **OllaVault**, which implements ERC-7540 (async redemptions) and ERC-4626 (sync deposits).
 
 ```mermaid
 flowchart LR
 
 userWallet[User Wallet]
 
-subgraph "Olla Core"
-    core[OllaCore]
+subgraph "Olla Vault"
+    vault[OllaVault]
 end
 
-userWallet -->|"deposit()"| core
-userWallet -->|"requestRedeem()"| core
-userWallet -->|"claimActiveRequest()"| core
+userWallet -->|"deposit()"| vault
+userWallet -->|"requestRedeem()"| vault
+userWallet -->|"claimRequestById()"| vault
+userWallet -->|"instantRedeem()"| vault
 
 style userWallet fill:#900
-style core stroke:#090,stroke-width:4px
+style vault stroke:#090,stroke-width:4px
 ```
 
 ## Permissionless Operations
@@ -309,7 +340,7 @@ style stkMan stroke:#090,stroke-width:3px
 
 ## Guardian
 
-Requires `GUARDIAN_ROLE` on OllaCore and SafetyModule.
+Requires `GUARDIAN_ROLE` on OllaCore, OllaVault, and SafetyModule.
 
 ```mermaid
 flowchart LR
@@ -320,15 +351,21 @@ subgraph "Olla Core"
     core[OllaCore]
     safety[SafetyModule]
 end
+subgraph "Olla Vault"
+    vault[OllaVault]
+end
 
 guardianWallet -->|"pause()"| core
 guardianWallet -->|"unpause()"| core
 guardianWallet -->|"forceRebalanceReset()"| core
+guardianWallet -->|"pause()"| vault
+guardianWallet -->|"unpause()"| vault
 guardianWallet -->|"pause()"| safety
 guardianWallet -->|"unpause()"| safety
 
 style guardianWallet stroke:#050,stroke-width:2px
 style core stroke:#090,stroke-width:4px
+style vault stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
 ```
 
@@ -345,25 +382,25 @@ stakingProviderRewardsWallet[Staking Provider Rewards Wallet]
 subgraph "Olla Staking Components"
     spr[StakingProviderRegistry]
 end
-subgraph "Olla Core"
-    core[OllaCore]
+subgraph "Olla Vault"
+    vault[OllaVault]
 end
 
 stakingProviderAdminWallet -->|"addKeysToProvider()"| spr
 stakingProviderAdminWallet -->|"dripQueue()"| spr
 stakingProviderAdminWallet -->|"setProviderRewardsRecipient()"| spr
 
-core -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
+vault -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
 
 style stakingProviderAdminWallet fill:#009
 style stakingProviderRewardsWallet fill:#009
-style core stroke:#090,stroke-width:4px
+style vault stroke:#090,stroke-width:4px
 style spr stroke:#090,stroke-width:3px
 ```
 
 ## Governance
 
-The governance admin wallet holds proposer, executor, and canceller roles on `OllaGovernance`, which inherits `TimelockControllerUpgradeable`. All governance actions (parameter changes, upgrades, governance transfers) must be scheduled, wait for the timelock delay, and then executed. `OllaGovernance` is the owner of `OllaCore` (via `Ownable2Step`) and holds `DEFAULT_ADMIN_ROLE` on all satellite contracts.
+The governance admin wallet holds proposer, executor, and canceller roles on `OllaGovernance`, which inherits `TimelockControllerUpgradeable`. All governance actions (parameter changes, upgrades, governance transfers) must be scheduled, wait for the timelock delay, and then executed. `OllaGovernance` is the owner of `OllaCore` and `OllaVault` (via `Ownable2Step`) and holds `DEFAULT_ADMIN_ROLE` on all satellite contracts.
 
 ```mermaid
 flowchart LR
@@ -380,26 +417,31 @@ governanceAdminWallet -->|"proposer/executor/canceller"| ollaGov
 subgraph "Olla Core"
     core[OllaCore]
     safety[SafetyModule]
+    rewards[RewardsAccumulator]
+end
+subgraph "Olla Vault"
+    vault[OllaVault]
     withdrawQ[WithdrawalQueue]
 end
 subgraph "Olla Staking Components"
-    rewards[RewardsVault]
     stkMan[StakingManager]
     spr[StakingProviderRegistry]
 end
 
-ollaGov -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, setTargetBufferedAssets, setRebalanceGasThreshold, setRebalanceCooldown, setInstantRedemptionFeeBP, reconcileBufferedAssets, recoverStAztec, setSafetyModule, upgradeCore"| core
+ollaGov -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, setTargetBufferedAssets, setRebalanceGasThreshold, setRebalanceCooldown, setSafetyModule, setVault"| core
+ollaGov -->|"setInstantRedemptionFeeBP, setSafetyModule, reconcileBufferedAssets, recoverStAztec"| vault
 ollaGov -->|"setDepositCap, setWithdrawalMinimum, setMinRateDropBps, setMaxQueueRatioBps, setMaxAccountingDelay"| safety
 ollaGov -->|"upgradeSatellite"| withdrawQ
 ollaGov -->|"upgradeSatellite"| rewards
 ollaGov -->|"upgradeSatellite"| stkMan
 ollaGov -->|"upgradeSatellite"| spr
 
-core -->|"pay staking fees >StAztec< mint(treasury, treasuryShares)"| treasury
+vault -->|"pay staking fees >StAztec< mint(treasury, treasuryShares)"| treasury
 
 style governanceAdminWallet stroke:#050,stroke-width:2px
 style ollaGov stroke:#f90,stroke-width:3px
 style core stroke:#090,stroke-width:4px
+style vault stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px
 style rewards stroke:#090,stroke-width:3px
 style stkMan stroke:#090,stroke-width:3px

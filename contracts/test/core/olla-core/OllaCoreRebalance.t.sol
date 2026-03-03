@@ -8,18 +8,20 @@ import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.so
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/core/interfaces/IWithdrawalQueue.sol";
-import { StAztec } from "src/core/StAztec.sol";
-import { WithdrawalQueue } from "src/core/WithdrawalQueue.sol";
+import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MaliciousReentrantStakingManager } from "test/mocks/MaliciousReentrantStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract InconsistentWithdrawalQueue is IWithdrawalQueue {
     uint256 internal _totalPendingAssets;
@@ -77,7 +79,7 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
         return 1;
     }
 
-    function core() external view override returns (address) {
+    function vault() external view override returns (address) {
         return _core;
     }
 }
@@ -142,7 +144,7 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
         return 1;
     }
 
-    function core() external view override returns (address) {
+    function vault() external view override returns (address) {
         return _core;
     }
 }
@@ -170,13 +172,14 @@ contract OllaCoreRebalanceTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -187,9 +190,15 @@ contract OllaCoreRebalanceTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
@@ -201,32 +210,31 @@ contract OllaCoreRebalanceTest is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Configure staking manager to mint rewards directly to rewards vault
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
         // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
@@ -248,7 +256,7 @@ contract OllaCoreRebalanceTest is Test {
 
     function _requestWithdrawal(address owner, uint256 shares) internal returns (uint256 requestId) {
         vm.prank(owner);
-        requestId = vault.requestRedeem(shares, owner);
+        requestId = vault.requestRedeem(shares, owner, owner);
         return requestId;
     }
 
@@ -257,27 +265,27 @@ contract OllaCoreRebalanceTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_DefaultRebalanceGasThreshold() external view {
-        assertEq(vault.rebalanceGasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "default gas threshold");
+        assertEq(core.rebalanceGasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "default gas threshold");
         assertEq(stakingManager.gasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "staking manager threshold set");
     }
 
     function test_RevertWhen_NonAdminSetsRebalanceGasThreshold() external {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
-        vault.setRebalanceGasThreshold(200_000);
+        core.setRebalanceGasThreshold(200_000);
     }
 
     function test_RevertWhen_OperatorWithoutAdminSetsRebalanceGasThreshold() external {
         address otherOperator = makeAddr("otherOperator");
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.prank(governance);
-        vault.grantRole(operatorRole, otherOperator);
+        core.grantRole(operatorRole, otherOperator);
 
-        assertTrue(vault.hasRole(operatorRole, otherOperator), "test operator role");
+        assertTrue(core.hasRole(operatorRole, otherOperator), "test operator role");
 
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, otherOperator));
         vm.prank(otherOperator);
-        vault.setRebalanceGasThreshold(200_000);
+        core.setRebalanceGasThreshold(200_000);
     }
 
     function test_SetRebalanceGasThreshold_UpdatesAndForwards() external {
@@ -286,9 +294,9 @@ contract OllaCoreRebalanceTest is Test {
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.setGasThreshold, (newThreshold)));
 
         vm.prank(governance);
-        vault.setRebalanceGasThreshold(newThreshold);
+        core.setRebalanceGasThreshold(newThreshold);
 
-        assertEq(vault.rebalanceGasThreshold(), newThreshold, "core gas threshold updated");
+        assertEq(core.rebalanceGasThreshold(), newThreshold, "core gas threshold updated");
         assertEq(stakingManager.gasThreshold(), newThreshold, "staking manager threshold forwarded");
     }
 
@@ -303,23 +311,24 @@ contract OllaCoreRebalanceTest is Test {
         uint256 rewardAmount = 5 * DECIMALS;
         stakingManager.setHarvestedRewards(rewardAmount);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
+
         // Expected buffer after rebalance includes rewards pulled from rewards vault
-        uint256 expectedBuffer = accountingBefore.bufferedAssets + rewardAmount;
+        uint256 expectedBuffer = vault.bufferedAssets() + rewardAmount;
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(expectedBuffer);
+        core.setTargetBufferedAssets(expectedBuffer);
 
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit RewardsDelta(rewardAmount);
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit Rebalanced(rewardAmount, 0, 0, expectedBuffer);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
         assertEq(
             accountingAfter.cumulativeRewards,
             accountingBefore.cumulativeRewards + rewardAmount,
@@ -334,29 +343,30 @@ contract OllaCoreRebalanceTest is Test {
         uint256 firstReward = 3 * DECIMALS;
         stakingManager.setHarvestedRewards(firstReward);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Advance past cooldown so a new rebalance cycle can start
         vm.warp(block.timestamp + 1 hours);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 expectedBuffer = accountingBefore.bufferedAssets;
+        uint256 expectedBuffer = vault.bufferedAssets();
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(expectedBuffer);
+        core.setTargetBufferedAssets(expectedBuffer);
 
         stakingManager.setHarvestedRewards(0);
 
+        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
+
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit RewardsDelta(0);
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit Rebalanced(0, 0, 0, expectedBuffer);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
         assertEq(accountingAfter.cumulativeRewards, accountingBefore.cumulativeRewards, "cumulative rewards unchanged");
     }
 
@@ -368,11 +378,11 @@ contract OllaCoreRebalanceTest is Test {
         // decrements stakedPrincipal by exitAmount).
         _performDeposit(alice, unstakedAmount);
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(unstakedAmount);
         stakingManager.setTotalStaked(unstakedAmount);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Advance past cooldown so a new rebalance cycle can start
         vm.warp(block.timestamp + 1 hours);
@@ -383,35 +393,32 @@ contract OllaCoreRebalanceTest is Test {
         asset.mint(address(stakingManager), unstakedAmount);
         stakingManager.setStakeReturnAmount(0);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 expectedBuffer = accountingBefore.bufferedAssets + unstakedAmount;
+        uint256 expectedBuffer = vault.bufferedAssets() + unstakedAmount;
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(expectedBuffer);
+        core.setTargetBufferedAssets(expectedBuffer);
 
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.getUnstakedFunds, ()));
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit UnstakedFundsClaimed(unstakedAmount);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(accountingAfter.bufferedAssets, expectedBuffer, "buffered assets increased");
+        assertEq(vault.bufferedAssets(), expectedBuffer, "buffered assets increased");
     }
 
     function test_Rebalance_PullUnstakedFunds_NoOp() external {
         stakingManager.setUnstakedToken(asset);
         stakingManager.setUnstakedAmount(0);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 bufferBefore = vault.bufferedAssets();
 
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.getUnstakedFunds, ()));
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered assets unchanged");
+        assertEq(vault.bufferedAssets(), bufferBefore, "buffered assets unchanged");
     }
 
     function test_Rebalance_PullUnstakedFunds_CapsExitAmountToStakedPrincipal() external {
@@ -421,13 +428,13 @@ contract OllaCoreRebalanceTest is Test {
         // Deposit and stake to establish stakedPrincipal
         _performDeposit(alice, stakedAmount);
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(stakedAmount);
         stakingManager.setTotalStaked(stakedAmount);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        assertEq(vault.accountingState().stakedPrincipal, stakedAmount, "stakedPrincipal after stake");
+        assertEq(core.accountingState().stakedPrincipal, stakedAmount, "stakedPrincipal after stake");
 
         // Advance past cooldown
         vm.warp(block.timestamp + 1 hours);
@@ -444,16 +451,16 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setTotalStaked(0);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(unstakedAmount);
+        core.setTargetBufferedAssets(unstakedAmount);
 
         // Without the cap, this would revert with arithmetic underflow
         // because exitAmount (8e18) > stakedPrincipal (5e18).
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // _updateAccountingInternal runs at end and resets stakedPrincipal
         // from totalStaked() (now 0). The key assertion is that we didn't revert.
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
         assertEq(accountingAfter.stakedPrincipal, 0, "stakedPrincipal zeroed");
     }
 
@@ -465,7 +472,7 @@ contract OllaCoreRebalanceTest is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
@@ -473,24 +480,22 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 bufferBefore = accountingBefore.bufferedAssets;
+        uint256 bufferBefore = vault.bufferedAssets();
         uint256 bufferAfterFinalize = bufferBefore - request.assetsExpected;
         uint256 expectedStaked = bufferAfterFinalize - targetBufferedAssets;
 
         vm.expectCall(address(withdrawalQueue), abi.encodeCall(withdrawalQueue.finalizeWithdrawals, (bufferBefore)));
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit RewardsDelta(0);
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit WithdrawalFinalized(bufferBefore, request.assetsExpected);
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit Rebalanced(0, request.assetsExpected, expectedStaked, bufferAfterFinalize);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(accountingAfter.bufferedAssets, bufferAfterFinalize, "buffered assets reduced by finalize");
+        assertEq(vault.bufferedAssets(), bufferAfterFinalize, "buffered assets reduced by finalize");
     }
 
     function test_Rebalance_FinalizeWithdrawals_QueueDrains() external {
@@ -504,7 +509,7 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakedAmount(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending queue drained");
     }
@@ -516,7 +521,7 @@ contract OllaCoreRebalanceTest is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBuffered);
+        core.setTargetBufferedAssets(targetBuffered);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -524,7 +529,7 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setTotalStaked(depositAmount);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Advance past cooldown so a new rebalance cycle can start
         vm.warp(block.timestamp + 1 hours);
@@ -533,13 +538,13 @@ contract OllaCoreRebalanceTest is Test {
 
         vm.recordLogs();
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bytes32 topic = keccak256("WithdrawalFinalized(uint256,uint256)");
         bool found;
         for (uint256 i = 0; i < entries.length; i++) {
-            if (entries[i].emitter == address(vault) && entries[i].topics[0] == topic) {
+            if (entries[i].emitter == address(core) && entries[i].topics[0] == topic) {
                 found = true;
                 break;
             }
@@ -547,7 +552,7 @@ contract OllaCoreRebalanceTest is Test {
 
         assertFalse(found, "should not emit WithdrawalFinalized without liquidity");
         assertEq(withdrawalQueue.totalPendingAssets(), depositAmount, "pending assets unchanged");
-        assertEq(vault.accountingState().bufferedAssets, targetBuffered, "buffer unchanged");
+        assertEq(vault.bufferedAssets(), targetBuffered, "buffer unchanged");
     }
 
     function test_Rebalance_PullUnstaked_WaitsForExitableUnstakes() external {
@@ -557,7 +562,7 @@ contract OllaCoreRebalanceTest is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(depositAmount);
+        core.setTargetBufferedAssets(depositAmount);
 
         uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
@@ -566,46 +571,38 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakedAmount(0);
         stakingManager.setWithdrawableUnstakes(1);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 bufferBefore = vault.bufferedAssets();
         uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressAfterFirst = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfterFirst = core.rebalanceProgress();
         assertEq(
             uint256(progressAfterFirst.step),
             uint256(IOllaCore.RebalanceStep.PullUnstaked),
             "rebalance should hold at pull unstaked while exitable unstakes"
         );
         assertEq(withdrawalQueue.totalPendingAssets(), pendingBefore, "pending assets unchanged with exitable unstakes");
-        assertEq(
-            vault.accountingState().bufferedAssets,
-            accountingBefore.bufferedAssets,
-            "buffer unchanged with exitable unstakes"
-        );
+        assertEq(vault.bufferedAssets(), bufferBefore, "buffer unchanged with exitable unstakes");
 
         stakingManager.setWithdrawableUnstakes(0);
 
-        uint256 bufferBeforeFinalize = vault.accountingState().bufferedAssets;
+        uint256 bufferBeforeFinalize = vault.bufferedAssets();
         vm.expectCall(
             address(withdrawalQueue), abi.encodeCall(withdrawalQueue.finalizeWithdrawals, (bufferBeforeFinalize))
         );
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressAfterSecond = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfterSecond = core.rebalanceProgress();
         assertTrue(
             uint256(progressAfterSecond.step) != uint256(IOllaCore.RebalanceStep.PullUnstaked),
             "rebalance should advance after pending unstakes cleared"
         );
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending assets finalized after pending unstakes cleared");
-        assertEq(
-            vault.accountingState().bufferedAssets,
-            bufferBeforeFinalize - request.assetsExpected,
-            "buffer reduced after finalize"
-        );
+        assertEq(vault.bufferedAssets(), bufferBeforeFinalize - request.assetsExpected, "buffer reduced after finalize");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -619,22 +616,21 @@ contract OllaCoreRebalanceTest is Test {
         _performDeposit(alice, depositAmount);
         stakingManager.setHarvestedRewards(rewardAmount);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 expectedBuffer = accountingBefore.bufferedAssets + rewardAmount;
+        uint256 expectedBuffer = vault.bufferedAssets() + rewardAmount;
 
         uint256 snapshotId = vm.snapshotState();
         uint256 selectedGas;
-        uint256[6] memory gasOptions = [uint256(120_000), 140_000, 160_000, 180_000, 200_000, 220_000];
+        uint256[6] memory gasOptions = [uint256(200_000), 250_000, 300_000, 350_000, 400_000, 450_000];
 
         for (uint256 i = 0; i < gasOptions.length; i++) {
             vm.revertToState(snapshotId);
             vm.prank(operator);
             (bool success, bytes memory data) =
-                address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+                address(core).call{ gas: gasOptions[i] }(abi.encodeCall(core.rebalance, ()));
             if (!success) {
                 continue;
             }
-            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
                 (
                     uint256 loopRewardsDelta,
@@ -655,9 +651,9 @@ contract OllaCoreRebalanceTest is Test {
         vm.revertToState(snapshotId);
         vm.prank(operator);
         (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
-            vault.rebalance{ gas: selectedGas }();
+            core.rebalance{ gas: selectedGas }();
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(
             uint256(progressAfter.step),
             uint256(IOllaCore.RebalanceStep.PullUnstaked),
@@ -677,11 +673,11 @@ contract OllaCoreRebalanceTest is Test {
         // Deposit and stake first so stakedPrincipal >= exitAmount
         _performDeposit(alice, depositAmount);
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setTotalStaked(depositAmount);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Advance past cooldown so a new rebalance cycle can start
         vm.warp(block.timestamp + 1 hours);
@@ -694,8 +690,7 @@ contract OllaCoreRebalanceTest is Test {
         asset.mint(address(stakingManager), unstakedAmount);
         stakingManager.setGasBurnTarget(60_000);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 expectedBuffer = accountingBefore.bufferedAssets + rewardAmount + unstakedAmount;
+        uint256 expectedBuffer = vault.bufferedAssets() + rewardAmount + unstakedAmount;
 
         uint256 snapshotId = vm.snapshotState();
         uint256 selectedGas;
@@ -703,13 +698,12 @@ contract OllaCoreRebalanceTest is Test {
         for (uint256 gasLimit = 250_000; gasLimit <= 800_000; gasLimit += 25_000) {
             vm.revertToState(snapshotId);
             vm.prank(operator);
-            (bool success, bytes memory data) =
-                address(vault).call{ gas: gasLimit }(abi.encodeCall(vault.rebalance, ()));
+            (bool success, bytes memory data) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
             if (!success) {
                 continue;
             }
 
-            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals) {
                 (
                     uint256 loopRewardsDelta,
@@ -730,9 +724,9 @@ contract OllaCoreRebalanceTest is Test {
         vm.revertToState(snapshotId);
         vm.prank(operator);
         (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
-            vault.rebalance{ gas: selectedGas }();
+            core.rebalance{ gas: selectedGas }();
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(
             uint256(progressAfter.step),
             uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
@@ -751,11 +745,11 @@ contract OllaCoreRebalanceTest is Test {
         // Deposit and stake first so stakedPrincipal >= exitAmount
         _performDeposit(alice, depositAmount);
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setTotalStaked(depositAmount);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Advance past cooldown so a new rebalance cycle can start
         vm.warp(block.timestamp + 1 hours);
@@ -768,16 +762,15 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setGasBurnTarget(90_000);
         asset.mint(address(stakingManager), unstakedAmount);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 expectedBuffer = accountingBefore.bufferedAssets + unstakedAmount;
+        uint256 expectedBuffer = vault.bufferedAssets() + unstakedAmount;
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(expectedBuffer);
+        core.setTargetBufferedAssets(expectedBuffer);
 
         vm.prank(operator);
-        vault.rebalance{ gas: 400_000 }();
+        core.rebalance{ gas: 400_000 }();
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(
             uint256(progressAfter.step),
             uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
@@ -785,9 +778,9 @@ contract OllaCoreRebalanceTest is Test {
         );
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
         assertEq(
             uint256(progressFinal.step),
             uint256(IOllaCore.RebalanceStep.Done),
@@ -807,21 +800,21 @@ contract OllaCoreRebalanceTest is Test {
         }
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
         stakingManager.setStakeReturnAmount(0);
 
         uint256 totalPendingBefore = withdrawalQueue.totalPendingAssets();
-        if (vault.accountingState().bufferedAssets < totalPendingBefore) {
-            uint256 bufferGap = totalPendingBefore - vault.accountingState().bufferedAssets;
+        if (vault.bufferedAssets() < totalPendingBefore) {
+            uint256 bufferGap = totalPendingBefore - vault.bufferedAssets();
             asset.mint(address(vault), bufferGap);
             vm.prank(governance);
             vault.reconcileBufferedAssets();
         }
 
-        uint256 bufferBefore = vault.accountingState().bufferedAssets;
+        uint256 bufferBefore = vault.bufferedAssets();
         uint256 snapshotId = vm.snapshotState();
 
         uint256 selectedGas;
@@ -833,7 +826,7 @@ contract OllaCoreRebalanceTest is Test {
             vm.revertToState(snapshotId);
             vm.prank(operator);
             (bool success, bytes memory data) =
-                address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+                address(core).call{ gas: gasOptions[i] }(abi.encodeCall(core.rebalance, ()));
 
             if (!success) {
                 continue;
@@ -852,16 +845,16 @@ contract OllaCoreRebalanceTest is Test {
         if (selectedGas == 0) {
             vm.revertToState(snapshotId);
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
 
             assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue should drain in one call");
-            assertEq(vault.accountingState().bufferedAssets, bufferBefore - totalPendingBefore, "buffer should drain");
+            assertEq(vault.bufferedAssets(), bufferBefore - totalPendingBefore, "buffer should drain");
             return;
         }
 
         vm.revertToState(snapshotId);
         vm.prank(operator);
-        (, uint256 finalizedAmount,, uint256 bufferAfter) = vault.rebalance{ gas: selectedGas }();
+        (, uint256 finalizedAmount,, uint256 bufferAfter) = core.rebalance{ gas: selectedGas }();
 
         assertEq(finalizedAmount, finalizedObserved, "finalized amount should match probe");
         assertEq(bufferAfter, bufferObserved, "buffer should match probe");
@@ -871,14 +864,14 @@ contract OllaCoreRebalanceTest is Test {
             "pending assets should decrease by finalized amount"
         );
         assertEq(
-            vault.accountingState().bufferedAssets,
+            vault.bufferedAssets(),
             bufferBefore - finalizedAmount,
             "buffered assets should decrease by finalized amount"
         );
 
         for (uint256 i = 0; i < 50; i++) {
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
             if (withdrawalQueue.totalPendingAssets() == 0) {
                 break;
             }
@@ -894,7 +887,7 @@ contract OllaCoreRebalanceTest is Test {
         asset.mint(address(vault), bufferAmount);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -902,9 +895,9 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakeReturnAmount(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(
             uint256(progressAfter.step),
             uint256(IOllaCore.RebalanceStep.Done),
@@ -916,9 +909,9 @@ contract OllaCoreRebalanceTest is Test {
         vm.warp(block.timestamp + 1 hours);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
         assertEq(
             uint256(progressFinal.step),
             uint256(IOllaCore.RebalanceStep.Done),
@@ -931,9 +924,11 @@ contract OllaCoreRebalanceTest is Test {
         uint256 targetBufferedAssets = 20 * DECIMALS;
 
         asset.mint(address(vault), bufferAmount);
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -942,9 +937,9 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setActivatedAttesterCount(1);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(
             uint256(progressAfter.step),
             uint256(IOllaCore.RebalanceStep.InitiateUnstake),
@@ -967,11 +962,11 @@ contract OllaCoreRebalanceTest is Test {
         // Deposit and stake first so stakedPrincipal >= exitAmount
         _performDeposit(alice, depositAmount);
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setTotalStaked(depositAmount);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Advance past cooldown so a new rebalance cycle can start
         vm.warp(block.timestamp + 1 hours);
@@ -980,7 +975,7 @@ contract OllaCoreRebalanceTest is Test {
         _requestWithdrawal(alice, withdrawalShares);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(rewardAmount);
         stakingManager.setUnstakedToken(asset);
@@ -996,11 +991,11 @@ contract OllaCoreRebalanceTest is Test {
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
             vm.prank(operator);
-            (bool success,) = address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+            (bool success,) = address(core).call{ gas: gasOptions[i] }(abi.encodeCall(core.rebalance, ()));
             if (!success) {
                 continue;
             }
-            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (
                 progress.step == IOllaCore.RebalanceStep.PullUnstaked
                     || progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals
@@ -1016,9 +1011,9 @@ contract OllaCoreRebalanceTest is Test {
         vm.revertToState(snapshotId);
         vm.recordLogs();
         vm.prank(operator);
-        vault.rebalance{ gas: selectedGas }();
+        core.rebalance{ gas: selectedGas }();
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(uint256(progressAfter.step), uint256(observedStep), "rebalance should stop at early step");
 
         Vm.Log[] memory earlyLogs = vm.getRecordedLogs();
@@ -1037,20 +1032,20 @@ contract OllaCoreRebalanceTest is Test {
         for (uint256 i; i < maxIterations; ++i) {
             vm.recordLogs();
             vm.prank(operator);
-            vault.rebalance();
+            core.rebalance();
             Vm.Log[] memory entries = vm.getRecordedLogs();
             for (uint256 j; j < entries.length; ++j) {
                 if (entries[j].topics[0] == rebalancedSelector) {
                     rebalancedEvents += 1;
                 }
             }
-            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.Done) {
                 break;
             }
         }
 
-        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
         assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should finish");
         assertEq(progressFinal.stakeRemaining, 0, "stake remaining should clear");
         assertEq(progressFinal.unstakeRemaining, 0, "unstake remaining should clear");
@@ -1061,18 +1056,17 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        uint256 bufferedBefore = vault.bufferedAssets();
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit RewardsDelta(0);
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit Rebalanced(0, 0, 0, accountingBefore.bufferedAssets);
+        vm.expectEmit(true, true, true, true, address(core));
+        emit Rebalanced(0, 0, 0, bufferedBefore);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
-        assertEq(accountingAfter.bufferedAssets, accountingBefore.bufferedAssets, "buffered assets unchanged");
+        assertEq(vault.bufferedAssets(), bufferedBefore, "buffered assets unchanged");
     }
 
     function test_Rebalance_Unstake_TargetBufferedAssetsShortfall_NoPending() external {
@@ -1080,9 +1074,11 @@ contract OllaCoreRebalanceTest is Test {
         uint256 targetBufferedAssets = 30 * DECIMALS;
 
         asset.mint(address(vault), bufferAmount);
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -1090,11 +1086,11 @@ contract OllaCoreRebalanceTest is Test {
 
         uint256 shortfall = targetBufferedAssets - bufferAmount;
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit UnstakeInitiated(shortfall, shortfall);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         assertEq(stakingManager.lastUnstakeAmount(), shortfall, "unstake replenishes buffer");
     }
@@ -1110,7 +1106,7 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setPendingUnstakes(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets, "unstake initiated");
     }
@@ -1120,7 +1116,7 @@ contract OllaCoreRebalanceTest is Test {
         uint256 targetBufferedAssets = 5 * DECIMALS;
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         vm.prank(address(vault));
         withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
@@ -1130,7 +1126,7 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setPendingUnstakes(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         assertEq(
             stakingManager.lastUnstakeAmount(),
@@ -1144,6 +1140,8 @@ contract OllaCoreRebalanceTest is Test {
         uint256 pendingAssets = 25 * DECIMALS;
 
         asset.mint(address(vault), bufferAmount);
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
         vm.prank(address(vault));
         withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
 
@@ -1152,7 +1150,7 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setPendingUnstakes(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         assertEq(stakingManager.lastUnstakeAmount(), 0, "unstake not initiated");
     }
@@ -1169,7 +1167,7 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setPendingUnstakes(pendingUnstakes);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - pendingUnstakes, "unstake reduced by pending");
     }
@@ -1184,11 +1182,11 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakedAmount(0);
         stakingManager.setPendingUnstakes(0);
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit UnstakeInitiated(pendingAssets, pendingAssets);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets, "unstake uses requested amount");
     }
@@ -1214,7 +1212,7 @@ contract OllaCoreRebalanceTest is Test {
 
         // Rebalance should succeed — the ComputeAttesterState step refreshes the stale state
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
         // Verify the attester state is no longer stale after rebalance
         (uint256 updatedAt,, bool isStale) = stakingManager.getAttesterStateLiveness();
@@ -1232,7 +1230,7 @@ contract OllaCoreRebalanceTest is Test {
 
         uint256 targetBufferedAssets = 10 * DECIMALS;
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -1240,20 +1238,21 @@ contract OllaCoreRebalanceTest is Test {
         uint256 actualStaked = 64 * DECIMALS;
         stakingManager.setStakeReturnAmount(actualStaked);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 stakeable = accountingBefore.bufferedAssets - targetBufferedAssets;
-        uint256 expectedBufferAfter = accountingBefore.bufferedAssets - actualStaked;
+        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
+        uint256 bufferedBefore = vault.bufferedAssets();
+        uint256 stakeable = bufferedBefore - targetBufferedAssets;
+        uint256 expectedBufferAfter = bufferedBefore - actualStaked;
         uint256 expectedStakedPrincipal = accountingBefore.stakedPrincipal + actualStaked;
 
         vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.stake, (stakeable)));
 
         vm.prank(operator);
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
+        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
         assertEq(stakedAmount, actualStaked, "staked amount uses staking manager return");
         assertEq(resultingBuffer, expectedBufferAfter, "resulting buffer uses actual staked");
-        assertEq(accountingAfter.bufferedAssets, expectedBufferAfter, "buffered assets reduced by actual staked");
+        assertEq(vault.bufferedAssets(), expectedBufferAfter, "buffered assets reduced by actual staked");
         assertEq(
             accountingAfter.stakedPrincipal, expectedStakedPrincipal, "staked principal increased by actual staked"
         );
@@ -1265,23 +1264,23 @@ contract OllaCoreRebalanceTest is Test {
 
         uint256 targetBufferedAssets = 10 * DECIMALS;
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
+        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
+        uint256 bufferedBefore = vault.bufferedAssets();
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit Rebalanced(0, 0, 0, accountingBefore.bufferedAssets);
+        vm.expectEmit(true, true, true, true, address(core));
+        emit Rebalanced(0, 0, 0, bufferedBefore);
 
         vm.prank(operator);
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
 
-        IOllaCore.AccountingState memory accountingAfter = vault.accountingState();
         assertEq(stakedAmount, 0, "staked amount is zero when below target");
-        assertEq(resultingBuffer, accountingBefore.bufferedAssets, "buffer unchanged when below target");
-        assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked principal unchanged");
+        assertEq(resultingBuffer, bufferedBefore, "buffer unchanged when below target");
+        assertEq(core.accountingState().stakedPrincipal, accountingBefore.stakedPrincipal, "staked principal unchanged");
     }
 
     function test_Rebalance_Liveness_ZeroStakeReturn_Recovers() external {
@@ -1291,16 +1290,16 @@ contract OllaCoreRebalanceTest is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
         stakingManager.setStakeReturnAmount(0);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressAfter = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(
             uint256(progressAfter.step),
             uint256(IOllaCore.RebalanceStep.Done),
@@ -1312,9 +1311,9 @@ contract OllaCoreRebalanceTest is Test {
         vm.warp(block.timestamp + 1 hours);
 
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        IOllaCore.RebalanceProgress memory progressFinal = vault.rebalanceProgress();
+        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
         assertEq(
             uint256(progressFinal.step),
             uint256(IOllaCore.RebalanceStep.Done),
@@ -1328,20 +1327,20 @@ contract OllaCoreRebalanceTest is Test {
 
         uint256 targetBufferedAssets = 10 * DECIMALS;
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 stakeable = accountingBefore.bufferedAssets - targetBufferedAssets;
+        uint256 bufferedBefore = vault.bufferedAssets();
+        uint256 stakeable = bufferedBefore - targetBufferedAssets;
 
         stakingManager.setStakeReturnAmount(stakeable + 1);
         stakingManager.setAllowStakeReturnExceeds(true);
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__StakeFailed.selector, stakeable + 1));
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1357,7 +1356,7 @@ contract OllaCoreRebalanceTest is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(targetBufferedAssets);
+        core.setTargetBufferedAssets(targetBufferedAssets);
 
         uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
         IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
@@ -1366,8 +1365,8 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakedAmount(0);
         stakingManager.setStakeReturnAmount(actualStaked);
 
-        IOllaCore.AccountingState memory accountingBefore = vault.accountingState();
-        uint256 bufferAfterFinalize = accountingBefore.bufferedAssets - request.assetsExpected;
+        uint256 bufferedBefore = vault.bufferedAssets();
+        uint256 bufferAfterFinalize = bufferedBefore - request.assetsExpected;
         uint256 stakeable = bufferAfterFinalize - targetBufferedAssets;
         uint256 expectedBufferAfter = bufferAfterFinalize - actualStaked;
 
@@ -1376,7 +1375,7 @@ contract OllaCoreRebalanceTest is Test {
         vm.recordLogs();
 
         vm.prank(operator);
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = vault.rebalance();
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
 
         Vm.Log[] memory entries = vm.getRecordedLogs();
         bytes32 finalizedSelector = keccak256("WithdrawalFinalized(uint256,uint256)");
@@ -1403,11 +1402,12 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
     uint256 internal constant DECIMALS = 1e18;
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     InconsistentWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
@@ -1416,39 +1416,42 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         withdrawalQueue = new InconsistentWithdrawalQueue();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
@@ -1458,13 +1461,15 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         uint256 bufferedAmount = 5 * DECIMALS;
 
         asset.mint(address(vault), bufferedAmount);
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
         withdrawalQueue.setTotalPendingAssets(bufferedAmount);
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__FinalizeInconsistent.selector, 1e18, 0));
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__FinalizeInconsistent.selector, 1e18, 0));
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        assertEq(vault.accountingState().bufferedAssets, 0, "buffered assets unchanged on revert");
+        assertEq(vault.bufferedAssets(), bufferedAmount, "buffered assets unchanged on revert");
         assertEq(withdrawalQueue.totalPendingAssets(), bufferedAmount, "pending assets unchanged on revert");
     }
 }
@@ -1473,11 +1478,12 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
     uint256 internal constant DECIMALS = 1e18;
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     MismatchWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
     address internal operator;
@@ -1486,39 +1492,42 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         withdrawalQueue = new MismatchWithdrawalQueue();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
@@ -1529,13 +1538,15 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
         uint256 queuedAmount = 2 * DECIMALS;
 
         asset.mint(address(vault), bufferedAmount);
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
         withdrawalQueue.setTotalPendingAssets(queuedAmount);
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__FinalizeAmountMismatch.selector, 0, 1e18));
+        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__FinalizeAmountMismatch.selector, 0, 1e18));
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
 
-        assertEq(vault.accountingState().bufferedAssets, 0, "buffered assets unchanged on revert");
+        assertEq(vault.bufferedAssets(), bufferedAmount, "buffered assets unchanged on revert");
         assertEq(withdrawalQueue.totalPendingAssets(), queuedAmount, "pending assets unchanged on revert");
     }
 }
@@ -1546,12 +1557,13 @@ contract OllaCoreRebalanceReentrancyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MaliciousReentrantStakingManager internal stakingManager;
     address internal governance;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
 
@@ -1563,8 +1575,12 @@ contract OllaCoreRebalanceReentrancyTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
@@ -1576,30 +1592,29 @@ contract OllaCoreRebalanceReentrancyTest is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
-        vault.grantRole(operatorRole, address(stakingManager));
+        core.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, address(stakingManager));
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
@@ -1610,11 +1625,11 @@ contract OllaCoreRebalanceReentrancyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_Rebalance_RevertsOnReentrantGetUnstakedFunds() external {
-        stakingManager.setReentry(vault, MaliciousReentrantStakingManager.ReentryAction.Rebalance);
+        stakingManager.setReentry(core, MaliciousReentrantStakingManager.ReentryAction.Rebalance);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
     }
 }
 
@@ -1622,10 +1637,12 @@ contract RevertingSafetyModule is ISafetyModule {
     error AccountingStale();
 
     address public immutable CORE_ADDRESS;
+    address public immutable VAULT_ADDRESS;
     bool internal stale;
 
-    constructor(address coreAddress) {
+    constructor(address coreAddress, address vaultAddress) {
         CORE_ADDRESS = coreAddress;
+        VAULT_ADDRESS = vaultAddress;
     }
 
     function setStale(bool value) external {
@@ -1642,6 +1659,10 @@ contract RevertingSafetyModule is ISafetyModule {
 
     function CORE() external view override returns (address) {
         return CORE_ADDRESS;
+    }
+
+    function VAULT() external view override returns (address) {
+        return VAULT_ADDRESS;
     }
 
     function checkRateDrop(uint256, uint256) external pure override { }
@@ -1671,16 +1692,21 @@ contract RevertingSafetyModule is ISafetyModule {
     }
 
     function checkWithdrawalMinimum(uint256) external pure override { }
+
+    function depositCap() external pure override returns (uint256) {
+        return type(uint256).max;
+    }
 }
 
 contract OllaCoreRebalanceAccountingLivenessTest is Test {
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     WithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     RevertingSafetyModule internal safetyModule;
     address internal operator;
 
@@ -1688,8 +1714,12 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
@@ -1701,29 +1731,28 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
             abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
         );
         withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new RevertingSafetyModule(address(vault));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new RevertingSafetyModule(address(core), address(vault));
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
     }
 
@@ -1732,7 +1761,7 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
 
         vm.prank(operator);
         vm.expectRevert(RevertingSafetyModule.AccountingStale.selector);
-        vault.rebalance();
+        core.rebalance();
     }
 }
 
@@ -1744,7 +1773,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 
 /// @notice Staking manager that reverts on unstake when amount exceeds staked principal.
 /// @dev Used to test that rebalance correctly accounts for rewards vault liquidity.
@@ -1937,11 +1966,12 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
     uint256 internal constant DECIMALS = 1e18;
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     UnstakeRevertingStakingManager internal stakingManager;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     address internal governance;
@@ -1957,31 +1987,34 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         operator = makeAddr("operator");
 
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(vault));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
+
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, operator);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
@@ -1996,40 +2029,40 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         return shares;
     }
 
-    function test_Rebalance_HandlesWithdrawalsBackedByRewardsVaultLiquidity() external {
+    function test_Rebalance_HandlesWithdrawalsBackedByRewardsAccumulatorLiquidity() external {
         uint256 principal = 200_000 * DECIMALS;
         _performDeposit(alice, principal);
 
         // Stake everything so buffered liquidity is zero.
         vm.prank(operator);
-        vault.rebalance();
-        assertEq(vault.accountingState().bufferedAssets, 0, "buffer should be zero after stake");
+        core.rebalance();
+        assertEq(vault.bufferedAssets(), 0, "buffer should be zero after stake");
 
         // Simulate rewards sitting in the rewards vault (counted in totalAssets via accounting).
         uint256 rewards = 69 * DECIMALS;
-        asset.mint(address(rewardsVault), rewards);
+        asset.mint(address(rewardsAccumulator), rewards);
 
         // Advance past rebalance cooldown after first cycle completion
         uint256 t1 = block.timestamp + 1 hours;
         vm.warp(t1);
 
-        // Persist rewardsVaultBalance into accounting so exchangeRate/totalAssets includes it.
+        // Persist rewardsAccumulatorBalance into accounting so exchangeRate/totalAssets includes it.
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         // Request redeem of all shares; assetsExpected includes rewards.
         uint256 shares = stAztec.balanceOf(alice);
         vm.prank(alice);
-        vault.requestRedeem(shares, alice);
+        vault.requestRedeem(shares, alice, alice);
 
         // Advance past rebalance cooldown after updateAccounting updated _latestReport.timestamp
         vm.warp(t1 + 1 hours);
 
-        // Rebalance should use rewards-vault funds as liquidity and avoid over-unstaking.
+        // Rebalance should use rewards-accumulator funds as liquidity and avoid over-unstaking.
         // Previously this would revert with StakingManager__InsufficientStake because
         // _initiateUnstake sized against bufferedAssets only.
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
     }
 
     function test_Rebalance_HandlesWithdrawalsBackedByClaimableRewards() external {
@@ -2037,11 +2070,11 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         _performDeposit(alice, principal);
 
         vm.prank(operator);
-        vault.rebalance();
-        assertEq(vault.accountingState().bufferedAssets, 0, "buffer should be zero after stake");
+        core.rebalance();
+        assertEq(vault.bufferedAssets(), 0, "buffer should be zero after stake");
 
         // Set rewards recipient so harvest actually transfers tokens to rewards vault
-        stakingManager.setRewardsRecipient(address(rewardsVault));
+        stakingManager.setRewardsRecipient(address(rewardsAccumulator));
 
         // Advance past rebalance cooldown after first cycle completion
         uint256 t1 = block.timestamp + 1 hours;
@@ -2051,11 +2084,11 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         uint256 claimableRewards = 69 * DECIMALS;
         stakingManager.setClaimableRewards(claimableRewards);
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         uint256 shares = stAztec.balanceOf(alice);
         vm.prank(alice);
-        vault.requestRedeem(shares, alice);
+        vault.requestRedeem(shares, alice, alice);
 
         // Advance past rebalance cooldown after updateAccounting updated _latestReport.timestamp
         vm.warp(t1 + 1 hours);
@@ -2063,6 +2096,6 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         // Rebalance should not over-request unstake when withdrawals include claimable rewards.
         // The harvest step pulls the rewards into the buffer before unstake sizing.
         vm.prank(operator);
-        vault.rebalance();
+        core.rebalance();
     }
 }

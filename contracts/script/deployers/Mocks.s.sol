@@ -19,7 +19,7 @@ contract MocksDeployer is BaseDeployer {
     struct StakingStackParams {
         DeployConfig config;
         address core;
-        address rewardsVault;
+        address rewardsAccumulator;
         address asset;
         address rollupRegistry;
         address governanceAdmin;
@@ -67,7 +67,7 @@ contract MocksDeployer is BaseDeployer {
     function deployStakingStack(
         DeployConfig memory config,
         address core,
-        address rewardsVault,
+        address rewardsAccumulator,
         address asset,
         address rollupRegistry,
         address governanceAdmin
@@ -83,7 +83,7 @@ contract MocksDeployer is BaseDeployer {
         StakingStackParams memory params = StakingStackParams({
             config: config,
             core: core,
-            rewardsVault: rewardsVault,
+            rewardsAccumulator: rewardsAccumulator,
             asset: asset,
             rollupRegistry: rollupRegistry,
             governanceAdmin: governanceAdmin
@@ -121,7 +121,7 @@ contract MocksDeployer is BaseDeployer {
     {
         require(params.config.deployMocks, "MocksDeployer: mocks not enabled for this environment");
         require(params.core != address(0), "MocksDeployer: core required");
-        require(params.rewardsVault != address(0), "MocksDeployer: rewardsVault required");
+        require(params.rewardsAccumulator != address(0), "MocksDeployer: rewardsAccumulator required");
         require(params.asset != address(0), "MocksDeployer: asset required");
         require(params.rollupRegistry != address(0), "MocksDeployer: rollupRegistry required");
         require(params.governanceAdmin != address(0), "MocksDeployer: governanceAdmin required");
@@ -149,14 +149,19 @@ contract MocksDeployer is BaseDeployer {
         address sprProxyAddr = address(sprProxy);
         IERC20 asset = IERC20(params.asset);
         address rollupRegistry = params.rollupRegistry;
-        address rewardsVault = params.rewardsVault;
+        address rewardsAccumulator = params.rewardsAccumulator;
         address core = params.core;
 
+        address governance = params.governanceAdmin;
+
         // Initialize StakingProviderRegistry first (needs stakingManager address)
+        // defaultAdmin is governance so OllaGovernance can propagate admin role changes.
         StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, deployer, deployer, governanceAdmin);
 
         // Initialize StakingManager
-        StakingManager(smProxyAddr).initialize(asset, rollupRegistry, rewardsVault, core, sprProxyAddr, governanceAdmin);
+        // defaultAdmin is governance so OllaGovernance can propagate admin role changes.
+        StakingManager(smProxyAddr)
+            .initialize(asset, rollupRegistry, rewardsAccumulator, core, sprProxyAddr, governance);
 
         vm.stopBroadcast();
 

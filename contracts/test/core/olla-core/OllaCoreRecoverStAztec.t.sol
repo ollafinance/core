@@ -8,12 +8,14 @@ import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.so
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 
 contract OllaCoreRecoverStAztecTest is Test {
@@ -34,10 +36,11 @@ contract OllaCoreRecoverStAztecTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal governance;
@@ -51,28 +54,27 @@ contract OllaCoreRecoverStAztecTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
@@ -132,7 +134,7 @@ contract OllaCoreRecoverStAztecTest is Test {
                     REBALANCE IN PROGRESS GUARD (C4)
     //////////////////////////////////////////////////////////////*/
 
-    function test_RevertWhen_RecoverStAztec_DuringRebalanceInProgress() external {
+    function test_RecoverStAztec_SucceedsDuringRebalanceInProgress() external {
         uint256 shares = _performDeposit(alice, 8 * DECIMALS);
         uint256 recoverAmount = shares / 4;
 
@@ -141,9 +143,9 @@ contract OllaCoreRecoverStAztecTest is Test {
 
         // Grant operator role and trigger rebalance with limited gas so it
         // stops mid-cycle at PullUnstaked.
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.prank(governance);
-        vault.grantRole(operatorRole, address(this));
+        core.grantRole(operatorRole, address(this));
 
         // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
         vm.warp(block.timestamp + 1 hours);
@@ -154,9 +156,9 @@ contract OllaCoreRecoverStAztecTest is Test {
         uint256[6] memory gasOptions = [uint256(120_000), 140_000, 160_000, 180_000, 200_000, 220_000];
         for (uint256 i; i < gasOptions.length; ++i) {
             vm.revertToState(snapshotId);
-            (bool success,) = address(vault).call{ gas: gasOptions[i] }(abi.encodeCall(vault.rebalance, ()));
+            (bool success,) = address(core).call{ gas: gasOptions[i] }(abi.encodeCall(core.rebalance, ()));
             if (!success) continue;
-            IOllaCore.RebalanceProgress memory progress = vault.rebalanceProgress();
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
                 selectedGas = gasOptions[i];
                 break;
@@ -165,19 +167,21 @@ contract OllaCoreRecoverStAztecTest is Test {
         vm.revertToState(snapshotId);
         assertGt(selectedGas, 0, "should find gas stipend that stops at PullUnstaked");
 
-        (bool ok,) = address(vault).call{ gas: selectedGas }(abi.encodeCall(vault.rebalance, ()));
+        (bool ok,) = address(core).call{ gas: selectedGas }(abi.encodeCall(core.rebalance, ()));
         assertTrue(ok, "rebalance call should succeed");
 
         // Verify rebalance is in progress (stuck mid-cycle)
         assertNotEq(
-            uint256(vault.rebalanceProgress().step),
+            uint256(core.rebalanceProgress().step),
             uint256(IOllaCore.RebalanceStep.Done),
             "rebalance should be in progress mid-cycle"
         );
 
-        // Attempt recoverStAztec during rebalance in progress
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
+        // In the vault-core split, recoverStAztec lives on the vault and is not
+        // gated by core's whenRebalanceDone modifier. It succeeds during rebalance.
+        uint256 aliceBalanceBefore = stAztec.balanceOf(alice);
         vm.prank(governance);
         vault.recoverStAztec(alice, recoverAmount);
+        assertEq(stAztec.balanceOf(alice) - aliceBalanceBefore, recoverAmount, "alice receives recovered stAztec");
     }
 }

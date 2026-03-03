@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity 0.8.27;
+
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+
+/// @title IRewardsAccumulator
+/// @notice Interface for rewards and fee management vault.
+/// @author Olla Core contributors
+interface IRewardsAccumulator {
+    /*//////////////////////////////////////////////////////////////
+                                  EVENTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Emitted when rewards are recorded.
+    /// @param delta The delta amount of rewards recorded (current - previous).
+    event RewardsRecorded(uint256 indexed delta);
+
+    /// @notice Emitted when rewards are withdrawn to core.
+    /// @param amount The amount of rewards withdrawn.
+    event RewardsWithdrawn(uint256 indexed amount);
+
+    /*//////////////////////////////////////////////////////////////
+                                  ERRORS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when address is zero.
+    error RewardsAccumulator__ZeroAddress(string param);
+
+    /// @notice Thrown when amount is zero.
+    error RewardsAccumulator__ZeroAmount();
+
+    /// @notice Thrown when there is a balance mismatch.
+    error RewardsAccumulator__BalanceMismatch();
+
+    /// @notice Thrown when caller is not authorized core.
+    error RewardsAccumulator__UnauthorizedCore(address caller);
+
+    /*//////////////////////////////////////////////////////////////
+                                 FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Initializes the vault when deployed behind a proxy.
+    /// @param rewardsToken_ The rewards token address.
+    /// @param core_ The core contract address.
+    /// @param defaultAdmin_ The default admin for role management.
+    function initialize(IERC20 rewardsToken_, address core_, address defaultAdmin_) external;
+
+    /// @notice Records the rewards delta (current balance - previous balance) and updates internal accounting.
+    /// @dev Only callable by the configured core address. Does not revert on any balance changes.
+    /// @return balanceDelta The delta amount of rewards (current balance - previous recorded balance).
+    function recordBalance() external returns (uint256 balanceDelta);
+
+    /// @notice Withdraws all available rewards to the core contract.
+    /// @dev Only callable by the configured core address.
+    function withdrawToCore() external;
+
+    /// @notice Returns the current available funds.
+    /// @return The balance of funds held in the vault.
+    function balance() external view returns (uint256);
+
+    /// @notice Returns the core address.
+    /// @return The core contract address.
+    function core() external view returns (address);
+
+    /// @notice Returns the rewards token address.
+    /// @return The ERC20 token address for rewards.
+    function rewardsToken() external view returns (IERC20);
+
+    /// @notice Returns the latest recorded rewards amount.
+    /// @return The latest recorded rewards amount.
+    function latestRecordedRewardsAmount() external view returns (uint256);
+}

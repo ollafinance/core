@@ -15,6 +15,7 @@ contract SafetyModuleBoundsValidationTest is Test {
     address internal admin;
     address internal guardian;
     address internal core;
+    address internal vault;
 
     /*//////////////////////////////////////////////////////////////
                                   SETUP
@@ -24,8 +25,9 @@ contract SafetyModuleBoundsValidationTest is Test {
         admin = makeAddr("admin");
         guardian = makeAddr("guardian");
         core = makeAddr("core");
+        vault = makeAddr("vault");
 
-        safetyModule = new SafetyModule(admin, guardian, core, 1_000 ether, 500, 6_000, 1 days);
+        safetyModule = new SafetyModule(admin, guardian, core, vault, 1_000 ether, 500, 6_000, 1 days);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -34,37 +36,37 @@ contract SafetyModuleBoundsValidationTest is Test {
 
     function test_RevertWhen_Constructor_DepositCapZero() public {
         vm.expectRevert(ISafetyModule.SafetyModule__InvalidParameter.selector);
-        new SafetyModule(admin, guardian, core, 0, 500, 6_000, 1 days);
+        new SafetyModule(admin, guardian, core, vault, 0, 500, 6_000, 1 days);
     }
 
     function test_RevertWhen_Constructor_MinRateDropBpsBelowMin() public {
         vm.expectRevert(ISafetyModule.SafetyModule__InvalidParameter.selector);
-        new SafetyModule(admin, guardian, core, 1_000 ether, 0, 6_000, 1 days);
+        new SafetyModule(admin, guardian, core, vault, 1_000 ether, 0, 6_000, 1 days);
     }
 
     function test_RevertWhen_Constructor_MinRateDropBpsAboveMax() public {
         vm.expectRevert(ISafetyModule.SafetyModule__InvalidParameter.selector);
-        new SafetyModule(admin, guardian, core, 1_000 ether, 5_001, 6_000, 1 days);
+        new SafetyModule(admin, guardian, core, vault, 1_000 ether, 5_001, 6_000, 1 days);
     }
 
     function test_RevertWhen_Constructor_MaxQueueRatioBpsBelowMin() public {
         vm.expectRevert(ISafetyModule.SafetyModule__InvalidParameter.selector);
-        new SafetyModule(admin, guardian, core, 1_000 ether, 500, 99, 1 days);
+        new SafetyModule(admin, guardian, core, vault, 1_000 ether, 500, 99, 1 days);
     }
 
     function test_RevertWhen_Constructor_MaxQueueRatioBpsAboveMax() public {
         vm.expectRevert(ISafetyModule.SafetyModule__InvalidParameter.selector);
-        new SafetyModule(admin, guardian, core, 1_000 ether, 500, 9_001, 1 days);
+        new SafetyModule(admin, guardian, core, vault, 1_000 ether, 500, 9_001, 1 days);
     }
 
     function test_RevertWhen_Constructor_MaxAccountingDelayBelowMin() public {
         vm.expectRevert(ISafetyModule.SafetyModule__InvalidParameter.selector);
-        new SafetyModule(admin, guardian, core, 1_000 ether, 500, 6_000, 1 hours - 1);
+        new SafetyModule(admin, guardian, core, vault, 1_000 ether, 500, 6_000, 1 hours - 1);
     }
 
     function test_RevertWhen_Constructor_MaxAccountingDelayAboveMax() public {
         vm.expectRevert(ISafetyModule.SafetyModule__InvalidParameter.selector);
-        new SafetyModule(admin, guardian, core, 1_000 ether, 500, 6_000, 7 days + 1);
+        new SafetyModule(admin, guardian, core, vault, 1_000 ether, 500, 6_000, 7 days + 1);
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -14,7 +14,7 @@ import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProvide
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { Status } from "src/staking/libraries/AztecTypes.sol";
 
@@ -33,7 +33,7 @@ contract StakingManagerHandler is Test {
     address public core;
     address public providerAdmin;
     address public defaultAdmin;
-    address public rewardsVault;
+    address public rewardsAccumulator;
 
     // Ghost variables for tracking state
     uint256 public ghost_totalStaked;
@@ -54,7 +54,7 @@ contract StakingManagerHandler is Test {
         address _core,
         address _providerAdmin,
         address _defaultAdmin,
-        address _rewardsVault
+        address _rewardsAccumulator
     ) {
         stakingManager = _stakingManager;
         stakingProviderRegistry = _stakingProviderRegistry;
@@ -64,7 +64,7 @@ contract StakingManagerHandler is Test {
         core = _core;
         providerAdmin = _providerAdmin;
         defaultAdmin = _defaultAdmin;
-        rewardsVault = _rewardsVault;
+        rewardsAccumulator = _rewardsAccumulator;
     }
 
     /// @notice Add keys to the provider queue (only provider admin can call)
@@ -218,9 +218,9 @@ contract StakingManagerHandler is Test {
     function harvestRewards(uint256 rewardSeed) external {
         uint256 reward = bound(rewardSeed, 0, 10e18);
         if (reward > 0) {
-            uint256 currentPending = rollup.pendingRewards(rewardsVault);
+            uint256 currentPending = rollup.pendingRewards(rewardsAccumulator);
             stakingAsset.mint(address(rollup), reward);
-            rollup.setRewards(rewardsVault, currentPending + reward);
+            rollup.setRewards(rewardsAccumulator, currentPending + reward);
             ghost_totalRewardsSet += reward;
         }
 
@@ -251,7 +251,7 @@ contract StakingManagerInvariantTest is Test {
     MockAztec internal stakingAsset;
     MockAztecRollupRegistry internal rollupRegistry;
     MockAztecRollup internal rollup;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     StakingManagerHandler internal handler;
 
     address internal core;
@@ -268,7 +268,7 @@ contract StakingManagerInvariantTest is Test {
         stakingAsset = new MockAztec(address(this));
         rollupRegistry = new MockAztecRollupRegistry(address(0));
         rollup = new MockAztecRollup(stakingAsset, 100e18); // 100 AZTEC activation threshold
-        rewardsVault = new MockRewardsVault(IERC20(address(stakingAsset)), core);
+        rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(stakingAsset)), core);
 
         // Set canonical rollup
         rollupRegistry.setCanonicalRollup(address(rollup));
@@ -292,7 +292,7 @@ contract StakingManagerInvariantTest is Test {
         stakingManager.initialize(
             stakingAsset,
             address(rollupRegistry),
-            address(rewardsVault),
+            address(rewardsAccumulator),
             core,
             address(stakingProviderRegistry),
             defaultAdmin
@@ -312,7 +312,7 @@ contract StakingManagerInvariantTest is Test {
             core,
             providerAdmin,
             defaultAdmin,
-            address(rewardsVault)
+            address(rewardsAccumulator)
         );
 
         targetContract(address(handler));
@@ -481,10 +481,10 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Balance consistency across contract interactions
     function invariant_BalanceConsistency() external view {
-        // Rewards are paid by the rollup directly to `rewardsVault` (the claim recipient).
+        // Rewards are paid by the rollup directly to `rewardsAccumulator` (the claim recipient).
         // StakingManager only triggers the claim and emits accounting signals.
         assertEq(
-            stakingAsset.balanceOf(address(rewardsVault)),
+            stakingAsset.balanceOf(address(rewardsAccumulator)),
             handler.ghost_totalHarvested(),
             "rewards vault balance should equal harvested"
         );

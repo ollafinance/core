@@ -8,12 +8,14 @@ import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.so
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract OllaCoreAccessControlTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -38,11 +40,12 @@ contract OllaCoreAccessControlTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCore internal vault;
+    OllaCore internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     address internal governance;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal alice;
@@ -54,28 +57,41 @@ contract OllaCoreAccessControlTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCore coreImplementation = new OllaCore();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCore(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCore(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(coreImplementation));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             INITIAL_PROTOCOL_FEE_BP,
             INITIAL_TREASURY_SPLIT_BP,
             governance,
-            address(withdrawalQueue),
-            rewardsVault,
+            rewardsAccumulator,
             address(safetyModule)
         );
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
 
         vm.prank(governance);
         vault.unpause();
@@ -90,25 +106,25 @@ contract OllaCoreAccessControlTest is Test {
     function test_RevertWhen_NonOwnerSetsProtocolFeeBP() external {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
-        vault.setProtocolFeeBP(100);
+        core.setProtocolFeeBP(100);
     }
 
     function test_RevertWhen_NonOwnerSetsTreasuryFeeSplitBP() external {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
-        vault.setTreasuryFeeSplitBP(100);
+        core.setTreasuryFeeSplitBP(100);
     }
 
     function test_RevertWhen_NonOwnerSetsSafetyModule() external {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
-        vault.setSafetyModule(alice);
+        core.setSafetyModule(alice);
     }
 
     function test_RevertWhen_NonOwnerSetsTargetBufferedAssets() external {
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
         vm.prank(alice);
-        vault.setTargetBufferedAssets(1);
+        core.setTargetBufferedAssets(1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -116,42 +132,42 @@ contract OllaCoreAccessControlTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_ProtocolFeeBPExceedsMax() external {
-        uint256 aboveMax = vault.MAX_PROTOCOL_FEE_BP() + 1;
+        uint256 aboveMax = core.MAX_PROTOCOL_FEE_BP() + 1;
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, aboveMax));
-        vault.setProtocolFeeBP(aboveMax);
+        core.setProtocolFeeBP(aboveMax);
     }
 
     function test_RevertWhen_TreasuryFeeSplitBPExceedsMax() external {
-        uint256 aboveMax = vault.MAX_TREASURY_SPLIT_BP() + 1;
+        uint256 aboveMax = core.MAX_TREASURY_SPLIT_BP() + 1;
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, aboveMax));
-        vault.setTreasuryFeeSplitBP(aboveMax);
+        core.setTreasuryFeeSplitBP(aboveMax);
     }
 
     function test_RevertWhen_TreasuryFeeSplitBPBelowMin() external {
-        uint256 belowMin = vault.MIN_TREASURY_SPLIT_BP() - 1;
+        uint256 belowMin = core.MIN_TREASURY_SPLIT_BP() - 1;
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, belowMin));
-        vault.setTreasuryFeeSplitBP(belowMin);
+        core.setTreasuryFeeSplitBP(belowMin);
     }
 
     function test_RevertWhen_SafetyModuleIsZero() external {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newSafetyModule"));
         vm.prank(governance);
-        vault.setSafetyModule(address(0));
+        core.setSafetyModule(address(0));
     }
 
     function test_SetTargetBufferedAssets_AllowsZero() external {
-        uint256 oldBuffer = vault.targetBufferedAssets();
+        uint256 oldBuffer = core.targetBufferedAssets();
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit TargetBufferedAssetsUpdated(oldBuffer, 0);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(0);
+        core.setTargetBufferedAssets(0);
 
-        assertEq(vault.targetBufferedAssets(), 0, "target buffer set to zero");
+        assertEq(core.targetBufferedAssets(), 0, "target buffer set to zero");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -159,63 +175,63 @@ contract OllaCoreAccessControlTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_SetProtocolFeeBP_UpdatesAndEmits() external {
-        uint256 oldFeeBP = vault.protocolFeeBP();
+        uint256 oldFeeBP = core.protocolFeeBP();
         uint256 newFeeBP = 1000;
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
 
         vm.prank(governance);
-        vault.setProtocolFeeBP(newFeeBP);
+        core.setProtocolFeeBP(newFeeBP);
 
-        assertEq(vault.protocolFeeBP(), newFeeBP, "protocol fee updated");
+        assertEq(core.protocolFeeBP(), newFeeBP, "protocol fee updated");
     }
 
     function test_SetTreasuryFeeSplitBP_UpdatesAndEmits() external {
-        uint256 oldSplitBP = vault.treasuryFeeSplitBP();
+        uint256 oldSplitBP = core.treasuryFeeSplitBP();
         uint256 newSplitBP = 7_000;
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
 
         vm.prank(governance);
-        vault.setTreasuryFeeSplitBP(newSplitBP);
+        core.setTreasuryFeeSplitBP(newSplitBP);
 
-        assertEq(vault.treasuryFeeSplitBP(), newSplitBP, "treasury split updated");
+        assertEq(core.treasuryFeeSplitBP(), newSplitBP, "treasury split updated");
     }
 
     function test_SetSafetyModule_UpdatesAndEmits() external {
-        address oldSafetyModule = vault.safetyModule();
-        MockSafetyModule newSafetyModule = new MockSafetyModule(address(vault));
+        address oldSafetyModule = core.safetyModule();
+        MockSafetyModule newSafetyModule = new MockSafetyModule(address(core), address(vault));
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit SafetyModuleUpdated(oldSafetyModule, address(newSafetyModule));
 
         vm.prank(governance);
-        vault.setSafetyModule(address(newSafetyModule));
+        core.setSafetyModule(address(newSafetyModule));
 
-        assertEq(vault.safetyModule(), address(newSafetyModule), "safety module updated");
+        assertEq(core.safetyModule(), address(newSafetyModule), "safety module updated");
     }
 
     function test_RevertWhen_SafetyModuleCoreDoesNotMatch() external {
-        MockSafetyModule wrongModule = new MockSafetyModule(makeAddr("wrongCore"));
+        MockSafetyModule wrongModule = new MockSafetyModule(makeAddr("wrongCore"), address(vault));
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSafetyModule.selector, address(wrongModule)));
         vm.prank(governance);
-        vault.setSafetyModule(address(wrongModule));
+        core.setSafetyModule(address(wrongModule));
     }
 
     function test_SetTargetBufferedAssets_UpdatesAndEmits() external {
-        uint256 oldBuffer = vault.targetBufferedAssets();
+        uint256 oldBuffer = core.targetBufferedAssets();
         uint256 newBuffer = oldBuffer + 1;
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
 
         vm.prank(governance);
-        vault.setTargetBufferedAssets(newBuffer);
+        core.setTargetBufferedAssets(newBuffer);
 
-        assertEq(vault.targetBufferedAssets(), newBuffer, "target buffer updated");
+        assertEq(core.targetBufferedAssets(), newBuffer, "target buffer updated");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -224,29 +240,29 @@ contract OllaCoreAccessControlTest is Test {
 
     function test_SetProtocolFeeBP_AllowsZero() external {
         vm.prank(governance);
-        vault.setProtocolFeeBP(0);
-        assertEq(vault.protocolFeeBP(), 0, "protocol fee set to zero");
+        core.setProtocolFeeBP(0);
+        assertEq(core.protocolFeeBP(), 0, "protocol fee set to zero");
     }
 
     function test_SetProtocolFeeBP_AllowsMax() external {
-        uint256 maxFee = vault.MAX_PROTOCOL_FEE_BP();
+        uint256 maxFee = core.MAX_PROTOCOL_FEE_BP();
         vm.prank(governance);
-        vault.setProtocolFeeBP(maxFee);
-        assertEq(vault.protocolFeeBP(), maxFee, "protocol fee set to max");
+        core.setProtocolFeeBP(maxFee);
+        assertEq(core.protocolFeeBP(), maxFee, "protocol fee set to max");
     }
 
     function test_SetTreasuryFeeSplitBP_AllowsMin() external {
-        uint256 minSplit = vault.MIN_TREASURY_SPLIT_BP();
+        uint256 minSplit = core.MIN_TREASURY_SPLIT_BP();
         vm.prank(governance);
-        vault.setTreasuryFeeSplitBP(minSplit);
-        assertEq(vault.treasuryFeeSplitBP(), minSplit, "treasury split set to min");
+        core.setTreasuryFeeSplitBP(minSplit);
+        assertEq(core.treasuryFeeSplitBP(), minSplit, "treasury split set to min");
     }
 
     function test_SetTreasuryFeeSplitBP_AllowsMax() external {
-        uint256 maxSplit = vault.MAX_TREASURY_SPLIT_BP();
+        uint256 maxSplit = core.MAX_TREASURY_SPLIT_BP();
         vm.prank(governance);
-        vault.setTreasuryFeeSplitBP(maxSplit);
-        assertEq(vault.treasuryFeeSplitBP(), maxSplit, "treasury split set to max");
+        core.setTreasuryFeeSplitBP(maxSplit);
+        assertEq(core.treasuryFeeSplitBP(), maxSplit, "treasury split set to max");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -254,75 +270,75 @@ contract OllaCoreAccessControlTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function testFuzz_SetProtocolFeeBP_ValidRange(uint256 newFeeBP) external {
-        uint256 maxProtocolFee = vault.MAX_PROTOCOL_FEE_BP();
+        uint256 maxProtocolFee = core.MAX_PROTOCOL_FEE_BP();
         newFeeBP = bound(newFeeBP, 0, maxProtocolFee);
 
-        uint256 oldFeeBP = vault.protocolFeeBP();
+        uint256 oldFeeBP = core.protocolFeeBP();
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
 
         vm.prank(governance);
-        vault.setProtocolFeeBP(newFeeBP);
+        core.setProtocolFeeBP(newFeeBP);
 
-        assertEq(vault.protocolFeeBP(), newFeeBP, "protocol fee fuzz");
+        assertEq(core.protocolFeeBP(), newFeeBP, "protocol fee fuzz");
     }
 
     function testFuzz_SetProtocolFeeBP_InvalidRange(uint256 newFeeBP) external {
-        uint256 maxProtocolFee = vault.MAX_PROTOCOL_FEE_BP();
+        uint256 maxProtocolFee = core.MAX_PROTOCOL_FEE_BP();
         newFeeBP = bound(newFeeBP, maxProtocolFee + 1, type(uint256).max);
 
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidFeeBP.selector, newFeeBP));
-        vault.setProtocolFeeBP(newFeeBP);
+        core.setProtocolFeeBP(newFeeBP);
     }
 
     function testFuzz_SetTreasuryFeeSplitBP_ValidRange(uint256 newSplitBP) external {
-        uint256 minSplit = vault.MIN_TREASURY_SPLIT_BP();
-        uint256 maxSplit = vault.MAX_TREASURY_SPLIT_BP();
+        uint256 minSplit = core.MIN_TREASURY_SPLIT_BP();
+        uint256 maxSplit = core.MAX_TREASURY_SPLIT_BP();
         newSplitBP = bound(newSplitBP, minSplit, maxSplit);
 
-        uint256 oldSplitBP = vault.treasuryFeeSplitBP();
+        uint256 oldSplitBP = core.treasuryFeeSplitBP();
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
 
         vm.prank(governance);
-        vault.setTreasuryFeeSplitBP(newSplitBP);
+        core.setTreasuryFeeSplitBP(newSplitBP);
 
-        assertEq(vault.treasuryFeeSplitBP(), newSplitBP, "treasury split fuzz");
+        assertEq(core.treasuryFeeSplitBP(), newSplitBP, "treasury split fuzz");
     }
 
     function testFuzz_SetTreasuryFeeSplitBP_InvalidRange_AboveMax(uint256 newSplitBP) external {
-        uint256 maxSplit = vault.MAX_TREASURY_SPLIT_BP();
+        uint256 maxSplit = core.MAX_TREASURY_SPLIT_BP();
         newSplitBP = bound(newSplitBP, maxSplit + 1, type(uint256).max);
 
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, newSplitBP));
-        vault.setTreasuryFeeSplitBP(newSplitBP);
+        core.setTreasuryFeeSplitBP(newSplitBP);
     }
 
     function testFuzz_SetTreasuryFeeSplitBP_InvalidRange_BelowMin(uint256 newSplitBP) external {
-        uint256 minSplit = vault.MIN_TREASURY_SPLIT_BP();
+        uint256 minSplit = core.MIN_TREASURY_SPLIT_BP();
         newSplitBP = bound(newSplitBP, 0, minSplit - 1);
 
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSplitBP.selector, newSplitBP));
-        vault.setTreasuryFeeSplitBP(newSplitBP);
+        core.setTreasuryFeeSplitBP(newSplitBP);
     }
 
     function testFuzz_SetSafetyModule_AcceptsValidModule(uint256 salt) external {
         // Deploy a fresh MockSafetyModule with the correct CORE for each fuzz run.
-        MockSafetyModule newModule = new MockSafetyModule{ salt: bytes32(salt) }(address(vault));
+        MockSafetyModule newModule = new MockSafetyModule{ salt: bytes32(salt) }(address(core), address(vault));
 
-        address oldSafetyModule = vault.safetyModule();
+        address oldSafetyModule = core.safetyModule();
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit SafetyModuleUpdated(oldSafetyModule, address(newModule));
 
         vm.prank(governance);
-        vault.setSafetyModule(address(newModule));
+        core.setSafetyModule(address(newModule));
 
-        assertEq(vault.safetyModule(), address(newModule), "safety module fuzz");
+        assertEq(core.safetyModule(), address(newModule), "safety module fuzz");
     }
 }

@@ -7,11 +7,13 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 
@@ -29,14 +31,15 @@ contract OllaCoreFirstDepositorAttackTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreHarness internal vault;
+    OllaCoreHarness internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal attacker;
     address internal victim;
     MockWithdrawalQueue internal withdrawalQueue;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
     /*//////////////////////////////////////////////////////////////
@@ -47,31 +50,30 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         asset = new MockAztec(address(this));
 
         OllaCoreHarness coreImplementation = new OllaCoreHarness();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCoreHarness(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCoreHarness(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
-        stakingManager.setRewardsVault(address(rewardsVault));
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        vault.initialize(
-            asset,
-            stAztec,
-            stakingManager,
-            0,
-            5_000,
-            governance,
-            address(withdrawalQueue),
-            rewardsVault,
-            address(safetyModule)
-        );
+        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
         vm.prank(governance);
         vault.unpause();
 
@@ -113,7 +115,8 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         asset.transfer(address(vault), donation);
 
         // Step 3: Sync buffered assets so the vault absorbs the donation.
-        vault.exposedSyncBufferedWithBalance();
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
 
         // Step 4: Victim deposits.
         uint256 victimShares = _performDeposit(victim, victimDeposit);
@@ -124,7 +127,7 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         // Assert: victim's share of total value is fair. The victim deposited ~50% of
         // the post-deposit total assets, so they should hold roughly ~50% of shares.
         uint256 totalShares = stAztec.totalSupply();
-        uint256 totalAssets = vault.totalAssets();
+        uint256 totalAssets = core.totalAssets();
 
         // Victim's proportional asset value via their share fraction.
         uint256 victimAssetValue = victimShares.mulDiv(totalAssets, totalShares, Math.Rounding.Floor);
@@ -146,7 +149,8 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         asset.mint(attacker, donation);
         vm.prank(attacker);
         asset.transfer(address(vault), donation);
-        vault.exposedSyncBufferedWithBalance();
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
 
         // Victim deposits.
         _performDeposit(victim, victimDeposit);
@@ -156,7 +160,7 @@ contract OllaCoreFirstDepositorAttackTest is Test {
 
         // Calculate attacker's extractable value (share value).
         uint256 totalShares = stAztec.totalSupply();
-        uint256 totalAssets = vault.totalAssets();
+        uint256 totalAssets = core.totalAssets();
         uint256 attackerAssetValue = attackerShares.mulDiv(totalAssets, totalShares, Math.Rounding.Floor);
 
         // The attacker's extractable value must be less than their total cost.
@@ -174,7 +178,7 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         // So at zero supply the 1:1 ratio is preserved exactly.
         assertEq(shares, depositAmount, "first deposit should mint shares 1:1 when vault is empty");
         assertEq(stAztec.balanceOf(victim), depositAmount, "shares balance should match deposit");
-        assertEq(vault.totalAssets(), depositAmount, "total assets should equal deposited amount");
+        assertEq(core.totalAssets(), depositAmount, "total assets should equal deposited amount");
     }
 
     /// @notice Fuzz test: deposit a random amount and verify the roundtrip conversion is within
@@ -186,7 +190,7 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         uint256 shares = _performDeposit(victim, assets);
 
         // Convert shares back to assets using the public view function.
-        uint256 recoveredAssets = vault.convertToAssets(shares);
+        uint256 recoveredAssets = core.convertToAssets(shares);
 
         // The roundtrip should be within 1 wei of the original deposit.
         assertGe(recoveredAssets, uint256(assets) - 1, "recovered assets must be >= deposit - 1 wei");
@@ -206,7 +210,8 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         asset.mint(attacker, donation);
         vm.prank(attacker);
         asset.transfer(address(vault), donation);
-        vault.exposedSyncBufferedWithBalance();
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
 
         // Victim deposits the same amount as the donation.
         uint256 victimShares = _performDeposit(victim, donation);
@@ -216,7 +221,7 @@ contract OllaCoreFirstDepositorAttackTest is Test {
 
         // Victim's share of total value should be fair.
         uint256 totalShares = stAztec.totalSupply();
-        uint256 totalAssets = vault.totalAssets();
+        uint256 totalAssets = core.totalAssets();
         uint256 victimAssetValue = victimShares.mulDiv(totalAssets, totalShares, Math.Rounding.Floor);
 
         // The victim deposited `donation` worth of assets into a pool that had `donation + 1`

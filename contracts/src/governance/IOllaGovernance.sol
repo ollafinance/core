@@ -106,11 +106,11 @@ interface IOllaGovernance {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Sets the protocol fee in basis points on OllaCore.
-    /// @param newFeeBP The new fee (0-5000).
+    /// @param newFeeBP The new fee.
     function setProtocolFeeBP(uint256 newFeeBP) external;
 
     /// @notice Sets the treasury fee split in basis points on OllaCore.
-    /// @param newSplitBP The new split (1000-9000).
+    /// @param newSplitBP The new split.
     function setTreasuryFeeSplitBP(uint256 newSplitBP) external;
 
     /// @notice Sets the target buffer on OllaCore.
@@ -121,24 +121,28 @@ interface IOllaGovernance {
     /// @param newThreshold The new gas threshold.
     function setRebalanceGasThreshold(uint256 newThreshold) external;
 
-    /// @notice Sets the instant redemption fee on OllaCore.
-    /// @param newFeeBP The new fee (0-2000).
-    function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
-
     /// @notice Sets the safety module address on OllaCore.
     /// @param newSafetyModule The new safety module address.
     function setSafetyModule(address newSafetyModule) external;
-
-    /// @notice Recovers stAztec from OllaCore.
-    /// @param recipient The recipient of the recovered stAztec.
-    /// @param amount The amount of stAztec to recover.
-    function recoverStAztec(address recipient, uint256 amount) external;
 
     /// @notice Sets the rebalance cooldown on OllaCore.
     /// @param cooldown_ The new cooldown in seconds.
     function setRebalanceCooldown(uint256 cooldown_) external;
 
-    /// @notice Reconciles buffered assets on OllaCore.
+    /*//////////////////////////////////////////////////////////////
+                    OLLAVAULT PARAMETER PASSTHROUGHS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Sets the instant redemption fee on OllaVault.
+    /// @param newFeeBP The new fee (0-2000).
+    function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
+
+    /// @notice Recovers stAztec from OllaVault.
+    /// @param recipient The recipient of the recovered stAztec.
+    /// @param amount The amount of stAztec to recover.
+    function recoverStAztec(address recipient, uint256 amount) external;
+
+    /// @notice Reconciles buffered assets on OllaVault.
     function reconcileBufferedAssets() external;
 
     /*//////////////////////////////////////////////////////////////

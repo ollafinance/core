@@ -7,15 +7,17 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsVault } from "src/core/interfaces/IRewardsVault.sol";
-import { StAztec } from "src/core/StAztec.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
-import { MockSafetyModule } from "src/safetymodule/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/core/mocks/MockWithdrawalQueue.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract OllaCoreProtocolFeesTest is Test {
     using Math for uint256;
@@ -51,11 +53,12 @@ contract OllaCoreProtocolFeesTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreHarness internal vault;
+    OllaCoreHarness internal core;
+    OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal operator;
@@ -69,41 +72,54 @@ contract OllaCoreProtocolFeesTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
+        // Deploy Core
         OllaCoreHarness coreImplementation = new OllaCoreHarness();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(coreImplementation), "");
-        vault = OllaCoreHarness(address(proxy));
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
+        core = OllaCoreHarness(address(coreProxy));
+
+        // Deploy Vault
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        rewardsVault = new MockRewardsVault(asset, address(vault));
-        safetyModule = new MockSafetyModule(address(coreImplementation));
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
         withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
-        vault.initialize(
+        core.initialize(
             asset,
             stAztec,
             stakingManager,
             PROTOCOL_FEE_BP,
             TREASURY_FEE_SPLIT_BP,
             governance,
-            address(withdrawalQueue),
-            IRewardsVault(address(rewardsVault)),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
+
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+
+        vm.prank(governance);
+        core.setVault(address(vault));
+
+        vm.prank(governance);
+        core.unpause();
 
         vm.prank(governance);
         vault.unpause();
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = vault.OPERATOR_ROLE();
+        bytes32 operatorRole = core.OPERATOR_ROLE();
         vm.startPrank(governance);
-        vault.grantRole(operatorRole, operator);
-        vault.grantRole(operatorRole, address(this));
+        core.grantRole(operatorRole, operator);
+        core.grantRole(operatorRole, address(this));
         vm.stopPrank();
     }
 
@@ -131,13 +147,13 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 grossRewards = 100 * DECIMALS;
 
         assertGt(stAztec.totalSupply(), 0, "supply nonzero");
-        assertGt(vault.totalAssets(), 0, "total assets nonzero");
+        assertGt(core.totalAssets(), 0, "total assets nonzero");
 
         (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
-            vault.exposedCalculateProtocolFees(grossRewards);
+            core.exposedCalculateProtocolFees(grossRewards);
 
         uint256 expectedFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
-        uint256 expectedSharesTotal = vault.convertToShares(expectedFeeAssets);
+        uint256 expectedSharesTotal = core.convertToShares(expectedFeeAssets);
 
         assertEq(feeAssets, expectedFeeAssets, "fee assets");
         assertEq(treasuryShares + providerShares, expectedSharesTotal, "fee shares match convertToShares");
@@ -146,16 +162,16 @@ contract OllaCoreProtocolFeesTest is Test {
     function test_CalculateProtocolFees_LargeAssetsTinyRewards_MatchesConvertToShares() external {
         uint256 depositAmount = 1e24;
         _performDeposit(alice, depositAmount);
-        vault.exposedApplyAccountingUpdates(1, 0, 0, 0, 0);
+        core.exposedApplyAccountingUpdates(1, 0, 0, 0, 0);
 
         uint256 grossRewards = 20;
         (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
-            vault.exposedCalculateProtocolFees(grossRewards);
+            core.exposedCalculateProtocolFees(grossRewards);
 
         uint256 expectedFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
-        uint256 expectedSharesTotal = vault.convertToShares(expectedFeeAssets);
+        uint256 expectedSharesTotal = core.convertToShares(expectedFeeAssets);
         uint256 supply = stAztec.totalSupply();
-        uint256 totalAssets = vault.totalAssets();
+        uint256 totalAssets = core.totalAssets();
 
         assertEq(feeAssets, expectedFeeAssets, "fee assets");
         assertEq(supply, depositAmount, "supply from deposit");
@@ -193,11 +209,11 @@ contract OllaCoreProtocolFeesTest is Test {
             expectedTotalAssets.mulDiv(DECIMALS, oldSupply + protocolSharesTotal, Math.Rounding.Floor);
         uint256 expectedTimestamp = block.timestamp;
 
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit OllaProtocolFeesPaid(protocolFeeAssets, treasuryShares, providerShares);
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit AttestersStateRead(rewards, 0, expectedTimestamp);
-        vm.expectEmit(true, true, true, true, address(vault));
+        vm.expectEmit(true, true, true, true, address(core));
         emit AccountingUpdated(
             expectedTotalAssets,
             expectedRateAfter,
@@ -210,7 +226,7 @@ contract OllaCoreProtocolFeesTest is Test {
         );
 
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "protocol fee shares minted");
         assertEq(stAztec.balanceOf(governance), oldGovShares + treasuryShares, "treasury shares minted");
@@ -246,7 +262,7 @@ contract OllaCoreProtocolFeesTest is Test {
         assertLe(treasuryShares, providerShares + 1, "treasury floor split at 50/50");
 
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury minted (from zero)");
         assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider minted (from zero)");
@@ -257,22 +273,22 @@ contract OllaCoreProtocolFeesTest is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         uint256 sharesToRedeem = 40 * DECIMALS;
-        uint256 rate = vault.exchangeRate();
+        uint256 rate = core.exchangeRate();
         uint256 assetsExpected = sharesToRedeem * rate / DECIMALS;
         vm.prank(alice);
-        vault.requestRedeem(sharesToRedeem, alice);
+        vault.requestRedeem(sharesToRedeem, alice, alice);
 
         uint256 oldSupply = stAztec.totalSupply();
         uint256 oldGovShares = stAztec.balanceOf(governance);
         uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
 
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
-        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        IOllaCore.LatestReport memory reportAfter = core.latestReport();
         assertEq(reportAfter.netFlows, -int256(assetsExpected), "net flows negative");
         // No actual rewards accrued — pending withdrawal assets are excluded from totalAssets
         // so no phantom rewards are computed and no protocol fees are minted.
@@ -287,7 +303,7 @@ contract OllaCoreProtocolFeesTest is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         uint256 extraDeposit = 10 * DECIMALS;
         _performDeposit(alice, extraDeposit);
@@ -298,9 +314,9 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
 
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
-        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        IOllaCore.LatestReport memory reportAfter = core.latestReport();
         assertEq(reportAfter.grossRewards, 0, "gross rewards clamped to zero");
         assertEq(reportAfter.netFlows, int256(extraDeposit), "net flows positive");
         assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");
@@ -313,7 +329,7 @@ contract OllaCoreProtocolFeesTest is Test {
         _performDeposit(alice, depositAmount);
 
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         stakingManager.setSlashingDelta(depositAmount);
 
@@ -322,13 +338,13 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 oldProviderShares = stAztec.balanceOf(providerRewardsRecipient);
 
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
-        IOllaCore.LatestReport memory reportAfter = vault.latestReport();
+        IOllaCore.LatestReport memory reportAfter = core.latestReport();
         assertEq(reportAfter.grossRewards, 0, "gross rewards zero");
         assertEq(reportAfter.totalAssets, 0, "report total assets zero");
         assertEq(reportAfter.exchangeRate, 0, "exchange rate zero");
-        assertEq(vault.totalAssets(), 0, "total assets zeroed");
+        assertEq(core.totalAssets(), 0, "total assets zeroed");
         assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");
         assertEq(stAztec.balanceOf(governance), oldGovShares, "no treasury shares minted");
         assertEq(stAztec.balanceOf(providerRewardsRecipient), oldProviderShares, "no provider shares minted");
@@ -352,16 +368,16 @@ contract OllaCoreProtocolFeesTest is Test {
 
         // Step 3: Update accounting to apply the staked principal
         vm.prank(operator);
-        vault.updateAccounting();
+        core.updateAccounting();
 
         // Step 4: Now check the invariant: convertToAssets with virtual offset
         uint256 supply = stAztec.totalSupply();
-        uint256 total = vault.totalAssets();
+        uint256 total = core.totalAssets();
 
         uint256 shares = supply; // Use total supply as test shares
 
         // Contract's implementation (uses virtual offset)
-        uint256 contractResult = vault.convertToAssets(shares);
+        uint256 contractResult = core.convertToAssets(shares);
 
         // Expected result with virtual offset: shares * (total + 1) / (supply + 1)
         uint256 expectedResult = shares.mulDiv(total + 1, supply + 1, Math.Rounding.Floor);
@@ -384,18 +400,18 @@ contract OllaCoreProtocolFeesTest is Test {
 
         // Set fee and split parameters via governance
         vm.startPrank(governance);
-        vault.setProtocolFeeBP(feeBP);
-        vault.setTreasuryFeeSplitBP(splitBP);
+        core.setProtocolFeeBP(feeBP);
+        core.setTreasuryFeeSplitBP(splitBP);
         vm.stopPrank();
 
         (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
-            vault.exposedCalculateProtocolFees(grossRewards);
+            core.exposedCalculateProtocolFees(grossRewards);
 
         uint256 expectedFeeAssets = uint256(grossRewards) * feeBP / BP_DIVISOR;
         assertEq(feeAssets, expectedFeeAssets, "feeAssets == grossRewards * feeBP / 10000");
 
         // Shares split sums to total
-        uint256 totalShares = vault.convertToShares(expectedFeeAssets);
+        uint256 totalShares = core.convertToShares(expectedFeeAssets);
         assertEq(treasuryShares + providerShares, totalShares, "treasury + provider == total shares");
     }
 }

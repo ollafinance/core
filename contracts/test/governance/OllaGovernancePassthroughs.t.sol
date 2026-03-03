@@ -17,7 +17,7 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
         uint256 newFee = 1_000;
         bytes memory data = abi.encodeCall(IOllaGovernance.setProtocolFeeBP, (newFee));
         _scheduleAndExecute(address(gov), data);
-        assertEq(vault.protocolFeeBP(), newFee, "protocol fee updated");
+        assertEq(core.protocolFeeBP(), newFee, "protocol fee updated");
     }
 
     function test_RevertWhen_SetProtocolFeeBP_DirectCall() external {
@@ -34,7 +34,7 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
         uint256 newSplit = 7_000;
         bytes memory data = abi.encodeCall(IOllaGovernance.setTreasuryFeeSplitBP, (newSplit));
         _scheduleAndExecute(address(gov), data);
-        assertEq(vault.treasuryFeeSplitBP(), newSplit, "treasury split updated");
+        assertEq(core.treasuryFeeSplitBP(), newSplit, "treasury split updated");
     }
 
     function test_RevertWhen_SetTreasuryFeeSplitBP_DirectCall() external {
@@ -51,7 +51,7 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
         uint256 newBuffer = 100 * DECIMALS;
         bytes memory data = abi.encodeCall(IOllaGovernance.setTargetBufferedAssets, (newBuffer));
         _scheduleAndExecute(address(gov), data);
-        assertEq(vault.targetBufferedAssets(), newBuffer, "target buffer updated");
+        assertEq(core.targetBufferedAssets(), newBuffer, "target buffer updated");
     }
 
     function test_RevertWhen_SetTargetBufferedAssets_DirectCall() external {
@@ -68,7 +68,7 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
         uint256 newThreshold = 200_000;
         bytes memory data = abi.encodeCall(IOllaGovernance.setRebalanceGasThreshold, (newThreshold));
         _scheduleAndExecute(address(gov), data);
-        assertEq(vault.rebalanceGasThreshold(), newThreshold, "gas threshold updated");
+        assertEq(core.rebalanceGasThreshold(), newThreshold, "gas threshold updated");
     }
 
     function test_RevertWhen_SetRebalanceGasThreshold_DirectCall() external {
@@ -99,10 +99,10 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
     //////////////////////////////////////////////////////////////*/
 
     function test_SetSafetyModule_ViaTimelock() external {
-        address newSM = address(new MockSafetyModuleStub(address(vault)));
+        address newSM = address(new MockSafetyModuleStub(address(core), address(vault)));
         bytes memory data = abi.encodeCall(IOllaGovernance.setSafetyModule, (newSM));
         _scheduleAndExecute(address(gov), data);
-        assertEq(vault.safetyModule(), newSM, "safety module updated");
+        assertEq(core.safetyModule(), newSM, "safety module updated");
     }
 
     function test_RevertWhen_SetSafetyModule_DirectCall() external {
@@ -119,7 +119,7 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
         uint256 newCooldown = 2 hours;
         bytes memory data = abi.encodeCall(IOllaGovernance.setRebalanceCooldown, (newCooldown));
         _scheduleAndExecute(address(gov), data);
-        assertEq(vault.rebalanceCooldown(), newCooldown, "cooldown updated");
+        assertEq(core.rebalanceCooldown(), newCooldown, "cooldown updated");
     }
 
     function test_RevertWhen_SetRebalanceCooldown_DirectCall() external {
@@ -214,13 +214,19 @@ import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 
 contract MockSafetyModuleStub {
     address private immutable _core;
+    address private immutable _vault;
 
-    constructor(address core_) {
+    constructor(address core_, address vault_) {
         _core = core_;
+        _vault = vault_;
     }
 
     function CORE() external view returns (address) {
         return _core;
+    }
+
+    function VAULT() external view returns (address) {
+        return _vault;
     }
 
     // Satisfy ISafetyModule interface calls made by OllaCore.setSafetyModule validation:

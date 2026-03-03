@@ -13,7 +13,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
-import { MockRewardsVault } from "src/core/mocks/MockRewardsVault.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 abstract contract StakingManagerBaseTest is Test {
@@ -36,7 +36,7 @@ abstract contract StakingManagerBaseTest is Test {
 
     address internal core;
     address internal providerAdmin;
-    MockRewardsVault internal rewardsVault;
+    MockRewardsAccumulator internal rewardsAccumulator;
     address internal defaultAdmin;
     address internal alice;
     address internal bob;
@@ -71,7 +71,7 @@ abstract contract StakingManagerBaseTest is Test {
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         rollupRegistry = new MockAztecRollupRegistry(address(rollup));
-        rewardsVault = new MockRewardsVault(IERC20(address(aztec)), core);
+        rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         StakingManager implementation = new StakingManager();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
@@ -91,7 +91,7 @@ abstract contract StakingManagerBaseTest is Test {
         stakingManager.initialize(
             IERC20(address(aztec)),
             address(rollupRegistry),
-            address(rewardsVault),
+            address(rewardsAccumulator),
             core,
             address(stakingProviderRegistry),
             defaultAdmin

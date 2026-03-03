@@ -3,7 +3,8 @@ pragma solidity ^0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-import { OllaCore } from "src/core/OllaCore.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 import { BaseScript } from "../base/BaseScript.s.sol";
 
@@ -15,6 +16,7 @@ contract UserInitiateWithdrawAll is BaseScript {
         address stAztec = _addrOrDeployment("STAZTEC", "StAztec", "STAZTEC missing: set STAZTEC or deploy local");
         uint256 pk = _privateKey();
         address user = vm.addr(pk);
+        address vaultAddr = IOllaCore(core).vault();
 
         address recipient = vm.envOr("RECIPIENT", user);
 
@@ -24,7 +26,7 @@ contract UserInitiateWithdrawAll is BaseScript {
         }
 
         vm.startBroadcast(pk);
-        OllaCore(core).requestRedeem(shares, recipient);
+        IOllaVault(vaultAddr).requestRedeem(shares, recipient, user);
         vm.stopBroadcast();
     }
 }
