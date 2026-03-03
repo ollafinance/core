@@ -11,6 +11,7 @@ to grow into an open-source, auditable codebase.
 - `contracts/src/core/` Protocol core contracts.
 - `contracts/src/core/interfaces/` Core module interfaces.
 - `contracts/src/core/mocks/` Core module mocks and mock interfaces.
+- `contracts/src/bridge/` LayerZero V2 bridge contracts (OFTAdapter + OFT).
 - `contracts/src/governance/` Governance contract and interface (OllaGovernance with embedded timelock).
 - `contracts/src/safetymodule/` Safety module contracts and interface.
 - `contracts/src/staking/` Staking module contracts.
@@ -18,7 +19,7 @@ to grow into an open-source, auditable codebase.
 - `contracts/src/staking/interfaces/` Staking module interfaces.
 - `contracts/src/staking/mocks/` Staking module mocks and mock interfaces.
 - `contracts/script/` Foundry scripts.
-- `contracts/test/` Component-based Foundry tests (e.g., `core/`, `governance/`, `safetymodule/`, `staking/`, `integration/`, `e2e/`).
+- `contracts/test/` Component-based Foundry tests (e.g., `core/`, `bridge/`, `governance/`, `safetymodule/`, `staking/`, `integration/`, `e2e/`).
 - `research/` Protocol research and design notes (Obsidian vault).
 
 Key research index:

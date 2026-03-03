@@ -1,4 +1,46 @@
 [[dependencies]]
+name = "@layerzerolabs-lz-evm-messagelib-v2"
+version = "3.0.160"
+url = "https://soldeer-revisions.s3.amazonaws.com/@layerzerolabs-lz-evm-messagelib-v2/3_0_160_16-02-2026_06:36:20_lz-evm-messagelib-v2.zip"
+checksum = "f051e22586f5429909a7805591fcff2e80b6c3893ec46855979a535193774112"
+integrity = "9d20078d258b60bbafa1ae651fb5ba63c2da5fa3a8d449100f18b26298d1e50e"
+
+[[dependencies]]
+name = "@layerzerolabs-lz-evm-protocol-v2"
+version = "3.0.160"
+url = "https://soldeer-revisions.s3.amazonaws.com/@layerzerolabs-lz-evm-protocol-v2/3_0_160_16-02-2026_06:36:27_lz-evm-protocol-v2.zip"
+checksum = "67ce943aff6859ec3ee986932db954ce9cac9befe0f49477316443feaaaff59d"
+integrity = "fbeaf5b21a44829bbe1e03a908a178eabacdc1717bfc52a27cdef1993fcb6125"
+
+[[dependencies]]
+name = "@layerzerolabs-lz-evm-v1-0-7"
+version = "3.0.160"
+url = "https://soldeer-revisions.s3.amazonaws.com/@layerzerolabs-lz-evm-v1-0-7/3_0_160_16-02-2026_06:36:32_lz-evm-v1-0.zip"
+checksum = "9fdda3b6d52f5c269ed39df43779fe0992798c4dd2534a4b3fae689eba4650b2"
+integrity = "c3d351fff6fde6b1a532dad665023e3024c2277fd4b8bfe07d4b0b591d662856"
+
+[[dependencies]]
+name = "@layerzerolabs-oapp-evm"
+version = "0.4.1"
+url = "https://soldeer-revisions.s3.amazonaws.com/@layerzerolabs-oapp-evm/0_4_1_14-12-2025_22:00:19_oapp-evm.zip"
+checksum = "65bf469656c64d3f448d5c23798376d3b399e55b3cee0d1838fe42cfc70a361b"
+integrity = "9b5962846e82481219ab5592bcc38c3b9966d978a79615e3e8eb98d28373b266"
+
+[[dependencies]]
+name = "@layerzerolabs-oft-evm"
+version = "4.0.1"
+url = "https://soldeer-revisions.s3.amazonaws.com/@layerzerolabs-oft-evm/4_0_1_14-12-2025_22:00:24_oft-evm.zip"
+checksum = "18b0679b484e840c6626fc4c256aa9d944e5bb7e102b07d21a4f46523916e1ca"
+integrity = "cf4ac90b4cc181db9fa5854cf846ab1ff94ab00c1468f1f3a2cd3c93dc98798b"
+
+[[dependencies]]
+name = "@layerzerolabs-test-devtools-evm-foundry"
+version = "8.0.1"
+url = "https://soldeer-revisions.s3.amazonaws.com/@layerzerolabs-test-devtools-evm-foundry/8_0_1_14-12-2025_21:59:24_test-devtools-evm-foundry.zip"
+checksum = "e44c198c917aff47f8ce4b7469d3fd0dc84dc05ffdee28f0136c64f400a2bc93"
+integrity = "cb2acf42ee18ae51488af7fb9779a73c9e3984be82e695afcae336a694183178"
+
+[[dependencies]]
 name = "@openzeppelin-contracts"
 version = "5.5.0"
 url = "https://soldeer-revisions.s3.amazonaws.com/@openzeppelin-contracts/5_5_0_01-11-2025_09:56:40_contracts.zip"
@@ -24,3 +66,9 @@ version = "1.11.0"
 url = "https://soldeer-revisions.s3.amazonaws.com/forge-std/1_11_0_09-10-2025_06:23:22_forge-std-1.11.zip"
 checksum = "0290ef84c693dc9086f98f6a9b4a69dc5c2b6aa1cfe10a989bd1def1a456c099"
 integrity = "84aa7d32f8c7329468cf16f31f0f74e68072e634fdbde98f3bb00c6b136103b2"
+
+[[dependencies]]
+name = "solidity-bytes-utils"
+version = "0.8.2"
+git = "https://github.com/GNSPS/solidity-bytes-utils.git"
+rev = "e0115c4d231910df47ce3b60625ce562fe4af985"

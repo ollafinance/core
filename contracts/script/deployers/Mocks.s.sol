@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
+import { EndpointV2Mock } from "@lz-test/contracts/mocks/EndpointV2Mock.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
@@ -89,6 +90,23 @@ contract MocksDeployer is BaseDeployer {
         });
 
         return _deployStakingStackInternal(params);
+    }
+
+    /// @notice Deploy a mock LayerZero V2 endpoint for local development.
+    /// @param config The deployment configuration
+    /// @param eid The endpoint ID to assign (e.g. 1 for home chain)
+    /// @return lzEndpoint The deployed EndpointV2Mock address
+    function deployLzEndpointMock(DeployConfig memory config, uint32 eid) external returns (address lzEndpoint) {
+        require(config.deployMocks, "MocksDeployer: mocks not enabled for this environment");
+
+        vm.startBroadcast(config.deployerPrivateKey);
+
+        EndpointV2Mock endpoint = new EndpointV2Mock(eid, config.deployer);
+        _logDeployment("EndpointV2Mock", address(endpoint));
+
+        vm.stopBroadcast();
+
+        return address(endpoint);
     }
 
     /// @notice Internal implementation to avoid stack too deep

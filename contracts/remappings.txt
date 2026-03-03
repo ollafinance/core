@@ -4,3 +4,14 @@
 @oz-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.5.0/
 @az/=dependencies/aztec-contracts-4.0.0/src/
 @forge-std/=dependencies/forge-std-1.11.0/src/
+forge-std/=dependencies/forge-std-1.11.0/src/
+@layerzerolabs/oapp-evm/=dependencies/@layerzerolabs-oapp-evm-0.4.1/
+@layerzerolabs/oft-evm/=dependencies/@layerzerolabs-oft-evm-4.0.1/
+@layerzerolabs/lz-evm-protocol-v2/=dependencies/@layerzerolabs-lz-evm-protocol-v2-3.0.160/
+@layerzerolabs/lz-evm-messagelib-v2/=dependencies/@layerzerolabs-lz-evm-messagelib-v2-3.0.160/
+@layerzerolabs/lz-evm-v1-0.7/=dependencies/@layerzerolabs-lz-evm-v1-0-7-3.0.160/
+@layerzerolabs/test-devtools-evm-foundry/=dependencies/@layerzerolabs-test-devtools-evm-foundry-8.0.1/
+@lz-oapp/=dependencies/@layerzerolabs-oapp-evm-0.4.1/
+@lz-oft/=dependencies/@layerzerolabs-oft-evm-4.0.1/
+@lz-test/=dependencies/@layerzerolabs-test-devtools-evm-foundry-8.0.1/
+solidity-bytes-utils/=dependencies/solidity-bytes-utils-0.8.2/

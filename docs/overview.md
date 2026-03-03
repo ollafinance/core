@@ -48,6 +48,12 @@ subgraph "Olla Vault"
     stAztec[StAztec]
     withdrawQ[WithdrawalQueue]
 end
+
+subgraph "Cross-Chain Bridge"
+    oftAdapter["StAztecOFTAdapter (home chain)"]
+    oftDest["StAztecOFT (destination chains)"]
+end
+
 subgraph "Olla Core"
     core[OllaCore]
     safety[SafetyModule]
@@ -129,6 +135,11 @@ core -->|"balance()"| rewards
 vault -->|"pay staking fees >StAztec< mint(treasury, treasuryShares)"| treasury
 vault -->|"pay staking fees >StAztec< mint(providerRewardsRecipient, providerShares)"| stakingProviderRewardsWallet
 
+%% Cross-chain bridge (LayerZero V2)
+userWallet -->|"approve + send (bridge out)"| oftAdapter
+oftAdapter <-->|"LayerZero messages"| oftDest
+
+
 style user fill:#900
 style anyone fill:#555
 style ollaOperatorActor stroke:#050,stroke-width:2px
@@ -146,6 +157,8 @@ style rollupRegistry stroke:#ff6,stroke-width:2px
 style guardianActor stroke:#050,stroke-width:2px
 style governanceActor stroke:#050,stroke-width:2px
 style ollaGov stroke:#090,stroke-width:3px
+style oftAdapter stroke:#09f,stroke-width:3px
+style oftDest stroke:#09f,stroke-width:3px
 ```
 
 ## Contract architecture
@@ -165,6 +178,11 @@ subgraph "Olla Vault"
     vault[OllaVault]
     stAztec[StAztec]
     withdrawQ[WithdrawalQueue]
+end
+
+subgraph "Cross-Chain Bridge (LayerZero V2)"
+    oftAdapter["StAztecOFTAdapter (Ethereum)"]
+    oftDest["StAztecOFT (destination chains)"]
 end
 
 subgraph "Olla Core"
@@ -234,6 +252,10 @@ rollup -->|"rewards >Aztec< transferFrom(rollup, rewardsAccumulator, amount)"| r
 core -->|"recordBalance(expectedRewards)"| rewards
 core -->|"balance()"| rewards
 
+%% Cross-chain bridge
+oftAdapter <-->|"LayerZero V2 messages"| oftDest
+ollaGov -. "owner (setPeer, DVN config)" .-> oftAdapter
+
 style ollaGov stroke:#090,stroke-width:3px
 style core stroke:#090,stroke-width:4px
 style vault stroke:#090,stroke-width:4px
@@ -245,6 +267,8 @@ style spr stroke:#090,stroke-width:3px
 style withdrawQ stroke:#090,stroke-width:3px
 style rollup stroke:#ff6,stroke-width:2px
 style rollupRegistry stroke:#ff6,stroke-width:2px
+style oftAdapter stroke:#09f,stroke-width:3px
+style oftDest stroke:#09f,stroke-width:3px
 ```
 
 ## User
