@@ -203,7 +203,7 @@ contract DeployScript is BaseDeployer {
                     1_000_000_000e18, // depositCap — 1B tokens, effectively unlimited
                     500, // minRateDropBps — 5% rate drop triggers breaker
                     5_000, // maxQueueRatioBps — 50% queue ratio triggers breaker
-                    1 hours // maxAccountingDelay — minimum allowed, easy to test liveness breaker
+                    2 hours // maxAccountingDelay — must exceed rebalanceCooldown (1h) to tolerate block-time drift
                 )
             );
             vm.stopBroadcast();
@@ -227,7 +227,9 @@ contract DeployScript is BaseDeployer {
         _ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager, safetyModule);
 
         // 6.1 Initialize OllaVault with all dependencies
-        _ollaVaultDeployer.initialize(config, ollaVaultProxy, asset, stAztec, withdrawalQueue, ollaCoreProxy, ollaGovProxy);
+        _ollaVaultDeployer.initialize(
+            config, ollaVaultProxy, asset, stAztec, withdrawalQueue, ollaCoreProxy, ollaGovProxy
+        );
 
         // 6.2 Wire OllaGovernance → OllaCore
         _ollaGovernanceDeployer.setCore(config, ollaGovProxy, ollaCoreProxy);

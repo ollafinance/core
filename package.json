@@ -34,6 +34,7 @@
     "dev:mock-loop": "tsx mock-loop/index.ts",
     "dev:mock-loop:once": "tsx mock-loop/index.ts --once",
     "dev:mock-loop:until-error": "tsx mock-loop/index.ts --until-error",
-    "dev:mock-loop:permissionless": "tsx mock-loop/index.ts --until-error --config ./config-permissionless.ts"
+    "dev:mock-loop:permissionless": "tsx mock-loop/index.ts --until-error --config ./config-permissionless.ts",
+    "dev:mock-loop:demo": "tsx mock-loop/index.ts --config ./demo-config.ts"
   }
 }

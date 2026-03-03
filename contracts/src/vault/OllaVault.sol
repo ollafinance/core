@@ -124,10 +124,7 @@ contract OllaVault is
         _pause();
 
         _modules = VaultModules({
-            asset: asset_,
-            stAztec: stAztec_,
-            withdrawalQueue: IWithdrawalQueue(withdrawalQueue_),
-            core: core_
+            asset: asset_, stAztec: stAztec_, withdrawalQueue: IWithdrawalQueue(withdrawalQueue_), core: core_
         });
 
         instantRedemptionFeeBP = 500; // 5% default
