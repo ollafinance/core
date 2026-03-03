@@ -73,7 +73,7 @@ contract OllaVault is
     /// @notice ERC-7540 operator approvals: controller -> operator -> approved.
     mapping(address controller => mapping(address operator => bool approved)) private _operators;
 
-    /// @notice The instant redemption fee in basis points (0-10000).
+    /// @notice The instant redemption fee in basis points.
     uint256 public instantRedemptionFeeBP;
 
     /// @notice Cumulative deposits tracked for Core accounting.
