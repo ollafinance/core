@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { Vm } from "@forge-std/Test.sol";
-
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
@@ -170,25 +168,6 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         uint256 harvested = stakingManager.harvestRewards();
 
         assertEq(harvested, 30 ether, "Should harvest all rewards (no individual attester iteration)");
-    }
-
-    function test_HarvestRewards_EmitsRewardClaimFailedEvent() external {
-        uint256 rewardAmount = 10 ether;
-        _setupAttestersWithRewards(1, rewardAmount);
-
-        // Note: New implementation doesn't iterate through attesters,
-        // so no individual claim failures occur
-        vm.recordLogs();
-
-        vm.prank(core);
-        stakingManager.harvestRewards();
-
-        // Verify no RewardClaimFailed events were emitted
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bytes32 failedSelector = keccak256("RewardClaimFailed(address,string)");
-        for (uint256 i; i < logs.length; ++i) {
-            assertTrue(logs[i].topics[0] != failedSelector, "Should not emit RewardClaimFailed events");
-        }
     }
 
     function test_HarvestRewards_ReturnsCorrectAmountAfterPartialFailure() external {

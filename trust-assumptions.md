@@ -11,11 +11,11 @@ This serves two purposes:
 
 | # | Assumption | Contracts | Impact if Violated |
 |---|---|---|---|
-| T-1 | `BURNER_ROLE` is held exclusively by OllaCore | StAztec | Any other holder can burn arbitrary users' stAztec without allowance, effectively confiscating their staking position |
-| T-2 | `MINTER_ROLE` is held exclusively by OllaCore | StAztec | Any other holder can mint unbacked stAztec, diluting all existing holders |
+| T-1 | Only the immutable `OLLA_VAULT` address can burn stAztec | StAztec | Any other caller able to burn can confiscate arbitrary users' staking positions without allowance |
+| T-2 | Only the immutable `OLLA_VAULT` address can mint stAztec | StAztec | Any other caller able to mint can create unbacked stAztec, diluting all existing holders |
 | T-3 | `OPERATOR_ROLE` can set attester-state staleness window | StakingManager | A malicious operator can set an excessively large `attesterStateMaxAge`, allowing stale slashing/staking data to persist and delaying accurate accounting |
 | T-4 | `DEFAULT_ADMIN_ROLE` (governance) can upgrade all UUPS proxies | OllaCore, WithdrawalQueue, RewardsAccumulator, StakingManager, StakingProviderRegistry | A compromised governance key can replace any implementation — full protocol rug |
-| T-5 | Governance can set protocol fees up to 100% | OllaCore | Fee misconfiguration can extract all yield from stakers |
+| T-5 | Governance can set protocol fees up to 50% (`MAX_PROTOCOL_FEE_BP = 5_000`) | OllaCore | Fee misconfiguration can extract up to half of yield from stakers |
 | T-6 | Governance can hot-swap modules (StakingManager, RewardsAccumulator, WithdrawalQueue, SafetyModule) | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
 | T-7 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
 | T-8 | `GUARDIAN_ROLE` can pause/unpause and force-reset a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-resetting mid-rebalance discards in-progress work (unharvested rewards wait for next cycle, partial unstakes are tracked on-chain) |
@@ -39,6 +39,7 @@ SafetyModule uses plain `AccessControl` (not upgradeable) with an `immutable COR
 
 ## Mitigations
 
-- **T-1 through T-6** are governance-controlled risks. The primary mitigation is a **timelocked multisig** for all admin and role-grant operations, giving the community a window to react to malicious proposals.
+- **T-1 and T-2** are enforced by an immutable address check in StAztec — no governance action can change the authorized caller, so these hold as long as the StAztec contract is not redeployed.
+- **T-3 through T-6** are governance-controlled risks. The primary mitigation is a **timelocked multisig** for all admin and role-grant operations, giving the community a window to react to malicious proposals.
 - **T-7** is an external dependency risk. The protocol relies on the Aztec rollup behaving as specified. Circuit breakers in SafetyModule (rate drop, accounting staleness) provide partial protection.
 - **T-8** is mitigated by separating `GUARDIAN_ROLE` from `DEFAULT_ADMIN_ROLE` — the guardian can pause but cannot upgrade or drain.

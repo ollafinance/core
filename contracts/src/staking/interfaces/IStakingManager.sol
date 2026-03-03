@@ -89,16 +89,6 @@ interface IStakingManager {
     /// @param amount The amount harvested.
     event RewardsHarvested(uint256 indexed amount);
 
-    /// @notice Emitted when rewards are claimed for a specific attester.
-    /// @param attester The attester address.
-    /// @param amount The amount of rewards claimed.
-    event AttesterRewardsClaimed(address indexed attester, uint256 indexed amount);
-
-    /// @notice Emitted when reward claim fails for an attester.
-    /// @param attester The attester address.
-    /// @param reason The failure reason.
-    event RewardClaimFailed(address indexed attester, string reason);
-
     /// @notice Emitted when the cached attester state is updated.
     /// @param slashingDelta The updated slashing delta.
     /// @param totalStaked The updated total staked.
