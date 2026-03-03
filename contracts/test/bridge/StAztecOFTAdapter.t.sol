@@ -10,7 +10,7 @@ import { MessagingFee, MessagingReceipt } from "@lz-oft/contracts/OFTCore.sol";
 import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 // Project imports
-import { StAztec } from "src/core/StAztec.sol";
+import { StAztec } from "src/vault/StAztec.sol";
 import { StAztecOFTAdapter } from "src/bridge/StAztecOFTAdapter.sol";
 import { StAztecOFT } from "src/bridge/StAztecOFT.sol";
 
