@@ -149,9 +149,7 @@ contract OllaVaultViewsTest is Test {
     /// @notice maxDeposit returns cap minus current total assets.
     function test_MaxDeposit_ReturnsCapMinusCurrent() external {
         uint256 cap = 100 * DECIMALS;
-        vm.mockCall(
-            address(safetyModule), abi.encodeWithSelector(ISafetyModule.depositCap.selector), abi.encode(cap)
-        );
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(ISafetyModule.depositCap.selector), abi.encode(cap));
 
         _performDeposit(alice, 40 * DECIMALS);
 
@@ -177,14 +175,10 @@ contract OllaVaultViewsTest is Test {
     /// @notice maxDeposit returns zero when deposit cap is reached.
     function test_MaxDeposit_ReturnsZeroWhenCapReached() external {
         uint256 cap = 50 * DECIMALS;
-        vm.mockCall(
-            address(safetyModule), abi.encodeWithSelector(ISafetyModule.depositCap.selector), abi.encode(cap)
-        );
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(ISafetyModule.depositCap.selector), abi.encode(cap));
         // Also mock checkDepositAllowed to not revert at the cap
         vm.mockCall(
-            address(safetyModule),
-            abi.encodeWithSelector(ISafetyModule.checkDepositAllowed.selector),
-            abi.encode(true)
+            address(safetyModule), abi.encodeWithSelector(ISafetyModule.checkDepositAllowed.selector), abi.encode(true)
         );
 
         _performDeposit(alice, cap);
@@ -195,9 +189,7 @@ contract OllaVaultViewsTest is Test {
     /// @notice maxMint returns shares for remaining cap.
     function test_MaxMint_ReturnsSharesForRemainingCap() external {
         uint256 cap = 100 * DECIMALS;
-        vm.mockCall(
-            address(safetyModule), abi.encodeWithSelector(ISafetyModule.depositCap.selector), abi.encode(cap)
-        );
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(ISafetyModule.depositCap.selector), abi.encode(cap));
 
         _performDeposit(alice, 40 * DECIMALS);
 

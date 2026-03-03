@@ -160,7 +160,6 @@ interface IOllaCore {
     /// @param delta The rewards delta amount.
     event RewardsDelta(uint256 delta);
 
-
     /// @notice Emitted when the rebalance state machine is force-reset by governance.
     event RebalanceReset();
 
