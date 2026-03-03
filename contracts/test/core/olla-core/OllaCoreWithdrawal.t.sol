@@ -426,7 +426,12 @@ contract OllaCoreWithdrawalTest is Test {
         (uint8 v, bytes32 r, bytes32 s) =
             _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
 
-        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOllaVault.OllaVault__PermitFailed.selector,
+                abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline)
+            )
+        );
         vm.prank(permitOwner);
         vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
     }
@@ -441,7 +446,12 @@ contract OllaCoreWithdrawalTest is Test {
         );
 
         vm.expectRevert(
-            abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner)
+            abi.encodeWithSelector(
+                IOllaVault.OllaVault__PermitFailed.selector,
+                abi.encodeWithSelector(
+                    ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner
+                )
+            )
         );
         vm.prank(permitOwner);
         vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
@@ -462,7 +472,12 @@ contract OllaCoreWithdrawalTest is Test {
         bytes32 digest =
             _buildPermitDigest(IERC20Permit(address(stAztec)), permitOwner, address(vault), shares, nonce, deadline);
         address signer = ECDSA.recover(digest, v, r, s);
-        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOllaVault.OllaVault__PermitFailed.selector,
+                abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner)
+            )
+        );
         vm.prank(permitOwner);
         vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
     }

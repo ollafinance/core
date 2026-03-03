@@ -187,6 +187,9 @@ interface IOllaVault {
     /// @notice Thrown when claiming a withdrawal request that is not yet finalized.
     error OllaVault__NotFinalized(uint256 requestId);
 
+    /// @notice Thrown when an ERC-20 permit call fails (expired deadline, invalid signature, etc.).
+    error OllaVault__PermitFailed(bytes reason);
+
     /*//////////////////////////////////////////////////////////////
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/

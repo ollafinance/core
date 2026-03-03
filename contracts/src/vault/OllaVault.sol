@@ -160,8 +160,13 @@ contract OllaVault is
         bytes32 s
     ) external override nonReentrant whenNotPaused returns (uint256 shares) {
         // ERC-20 permit call on trusted asset token; sets allowance only.
+        // Wrapped in try/catch so opaque OZ permit errors (ERC2612InvalidSigner,
+        // ERC2612ExpiredSignature) surface as a named OllaVault error.
         // slither-disable-next-line reentrancy-benign
-        IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s);
+        try IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s) { }
+        catch (bytes memory reason) {
+            revert OllaVault__PermitFailed(reason);
+        }
         shares = _deposit(msg.sender, assets, recipient);
         // Slippage bound check; not a timestamp concern.
         // slither-disable-next-line timestamp
@@ -180,8 +185,12 @@ contract OllaVault is
     ) external override nonReentrant whenNotPaused returns (uint256 requestId) {
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
         // ERC-20 permit call on trusted stAztec token; sets allowance only.
+        // Wrapped in try/catch so opaque OZ permit errors surface as a named OllaVault error.
         // slither-disable-next-line reentrancy-benign
-        _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
+        try _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s) { }
+        catch (bytes memory reason) {
+            revert OllaVault__PermitFailed(reason);
+        }
         uint256 assets;
         (requestId, assets) = _executeRedeemRequest(msg.sender, controller, controller, shares);
 
@@ -219,8 +228,12 @@ contract OllaVault is
         bytes32 s
     ) external override nonReentrant whenNotPaused returns (uint256 assetsAfterFee) {
         // ERC-20 permit call on trusted stAztec token; sets allowance only.
+        // Wrapped in try/catch so opaque OZ permit errors surface as a named OllaVault error.
         // slither-disable-next-line reentrancy-benign
-        _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s);
+        try _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s) { }
+        catch (bytes memory reason) {
+            revert OllaVault__PermitFailed(reason);
+        }
         return _instantRedeem(shares, recipient, minAssetsOut);
     }
 

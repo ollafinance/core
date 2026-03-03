@@ -309,7 +309,12 @@ contract OllaCoreDepositTest is Test {
         (uint8 v, bytes32 r, bytes32 s) =
             _signPermit(IERC20Permit(address(asset)), permitOwner, permitOwnerKey, address(vault), assets, deadline);
 
-        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOllaVault.OllaVault__PermitFailed.selector,
+                abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline)
+            )
+        );
         vm.prank(permitOwner);
         vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
     }
@@ -323,7 +328,12 @@ contract OllaCoreDepositTest is Test {
             _signPermit(IERC20Permit(address(asset)), permitOwner, permitAttackerKey, address(vault), assets, deadline);
 
         vm.expectRevert(
-            abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner)
+            abi.encodeWithSelector(
+                IOllaVault.OllaVault__PermitFailed.selector,
+                abi.encodeWithSelector(
+                    ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner
+                )
+            )
         );
         vm.prank(permitOwner);
         vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
@@ -344,7 +354,12 @@ contract OllaCoreDepositTest is Test {
         bytes32 digest =
             _buildPermitDigest(IERC20Permit(address(asset)), permitOwner, address(vault), assets, nonce, deadline);
         address signer = ECDSA.recover(digest, v, r, s);
-        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOllaVault.OllaVault__PermitFailed.selector,
+                abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, signer, permitOwner)
+            )
+        );
         vm.prank(permitOwner);
         vault.depositWithPermit(assets, permitOwner, 0, deadline, v, r, s);
     }
