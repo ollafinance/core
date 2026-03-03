@@ -518,7 +518,12 @@ contract OllaCoreInstantRedemptionTest is Test {
         );
 
         vm.expectRevert(
-            abi.encodeWithSelector(ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner)
+            abi.encodeWithSelector(
+                IOllaVault.OllaVault__PermitFailed.selector,
+                abi.encodeWithSelector(
+                    ERC20Permit.ERC2612InvalidSigner.selector, vm.addr(permitAttackerKey), permitOwner
+                )
+            )
         );
         vm.prank(permitOwner);
         vault.instantRedeemWithPermit(sharesToRedeem, bob, 0, deadline, v, r, s);
@@ -973,7 +978,12 @@ contract OllaCoreInstantRedemptionTest is Test {
             IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), sharesToRedeem, deadline
         );
 
-        vm.expectRevert(abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IOllaVault.OllaVault__PermitFailed.selector,
+                abi.encodeWithSelector(ERC20Permit.ERC2612ExpiredSignature.selector, deadline)
+            )
+        );
         vm.prank(permitOwner);
         vault.instantRedeemWithPermit(sharesToRedeem, bob, 0, deadline, v, r, s);
     }
