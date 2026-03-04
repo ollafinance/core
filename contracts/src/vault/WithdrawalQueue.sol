@@ -30,6 +30,9 @@ contract WithdrawalQueue is
     /// @notice Maximum allowed gas threshold (30 million).
     uint256 private constant _MAX_GAS_THRESHOLD = 30_000_000;
 
+    /// @notice Scale factor for exchange rate calculations.
+    uint256 private constant _RATE_SCALE = 1e18;
+
     /*//////////////////////////////////////////////////////////////
                                    STATE
      //////////////////////////////////////////////////////////////*/
@@ -52,12 +55,15 @@ contract WithdrawalQueue is
     /// @notice Gas threshold used to gate the finalization loop.
     uint256 private _gasThreshold;
 
+    /// @notice Total shares outstanding across unfinalized requests (burned but not yet finalized).
+    uint256 public override totalPendingShares;
+
     /// @notice Storage gap for upgradability.
-    /// @dev State variables occupy 6 slots. When adding new state variables, append them above
+    /// @dev State variables occupy 7 slots. When adding new state variables, append them above
     ///      this gap and reduce its length by the number of slots consumed.
     // Reserved storage gap for future upgrades; intentionally unused.
     // slither-disable-next-line unused-state
-    uint256[44] private __gap;
+    uint256[43] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   ERRORS
@@ -144,6 +150,7 @@ contract WithdrawalQueue is
         requestId = nextRequestId;
         nextRequestId = requestId + 1;
         totalPendingAssets += assetsExpected;
+        totalPendingShares += shares;
 
         _requests[requestId] = WithdrawalRequest({
             recipient: recipient,
@@ -162,19 +169,20 @@ contract WithdrawalQueue is
     // FIFO loop reads request storage sequentially; caching is impractical for a variable-length loop.
     /// @inheritdoc IWithdrawalQueue
     /// @dev The loop processes requests in strict FIFO order and breaks (does not skip) when a request's
-    ///      `assetsExpected` exceeds the remaining `available` liquidity. This means a single large
-    ///      unfinalizable request at the head blocks all subsequent requests, even smaller ones with
-    ///      sufficient liquidity. This is a known limitation.
-    function finalizeWithdrawals(uint256 available)
+    ///      payout exceeds the remaining `available` liquidity. When `currentRate > 0`, each request's
+    ///      payout is adjusted to `shares * min(currentRate, lockedRate) / 1e18`, so slashing losses
+    ///      are shared proportionally and the queue cannot permanently block.
+    function finalizeWithdrawals(uint256 available, uint256 currentRate)
         external
         override
         onlyVault
         nonReentrant
-        returns (uint256 used, uint256 finalizedCount)
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
     {
         uint256 currentId = nextPendingId;
         uint256 upperBound = nextRequestId;
         uint256 pendingAssets = totalPendingAssets;
+        uint256 pendingShares_ = totalPendingShares;
 
         while (currentId < upperBound) {
             if (gasleft() < _gasThreshold) {
@@ -184,6 +192,19 @@ contract WithdrawalQueue is
             WithdrawalRequest storage request = _requests[currentId];
             if (!request.finalized) {
                 uint256 assetsExpected = request.assetsExpected;
+
+                // Adjust payout when slashing has reduced the exchange rate.
+                uint256 effectiveRate = currentRate < request.rate ? currentRate : request.rate;
+                uint256 payout = (request.shares * effectiveRate) / _RATE_SCALE;
+                if (payout < assetsExpected) {
+                    uint256 adjustment = assetsExpected - payout;
+                    pendingAssets -= adjustment;
+                    totalAdjusted += adjustment;
+                    request.assetsExpected = payout;
+                    assetsExpected = payout;
+                    emit WithdrawalAdjusted(currentId, assetsExpected + adjustment, assetsExpected);
+                }
+
                 // Breaks on first under-funded request; does not skip.
                 if (available < assetsExpected) {
                     break;
@@ -192,6 +213,7 @@ contract WithdrawalQueue is
                 available -= assetsExpected;
                 used += assetsExpected;
                 pendingAssets -= assetsExpected;
+                pendingShares_ -= request.shares;
                 request.finalized = true;
                 ++finalizedCount;
                 emit WithdrawalFinalized(currentId, assetsExpected);
@@ -201,8 +223,9 @@ contract WithdrawalQueue is
         }
 
         totalPendingAssets = pendingAssets;
+        totalPendingShares = pendingShares_;
         nextPendingId = currentId;
-        return (used, finalizedCount);
+        return (used, finalizedCount, totalAdjusted);
     }
 
     // slither-disable-end pess-multiple-storage-read

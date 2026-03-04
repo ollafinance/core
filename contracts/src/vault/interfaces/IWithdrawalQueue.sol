@@ -44,6 +44,12 @@ interface IWithdrawalQueue {
     /// @param assetsExpected The assets claimed for the request.
     event WithdrawalClaimed(uint256 indexed id, address indexed recipient, uint256 assetsExpected);
 
+    /// @notice Emitted when a withdrawal request's payout is adjusted due to slashing.
+    /// @param id The request id.
+    /// @param originalAmount The original assets expected at request time.
+    /// @param adjustedAmount The adjusted payout after applying the post-slash rate.
+    event WithdrawalAdjusted(uint256 indexed id, uint256 originalAmount, uint256 adjustedAmount);
+
     /// @notice Emitted when the gas threshold is updated.
     /// @param oldThreshold The previous gas threshold.
     /// @param newThreshold The new gas threshold.
@@ -101,9 +107,14 @@ interface IWithdrawalQueue {
 
     /// @notice Finalizes withdrawals using available liquidity.
     /// @param available The available assets to finalize.
+    /// @param currentRate The current exchange rate; used to adjust payouts after slashing.
+    ///        Pass 0 to skip adjustment (e.g., from mocks).
     /// @return used The assets used for finalization.
     /// @return finalizedCount The number of requests finalized.
-    function finalizeWithdrawals(uint256 available) external returns (uint256 used, uint256 finalizedCount);
+    /// @return totalAdjusted The total reduction applied to requests due to slashing.
+    function finalizeWithdrawals(uint256 available, uint256 currentRate)
+        external
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted);
 
     /// @notice Marks a finalized request as claimed.
     /// @param id The request id.
@@ -129,6 +140,10 @@ interface IWithdrawalQueue {
     /// @notice Returns the total pending assets.
     /// @return totalPending The total assets for unfinalized requests.
     function totalPendingAssets() external view returns (uint256 totalPending);
+
+    /// @notice Returns the total pending shares (burned but not yet finalized).
+    /// @return totalPending The total shares for unfinalized requests.
+    function totalPendingShares() external view returns (uint256 totalPending);
 
     /// @notice Returns the request struct for a given id.
     /// @param id The request id.

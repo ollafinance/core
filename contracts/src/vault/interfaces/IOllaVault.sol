@@ -343,9 +343,10 @@ interface IOllaVault {
 
     /// @notice Finalizes pending withdrawal requests using available liquidity.
     /// @param availableAssets Max assets to use for finalization.
+    /// @param currentRate The current exchange rate for slashing adjustment.
     /// @return finalizedAmount Actual assets used.
     /// @return finalizedCount Number of requests finalized.
-    function finalizeWithdrawals(uint256 availableAssets)
+    function finalizeWithdrawals(uint256 availableAssets, uint256 currentRate)
         external
         returns (uint256 finalizedAmount, uint256 finalizedCount);
 
@@ -482,6 +483,10 @@ interface IOllaVault {
     /// @notice Returns current pending withdrawal assets.
     /// @return The current pending withdrawal assets.
     function pendingWithdrawalAssets() external view returns (uint256);
+
+    /// @notice Returns current pending withdrawal shares (burned but not yet finalized).
+    /// @return The current pending withdrawal shares.
+    function pendingWithdrawalShares() external view returns (uint256);
 
     /// @notice Returns cumulative deposits tracked by the vault.
     /// @return The cumulative deposits.
