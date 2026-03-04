@@ -193,16 +193,19 @@ contract WithdrawalQueue is
             if (!request.finalized) {
                 uint256 assetsExpected = request.assetsExpected;
 
-                // Adjust payout when slashing has reduced the exchange rate.
-                uint256 effectiveRate = currentRate < request.rate ? currentRate : request.rate;
-                uint256 payout = (request.shares * effectiveRate) / _RATE_SCALE;
-                if (payout < assetsExpected) {
-                    uint256 adjustment = assetsExpected - payout;
-                    pendingAssets -= adjustment;
-                    totalAdjusted += adjustment;
-                    request.assetsExpected = payout;
-                    assetsExpected = payout;
-                    emit WithdrawalAdjusted(currentId, assetsExpected + adjustment, assetsExpected);
+                // Adjust payout when slashing has reduced the exchange rate below the locked rate.
+                // The +1 tolerance accounts for floor-rounding differences between the gross rate
+                // (computed on aggregate state) and per-request rates (computed on per-request state).
+                if (currentRate + 1 < request.rate) {
+                    uint256 payout = (request.shares * currentRate) / _RATE_SCALE;
+                    if (payout < assetsExpected) {
+                        uint256 adjustment = assetsExpected - payout;
+                        pendingAssets -= adjustment;
+                        totalAdjusted += adjustment;
+                        request.assetsExpected = payout;
+                        assetsExpected = payout;
+                        emit WithdrawalAdjusted(currentId, assetsExpected + adjustment, assetsExpected);
+                    }
                 }
 
                 // Breaks on first under-funded request; does not skip.
