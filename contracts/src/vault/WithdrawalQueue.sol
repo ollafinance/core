@@ -194,9 +194,9 @@ contract WithdrawalQueue is
                 uint256 assetsExpected = request.assetsExpected;
 
                 // Adjust payout when slashing has reduced the exchange rate below the locked rate.
-                // The +1 tolerance accounts for floor-rounding differences between the gross rate
+                // The > 1 tolerance accounts for floor-rounding differences between the gross rate
                 // (computed on aggregate state) and per-request rates (computed on per-request state).
-                if (currentRate + 1 < request.rate) {
+                if (currentRate < request.rate && request.rate - currentRate > 1) {
                     uint256 payout = (request.shares * currentRate) / _RATE_SCALE;
                     if (payout < assetsExpected) {
                         uint256 adjustment = assetsExpected - payout;
