@@ -83,13 +83,11 @@ sequenceDiagram
     C->>SAF: checkQueueRatio(queued, total)
     Note right of C: queued = WQ.totalPendingAssets()
     Note right of C: total = C.totalAssets()
-    C->>C: syncBufferedWithBalance()
     Note right of C: available = bufferedAssets
-    C->>WQ: previewFinalizeWithdrawals(available)
-    WQ-->>C: used
-    C->>WQ: finalizeWithdrawals(available)
-    WQ-->>C: finalized
-    Note right of C: require finalized == used
+    C->>WQ: finalizeWithdrawals(available, currentRate)
+    WQ-->>C: (used, finalizedCount, totalAdjusted)
+    Note right of WQ: payout = shares * min(currentRate, lockedRate) / 1e18
+    Note right of WQ: adjusts assetsExpected down if slashing occurred
 ```
 
 ### Initiate unstake
@@ -176,10 +174,10 @@ sequenceDiagram
     C->>C: available = bufferedAssets
     C->>WQ: totalPendingAssets()
     C->>SAF: checkQueueRatio(queued, totalAssets)
-    C->>WQ: previewFinalizeWithdrawals(available)
-    C->>WQ: finalizeWithdrawals(available)
-    WQ-->>C: amountUsed
-    C->>C: bufferedAssets -= amountUsed
+    C->>WQ: finalizeWithdrawals(available, currentRate)
+    WQ-->>C: (used, finalizedCount, totalAdjusted)
+    Note right of WQ: payout = shares * min(currentRate, lockedRate) / 1e18
+    C->>C: bufferedAssets -= used
 
     Note over C: Step 4: Initiate unstake (recomputed from current state)
     C->>WQ: totalPendingAssets()
