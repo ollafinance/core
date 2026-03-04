@@ -335,7 +335,7 @@ contract OllaCoreReentrancyTest is Test {
 
         // Finalize the request so the claim path reaches the queue callback
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.claimRequestById, (requestId)));
         withdrawalQueue.setReenterOnClaim(true);
@@ -354,7 +354,7 @@ contract OllaCoreReentrancyTest is Test {
 
         // Finalize the request so the claim path reaches the queue callback
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         withdrawalQueue.setReentry(address(this), abi.encodeCall(this.assertRequestCleared, (bob, requestId)));
         withdrawalQueue.setReenterOnClaim(true);

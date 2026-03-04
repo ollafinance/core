@@ -706,7 +706,7 @@ contract OllaCoreInstantRedemptionTest is Test {
 
         // Finalize the request before claiming
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         // Claim should work
         vm.prank(alice);

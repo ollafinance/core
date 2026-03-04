@@ -116,14 +116,14 @@ contract WithdrawalQueueUpgradeTest is Test {
     function test_Upgrade_PreservesStateAndEmitsEvent() external {
         address alice = makeAddr("alice");
         address bob = makeAddr("bob");
-        uint256 aliceAssets = 100;
-        uint256 bobAssets = 250;
+        uint256 aliceAssets = 10;
+        uint256 bobAssets = 22; // 20 shares * 1.1e18 rate / 1e18
 
         uint256 aliceId = _request(alice, 10, aliceAssets, 1e18);
         uint256 bobId = _request(bob, 20, bobAssets, 1.1e18);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(aliceAssets);
+        queue.finalizeWithdrawals(aliceAssets, type(uint256).max);
 
         address vaultBefore = queue.vault();
         uint256 nextRequestIdBefore = queue.nextRequestId();

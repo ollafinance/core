@@ -39,18 +39,17 @@ contract WithdrawalQueueHandler is Test {
             return;
         }
 
-        uint256 shares = uint256(bound(sharesRaw, 1, 1e18));
         uint256 assets = uint256(bound(assetsRaw, 1, 1e18));
         address user = actors[bound(actorSeed, 0, actors.length - 1)];
 
         vm.prank(vault);
-        queue.requestWithdrawal(user, shares, assets, 1e18);
+        queue.requestWithdrawal(user, assets, assets, 1e18);
     }
 
     function finalizeWithdrawals(uint96 availableRaw) external {
         uint256 available = uint256(bound(availableRaw, 0, queue.totalPendingAssets()));
         vm.prank(vault);
-        queue.finalizeWithdrawals(available);
+        queue.finalizeWithdrawals(available, type(uint256).max);
     }
 
     function claimWithdrawal(uint256 idSeed) external {

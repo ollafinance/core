@@ -45,14 +45,18 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
         return 0;
     }
 
-    function finalizeWithdrawals(uint256 available) external override returns (uint256 used, uint256 finalizedCount) {
+    function finalizeWithdrawals(uint256 available, uint256)
+        external
+        override
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
+    {
         uint256 usedAssets = 1e18;
         if (available < usedAssets || _totalPendingAssets < usedAssets) {
-            return (0, 0);
+            return (0, 0, 0);
         }
 
         _totalPendingAssets -= usedAssets;
-        return (usedAssets, 0);
+        return (usedAssets, 0, 0);
     }
 
     function claimWithdrawal(uint256) external pure override returns (uint256) {
@@ -69,6 +73,10 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
 
     function totalPendingAssets() external view override returns (uint256) {
         return _totalPendingAssets;
+    }
+
+    function totalPendingShares() external pure override returns (uint256) {
+        return 0;
     }
 
     function getRequest(uint256) external pure override returns (WithdrawalRequest memory request) {
@@ -106,18 +114,18 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
         return 0;
     }
 
-    function finalizeWithdrawals(uint256 available)
+    function finalizeWithdrawals(uint256 available, uint256)
         external
         pure
         override
-        returns (uint256 used, uint256 finalizedCount)
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
     {
         uint256 usedAssets = 1e18;
         if (available < usedAssets) {
-            return (0, 0);
+            return (0, 0, 0);
         }
 
-        return (usedAssets, 1);
+        return (usedAssets, 1, 0);
     }
 
     function claimWithdrawal(uint256) external pure override returns (uint256) {
@@ -134,6 +142,10 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
 
     function totalPendingAssets() external view override returns (uint256) {
         return _totalPendingAssets;
+    }
+
+    function totalPendingShares() external pure override returns (uint256) {
+        return 0;
     }
 
     function getRequest(uint256) external pure override returns (WithdrawalRequest memory request) {
@@ -484,7 +496,6 @@ contract OllaCoreRebalanceTest is Test {
         uint256 bufferAfterFinalize = bufferBefore - request.assetsExpected;
         uint256 expectedStaked = bufferAfterFinalize - targetBufferedAssets;
 
-        vm.expectCall(address(withdrawalQueue), abi.encodeCall(withdrawalQueue.finalizeWithdrawals, (bufferBefore)));
         vm.expectEmit(true, true, true, true, address(core));
         emit RewardsDelta(0);
         vm.expectEmit(true, true, true, true, address(core));
@@ -589,9 +600,6 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setWithdrawableUnstakes(0);
 
         uint256 bufferBeforeFinalize = vault.bufferedAssets();
-        vm.expectCall(
-            address(withdrawalQueue), abi.encodeCall(withdrawalQueue.finalizeWithdrawals, (bufferBeforeFinalize))
-        );
 
         vm.prank(operator);
         core.rebalance();
@@ -1137,13 +1145,10 @@ contract OllaCoreRebalanceTest is Test {
 
     function test_Rebalance_Unstake_NoOpWhenBufferCoversPending() external {
         uint256 bufferAmount = 30 * DECIMALS;
-        uint256 pendingAssets = 25 * DECIMALS;
+        uint256 redeemShares = 25 * DECIMALS;
 
-        asset.mint(address(vault), bufferAmount);
-        vm.prank(governance);
-        vault.reconcileBufferedAssets();
-        vm.prank(address(vault));
-        withdrawalQueue.requestWithdrawal(alice, 1 * DECIMALS, pendingAssets, 1e18);
+        _performDeposit(alice, bufferAmount);
+        _requestWithdrawal(alice, redeemShares);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
