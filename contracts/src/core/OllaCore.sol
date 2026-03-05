@@ -758,7 +758,7 @@ contract OllaCore is
             if (actualStaked > stakeable) revert OllaCore__StakeFailed(actualStaked);
             totalStaked = actualStaked;
         } catch {
-            // Stake failed entirely — return all assets to Vault
+            // Stake failed entirely -- return all assets to Vault
             assetRef.safeTransfer(address(vaultRef), stakeable);
             vaultRef.receiveUnstaked(stakeable);
             return 0;

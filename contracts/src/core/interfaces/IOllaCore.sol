@@ -7,7 +7,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 
 /// @title IOllaCore
-/// @notice Interface for OllaCore — orchestration + accounting layer.
+/// @notice Interface for OllaCore -- orchestration + accounting layer.
 /// @dev User-facing vault functions (deposit, redeem, claim) are on IOllaVault.
 /// @author Olla Core contributors
 interface IOllaCore {

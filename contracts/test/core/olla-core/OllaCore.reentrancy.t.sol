@@ -563,7 +563,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
     function test_RevertWhen_UpdateAccounting_ReenteredFromSafetyModuleCheck() external {
         _deposit(alice, 10 * DECIMALS);
 
-        // Re-entry targets updateAccounting() on core — same nonReentrant guard applies
+        // Re-entry targets updateAccounting() on core -- same nonReentrant guard applies
         safetyModule.setReentry(address(core), abi.encodeCall(core.updateAccounting, ()));
         safetyModule.setReenterOnCheckAccountingLiveness(true);
 

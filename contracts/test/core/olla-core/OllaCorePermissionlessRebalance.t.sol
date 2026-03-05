@@ -519,7 +519,7 @@ contract OllaCorePermissionlessRebalance is Test {
         IOllaCore.LatestReport memory report = core.latestReport();
         assertEq(report.timestamp, block.timestamp, "report timestamp should reflect updateAccounting call");
 
-        // Step 4: Immediately try to start a new rebalance — should still revert because
+        // Step 4: Immediately try to start a new rebalance -- should still revert because
         // _lastRebalanceTimestamp was NOT affected by the updateAccounting() call.
         // elapsed = 30 minutes since rebalance completion, cooldown = 1 hour
         _performDeposit(alice, 5 * DECIMALS); // deposit more so next cycle has work
@@ -583,7 +583,7 @@ contract OllaCorePermissionlessRebalance is Test {
         IOllaCore.RebalanceProgress memory progressAfterReset = core.rebalanceProgress();
         assertEq(uint256(progressAfterReset.step), uint256(IOllaCore.RebalanceStep.Done), "should be reset to Done");
 
-        // Step 5: Immediately try rebalance — it should succeed because the cooldown
+        // Step 5: Immediately try rebalance -- it should succeed because the cooldown
         // was from the step-1 completion, and we already warped past it in step 2.
         // forceRebalanceReset does NOT set _lastRebalanceTimestamp.
         stakingManager.clearStakeReturnAmount();

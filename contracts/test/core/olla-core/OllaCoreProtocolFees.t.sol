@@ -284,7 +284,7 @@ contract OllaCoreProtocolFeesTest is Test {
 
         IOllaCore.LatestReport memory reportAfter = core.latestReport();
         assertEq(reportAfter.netFlows, -int256(assetsExpected), "net flows negative");
-        // No actual rewards accrued — pending withdrawal assets are excluded from totalAssets
+        // No actual rewards accrued -- pending withdrawal assets are excluded from totalAssets
         // so no phantom rewards are computed and no protocol fees are minted.
         assertEq(reportAfter.grossRewards, 0, "no phantom rewards from withdrawal requests");
         assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");

@@ -331,7 +331,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(3);
 
         // Simulate external exits for 2 attesters on the rollup side.
-        // The StakingManager does NOT detect these automatically — attesters
+        // The StakingManager does NOT detect these automatically -- attesters
         // remain Active internally until refreshAttesterState is called.
         for (uint256 i; i < 2; ++i) {
             rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
@@ -400,12 +400,12 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         // Query staking state from StakingManager
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
 
-        // stakedAmount only reflects Active attesters (1 × 100 ether).
+        // stakedAmount only reflects Active attesters (1 x 100 ether).
         // _processUnstakeAttester decrements stakedAmount and increments pendingUnstakeAmount.
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 1, "stakedAmount reflects only active attesters");
         // pendingUnstakeAmount tracks the 2 exiting attesters
         assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD * 2, "2 attesters pending unstake");
-        // withdrawableAmount is never set by unstake — only updated via refreshAttesterState
+        // withdrawableAmount is never set by unstake -- only updated via refreshAttesterState
         assertEq(state.withdrawableAmount, 0, "withdrawableAmount is zero before refreshAttesterState");
     }
 

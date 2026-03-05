@@ -9,7 +9,7 @@ import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 /// @title GovernanceLib
 /// @notice Extracts governance setter logic from OllaCore to reduce bytecode.
 /// @dev Uses external functions with storage references, invoked via automatic DELEGATECALL.
-///      Only functions with external calls or struct interactions are extracted here —
+///      Only functions with external calls or struct interactions are extracted here --
 ///      scalar-only setters stay inline in OllaCore because the DELEGATECALL overhead
 ///      exceeds the body savings under via_ir optimization.
 /// @author Olla Core contributors

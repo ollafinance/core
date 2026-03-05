@@ -71,7 +71,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         // First proposal succeeds
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
 
-        // Second proposal — schedule succeeds but execute reverts
+        // Second proposal -- schedule succeeds but execute reverts
         address anotherGov = makeAddr("anotherGov");
         bytes memory data2 = abi.encodeCall(IOllaGovernance.proposeGovernance, (anotherGov));
 

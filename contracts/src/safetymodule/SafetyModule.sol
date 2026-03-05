@@ -11,7 +11,7 @@ import { RolesLib } from "src/shared/RolesLib.sol";
 /// @author Olla Core contributors
 /// @dev SafetyModule is intentionally **not** UUPS-upgradeable:
 ///  1. It is the protocol's safety/pause mechanism (circuit breaker). Making
-///     it silently upgradeable would undermine its purpose as a trust anchor —
+///     it silently upgradeable would undermine its purpose as a trust anchor --
 ///     users must be able to reason about what can pause the protocol.
 ///  2. Its logic is simple (circuit breakers + pause) with minimal attack
 ///     surface, so the upgrade complexity/risk outweighs the benefit.

@@ -297,7 +297,7 @@ contract RefreshAttesterStateIntegration is Test {
     }
 
     /// @notice Verifies that totalAssets (and exchange rate) never drops during the
-    ///         unstake lifecycle: rebalance(InitiateUnstake) → refreshAttesterState → accounting → rebalance(PullUnstaked).
+    ///         unstake lifecycle: rebalance(InitiateUnstake) -> refreshAttesterState -> accounting -> rebalance(PullUnstaked).
     ///         Regression test for a bug where _processUnstakeAttester eagerly reduced stakedAmount
     ///         but the pending exit wasn't reflected in totalAssets until PullUnstaked.
     function test_totalAssets_neverDrops_duringUnstakeLifecycle() external {

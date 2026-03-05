@@ -420,7 +420,7 @@ interface IOllaVault {
     // solhint-disable-next-line use-natspec
     function maxMint(address) external view returns (uint256);
 
-    /// @notice Returns 0 — withdraw is async (ERC-7540).
+    /// @notice Returns 0 -- withdraw is async (ERC-7540).
     /// @return Always 0 for async vaults.
     // solhint-disable-next-line use-natspec
     function maxWithdraw(address) external view returns (uint256);

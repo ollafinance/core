@@ -488,7 +488,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-start pess-multiple-storage-read
     function _refreshSingleAttester(IAztecRollup rollup, address attester) internal {
         AttesterInfo storage info = _attesterMap[attester];
-        if (info.attester == address(0)) return; // Unknown attester — skip silently
+        if (info.attester == address(0)) return; // Unknown attester -- skip silently
 
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
@@ -531,7 +531,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         // Handle Exiting attesters
         if (info.status == InternalAttesterStatus.Exiting) {
             if (!view_.exit.exists) {
-                // Externally finalized — reconcile accounting and remove
+                // Externally finalized -- reconcile accounting and remove
                 uint256 pendingExit = info.pendingExitAmount;
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
                     _aggregateState.pendingUnstakeAmount -= pendingExit;
@@ -541,7 +541,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 _pendingClaimAmount += pendingExit;
                 _removeAttester(attester);
             } else if (_isExitExitable(view_)) {
-                // Exitable — finalize the exit
+                // Exitable -- finalize the exit
                 uint256 exitAmount = view_.exit.amount;
                 uint256 pendingExit = info.pendingExitAmount;
 
@@ -561,7 +561,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                     _aggregateState.withdrawableAmount -= exitAmount;
                 }
 
-                // Attester removed — skip balance update below
+                // Attester removed -- skip balance update below
                 emit AttesterStateRefreshed(attester, oldBalance, newBalance);
                 return;
             }
