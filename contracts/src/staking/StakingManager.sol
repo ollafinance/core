@@ -373,9 +373,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-start pess-multiple-storage-read
     /// @notice Sets an attester status, updates counters, and maintains the active attester set.
     /// @param attester The attester address.
+    /// @param info The attester info storage reference.
     /// @param newStatus The new local status.
-    function _setAttesterStatus(address attester, InternalAttesterStatus newStatus) internal {
-        AttesterInfo storage info = _attesterMap[attester];
+    function _setAttesterStatus(address attester, AttesterInfo storage info, InternalAttesterStatus newStatus)
+        internal
+    {
         InternalAttesterStatus previousStatus = info.status;
         if (previousStatus == newStatus) {
             return;
@@ -423,6 +425,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end pess-multiple-storage-read
     // slither-disable-end costly-loop
 
+    // slither-disable-start pess-multiple-storage-read
     /// @notice Marks an attester as active in the registry and updates running state.
     /// @param attester The attester address.
     /// @param stakedAmount The amount staked for this attester.
@@ -431,9 +434,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         info.attester = attester;
         info.stakedAmount = stakedAmount;
         ++_attesterCount;
-        _setAttesterStatus(attester, InternalAttesterStatus.Active);
+        _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
         _aggregateState.stakedAmount += stakedAmount;
     }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /// @notice Processes a single attester unstake attempt.
     /// @param rollup The rollup staking interface.
@@ -442,6 +447,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @return exitAmount The unstake amount initiated for the attester.
     // slither-disable-start calls-loop
     // slither-disable-start reentrancy-benign
+    // slither-disable-start pess-multiple-storage-read
     function _processUnstakeAttester(IAztecRollup rollup, address attester, AttesterInfo storage info)
         internal
         returns (uint256 exitAmount)
@@ -453,13 +459,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         bool isInitiated = rollup.initiateWithdraw(attester, address(this));
         if (!isInitiated) {
             if (view_.exit.exists) {
-                _setAttesterStatus(attester, InternalAttesterStatus.Exiting);
+                _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
                 return 0;
             }
             revert StakingManager__UnstakeFailed(attester);
         }
 
-        _setAttesterStatus(attester, InternalAttesterStatus.Exiting);
+        _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
         info.stakedAmount = 0;
         info.pendingExitAmount = exitAmount;
 
@@ -471,6 +477,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         return exitAmount;
     }
 
+    // slither-disable-end pess-multiple-storage-read
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
@@ -512,7 +519,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         // Handle Active attesters with an exit (externally initiated exit)
         if (info.status == InternalAttesterStatus.Active && view_.exit.exists) {
-            _setAttesterStatus(attester, InternalAttesterStatus.Exiting);
+            _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
             uint256 exitAmount = view_.exit.amount;
             info.pendingExitAmount = exitAmount;
             _aggregateState.pendingUnstakeAmount += exitAmount;
@@ -520,7 +527,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         // Handle Active attesters that were externally fully exited (no exit record, zero balance)
         if (info.status == InternalAttesterStatus.Active && !view_.exit.exists && newBalance == 0) {
-            _setAttesterStatus(attester, InternalAttesterStatus.Exiting);
+            _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
             _removeAttester(attester);
             emit AttesterStateRefreshed(attester, oldBalance, newBalance);
             return;
