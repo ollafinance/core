@@ -433,7 +433,7 @@ contract OllaCoreRebalancePauseTest is Test {
         core.rebalance();
         Vm.Log[] memory entries = vm.getRecordedLogs();
 
-        // Rebalance completion calls _updateAccountingInternal after computeAttesterState
+        // Rebalance completion calls _updateAccountingInternal after StakeSurplus
         // completes as part of the rebalance state machine.
         bytes32 accountingUpdated =
             keccak256("AccountingUpdated(uint256,uint256,uint256,int256,uint256,uint256,uint256,uint256)");
@@ -537,7 +537,7 @@ contract OllaCoreRebalancePauseTest is Test {
         // If the first call completed fully without partial stop, force a partial state
         if (revertingCore.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) {
             stdstore.target(address(revertingCore)).sig("rebalanceProgress()").depth(0).enable_packed_slots()
-                .checked_write(uint256(IOllaCore.RebalanceStep.ComputeAttesterState));
+                .checked_write(uint256(IOllaCore.RebalanceStep.StakeSurplus));
         }
 
         assertNotEq(
@@ -578,10 +578,10 @@ contract OllaCoreRebalancePauseTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    IDLE BUFFER SKIP WITH COMPUTE STEP
+                    IDLE BUFFER SKIP WITH STAKE SURPLUS STEP
     //////////////////////////////////////////////////////////////*/
 
-    function test_RebalanceIdleBufferSkip_WithComputeAttesterStateStep() external {
+    function test_RebalanceIdleBufferSkip_WithStakeSurplusStep() external {
         // Deposit a small amount that is below staking minimum -- no actual staking happens
         // (MockAccountingStakingManager returns 0 from stake when useStakeReturnAmount is set)
         _performDeposit(alice, 3 * DECIMALS);
