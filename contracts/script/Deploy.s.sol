@@ -16,6 +16,7 @@ import { BaseDeployer } from "./base/BaseDeployer.s.sol";
 import { DeployConfig } from "./config/Config.s.sol";
 import { LocalConfig } from "./config/Local.s.sol";
 import { TestnetConfig } from "./config/Testnet.s.sol";
+import { TestnetMockedConfig } from "./config/TestnetMocked.s.sol";
 import { MocksDeployer } from "./deployers/Mocks.s.sol";
 import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
 import { OllaGovernanceDeployer } from "./deployers/OllaGovernance.s.sol";
@@ -23,6 +24,7 @@ import { OllaVaultDeployer } from "./deployers/OllaVault.s.sol";
 import { RewardsAccumulatorDeployer } from "./deployers/RewardsAccumulator.s.sol";
 import { StAztecDeployer } from "./deployers/StAztec.s.sol";
 import { StAztecOFTAdapterDeployer } from "./deployers/StAztecOFTAdapter.s.sol";
+import { StakingStackDeployer } from "./deployers/StakingStack.s.sol";
 import { WithdrawalQueueDeployer } from "./deployers/WithdrawalQueue.s.sol";
 
 /// @title DeployScript
@@ -37,6 +39,7 @@ contract DeployScript is BaseDeployer {
     StAztecOFTAdapterDeployer internal _stAztecOFTAdapterDeployer;
     WithdrawalQueueDeployer internal _withdrawalQueueDeployer;
     RewardsAccumulatorDeployer internal _rewardsAccumulatorDeployer;
+    StakingStackDeployer internal _stakingStackDeployer;
 
     function setUp() public {
         // Initialize deployers
@@ -48,6 +51,7 @@ contract DeployScript is BaseDeployer {
         _stAztecOFTAdapterDeployer = new StAztecOFTAdapterDeployer();
         _withdrawalQueueDeployer = new WithdrawalQueueDeployer();
         _rewardsAccumulatorDeployer = new RewardsAccumulatorDeployer();
+        _stakingStackDeployer = new StakingStackDeployer();
     }
 
     function run() public {
@@ -102,17 +106,15 @@ contract DeployScript is BaseDeployer {
         json = _addAddressToJson(json, "OllaVaultImplementation", ollaVaultImpl, false);
         json = _addAddressToJson(json, "OllaVaultProxy", ollaVaultProxy, false);
 
-        // 4. Deploy or use existing mocks/external contracts
+        // 4. Deploy or use existing external contracts (asset + rollup)
         if (config.deployMocks) {
             // Deploy local staking asset + Aztec mocks (rollup + registry)
             (asset, rollup, rollupRegistry) = _mocksDeployer.deployAssetAndRollup(config);
         } else {
             asset = config.asset;
-            stakingManager = config.stakingManager;
-            safetyModule = config.safetyModule;
-            require(asset != address(0), "Deploy: asset address required for non-mock deployment");
-            require(stakingManager != address(0), "Deploy: stakingManager address required for non-mock deployment");
-            require(safetyModule != address(0), "Deploy: safetyModule address required for non-mock deployment");
+            rollupRegistry = config.rollupRegistry;
+            require(asset != address(0), "Deploy: asset address required");
+            require(rollupRegistry != address(0), "Deploy: rollupRegistry address required");
         }
 
         // Record asset early (now known)
@@ -155,18 +157,16 @@ contract DeployScript is BaseDeployer {
         json = _addAddressToJson(json, "RewardsAccumulatorImplementation", rewardsAccumulatorImpl, false);
         json = _addAddressToJson(json, "RewardsAccumulatorProxy", rewardsAccumulator, false);
 
-        // Local wiring for staking stack + safety module (requires RewardsAccumulator and core proxy)
-        if (config.deployMocks) {
-            // Deploy + init StakingManager + StakingProviderRegistry behind proxies
-            (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
-                _mocksDeployer.deployStakingStack(
-                    config, ollaCoreProxy, rewardsAccumulator, asset, rollupRegistry, ollaGovProxy
-                );
-            json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
-            json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
-            json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);
-            json = _addAddressToJson(json, "StakingProviderRegistryProxy", stakingProviderRegistry, false);
+        // 6. Deploy staking stack (always — StakingManager + StakingProviderRegistry behind proxies)
+        (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
+            _stakingStackDeployer.deploy(config, ollaCoreProxy, rewardsAccumulator, asset, rollupRegistry, ollaGovProxy);
+        json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
+        json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
+        json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);
+        json = _addAddressToJson(json, "StakingProviderRegistryProxy", stakingProviderRegistry, false);
 
+        // 6a. Mock-only: seed provider keys and configure rollup mock
+        if (config.deployMocks) {
             // Seed deterministic provider keys for local dev so staking works immediately.
             uint256 keyCount = vm.envOr("PROVIDER_KEY_COUNT", uint256(5));
             IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](keyCount);
@@ -190,33 +190,30 @@ contract DeployScript is BaseDeployer {
 
             json = _addAddressToJson(json, "MockAztecRollup", rollup, false);
             json = _addAddressToJson(json, "MockAztecRollupRegistry", rollupRegistry, false);
-
-            // Deploy real SafetyModule with generous local-dev defaults.
-            // CORE must be the proxy (not impl) so onlyCore modifier works.
-            vm.startBroadcast(config.deployerPrivateKey);
-            safetyModule = address(
-                new SafetyModule(
-                    config.deployer, // admin
-                    config.deployer, // guardian (deployer can pause/unpause locally)
-                    ollaCoreProxy, // core — must match OllaCore proxy address
-                    ollaVaultProxy, // vault — must match OllaVault proxy address
-                    1_000_000_000e18, // depositCap — 1B tokens, effectively unlimited
-                    500, // minRateDropBps — 5% rate drop triggers breaker
-                    5_000, // maxQueueRatioBps — 50% queue ratio triggers breaker
-                    2 hours // maxAccountingDelay — must exceed rebalanceCooldown (1h) to tolerate block-time drift
-                )
-            );
-            vm.stopBroadcast();
-            _logDeployment("SafetyModule", safetyModule);
         }
 
-        // Always write StakingManager to JSON once known
-        json = _addAddressToJson(json, "StakingManager", stakingManager, false);
+        // 7. Deploy SafetyModule (always — deployer EOA as guardian for fast emergency pause)
+        vm.startBroadcast(config.deployerPrivateKey);
+        safetyModule = address(
+            new SafetyModule(
+                ollaGovProxy, // admin (governance controls config)
+                config.deployer, // guardian (deployer can pause directly, no timelock delay)
+                ollaCoreProxy, // core — must match OllaCore proxy address
+                ollaVaultProxy, // vault — must match OllaVault proxy address
+                1_000_000_000e18, // depositCap — 1B tokens, effectively unlimited
+                500, // minRateDropBps — 5% rate drop triggers breaker
+                5_000, // maxQueueRatioBps — 50% queue ratio triggers breaker
+                2 hours // maxAccountingDelay — must exceed rebalanceCooldown (1h) to tolerate block-time drift
+            )
+        );
+        vm.stopBroadcast();
+        _logDeployment("SafetyModule", safetyModule);
 
-        // Safety module (required by OllaCore deposit/withdraw paths)
+        // Always write addresses to JSON
+        json = _addAddressToJson(json, "StakingManager", stakingManager, false);
         json = _addAddressToJson(json, "SafetyModule", safetyModule, false);
 
-        // 6. Initialize OllaCore with OllaGovernance as owner
+        // 8. Initialize OllaCore with OllaGovernance as owner
         //    OllaGovernance holds: owner(), DEFAULT_ADMIN_ROLE, GUARDIAN_ROLE, OPERATOR_ROLE
 
         config.withdrawalQueue = withdrawalQueue;
@@ -226,20 +223,22 @@ contract DeployScript is BaseDeployer {
         config.governance = ollaGovProxy;
         _ollaCoreDeployer.initialize(config, ollaCoreProxy, asset, stAztec, stakingManager, safetyModule);
 
-        // 6.1 Initialize OllaVault with all dependencies
+        // 8.1 Initialize OllaVault with all dependencies
         _ollaVaultDeployer.initialize(
             config, ollaVaultProxy, asset, stAztec, withdrawalQueue, ollaCoreProxy, ollaGovProxy
         );
 
-        // 6.2 Wire OllaGovernance → OllaCore
+        // 8.2 Wire OllaGovernance → OllaCore
         _ollaGovernanceDeployer.setCore(config, ollaGovProxy, ollaCoreProxy);
 
-        // 6.3 For local dev: wire OllaCore → OllaVault and unpause both via governance timelock.
+        // 8.3 Wire OllaCore → OllaVault and unpause both via governance timelock.
         //     With timelockMinDelay=0 the deployer can schedule+execute immediately.
-        //     Warp is needed because Forge starts block.timestamp at 1, which collides with
-        //     OZ TimelockController's _DONE_TIMESTAMP sentinel (also 1).
-        if (config.deployMocks) {
-            vm.warp(block.timestamp + 1);
+        //     vm.warp is only needed on Anvil because Forge starts block.timestamp at 1,
+        //     which collides with OZ TimelockController's _DONE_TIMESTAMP sentinel (also 1).
+        if (config.timelockMinDelay == 0) {
+            if (config.chainId == 31337) {
+                vm.warp(block.timestamp + 1);
+            }
 
             // setVault on OllaCore (onlyOwner → must go through governance timelock)
             bytes memory setVaultData = abi.encodeCall(OllaCore.setVault, (ollaVaultProxy));
@@ -267,11 +266,11 @@ contract DeployScript is BaseDeployer {
             vm.stopBroadcast();
         }
 
-        // 7. Renounce deployer's temporary DEFAULT_ADMIN_ROLE on OllaGovernance.
+        // 9. Renounce deployer's temporary DEFAULT_ADMIN_ROLE on OllaGovernance.
         //    After this, only the timelock (address(this)) retains DEFAULT_ADMIN_ROLE.
         _ollaGovernanceDeployer.renounceDeployerAdmin(config, ollaGovProxy);
 
-        // 8. Write deployment JSON
+        // 10. Write deployment JSON
         json = _closeAddressesJson(json);
 
         // Add StAztec metadata for frontend signature generation
@@ -296,6 +295,9 @@ contract DeployScript is BaseDeployer {
         } else if (keccak256(bytes(env)) == keccak256(bytes("testnet"))) {
             TestnetConfig testnetConfig = new TestnetConfig();
             return testnetConfig.getConfig();
+        } else if (keccak256(bytes(env)) == keccak256(bytes("testnet-mocked"))) {
+            TestnetMockedConfig testnetMockedConfig = new TestnetMockedConfig();
+            return testnetMockedConfig.getConfig();
         } else {
             revert(string.concat("Unknown DEPLOY_ENV: ", env));
         }

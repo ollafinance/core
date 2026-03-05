@@ -3,9 +3,9 @@ pragma solidity ^0.8.27;
 
 import { ConfigHelper, DeployConfig } from "./Config.s.sol";
 
-/// @title TestnetConfig
-/// @notice Configuration for testnet deployment (e.g., Sepolia)
-contract TestnetConfig is ConfigHelper {
+/// @title TestnetMockedConfig
+/// @notice Configuration for testnet deployment with mocked Aztec contracts (e.g., Sepolia)
+contract TestnetMockedConfig is ConfigHelper {
     /// @notice Sepolia chain ID
     uint256 internal constant _SEPOLIA_CHAIN_ID = 11155111;
 
@@ -16,23 +16,23 @@ contract TestnetConfig is ConfigHelper {
 
         return DeployConfig({
             // Environment
-            name: "testnet",
+            name: "testnet-mocked",
             chainId: _SEPOLIA_CHAIN_ID,
             // Deployer
             deployerPrivateKey: deployerPrivateKey,
             deployer: deployer,
-            // Feature flags - do NOT deploy mocks on testnet
-            deployMocks: false,
-            // External addresses - real Aztec Sepolia contracts
-            asset: 0x5595cb9ED193cAc2C0Bc5393313bc6115817954B,
-            rollupRegistry: 0xA0BFb1B494FB49041e5c6e8c2C1BE09cD171c6Ba,
+            // Feature flags - deploy mocks for mocked testnet
+            deployMocks: true,
+            // External addresses - populated by mock deployer
+            asset: address(0),
+            rollupRegistry: address(0),
             // Protocol fee config
             protocolFeeBP: 500,
             treasuryFeeSplitBP: 5000,
-            // Governance config - TODO: replace with real addresses
-            governance: deployer, // TODO: Set real governance multisig
-            treasury: deployer, // TODO: Set real treasury address
-            timelockMinDelay: 0, // zero for initial testnet — allows atomic wiring
+            // Governance config
+            governance: deployer,
+            treasury: deployer,
+            timelockMinDelay: 0, // zero for mocked testnet — allows atomic wiring
             // Satellite addresses - populated during deployment
             withdrawalQueue: deployer,
             rewardsAccumulator: deployer,

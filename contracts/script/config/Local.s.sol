@@ -27,7 +27,7 @@ contract LocalConfig is ConfigHelper {
             deployMocks: true,
             // External addresses - not used in local (mocks deployed instead)
             asset: address(0),
-            stakingManager: address(0),
+            rollupRegistry: address(0),
             // Protocol fee config
             protocolFeeBP: 500,
             treasuryFeeSplitBP: 5000,
