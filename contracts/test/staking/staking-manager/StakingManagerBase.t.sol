@@ -142,6 +142,17 @@ abstract contract StakingManagerBaseTest is Test {
         vm.stopPrank();
     }
 
+    function _attesterAddresses(uint256 count) internal pure returns (address[] memory) {
+        address[] memory attesters = new address[](count);
+        for (uint256 i; i < count; ++i) {
+            // mirrors _createMockKeys: address(uint160(i + 1))
+            // casting to uint160 is safe because i + 1 stays within 160 bits
+            // forge-lint: disable-next-line(unsafe-typecast)
+            attesters[i] = address(uint160(i + 1));
+        }
+        return attesters;
+    }
+
     function _setupStakedAttestersWithExits(uint256 total, uint256 exited) internal {
         require(exited <= total, "exited cannot be more than total");
         IStakingManager.KeyStore[] memory keys = _createMockKeys(total);

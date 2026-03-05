@@ -15,49 +15,47 @@ import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.so
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
-contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
+contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /*//////////////////////////////////////////////////////////////
-                        FINALIZE EXITS TESTS
+                    REFRESH ATTESTER STATE TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Anyone can call finalizeExits() - it has no access control.
-    function test_FinalizeExits_PermissionlessAccess() external {
+    /// @notice Anyone can call refreshAttesterState() - it has no access control.
+    function test_RefreshAttesterState_PermissionlessAccess() external {
         _setupStakedAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        // Call finalizeExits() from a random address (not core, not operator, not admin)
+        // Call refreshAttesterState() from a random address (not core, not operator, not admin)
         address randomCaller = makeAddr("randomCaller");
         vm.prank(randomCaller);
-        uint256 finalized = stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        assertEq(finalized, ACTIVATION_THRESHOLD, "random caller should be able to finalize exits");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending unstake should be cleared");
     }
 
-    /// @notice When there are no exiting attesters, finalizeExits() returns 0.
-    function test_FinalizeExits_ReturnsZero_WhenNoExitableAttesters() external {
-        // No attesters registered or staked at all
-        uint256 finalized = stakingManager.finalizeExits();
-        assertEq(finalized, 0, "should return 0 when no attesters exist");
+    /// @notice When there are no exiting attesters, refreshAttesterState() is a no-op.
+    function test_RefreshAttesterState_NoOp_WhenNoExitableAttesters() external {
+        // No attesters registered or staked at all — should not revert
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        // With staked attesters but none unstaking
+        // With staked attesters but none unstaking — should not revert
         _setupStakedAttester();
-        finalized = stakingManager.finalizeExits();
-        assertEq(finalized, 0, "should return 0 when no attesters are exiting");
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "active count should be unchanged");
     }
 
-    /// @notice finalizeExits() tracks the finalized amount in _pendingClaimAmount,
+    /// @notice refreshAttesterState() tracks the finalized amount in _pendingClaimAmount,
     ///         which is then returned as exitAmount by getUnstakedFunds().
-    function test_FinalizeExits_TracksPendingClaimAmount() external {
+    function test_RefreshAttesterState_TracksPendingClaimAmount() external {
         _setupStakedAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        uint256 finalized = stakingManager.finalizeExits();
-        assertEq(finalized, ACTIVATION_THRESHOLD, "finalized amount should match staked amount");
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         // getUnstakedFunds should report exitAmount equal to what was finalized
         vm.prank(core);
@@ -66,9 +64,9 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match the finalized amount");
     }
 
-    /// @notice Multiple calls to finalizeExits() accumulate _pendingClaimAmount
+    /// @notice Multiple calls to refreshAttesterState() accumulate _pendingClaimAmount
     ///         until getUnstakedFunds() drains it.
-    function test_FinalizeExits_AccumulatesAcrossMultipleCalls() external {
+    function test_RefreshAttesterState_AccumulatesAcrossMultipleCalls() external {
         _setupMultipleStakedAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
 
@@ -79,24 +77,20 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         // Make only the second attester exitable initially
         rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
 
-        // First finalizeExits: only attester[1] is exitable
-        uint256 firstFinalized = stakingManager.finalizeExits();
-        assertEq(firstFinalized, ACTIVATION_THRESHOLD, "first call should finalize one attester");
+        // First refreshAttesterState: only attester[1] is exitable
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
+        vm.prank(core);
+        (, uint256 firstExitAmount,) = stakingManager.getUnstakedFunds();
+        assertEq(firstExitAmount, ACTIVATION_THRESHOLD, "first call should finalize one attester");
 
         // Advance time so attester[0] becomes exitable
         vm.warp(block.timestamp + 2 days);
 
-        // Second finalizeExits: attester[0] now exitable
-        uint256 secondFinalized = stakingManager.finalizeExits();
-        assertEq(secondFinalized, ACTIVATION_THRESHOLD, "second call should finalize remaining attester");
-
-        // getUnstakedFunds should report accumulated exitAmount from both calls
+        // Second refreshAttesterState: attester[0] now exitable
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
         vm.prank(core);
-        (, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
-
-        assertEq(
-            exitAmount, ACTIVATION_THRESHOLD * 2, "exitAmount should accumulate across multiple finalizeExits calls"
-        );
+        (, uint256 secondExitAmount,) = stakingManager.getUnstakedFunds();
+        assertEq(secondExitAmount, ACTIVATION_THRESHOLD, "second call should finalize remaining attester");
     }
 
     /// @notice getUnstakedFunds() returns exitAmount matching _pendingClaimAmount and resets it to 0.
@@ -107,7 +101,7 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         // First getUnstakedFunds: should return exitAmount matching finalized amount
         vm.prank(core);
@@ -151,12 +145,49 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    FINALIZE EXITS REENTRANCY TESTS
+            EXTERNALLY FINALIZED ACTIVE ATTESTER RECOVERY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice finalizeExits() is protected by nonReentrant. Re-entering via the rollup's
+    /// @notice An active attester that was externally fully exited (zero balance, no exit record)
+    ///         should be removed during refreshAttesterState.
+    function test_RefreshAttesterState_RemovesExternallyFinalizedActiveAttester() external {
+        _setupStakedAttester();
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "should have 1 active attester");
+
+        // Simulate external full exit: rollup clears all state for this attester
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        rollup.clearAttester(keys[0].attester);
+
+        // Refresh should detect zero balance + no exit and remove the attester
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "active count should be 0 after removal");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending unstake count should be 0 after removal");
+    }
+
+    /// @notice When an externally finalized active attester is removed, the aggregate stakedAmount
+    ///         should be decremented by the attester's cached balance.
+    function test_RefreshAttesterState_ExternallyFinalizedUpdatesAggregateState() external {
+        _setupMultipleStakedAttesters(2);
+        assertEq(stakingManager.getActivatedAttesterCount(), 2, "should have 2 active attesters");
+
+        // Externally finalize only the first attester
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+        rollup.clearAttester(keys[0].attester);
+
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "active count should be 1");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending unstake count should be 0");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                REFRESH ATTESTER STATE REENTRANCY TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice refreshAttesterState() is protected by nonReentrant. Re-entering via the rollup's
     ///         finalizeWithdraw() callback reverts with ReentrancyGuardReentrantCall.
-    function test_RevertWhen_FinalizeExits_Reentrancy() external {
+    function test_RevertWhen_RefreshAttesterState_Reentrancy() external {
         // Deploy a malicious rollup that re-enters during finalizeWithdraw
         MaliciousAztecRollup maliciousRollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         MockAztecRollupRegistry maliciousRegistry = new MockAztecRollupRegistry(address(maliciousRollup));
@@ -193,12 +224,15 @@ contract StakingManagerFinalizeExitsTest is StakingManagerBaseTest {
         vm.prank(core);
         maliciousSM.unstake(ACTIVATION_THRESHOLD);
 
-        // Configure the malicious rollup to re-enter finalizeExits during finalizeWithdraw
-        maliciousRollup.setReentry(address(maliciousSM), abi.encodeCall(maliciousSM.finalizeExits, ()));
+        // Configure the malicious rollup to re-enter refreshAttesterState during finalizeWithdraw
+        address[] memory reentrancyAttesters = _attesterAddresses(1);
+        maliciousRollup.setReentry(
+            address(maliciousSM), abi.encodeCall(maliciousSM.refreshAttesterState, (reentrancyAttesters))
+        );
         maliciousRollup.setReenterOnFinalizeWithdraw(true);
 
         // The reentrancy attempt should revert
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        maliciousSM.finalizeExits();
+        maliciousSM.refreshAttesterState(reentrancyAttesters);
     }
 }

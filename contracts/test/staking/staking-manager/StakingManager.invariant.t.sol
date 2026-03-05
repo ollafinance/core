@@ -206,15 +206,6 @@ contract StakingManagerHandler is Test {
         }
     }
 
-    /// @notice Compute attester state (refreshes cached values).
-    function computeAttesterState() external {
-        vm.prank(defaultAdmin);
-        try stakingManager.computeAttesterState() { }
-            catch {
-            // Expected if not authorized or other errors
-        }
-    }
-
     /// @notice Harvest rewards (only core can call)
     /// @dev Sets random rewards for the rewards vault address before harvesting.
     function harvestRewards(uint256 rewardSeed) external {
@@ -240,6 +231,10 @@ contract StakingManagerHandler is Test {
 
     function ghostAttesterAt(uint256 index) external view returns (address) {
         return ghost_attesters[index];
+    }
+
+    function getGhostAttesters() external view returns (address[] memory) {
+        return ghost_attesters;
     }
 }
 
@@ -326,7 +321,6 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Staking state amounts are never negative
     function invariant_StakingStateNonNegative() external {
-        _refreshAttesterState();
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
 
         assertGe(state.stakedAmount, 0, "stakedAmount should never be negative");
@@ -389,7 +383,6 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Total assets consistency across all states
     function invariant_TotalAssetsConsistency() external {
-        _refreshAttesterState();
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
 
         // The sum of all states should be reasonable (can't exceed total minted tokens)
@@ -428,14 +421,16 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Registry only contains Active/Exiting entries; removed attesters are not counted as staked
     function invariant_InactiveEntriesNotStaked() external {
-        _refreshAttesterState();
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         uint256 eligibleCount = _countRollupEligible();
         uint256 activationThreshold = rollup.getActivationThreshold();
 
-        // stakedAmount includes all eligible attesters (Active + Exiting with remaining stake)
+        // stakedAmount tracks Active attesters; pendingUnstakeAmount tracks Exiting attesters.
+        // Together they should match all rollup-eligible attesters.
         assertEq(
-            state.stakedAmount, eligibleCount * activationThreshold, "staked amount should match eligible attesters"
+            state.stakedAmount + state.pendingUnstakeAmount,
+            eligibleCount * activationThreshold,
+            "staked + pending should match eligible attesters"
         );
     }
 
@@ -463,7 +458,6 @@ contract StakingManagerInvariantTest is Test {
 
     /// @notice Staking operations respect activation threshold
     function invariant_ActivationThresholdRespected() external {
-        _refreshAttesterState();
         // Check that staking operations only occur when sufficient conditions are met
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         uint256 queueLength = stakingProviderRegistry.getQueueLength();
@@ -495,11 +489,6 @@ contract StakingManagerInvariantTest is Test {
     /*//////////////////////////////////////////////////////////////
                        HELPER FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    function _refreshAttesterState() internal {
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-    }
 
     function activatedCount() internal view returns (uint256) {
         return stakingManager.getActivatedAttesterCount();

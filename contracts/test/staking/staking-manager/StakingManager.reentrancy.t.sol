@@ -122,40 +122,20 @@ contract StakingManagerReentrancyTest is Test {
         stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
-    function test_RevertWhen_FinalizeExits_ReenteredFromRollupFinalizeWithdraw() external {
+    function test_RevertWhen_RefreshAttesterState_ReenteredFromRollupFinalizeWithdraw() external {
         _stakeOne();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.finalizeExits, ()));
+        // Build attester address array for refreshAttesterState
+        address[] memory attesters = new address[](1);
+        attesters[0] = address(uint160(1));
+
+        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.refreshAttesterState, (attesters)));
         rollup.setReenterOnFinalizeWithdraw(true);
 
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        stakingManager.finalizeExits();
-    }
-
-    function test_RevertWhen_ComputeAttesterState_ReenteredFromRollupDeposit() external {
-        bytes32 operatorRole = stakingManager.OPERATOR_ROLE();
-        vm.prank(defaultAdmin);
-        stakingManager.grantRole(operatorRole, address(rollup));
-
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.addKeysToProvider(keys);
-
-        aztec.mint(core, ACTIVATION_THRESHOLD * 2);
-
-        // First stake to set up an attester
-        vm.prank(core);
-        stakingManager.stake(ACTIVATION_THRESHOLD);
-
-        // Configure rollup to re-enter computeAttesterState during second deposit
-        rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.computeAttesterState, ()));
-        rollup.setReenterOnDeposit(true);
-
-        vm.prank(core);
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        stakingManager.stake(ACTIVATION_THRESHOLD);
+        stakingManager.refreshAttesterState(attesters);
     }
 }
