@@ -32,6 +32,7 @@ contract TestnetMockedConfig is ConfigHelper {
             // Governance config
             governance: deployer,
             treasury: deployer,
+            providerAdmin: deployer,
             timelockMinDelay: 0, // zero for mocked testnet — allows atomic wiring
             // Satellite addresses - populated during deployment
             withdrawalQueue: deployer,

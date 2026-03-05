@@ -32,6 +32,7 @@ contract TestnetConfig is ConfigHelper {
             // Governance config - TODO: replace with real addresses
             governance: deployer, // TODO: Set real governance multisig
             treasury: deployer, // TODO: Set real treasury address
+            providerAdmin: deployer, // TODO: Set real provider admin address
             timelockMinDelay: 0, // zero for initial testnet — allows atomic wiring
             // Satellite addresses - populated during deployment
             withdrawalQueue: deployer,

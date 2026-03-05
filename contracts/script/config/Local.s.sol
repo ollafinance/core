@@ -34,6 +34,7 @@ contract LocalConfig is ConfigHelper {
             // Governance config - deployer acts as governance admin for local dev
             governance: deployer,
             treasury: deployer,
+            providerAdmin: deployer,
             timelockMinDelay: 0, // instant for local dev
             // Satellite addresses - populated during deployment
             withdrawalQueue: deployer,

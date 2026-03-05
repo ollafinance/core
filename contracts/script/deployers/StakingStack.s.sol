@@ -52,13 +52,14 @@ contract StakingStackDeployer is BaseDeployer {
         _logDeployment("StakingProviderRegistry Proxy", address(sprProxy));
 
         // Cache all values to minimize stack usage
-        address deployer = config.deployer;
+        address providerAdmin = config.providerAdmin;
         address smProxyAddr = address(smProxy);
         address sprProxyAddr = address(sprProxy);
 
         // Initialize StakingProviderRegistry first (needs stakingManager address)
         // defaultAdmin is governance so OllaGovernance can propagate admin role changes.
-        StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, deployer, deployer, governanceAdmin);
+        // providerAdmin is used for both provider admin and rewards recipient.
+        StakingProviderRegistry(sprProxyAddr).initialize(smProxyAddr, providerAdmin, providerAdmin, governanceAdmin);
 
         // Initialize StakingManager
         // defaultAdmin is governance so OllaGovernance can propagate admin role changes.
