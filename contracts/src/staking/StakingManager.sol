@@ -368,23 +368,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end calls-loop
     // slither-disable-end divide-before-multiply
 
-    // slither-disable-start pess-multiple-storage-read
-    /// @notice Gets or creates an attester entry in the mapping.
-    /// @param attester The attester address.
-    /// @return info The attester info storage reference.
-    function _getOrCreateAttester(address attester) internal returns (AttesterInfo storage info) {
-        info = _attesterMap[attester];
-        if (info.attester == address(0)) {
-            info.attester = attester;
-            info.stakedAmount = 0;
-            info.status = InternalAttesterStatus.Inactive;
-            ++_attesterCount;
-        }
-        return info;
-    }
-
-    // slither-disable-end pess-multiple-storage-read
-
     // slither-disable-start unused-return
     // slither-disable-start costly-loop
     // slither-disable-start pess-multiple-storage-read
@@ -444,11 +427,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param attester The attester address.
     /// @param stakedAmount The amount staked for this attester.
     function _setActive(address attester, uint256 stakedAmount) internal {
-        AttesterInfo storage info = _getOrCreateAttester(attester);
-        uint256 oldAmount = info.stakedAmount;
+        AttesterInfo storage info = _attesterMap[attester];
+        info.attester = attester;
         info.stakedAmount = stakedAmount;
+        ++_attesterCount;
         _setAttesterStatus(attester, InternalAttesterStatus.Active);
-        _aggregateState.stakedAmount = _aggregateState.stakedAmount + stakedAmount - oldAmount;
+        _aggregateState.stakedAmount += stakedAmount;
     }
 
     /// @notice Processes a single attester unstake attempt.
