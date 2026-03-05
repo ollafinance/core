@@ -21,9 +21,9 @@ import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
-/// @title ComputeAttesterStateIntegration
+/// @title RefreshAttesterStateIntegration
 /// @notice Integration tests for deposit -> rebalance -> staked principal consistency.
-contract ComputeAttesterStateIntegration is Test {
+contract RefreshAttesterStateIntegration is Test {
     uint256 internal constant DECIMALS = 1e18;
 
     MockAztec internal asset;
@@ -300,5 +300,93 @@ contract ComputeAttesterStateIntegration is Test {
             activationThreshold * 2,
             "stakedPrincipal should be correct after standalone updateAccounting"
         );
+    }
+
+    /// @notice Verifies that totalAssets (and exchange rate) never drops during the
+    ///         unstake lifecycle: rebalance(InitiateUnstake) → refreshAttesterState → accounting → rebalance(PullUnstaked).
+    ///         Regression test for a bug where _processUnstakeAttester eagerly reduced stakedAmount
+    ///         but the pending exit wasn't reflected in totalAssets until PullUnstaked.
+    function test_totalAssets_neverDrops_duringUnstakeLifecycle() external {
+        uint256 activationThreshold = 200_000 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+
+        _addKeys(2);
+
+        // Deposit enough to create 2 attesters
+        uint256 depositAmount = activationThreshold * 2;
+        _performDeposit(alice, depositAmount);
+
+        // Stake via rebalance
+        vm.prank(operator);
+        core.rebalance();
+        _completeRebalance();
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 2, "should have 2 attesters");
+
+        // The completed rebalance already ran _updateAccountingInternal.
+        // Record baseline.
+        uint256 totalAssetsBefore = core.totalAssets();
+        uint256 exchangeRateBefore = core.exchangeRate();
+        assertEq(totalAssetsBefore, depositAmount, "totalAssets should equal deposit");
+
+        // --- Phase 1: Rebalance that initiates unstake ---
+        // Raise targetBufferedAssets to force unstaking of one attester
+        vm.prank(governance);
+        core.setTargetBufferedAssets(activationThreshold);
+
+        uint256 t1 = block.timestamp + 2 hours;
+        vm.warp(t1);
+        vm.prank(operator);
+        core.rebalance();
+        _completeRebalance();
+
+        // totalAssets should NOT have dropped after unstake + accounting
+        uint256 totalAssetsAfterUnstake = core.totalAssets();
+        assertGe(totalAssetsAfterUnstake, totalAssetsBefore, "totalAssets must not drop after unstake rebalance");
+
+        uint256 exchangeRateAfterUnstake = core.exchangeRate();
+        assertGe(exchangeRateAfterUnstake, exchangeRateBefore, "exchange rate must not drop after unstake rebalance");
+
+        // --- Phase 2: refreshAttesterState finalizes exits ---
+        address[] memory attesters = new address[](2);
+        attesters[0] = address(uint160(1));
+        attesters[1] = address(uint160(2));
+        stakingManager.refreshAttesterState(attesters);
+
+        uint256 totalAssetsAfterRefresh = core.totalAssets();
+        assertGe(totalAssetsAfterRefresh, totalAssetsBefore, "totalAssets must not drop after refreshAttesterState");
+
+        // --- Phase 3: Standalone accounting after finalization ---
+        uint256 t2 = t1 + 2 hours;
+        vm.warp(t2);
+        core.updateAccounting();
+
+        uint256 totalAssetsAfterAccounting = core.totalAssets();
+        assertGe(
+            totalAssetsAfterAccounting, totalAssetsBefore, "totalAssets must not drop after accounting post-finalize"
+        );
+
+        uint256 exchangeRateAfterAccounting = core.exchangeRate();
+        assertGe(
+            exchangeRateAfterAccounting,
+            exchangeRateBefore,
+            "exchange rate must not drop after accounting post-finalize"
+        );
+
+        // --- Phase 4: Next rebalance PullUnstaked recovers funds to buffer ---
+        uint256 t3 = t2 + 2 hours;
+        vm.warp(t3);
+        vm.prank(operator);
+        core.rebalance();
+        _completeRebalance();
+
+        uint256 totalAssetsAfterPull = core.totalAssets();
+        assertGe(totalAssetsAfterPull, totalAssetsBefore, "totalAssets must not drop after PullUnstaked");
+
+        uint256 exchangeRateAfterPull = core.exchangeRate();
+        assertGe(exchangeRateAfterPull, exchangeRateBefore, "exchange rate must be monotonically non-decreasing");
     }
 }
