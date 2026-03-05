@@ -16,7 +16,7 @@ import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegist
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
-import { Status } from "src/staking/libraries/AztecTypes.sol";
+import { AttesterView, Status } from "src/staking/libraries/AztecTypes.sol";
 
 /// @title StakingManagerHandler
 /// @notice Handler contract for StakingManager invariant testing.
@@ -205,6 +205,38 @@ contract StakingManagerHandler is Test {
             // Expected if not authorized or no funds to claim
         }
     }
+
+    /// @notice Externally finalize an exiting attester on the rollup, then refresh.
+    /// @dev Simulates a third party calling finalizeWithdraw directly on the rollup.
+    function externallyFinalizeAndRefresh(uint256 attesterSeed) external {
+        if (ghost_attesters.length == 0) return;
+
+        uint256 idx = bound(attesterSeed, 0, ghost_attesters.length - 1);
+        address attester = ghost_attesters[idx];
+
+        // Only finalize if the attester has an exit on the rollup
+        if (!rollup.getAttesterView(attester).exit.exists) return;
+
+        // External finalization: call finalizeWithdraw directly on rollup
+        try rollup.finalizeWithdraw(attester) {
+            ghost_externallyFinalized++;
+        } catch {
+            return;
+        }
+
+        // Refresh to reconcile StakingManager state
+        address[] memory attesters = new address[](1);
+        attesters[0] = attester;
+        stakingManager.refreshAttesterState(attesters);
+    }
+
+    /// @notice Refresh attester state for all known attesters.
+    function refreshAllAttesters() external {
+        if (ghost_attesters.length == 0) return;
+        stakingManager.refreshAttesterState(ghost_attesters);
+    }
+
+    uint256 public ghost_externallyFinalized;
 
     /// @notice Harvest rewards (only core can call)
     /// @dev Sets random rewards for the rewards vault address before harvesting.
@@ -475,6 +507,20 @@ contract StakingManagerInvariantTest is Test {
         }
     }
 
+    /// @notice pendingUnstakeAmount must not exceed the sum of rollup exit amounts
+    ///         for all known attesters. After refresh, externally finalized exits must
+    ///         be subtracted from pendingUnstakeAmount.
+    function invariant_PendingUnstakeNotStale() external view {
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        uint256 rollupExitTotal = _sumRollupExitAmounts();
+
+        assertLe(
+            state.pendingUnstakeAmount,
+            rollupExitTotal + handler.ghost_externallyFinalized() * rollup.getActivationThreshold(),
+            "pendingUnstakeAmount should not exceed rollup exits + reconciled externals"
+        );
+    }
+
     /// @notice Balance consistency across contract interactions
     function invariant_BalanceConsistency() external view {
         // Rewards are paid by the rollup directly to `rewardsAccumulator` (the claim recipient).
@@ -514,6 +560,18 @@ contract StakingManagerInvariantTest is Test {
             }
         }
         return eligibleCount;
+    }
+
+    function _sumRollupExitAmounts() internal view returns (uint256 total) {
+        uint256 length = handler.ghostAttestersLength();
+        for (uint256 i; i < length; ++i) {
+            address attester = handler.ghostAttesterAt(i);
+            AttesterView memory view_ = rollup.getAttesterView(attester);
+            if (view_.exit.exists) {
+                total += view_.exit.amount;
+            }
+        }
+        return total;
     }
 
     function _countRollupExits() internal view returns (uint256 exitCount) {

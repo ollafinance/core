@@ -182,6 +182,175 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
+            EXTERNALLY FINALIZED EXIT ACCOUNTING TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice When a third party calls rollup.finalizeWithdraw() directly (bypassing StakingManager),
+    ///         the subsequent refreshAttesterState() must reconcile pendingUnstakeAmount and
+    ///         populate _pendingClaimAmount so OllaCore can reduce stakedPrincipal.
+    function test_RefreshAttesterState_ExternalFinalization_ReconcilesPendingUnstake() external {
+        _setupStakedAttester();
+
+        // Unstake via StakingManager — creates exit on rollup, increments pendingUnstakeAmount
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.StakingState memory stateAfterUnstake = stakingManager.getStakingState();
+        assertEq(stateAfterUnstake.pendingUnstakeAmount, ACTIVATION_THRESHOLD, "pending should be set after unstake");
+
+        // Third party calls finalizeWithdraw directly on the rollup
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        rollup.finalizeWithdraw(keys[0].attester);
+
+        // Now the exit record is gone on the rollup, but StakingManager still tracks pendingUnstakeAmount
+        IStakingManager.StakingState memory stateBeforeRefresh = stakingManager.getStakingState();
+        assertEq(
+            stateBeforeRefresh.pendingUnstakeAmount,
+            ACTIVATION_THRESHOLD,
+            "pending should still be stale before refresh"
+        );
+
+        // Refresh detects the externally finalized exit and reconciles
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        IStakingManager.StakingState memory stateAfterRefresh = stakingManager.getStakingState();
+        assertEq(stateAfterRefresh.pendingUnstakeAmount, 0, "pending should be cleared after reconciliation");
+
+        // _pendingClaimAmount should be populated for OllaCore to claim
+        vm.prank(core);
+        (, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match the externally finalized amount");
+    }
+
+    /// @notice When an externally initiated exit (detected via refresh as Active -> Exiting)
+    ///         is later externally finalized, pendingUnstakeAmount must still be reconciled.
+    function test_RefreshAttesterState_ExternalInitiateAndFinalize_ReconcilesFully() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+
+        // External party initiates an exit on the rollup with a future exitable time
+        // so the first refresh only detects the exit without immediately finalizing it.
+        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+
+        // First refresh: detects Active attester with exit -> transitions to Exiting, increments pendingUnstake
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        IStakingManager.StakingState memory stateAfterDetection = stakingManager.getStakingState();
+        assertEq(
+            stateAfterDetection.pendingUnstakeAmount,
+            ACTIVATION_THRESHOLD,
+            "pending should be set after detecting external exit"
+        );
+
+        // External party finalizes the exit on the rollup (clears exit record)
+        rollup.clearAttester(keys[0].attester);
+
+        // Second refresh: detects Exiting attester with no exit -> reconciles and removes
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        IStakingManager.StakingState memory stateAfterReconcile = stakingManager.getStakingState();
+        assertEq(stateAfterReconcile.pendingUnstakeAmount, 0, "pending should be cleared after reconciliation");
+
+        vm.prank(core);
+        (, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should be populated for OllaCore");
+    }
+
+    /// @notice totalStaked() remains consistent through the external finalization lifecycle.
+    function test_RefreshAttesterState_ExternalFinalization_TotalStakedConsistent() external {
+        _setupMultipleStakedAttesters(2);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+        uint256 initialTotal = stakingManager.totalStaked();
+        assertEq(initialTotal, ACTIVATION_THRESHOLD * 2, "initial total should be 2x threshold");
+
+        // Unstake one attester (picks from end of set, so keys[1] gets unstaked)
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        // totalStaked should remain 2x (stakedAmount + pendingUnstakeAmount)
+        assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD * 2, "total should be unchanged after unstake");
+
+        // External finalization of the unstaked attester (keys[1] — the one that was unstaked)
+        rollup.finalizeWithdraw(keys[1].attester);
+
+        // Refresh reconciles the accounting
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
+
+        // After reconciliation: stakedAmount for 1 active + pendingClaim for 1 finalized
+        assertEq(
+            stakingManager.totalStaked(),
+            ACTIVATION_THRESHOLD * 2,
+            "total should still be 2x (1 staked + 1 pending claim)"
+        );
+
+        // After claiming, total should drop
+        vm.prank(core);
+        stakingManager.getUnstakedFunds();
+        assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD, "total should be 1x after claim");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+        HASEXITABLEUNSTAKES / WORK DETECTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice hasExitableUnstakes() returns true after refresh finalizes an exit,
+    ///         enabling _hasRebalanceWorkAvailable() in OllaCore to detect work.
+    function test_HasExitableUnstakes_TrueAfterRefreshFinalizesExit() external {
+        _setupStakedAttester();
+
+        assertFalse(stakingManager.hasExitableUnstakes(), "should be false initially");
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        assertFalse(stakingManager.hasExitableUnstakes(), "should be false after unstake but before refresh");
+
+        // Refresh finalizes the exit (mock sets exitableAt = block.timestamp)
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertTrue(stakingManager.hasExitableUnstakes(), "should be true after refresh finalizes exit");
+    }
+
+    /// @notice hasExitableUnstakes() returns false after getUnstakedFunds drains _pendingClaimAmount.
+    function test_HasExitableUnstakes_FalseAfterClaim() external {
+        _setupStakedAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertTrue(stakingManager.hasExitableUnstakes(), "should be true after finalization");
+
+        vm.prank(core);
+        stakingManager.getUnstakedFunds();
+
+        assertFalse(stakingManager.hasExitableUnstakes(), "should be false after claim");
+    }
+
+    /// @notice hasExitableUnstakes() returns true for externally finalized exits too.
+    function test_HasExitableUnstakes_TrueAfterExternalFinalization() external {
+        _setupStakedAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        // External finalization
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        rollup.finalizeWithdraw(keys[0].attester);
+
+        assertFalse(
+            stakingManager.hasExitableUnstakes(), "should be false before refresh detects external finalization"
+        );
+
+        // Refresh detects and reconciles
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertTrue(
+            stakingManager.hasExitableUnstakes(), "should be true after refresh reconciles external finalization"
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
                 REFRESH ATTESTER STATE REENTRANCY TESTS
     //////////////////////////////////////////////////////////////*/
 

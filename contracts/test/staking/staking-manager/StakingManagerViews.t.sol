@@ -48,7 +48,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         assertFalse(hasExitable, "hasExitableUnstakes should be false with only pending exits");
     }
 
-    function test_HasExitableUnstakes_ReturnsTrueWhenWithdrawable() external {
+    function test_HasExitableUnstakes_ReturnsFalseBeforeRefresh() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(keys);
@@ -62,22 +62,36 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         vm.stopPrank();
 
         bool hasExitable = stakingManager.hasExitableUnstakes();
-        assertFalse(
-            hasExitable,
-            "hasExitableUnstakes should be false because running state does not track withdrawable transitions"
-        );
+        assertFalse(hasExitable, "hasExitableUnstakes should be false before refresh finalizes exits");
     }
 
-    function test_HasExitableUnstakes_ReturnsTrueWhenActiveExitIsExitable() external {
+    function test_HasExitableUnstakes_ReturnsTrueAfterRefreshFinalizesExit() external {
         _setupStakedAttester();
 
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
-        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        // Refresh finalizes the exit (mock sets exitableAt to block.timestamp)
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         bool hasExitable = stakingManager.hasExitableUnstakes();
-        assertFalse(
-            hasExitable, "hasExitableUnstakes should be false because external exits are not reflected in running state"
-        );
+        assertTrue(hasExitable, "hasExitableUnstakes should be true after refresh finalizes an exit");
+    }
+
+    function test_HasExitableUnstakes_ReturnsFalseAfterClaim() external {
+        _setupStakedAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        assertTrue(stakingManager.hasExitableUnstakes(), "should be true after finalization");
+
+        // Claim resets _pendingClaimAmount
+        vm.prank(core);
+        stakingManager.getUnstakedFunds();
+
+        assertFalse(stakingManager.hasExitableUnstakes(), "should be false after claim drains pending");
     }
 
     function test_HasExitableUnstakes_ReturnsFalseWhenActiveExitNotExitable() external {
