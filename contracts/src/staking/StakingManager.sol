@@ -382,6 +382,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
         return info;
     }
+
     // slither-disable-end pess-multiple-storage-read
 
     // slither-disable-start unused-return
@@ -410,6 +411,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
         info.status = newStatus;
     }
+
     // slither-disable-end pess-multiple-storage-read
     // slither-disable-end costly-loop
     // slither-disable-end unused-return
@@ -434,6 +436,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         emit AttesterRemoved(attester);
     }
+
     // slither-disable-end pess-multiple-storage-read
     // slither-disable-end costly-loop
 
