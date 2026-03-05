@@ -138,6 +138,14 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         vm.stopPrank();
     }
 
+    function _allAttesterAddresses() internal view returns (address[] memory) {
+        address[] memory addrs = new address[](_keyOffset);
+        for (uint256 i; i < _keyOffset; ++i) {
+            addrs[i] = address(uint160(i + 1));
+        }
+        return addrs;
+    }
+
     function _setupStakedAttesters(uint256 count) internal returns (IStakingManager.KeyStore[] memory) {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
         _addKeysFromMemory(keys);
@@ -242,10 +250,6 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
     function test_FullUnstakeFlow_StakeThenUnstakeThenClaim() external {
         _setupStakedAttesters(3);
 
-        // Refresh cached state so view functions work
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
         assertEq(stateBefore.stakedAmount, ACTIVATION_THRESHOLD * 3);
 
@@ -259,7 +263,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         // Finalize exits first (permissionless), then claim unstaked funds
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
         vm.prank(core);
         (uint256 claimed,,) = stakingManager.getUnstakedFunds();
 
@@ -276,7 +280,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
 
         // Finalize exits first (permissionless), then claim funds
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
         vm.prank(core);
         stakingManager.getUnstakedFunds();
 
@@ -326,26 +330,23 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
     function test_CleanActivatedAttesters_ExternalExits() external {
         IStakingManager.KeyStore[] memory keys = _setupStakedAttesters(3);
 
-        // Simulate external exits for 2 attesters
+        // Simulate external exits for 2 attesters on the rollup side.
+        // The StakingManager does NOT detect these automatically — attesters
+        // remain Active internally until refreshAttesterState is called.
         for (uint256 i; i < 2; ++i) {
             rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
         }
 
-        // computeAttesterState() syncs Active→Exiting for externally exited attesters
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
+        // Counts remain unchanged: external exits are invisible to the StakingManager
+        assertEq(stakingManager.getActivatedAttesterCount(), 3);
+        assertEq(stakingManager.getPendingUnstakeCount(), 0);
 
+        // refreshAttesterState detects external exits and finalizes them
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
+
+        // After refresh: 2 externally exited attesters are finalized and removed, 1 remains active
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
-        assertEq(stakingManager.getPendingUnstakeCount(), 2);
-
-        // Finalize exits first (permissionless), then claim the externally exited funds
-        uint256 coreBalanceBefore = aztec.balanceOf(core);
-        stakingManager.finalizeExits();
-        vm.prank(core);
-        (uint256 claimed,,) = stakingManager.getUnstakedFunds();
-
-        assertEq(claimed, ACTIVATION_THRESHOLD * 2);
-        assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);
+        assertEq(stakingManager.getPendingUnstakeCount(), 0);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -396,17 +397,16 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
-        // Refresh cached state so view functions reflect current attester state
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
         // Query staking state from StakingManager
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
 
-        // stakedAmount includes all Active + Exiting attesters (3 × 100 ether)
-        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3, "stakedAmount includes exiting attesters");
-        // The 2 unstaked attesters have exitable exits (mock rollup auto-finalizes)
-        assertEq(state.withdrawableAmount, ACTIVATION_THRESHOLD * 2, "2 exits ready to claim");
+        // stakedAmount only reflects Active attesters (1 × 100 ether).
+        // _processUnstakeAttester decrements stakedAmount and increments pendingUnstakeAmount.
+        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 1, "stakedAmount reflects only active attesters");
+        // pendingUnstakeAmount tracks the 2 exiting attesters
+        assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD * 2, "2 attesters pending unstake");
+        // withdrawableAmount is never set by unstake — only updated via refreshAttesterState
+        assertEq(state.withdrawableAmount, 0, "withdrawableAmount is zero before refreshAttesterState");
     }
 
     function test_ProviderConfig_DelegatesToRegistry() external view {
@@ -457,10 +457,10 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         emit UnstakeInitiated(keys[0].attester, ACTIVATION_THRESHOLD);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        // finalizeExits() is permissionless and emits UnstakeFinalized
+        // refreshAttesterState() is permissionless and emits UnstakeFinalized
         vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeFinalized(keys[0].attester, ACTIVATION_THRESHOLD);
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
 
         // getUnstakedFunds() sweeps balance to core and emits UnstakedFundsClaimed
         vm.expectEmit(true, true, true, true, address(stakingManager));
@@ -486,7 +486,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         assertEq(stakingProviderRegistry.getQueueLength(), 2);
 
         // Finalize exits first (permissionless), then claim unstaked funds
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
         vm.prank(core);
         stakingManager.getUnstakedFunds();
 

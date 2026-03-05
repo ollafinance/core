@@ -9,7 +9,6 @@ import { Math } from "@oz/utils/math/Math.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
@@ -38,7 +37,6 @@ contract OllaCoreAccountingTest is Test {
         uint256 providerShares,
         uint256 timestamp
     );
-    event AttestersStateRead(uint256 rewardsDelta, uint256 slashingDelta, uint256 timestamp);
     event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
     event NegativeRewardsPeriod(int256 grossRewardsSigned);
     event RewardsDelta(uint256 delta);
@@ -236,8 +234,6 @@ contract OllaCoreAccountingTest is Test {
         uint256 expectedRate = core.exchangeRate();
         uint256 expectedTimestamp = block.timestamp;
         vm.expectEmit(true, true, true, true, address(core));
-        emit AttestersStateRead(0, 0, expectedTimestamp);
-        vm.expectEmit(true, true, true, true, address(core));
         emit AccountingUpdated(depositAmount, expectedRate, 0, int256(depositAmount), 0, 0, 0, expectedTimestamp);
         vm.prank(operator);
         core.updateAccounting();
@@ -343,8 +339,6 @@ contract OllaCoreAccountingTest is Test {
         IOllaCore.FlowCounters memory flowsBefore = core.flowCounters();
         uint256 rvBalance = rewardsAccumulator.balance();
         uint256 currentRewards = accountingAfterRebalance.cumulativeRewards + claimableRewards;
-        uint256 rDelta =
-            currentRewards > reportBefore.rewardsSnapshot ? currentRewards - reportBefore.rewardsSnapshot : 0;
         uint256 expectedTotalAssets = vault.bufferedAssets() + stakedPrincipal + rvBalance + claimableRewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
         (int256 expectedNetFlows,,) = core.exposedComputeNetFlows(flowsBefore);
@@ -352,8 +346,6 @@ contract OllaCoreAccountingTest is Test {
             core.exposedComputeGrossRewards(reportBefore.totalAssets, expectedTotalAssets, expectedNetFlows);
 
         uint256 expectedTimestamp = block.timestamp;
-        vm.expectEmit(true, true, true, true, address(core));
-        emit AttestersStateRead(rDelta, slashing, expectedTimestamp);
         vm.expectEmit(true, true, true, true, address(core));
         emit AccountingUpdated(
             expectedTotalAssets, expectedRate, expectedGrossRewards, expectedNetFlows, 0, 0, 0, expectedTimestamp
@@ -396,9 +388,6 @@ contract OllaCoreAccountingTest is Test {
         uint256 currentRewards = accountingBefore.cumulativeRewards + 9 * DECIMALS;
         uint256 expectedDelta =
             currentRewards > reportBefore.rewardsSnapshot ? currentRewards - reportBefore.rewardsSnapshot : 0;
-        uint256 expectedTimestamp = block.timestamp;
-        vm.expectEmit(true, true, true, true, address(core));
-        emit AttestersStateRead(expectedDelta, 0, expectedTimestamp);
         vm.prank(operator);
         core.updateAccounting();
 
@@ -612,67 +601,6 @@ contract OllaCoreAccountingTest is Test {
 
         assertEq(grossRewards, expectedGross, "gross rewards fuzz");
         assertEq(grossRewardsSigned, expectedGrossSigned, "gross rewards signed fuzz");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    ATTESTER STATE STALENESS TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_UpdateAccounting_AttesterStateStale() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        stakingManager.setSlashingDelta(1 * DECIMALS);
-        (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
-
-        uint256 maxAge = 1 hours;
-        stakingManager.setAttesterStateMaxAge(maxAge);
-
-        vm.warp(lastUpdated + maxAge + 1);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
-        );
-        vm.prank(operator);
-        core.updateAccounting();
-    }
-
-    function test_UpdateAccounting_SucceedsAtExactStalenessThreshold() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        stakingManager.setSlashingDelta(1 * DECIMALS);
-        (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
-
-        uint256 maxAge = 1 hours;
-        stakingManager.setAttesterStateMaxAge(maxAge);
-
-        vm.warp(lastUpdated + maxAge);
-
-        vm.prank(operator);
-        core.updateAccounting();
-
-        IOllaCore.LatestReport memory report = core.latestReport();
-        assertGt(report.timestamp, 0, "accounting should have been updated");
-    }
-
-    function test_RevertWhen_UpdateAccounting_TotalStakedStale() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        stakingManager.setTotalStaked(5 * DECIMALS);
-        (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
-
-        uint256 maxAge = 1 hours;
-        stakingManager.setAttesterStateMaxAge(maxAge);
-
-        vm.warp(lastUpdated + maxAge + 1);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__AttesterStateStale.selector, lastUpdated, maxAge)
-        );
-        vm.prank(operator);
-        core.updateAccounting();
     }
 
     /*//////////////////////////////////////////////////////////////

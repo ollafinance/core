@@ -2,14 +2,12 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { Vm } from "@forge-std/Test.sol";
-import { StdStorage, stdStorage } from "@forge-std/StdStorage.sol";
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
 contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
-    using stdStorage for StdStorage;
     /*//////////////////////////////////////////////////////////////
                         GET UNSTAKED FUNDS TESTS
     //////////////////////////////////////////////////////////////*/
@@ -22,7 +20,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         vm.prank(core);
         (uint256 claimed,,) = stakingManager.getUnstakedFunds();
@@ -38,7 +36,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         // Record logs to capture UnstakedFundsClaimed from getUnstakedFunds
         vm.recordLogs();
@@ -75,7 +73,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(3));
 
         vm.prank(core);
         (uint256 claimed,,) = stakingManager.getUnstakedFunds();
@@ -97,7 +95,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
 
         assertEq(stakingManager.getPendingUnstakeCount(), 1);
         assertTrue(stakingManager.isUnstakePending(keys[0].attester));
@@ -111,7 +109,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         vm.warp(block.timestamp + 2 days);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
 
         coreBalanceBefore = aztec.balanceOf(core);
         vm.prank(core);
@@ -124,23 +122,34 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     }
 
     function test_GetUnstakedFunds_ExternalExitReconciliation() external {
+        // Scenario: An attester is unstaked via unstake(), then someone externally
+        // calls rollup.finalizeWithdraw() before the StakingManager does. When
+        // refreshAttesterState() is called, it detects the exit was already finalized
+        // (exit no longer exists on rollup) and removes the attester. The funds
+        // that were sent to the StakingManager by the external finalization are
+        // then swept to core via getUnstakedFunds().
         _setupMultipleStakedAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
 
-        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+        // Unstake one attester through the StakingManager
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "active count should decrease after unstake");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should increase after unstake");
+
+        // Find which attester was unstaked (unstake iterates from end)
+        address unstakedAttester = keys[1].attester;
+        assertTrue(stakingManager.isUnstakePending(unstakedAttester), "attester should be marked exiting");
+
+        // External party finalizes the withdraw on the rollup directly
+        vm.prank(alice);
+        rollup.finalizeWithdraw(unstakedAttester);
+
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        // computeAttesterState() syncs Active→Exiting for externally exited attesters
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
-        assertEq(stakingManager.getActivatedAttesterCount(), activatedBefore - 1, "active count should decrease");
-        assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should increase");
-        assertTrue(stakingManager.isUnstakePending(keys[0].attester), "attester should be marked exiting");
-
-        stakingManager.finalizeExits();
+        // refreshAttesterState detects the exit was already finalized and removes the attester
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
 
         vm.recordLogs();
 
@@ -163,7 +172,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         assertEq(claimed, ACTIVATION_THRESHOLD, "claimed should equal exited stake");
         assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed, "core should receive claimed funds");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should clear after claim");
-        assertFalse(stakingManager.isUnstakePending(keys[0].attester), "exited attester should be inactive");
+        assertFalse(stakingManager.isUnstakePending(unstakedAttester), "exited attester should be inactive");
     }
 
     function test_GetUnstakedFunds_ExternalFinalizeBeforeManagerFinalize() external {
@@ -184,7 +193,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         vm.prank(core);
         (uint256 claimed,,) = stakingManager.getUnstakedFunds();
@@ -208,7 +217,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         vm.recordLogs();
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         vm.prank(core);
         (uint256 claimed,,) = stakingManager.getUnstakedFunds();
@@ -250,7 +259,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         vm.prank(alice);
         rollup.finalizeWithdraw(keys[0].attester);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending should be cleared");
 
@@ -289,7 +298,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
 
         vm.prank(core);
         (uint256 claimed,,) = stakingManager.getUnstakedFunds();
@@ -315,7 +324,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
 
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         vm.prank(core);
         stakingManager.getUnstakedFunds();
@@ -336,73 +345,29 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester should not be exiting");
     }
 
-    function test_GetUnstakedFunds_ActivatedExits_PartialFinalizeResetsCursor() external {
+    function test_GetUnstakedFunds_ActivatedExits_FinalizesAll() external {
         uint256 attesterCount = 6;
         _setupMultipleStakedAttesters(attesterCount);
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(attesterCount);
 
-        for (uint256 i; i < attesterCount; ++i) {
-            rollup.setExternalExit(keys[i].attester, ACTIVATION_THRESHOLD, block.timestamp);
-        }
+        // External exits are NOT reflected in running state until unstake() + refreshAttesterState()
+        // Internal state still shows all attesters as active after rollup-side exits
+        assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters still active before unstake");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "no pending unstakes before unstake");
 
         uint256 expectedTotal = ACTIVATION_THRESHOLD * attesterCount;
 
+        // Unstake all attesters through the StakingManager to move them to Exiting state
         vm.prank(core);
-        stakingManager.setGasThreshold(200_000);
+        stakingManager.unstake(expectedTotal);
 
-        // computeAttesterState() syncs Active→Exiting for externally exited attesters
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
-        assertEq(stakingManager.getActivatedAttesterCount(), 0, "all exits should move to exiting");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be exiting after unstake");
         assertEq(stakingManager.getPendingUnstakeCount(), attesterCount, "exiting count should match attesters");
 
-        // Probe gas for partial finalizeExits() (bounded finalization now happens here)
-        uint256 snapshotId = vm.snapshotState();
-        uint256 selectedGas;
-        uint256 pendingAfterProbe;
-        uint256[5] memory gasOptions = [uint256(220_000), 260_000, 300_000, 340_000, 380_000];
-
-        for (uint256 i; i < gasOptions.length; ++i) {
-            vm.revertToState(snapshotId);
-            (bool success,) =
-                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.finalizeExits, ()));
-            if (!success) {
-                continue;
-            }
-            uint256 pendingCandidate = stakingManager.getPendingUnstakeCount();
-            if (pendingCandidate > 0 && pendingCandidate < attesterCount) {
-                selectedGas = gasOptions[i];
-                pendingAfterProbe = pendingCandidate;
-                break;
-            }
-        }
-
-        assertGt(selectedGas, 0, "should find gas stipend for partial finalize");
-
-        uint256 cursorSlot = stdstore.target(address(stakingManager)).sig("getUnstakeCursor()").find();
-        bytes32 finalizeCursorSlot = bytes32(cursorSlot + 1);
-
-        vm.revertToState(snapshotId);
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        // Bounded finalizeExits() - processes partial set
-        stakingManager.finalizeExits{ gas: selectedGas }();
+        stakingManager.refreshAttesterState(_attesterAddresses(attesterCount));
 
-        uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
-        assertEq(pendingAfterFirst, pendingAfterProbe, "pending count should match probe");
-        assertGt(pendingAfterFirst, 0, "exiting attesters should remain after partial finalize");
-
-        // Continue bounded finalizeExits() calls until all exits are finalized
-        uint256 maxIterations = 10;
-        for (uint256 i; i < maxIterations; ++i) {
-            if (stakingManager.getPendingUnstakeCount() == 0) {
-                break;
-            }
-            stakingManager.finalizeExits{ gas: selectedGas }();
-        }
-
-        assertEq(stakingManager.getPendingUnstakeCount(), 0, "remaining exits should complete across calls");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "remaining exits should complete");
 
         // Now sweep all funds to core
         vm.prank(core);
@@ -410,9 +375,6 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
         assertEq(totalClaimed, expectedTotal, "total claimed should match exits");
         assertEq(aztec.balanceOf(core), coreBalanceBefore + totalClaimed, "core should receive claimed funds");
-
-        uint256 finalizeCursorAfter = uint256(vm.load(address(stakingManager), finalizeCursorSlot));
-        assertEq(finalizeCursorAfter, 0, "finalize cursor should reset after completion");
     }
 
     function test_GetUnstakedFunds_Bounded_LowGasCompletesAcrossCalls() external {
@@ -423,51 +385,11 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         stakingManager.unstake(ACTIVATION_THRESHOLD * attesterCount);
 
         uint256 expectedTotal = ACTIVATION_THRESHOLD * attesterCount;
+        address[] memory attesters = _attesterAddresses(attesterCount);
 
-        vm.prank(core);
-        stakingManager.setGasThreshold(180_000);
-
-        // Probe gas for partial finalizeExits() (bounded finalization now happens here)
-        uint256 snapshotId = vm.snapshotState();
-        uint256 selectedGas;
-        uint256 pendingAfterProbe;
-        uint256[5] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000];
-
-        for (uint256 i; i < gasOptions.length; ++i) {
-            vm.revertToState(snapshotId);
-            (bool success,) =
-                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.finalizeExits, ()));
-            if (!success) {
-                continue;
-            }
-            uint256 pendingCandidate = stakingManager.getPendingUnstakeCount();
-            if (pendingCandidate > 0 && pendingCandidate < attesterCount) {
-                selectedGas = gasOptions[i];
-                pendingAfterProbe = pendingCandidate;
-                break;
-            }
-        }
-
-        assertGt(selectedGas, 0, "should find gas stipend for partial finalize");
-
-        vm.revertToState(snapshotId);
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        // Bounded finalizeExits() - processes partial set
-        stakingManager.finalizeExits{ gas: selectedGas }();
-
-        uint256 pendingAfterFirst = stakingManager.getPendingUnstakeCount();
-        assertEq(pendingAfterFirst, pendingAfterProbe, "pending count should match probe");
-        assertGt(pendingAfterFirst, 0, "pending should remain after partial finalize");
-
-        // Continue bounded finalizeExits() calls until all exits are finalized
-        uint256 maxIterations = 10;
-        for (uint256 i; i < maxIterations; ++i) {
-            if (stakingManager.getPendingUnstakeCount() == 0) {
-                break;
-            }
-            stakingManager.finalizeExits{ gas: selectedGas }();
-        }
+        stakingManager.refreshAttesterState(attesters);
 
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "all pending unstakes should be finalized");
 

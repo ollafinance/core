@@ -163,6 +163,14 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         stakingProviderRegistry.addKeysToProvider(keys);
     }
 
+    function _allAttesterAddresses() internal view returns (address[] memory) {
+        address[] memory addrs = new address[](_keyOffset);
+        for (uint256 i; i < _keyOffset; ++i) {
+            addrs[i] = address(uint160(i + 1));
+        }
+        return addrs;
+    }
+
     /// @notice Test that reproduces the mock loop scenario:
     ///         - 200k ETH deposit
     ///         - Target buffer = 0
@@ -234,9 +242,9 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "Final step should be Done");
     }
 
-    /// @notice Reproduces the mock-loop bug: after unstake, finalizeExits fails to finalize.
-    ///         Steps: deposit -> stake -> request withdrawal -> unstake -> finalizeExits -> pullUnstaked
-    function test_FinalizeExitsAfterUnstake() external {
+    /// @notice Reproduces the mock-loop bug: after unstake, refreshAttesterState fails to finalize.
+    ///         Steps: deposit -> stake -> request withdrawal -> unstake -> refreshAttesterState -> pullUnstaked
+    function test_RefreshAttesterStateAfterUnstake() external {
         vm.prank(governance);
         core.setTargetBufferedAssets(0);
 
@@ -279,9 +287,6 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         // --- Second rebalance: should unstake to cover the withdrawal ---
         vm.warp(block.timestamp + 1 hours);
 
-        // Call computeAttesterState first (mock-loop does this)
-        stakingManager.computeAttesterState();
-
         vm.prank(operator);
         core.rebalance();
         for (uint256 i; i < 10; ++i) {
@@ -299,8 +304,8 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         emit log_named_uint("Pending unstake count after rebalance", exitCount);
 
         if (exitCount > 0) {
-            // There are exiting attesters. Now call finalizeExits and check.
-            emit log_named_uint("Block timestamp before finalizeExits", block.timestamp);
+            // There are exiting attesters. Now call refreshAttesterState and check.
+            emit log_named_uint("Block timestamp before refreshAttesterState", block.timestamp);
 
             // Check hasExitableUnstakes via cached state
             IStakingManager.StakingState memory stakingState = stakingManager.getStakingState();
@@ -310,15 +315,13 @@ contract OllaCoreRebalanceRealStakingManager is Test {
             // Advance time by 1 second to ensure exitableAt < block.timestamp
             vm.warp(block.timestamp + 1);
 
-            // Call finalizeExits
-            uint256 finalized = stakingManager.finalizeExits();
-            emit log_named_uint("Finalized amount", finalized);
+            // Call refreshAttesterState
+            stakingManager.refreshAttesterState(_allAttesterAddresses());
 
             uint256 exitCountAfter = stakingManager.getPendingUnstakeCount();
-            emit log_named_uint("Pending unstake count after finalizeExits", exitCountAfter);
+            emit log_named_uint("Pending unstake count after refreshAttesterState", exitCountAfter);
 
-            assertLt(exitCountAfter, exitCount, "finalizeExits should reduce pending count");
-            assertGt(finalized, 0, "finalizeExits should finalize nonzero amount");
+            assertLt(exitCountAfter, exitCount, "refreshAttesterState should reduce pending count");
         }
 
         // Now complete the rebalance if needed

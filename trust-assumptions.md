@@ -13,18 +13,17 @@ This serves two purposes:
 |---|---|---|---|
 | T-1 | Only the immutable `OLLA_VAULT` address can burn stAztec | StAztec | Any other caller able to burn can confiscate arbitrary users' staking positions without allowance |
 | T-2 | Only the immutable `OLLA_VAULT` address can mint stAztec | StAztec | Any other caller able to mint can create unbacked stAztec, diluting all existing holders |
-| T-3 | `OPERATOR_ROLE` can set attester-state staleness window | StakingManager | A malicious operator can set an excessively large `attesterStateMaxAge`, allowing stale slashing/staking data to persist and delaying accurate accounting |
-| T-4 | `DEFAULT_ADMIN_ROLE` (governance) can upgrade all UUPS proxies | OllaCore, WithdrawalQueue, RewardsAccumulator, StakingManager, StakingProviderRegistry | A compromised governance key can replace any implementation — full protocol rug |
-| T-5 | Governance can set protocol fees up to 50% (`MAX_PROTOCOL_FEE_BP = 5_000`) | OllaCore | Fee misconfiguration can extract up to half of yield from stakers |
-| T-6 | Governance can hot-swap modules (StakingManager, RewardsAccumulator, WithdrawalQueue, SafetyModule) | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
-| T-7 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
-| T-8 | `GUARDIAN_ROLE` can pause/unpause and force-reset a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-resetting mid-rebalance discards in-progress work (unharvested rewards wait for next cycle, partial unstakes are tracked on-chain) |
+| T-3 | `DEFAULT_ADMIN_ROLE` (governance) can upgrade all UUPS proxies | OllaCore, WithdrawalQueue, RewardsAccumulator, StakingManager, StakingProviderRegistry | A compromised governance key can replace any implementation — full protocol rug |
+| T-4 | Governance can set protocol fees up to 50% (`MAX_PROTOCOL_FEE_BP = 5_000`) | OllaCore | Fee misconfiguration can extract up to half of yield from stakers |
+| T-5 | Governance can hot-swap modules (StakingManager, RewardsAccumulator, WithdrawalQueue, SafetyModule) | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
+| T-6 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
+| T-7 | `GUARDIAN_ROLE` can pause/unpause and force-reset a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-resetting mid-rebalance discards in-progress work (unharvested rewards wait for next cycle, partial unstakes are tracked on-chain) |
 
 ## Design Decisions
 
 ### Rebalance and accounting are permissionless
 
-`rebalance()`, `updateAccounting()`, `computeAttesterState()`, and `finalizeExits()` are callable by any address. This eliminates the operator as a liveness dependency — anyone can advance the protocol's state machine. Rate-limiting is enforced by a governance-configurable cooldown (`rebalanceCooldown`, bounded to 10 min–24 h) that prevents new rebalance cycles from starting too frequently. All accounting data is derived from on-chain state (rollup attester views, rewards vault balances), not operator-submitted values.
+`rebalance()`, `updateAccounting()`, and `refreshAttesterState(address[])` are callable by any address. This eliminates the operator as a liveness dependency — anyone can advance the protocol's state machine. `refreshAttesterState` delta-updates the aggregate staking state per attester and finalizes exits when applicable — it replaces the previous `computeAttesterState()` and `finalizeExits()` functions with an event-driven, idempotent design. Rate-limiting is enforced by a governance-configurable cooldown (`rebalanceCooldown`, bounded to 10 min–24 h) that prevents new rebalance cycles from starting too frequently. All accounting data is derived from on-chain state (rollup attester views, rewards vault balances), not operator-submitted values.
 
 `reconcileBufferedAssets()` was moved from `OPERATOR_ROLE` to `DEFAULT_ADMIN_ROLE` (governance) because it has donation-absorption side effects that should remain privileged.
 
@@ -40,6 +39,6 @@ SafetyModule uses plain `AccessControl` (not upgradeable) with an `immutable COR
 ## Mitigations
 
 - **T-1 and T-2** are enforced by an immutable address check in StAztec — no governance action can change the authorized caller, so these hold as long as the StAztec contract is not redeployed.
-- **T-3 through T-6** are governance-controlled risks. The primary mitigation is a **timelocked multisig** for all admin and role-grant operations, giving the community a window to react to malicious proposals.
-- **T-7** is an external dependency risk. The protocol relies on the Aztec rollup behaving as specified. Circuit breakers in SafetyModule (rate drop, accounting staleness) provide partial protection.
-- **T-8** is mitigated by separating `GUARDIAN_ROLE` from `DEFAULT_ADMIN_ROLE` — the guardian can pause but cannot upgrade or drain.
+- **T-3 through T-5** are governance-controlled risks. The primary mitigation is a **timelocked multisig** for all admin and role-grant operations, giving the community a window to react to malicious proposals.
+- **T-6** is an external dependency risk. The protocol relies on the Aztec rollup behaving as specified. Circuit breakers in SafetyModule (rate drop, accounting staleness) provide partial protection.
+- **T-7** is mitigated by separating `GUARDIAN_ROLE` from `DEFAULT_ADMIN_ROLE` — the guardian can pause but cannot upgrade or drain.

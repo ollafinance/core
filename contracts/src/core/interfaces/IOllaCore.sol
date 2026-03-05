@@ -21,7 +21,6 @@ interface IOllaCore {
         FinalizeWithdrawals,
         InitiateUnstake,
         StakeSurplus,
-        ComputeAttesterState,
         Done
     }
 
