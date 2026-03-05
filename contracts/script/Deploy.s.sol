@@ -22,9 +22,9 @@ import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
 import { OllaGovernanceDeployer } from "./deployers/OllaGovernance.s.sol";
 import { OllaVaultDeployer } from "./deployers/OllaVault.s.sol";
 import { RewardsAccumulatorDeployer } from "./deployers/RewardsAccumulator.s.sol";
+import { StakingStackDeployer } from "./deployers/StakingStack.s.sol";
 import { StAztecDeployer } from "./deployers/StAztec.s.sol";
 import { StAztecOFTAdapterDeployer } from "./deployers/StAztecOFTAdapter.s.sol";
-import { StakingStackDeployer } from "./deployers/StakingStack.s.sol";
 import { WithdrawalQueueDeployer } from "./deployers/WithdrawalQueue.s.sol";
 
 /// @title DeployScript
@@ -158,8 +158,9 @@ contract DeployScript is BaseDeployer {
         json = _addAddressToJson(json, "RewardsAccumulatorProxy", rewardsAccumulator, false);
 
         // 6. Deploy staking stack (always — StakingManager + StakingProviderRegistry behind proxies)
-        (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) =
-            _stakingStackDeployer.deploy(config, ollaCoreProxy, rewardsAccumulator, asset, rollupRegistry, ollaGovProxy);
+        (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) = _stakingStackDeployer.deploy(
+            config, ollaCoreProxy, rewardsAccumulator, asset, rollupRegistry, ollaGovProxy
+        );
         json = _addAddressToJson(json, "StakingManagerImplementation", stakingManagerImpl, false);
         json = _addAddressToJson(json, "StakingManagerProxy", stakingManager, false);
         json = _addAddressToJson(json, "StakingProviderRegistryImplementation", stakingProviderRegistryImpl, false);

@@ -579,7 +579,8 @@ contract OllaCoreAccountingTest is Test {
 
         (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
-        uint256 expectedNetDeposits = cumulativeDeposits > latestReportCumulativeDeposits
+        uint256 expectedNetDeposits =
+            cumulativeDeposits > latestReportCumulativeDeposits
             ? cumulativeDeposits - latestReportCumulativeDeposits
             : 0;
         uint256 expectedNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals
