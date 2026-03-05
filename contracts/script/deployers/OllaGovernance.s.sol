@@ -24,16 +24,20 @@ contract OllaGovernanceDeployer is BaseDeployer {
         OllaGovernance govImpl = new OllaGovernance();
         _logDeployment("OllaGovernance Implementation", address(govImpl));
 
-        // Build proposer/executor arrays from config.governance
-        // The governance address (e.g. multisig) holds proposer + executor + canceller roles.
-        address[] memory proposers = new address[](1);
+        // Build proposer/executor arrays.
+        // config.governance (e.g. multisig) holds proposer + executor + canceller roles permanently.
+        // config.deployer is added temporarily so it can schedule+execute wiring calls
+        // (setVault, unpause) during deployment. These roles are revoked in renounceDeployerRoles().
+        address[] memory proposers = new address[](2);
         proposers[0] = config.governance;
-        address[] memory executors = new address[](1);
+        proposers[1] = config.deployer;
+        address[] memory executors = new address[](2);
         executors[0] = config.governance;
+        executors[1] = config.deployer;
 
         // Deploy proxy with initialization
         // The deployer is granted DEFAULT_ADMIN_ROLE for initial wiring (setCore).
-        // It MUST be renounced after setup via renounceDeployerAdmin().
+        // It MUST be renounced after setup via renounceDeployerRoles().
         ERC1967Proxy govProxy = new ERC1967Proxy(
             address(govImpl),
             abi.encodeCall(
@@ -64,14 +68,22 @@ contract OllaGovernanceDeployer is BaseDeployer {
         vm.stopBroadcast();
     }
 
-    /// @notice Renounce the deployer's temporary DEFAULT_ADMIN_ROLE after wiring is complete.
-    /// @dev MUST be called after setCore. Leaves only address(this) (the timelock) as admin.
+    /// @notice Renounce all temporary deployer roles after wiring is complete.
+    /// @dev MUST be called after setCore and all timelock wiring (setVault, unpause).
+    ///      Revokes PROPOSER_ROLE, EXECUTOR_ROLE, CANCELLER_ROLE and DEFAULT_ADMIN_ROLE.
+    ///      After this, only config.governance holds operational roles and the timelock
+    ///      itself retains DEFAULT_ADMIN_ROLE.
     /// @param config The deployment configuration.
     /// @param govProxy The OllaGovernance proxy address.
-    function renounceDeployerAdmin(DeployConfig memory config, address govProxy) external {
+    function renounceDeployerRoles(DeployConfig memory config, address govProxy) external {
+        OllaGovernance gov = OllaGovernance(payable(govProxy));
         vm.startBroadcast(config.deployerPrivateKey);
-        OllaGovernance(payable(govProxy))
-            .renounceRole(OllaGovernance(payable(govProxy)).DEFAULT_ADMIN_ROLE(), config.deployer);
+        // Revoke operational roles granted during initialization
+        gov.renounceRole(gov.PROPOSER_ROLE(), config.deployer);
+        gov.renounceRole(gov.EXECUTOR_ROLE(), config.deployer);
+        gov.renounceRole(gov.CANCELLER_ROLE(), config.deployer);
+        // Revoke temporary admin role
+        gov.renounceRole(gov.DEFAULT_ADMIN_ROLE(), config.deployer);
         vm.stopBroadcast();
     }
 }

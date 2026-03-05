@@ -106,7 +106,8 @@ DEPLOY_ENV=testnet PRIVATE_KEY=<key> forge script script/Deploy.s.sol \
 - [ ] Verify OllaVault is unpaused (if `timelockMinDelay == 0`)
 - [ ] Verify OllaGovernance.core() points to OllaCore proxy
 - [ ] Verify OllaCore.vault() points to OllaVault proxy
-- [ ] Verify deployer's DEFAULT_ADMIN_ROLE on OllaGovernance was renounced
+- [ ] Verify deployer holds **no roles** on OllaGovernance (all temporary roles renounced)
+- [ ] Verify `config.governance` holds PROPOSER_ROLE, EXECUTOR_ROLE, CANCELLER_ROLE on OllaGovernance
 - [ ] Verify SafetyModule guardian is the deployer EOA
 - [ ] Verify SafetyModule admin is OllaGovernance proxy
 - [ ] Verify StakingProviderRegistry provider admin is `config.providerAdmin`

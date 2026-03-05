@@ -267,9 +267,10 @@ contract DeployScript is BaseDeployer {
             vm.stopBroadcast();
         }
 
-        // 9. Renounce deployer's temporary DEFAULT_ADMIN_ROLE on OllaGovernance.
-        //    After this, only the timelock (address(this)) retains DEFAULT_ADMIN_ROLE.
-        _ollaGovernanceDeployer.renounceDeployerAdmin(config, ollaGovProxy);
+        // 9. Renounce deployer's temporary roles on OllaGovernance.
+        //    Revokes PROPOSER_ROLE, EXECUTOR_ROLE, CANCELLER_ROLE and DEFAULT_ADMIN_ROLE.
+        //    After this, only config.governance holds operational roles.
+        _ollaGovernanceDeployer.renounceDeployerRoles(config, ollaGovProxy);
 
         // 10. Write deployment JSON
         json = _closeAddressesJson(json);
