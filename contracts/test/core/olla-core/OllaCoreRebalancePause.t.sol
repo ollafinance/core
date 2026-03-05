@@ -185,10 +185,8 @@ contract OllaCoreRebalancePauseTest is Test {
         alice = makeAddr("alice");
         bob = makeAddr("bob");
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
         bytes32 guardianRole = core.GUARDIAN_ROLE();
         vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
         core.grantRole(guardianRole, guardian);
         vm.stopPrank();
 
@@ -297,11 +295,6 @@ contract OllaCoreRebalancePauseTest is Test {
 
         vm.prank(governance);
         newVault.unpause();
-
-        bytes32 operatorRole = newCore.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        newCore.grantRole(operatorRole, operator);
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////

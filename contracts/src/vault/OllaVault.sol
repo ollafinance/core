@@ -43,7 +43,7 @@ contract OllaVault is
     /// @notice Role for guardian pause/unpause actions.
     bytes32 public constant GUARDIAN_ROLE = RolesLib.GUARDIAN_ROLE;
 
-    /// @notice Role that only OllaCore holds — for rebalance instructions.
+    /// @notice Role that only OllaCore holds -- for rebalance instructions.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
 
     /// @notice Basis points divisor.
@@ -59,7 +59,7 @@ contract OllaVault is
     /// @notice Contract related interfaces and addresses.
     VaultModules private _modules;
 
-    /// @notice Buffer tracking — liquid assets held by the vault.
+    /// @notice Buffer tracking -- liquid assets held by the vault.
     uint256 private _bufferedAssets;
 
     /// @notice Assets that have been finalized but not yet claimed.
@@ -698,7 +698,7 @@ contract OllaVault is
         revert OllaVault__NotSupported();
     }
 
-    /// @notice Returns 0 — withdraw is async (ERC-7540).
+    /// @notice Returns 0 -- withdraw is async (ERC-7540).
     /// @return Always 0.
     // solhint-disable-next-line use-natspec
     function maxWithdraw(address) external pure override returns (uint256) {
@@ -732,7 +732,7 @@ contract OllaVault is
     }
 
     /// @notice Returns the total assets attributable to shareholders (ERC-4626).
-    /// @dev Proxies to Core.totalAssets() — Core owns the pricing computation.
+    /// @dev Proxies to Core.totalAssets() -- Core owns the pricing computation.
     /// @return The total assets.
     function totalAssets() public view override returns (uint256) {
         return IOllaCore(_modules.core).totalAssets();

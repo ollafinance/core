@@ -101,11 +101,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
-
         vm.warp(block.timestamp + 1 hours);
     }
 
@@ -227,7 +222,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
               FULL CYCLE: LARGE WITHDRAWAL UNSTAKE AND FINALIZE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice End-to-end test: deposit → stake → request large withdrawal → rebalance through
+    /// @notice End-to-end test: deposit -> stake -> request large withdrawal -> rebalance through
     ///         all steps until claim succeeds.
     function test_Rebalance_FullCycleLargeWithdrawal_UnstakeAndFinalize() external {
         vm.prank(governance);
@@ -291,7 +286,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         IOllaCore.RebalanceProgress memory p2 = core.rebalanceProgress();
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "second cycle should reach Done");
 
-        // Withdrawal should now be finalized — verify user can claim
+        // Withdrawal should now be finalized -- verify user can claim
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "all pending withdrawals should be finalized");
 
         vm.prank(alice);
@@ -411,7 +406,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         // Create 3 withdrawal requests of different sizes.
         // With totalAssets = 100 (staked) + 7 (buffer) = 107, and totalSupply = 100,
-        // exchangeRate = 107/100 = 1.07, so convertToShares(2) = 2/1.07 ≈ 1.869
+        // exchangeRate = 107/100 = 1.07, so convertToShares(2) = 2/1.07 ~= 1.869
         // assetsExpected = shares * 107 / 100 (rounds down for each step).
         // Use convertToShares to get exact share amounts, then check assetsExpected.
         uint256 shares2 = core.convertToShares(2 * DECIMALS);
@@ -442,7 +437,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         uint256 pendingAfterFirst = withdrawalQueue.totalPendingAssets();
         assertEq(pendingAfterFirst, ae3, "only third request remaining");
 
-        // Second rebalance: buffer < ae3 → finalizedAmount = 0 → advances past FinalizeWithdrawals
+        // Second rebalance: buffer < ae3 -> finalizedAmount = 0 -> advances past FinalizeWithdrawals
         vm.prank(operator);
         core.rebalance();
 

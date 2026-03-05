@@ -95,11 +95,6 @@ contract RebalanceIntegrationTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
-
         // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
         vm.warp(block.timestamp + 1 hours);
     }

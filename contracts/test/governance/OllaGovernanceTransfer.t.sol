@@ -71,7 +71,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         // First proposal succeeds
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
 
-        // Second proposal — schedule succeeds but execute reverts
+        // Second proposal -- schedule succeeds but execute reverts
         address anotherGov = makeAddr("anotherGov");
         bytes memory data2 = abi.encodeCall(IOllaGovernance.proposeGovernance, (anotherGov));
 
@@ -221,6 +221,44 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         vm.expectRevert();
         vm.prank(admin);
         gov.grantRole(defaultAdminRole, admin);
+    }
+
+    function test_AcceptGovernance_EmitsEventOnSatelliteFailure() external {
+        // Propose
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+
+        // Mock stakingProviderRegistry() to return a valid address
+        vm.mockCall(
+            address(stakingManager),
+            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
+            abi.encode(sprMock)
+        );
+
+        // Mock grantRole to succeed on vault and rewardsAccumulator, but revert on stakingManager
+        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCallRevert(
+            address(stakingManager), abi.encodeWithSelector(IAccessControl.grantRole.selector), "mock revert"
+        );
+        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+
+        // Mock revokeRole to succeed on all
+        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+
+        // Expect the failure event for stakingManager grant
+        vm.expectEmit(true, true, false, true);
+        emit IOllaGovernance.AdminRolePropagationFailed(address(stakingManager), newGov, true);
+
+        // Accept should NOT revert despite the satellite failure
+        vm.prank(newGov);
+        gov.acceptGovernance();
+
+        // Core governance transfer still completed
+        assertEq(gov.governanceAdmin(), newGov, "admin updated despite satellite failure");
+        assertTrue(gov.hasRole(gov.PROPOSER_ROLE(), newGov), "newGov has PROPOSER_ROLE");
     }
 
     function test_OldAdmin_CannotScheduleAfterTransfer() external {

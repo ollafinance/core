@@ -90,10 +90,8 @@ contract OllaCorePermissionlessRebalance is Test {
         alice = makeAddr("alice");
         bob = makeAddr("bob");
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
         bytes32 guardianRole = core.GUARDIAN_ROLE();
         vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
         core.grantRole(guardianRole, guardian);
         vm.stopPrank();
 
@@ -112,7 +110,7 @@ contract OllaCorePermissionlessRebalance is Test {
                     PERMISSIONLESS REBALANCE TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Anyone (not just OPERATOR_ROLE holders) can start a new rebalance cycle
+    /// @notice Anyone can start a new rebalance cycle
     /// after the cooldown has elapsed.
     function test_Rebalance_AnyoneCanStartNewCycle() external {
         // Set a target buffer so not all assets are staked (some remain in buffer)
@@ -124,7 +122,6 @@ contract OllaCorePermissionlessRebalance is Test {
         address randomCaller = makeAddr("randomCaller");
 
         // randomCaller has no roles
-        assertFalse(core.hasRole(core.OPERATOR_ROLE(), randomCaller));
         assertFalse(core.hasRole(core.GUARDIAN_ROLE(), randomCaller));
         assertFalse(core.hasRole(core.DEFAULT_ADMIN_ROLE(), randomCaller));
 
@@ -392,7 +389,6 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Random address calls updateAccounting (no role required)
         address randomCaller = makeAddr("randomCaller");
-        assertFalse(core.hasRole(core.OPERATOR_ROLE(), randomCaller));
 
         vm.prank(randomCaller);
         core.updateAccounting();
@@ -520,7 +516,7 @@ contract OllaCorePermissionlessRebalance is Test {
         IOllaCore.LatestReport memory report = core.latestReport();
         assertEq(report.timestamp, block.timestamp, "report timestamp should reflect updateAccounting call");
 
-        // Step 4: Immediately try to start a new rebalance — should still revert because
+        // Step 4: Immediately try to start a new rebalance -- should still revert because
         // _lastRebalanceTimestamp was NOT affected by the updateAccounting() call.
         // elapsed = 30 minutes since rebalance completion, cooldown = 1 hour
         _performDeposit(alice, 5 * DECIMALS); // deposit more so next cycle has work
@@ -584,7 +580,7 @@ contract OllaCorePermissionlessRebalance is Test {
         IOllaCore.RebalanceProgress memory progressAfterReset = core.rebalanceProgress();
         assertEq(uint256(progressAfterReset.step), uint256(IOllaCore.RebalanceStep.Done), "should be reset to Done");
 
-        // Step 5: Immediately try rebalance — it should succeed because the cooldown
+        // Step 5: Immediately try rebalance -- it should succeed because the cooldown
         // was from the step-1 completion, and we already warped past it in step 2.
         // forceRebalanceReset does NOT set _lastRebalanceTimestamp.
         stakingManager.clearStakeReturnAmount();

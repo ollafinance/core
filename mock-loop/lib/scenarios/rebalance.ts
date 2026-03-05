@@ -45,8 +45,8 @@ export async function executeRebalance(
   try {
     let iteration = 0;
     let complete = false;
-    const attesterGas = 500_000n;
     const allAttesters = await findAllAttesters(clients.publicClient, stakingManagerAddress);
+    const attesterGas = 100_000n + 35_000n * BigInt(allAttesters.length);
     const preComputeTx = await callerWallet.writeContract({
       address: stakingManagerAddress,
       abi: stakingManagerAbi,
@@ -65,7 +65,7 @@ export async function executeRebalance(
         data: { iterationsCompleted: 0, stepHistory },
       };
     }
-    const gasThreshold = await ollaCoreRead.read.rebalanceGasThreshold() as bigint;
+    const gasThreshold = BigInt(await ollaCoreRead.read.rebalanceGasThreshold());
     const minGasLimit = gasBumpSteps[0];
     gasLimit = gasThreshold + 300_000n;
     if (gasLimit < minGasLimit) {

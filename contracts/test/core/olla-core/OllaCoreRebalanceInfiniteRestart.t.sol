@@ -23,7 +23,7 @@ import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 ///         pause flag, the next rebalance() call starts a brand new cycle. The new
 ///         cycle recalculates stakeRemaining = bufferedAssets - requiredBuffer, finds
 ///         the same small remainder, tries to stake it, gets 0 back, sets step=Done,
-///         clears pause again — and the pattern repeats forever.
+///         clears pause again -- and the pattern repeats forever.
 ///
 ///         In the mock-loop each write.rebalance() call completes one cycle AND starts
 ///         a new one in the same tx, so the on-chain progress after each call always
@@ -87,11 +87,6 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
         vault.unpause();
 
         alice = makeAddr("alice");
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
     }

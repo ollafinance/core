@@ -108,7 +108,7 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
         return OptionsBuilder.newOptions().addExecutorLzReceiveOption(200_000, 0);
     }
 
-    /// @dev Builds a SendParam for bridging `amount` from home → destination.
+    /// @dev Builds a SendParam for bridging `amount` from home -> destination.
     function _sendParamHomeToDestination(address to, uint256 amount) internal pure returns (SendParam memory) {
         return SendParam({
             dstEid: DEST_EID,
@@ -121,7 +121,7 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
         });
     }
 
-    /// @dev Builds a SendParam for bridging `amount` from destination → home.
+    /// @dev Builds a SendParam for bridging `amount` from destination -> home.
     function _sendParamDestinationToHome(address to, uint256 amount) internal pure returns (SendParam memory) {
         return SendParam({
             dstEid: HOME_EID,
@@ -150,7 +150,7 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
     }
 
     /*//////////////////////////////////////////////////////////////
-                  TEST: BRIDGE HOME → DESTINATION
+                  TEST: BRIDGE HOME -> DESTINATION
     //////////////////////////////////////////////////////////////*/
 
     function test_bridge_home_to_destination() public {
@@ -178,7 +178,7 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
     }
 
     /*//////////////////////////////////////////////////////////////
-                  TEST: BRIDGE DESTINATION → HOME
+                  TEST: BRIDGE DESTINATION -> HOME
     //////////////////////////////////////////////////////////////*/
 
     function test_bridge_destination_to_home() public {
@@ -211,12 +211,12 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
     function test_round_trip() public {
         uint256 tokensToSend = 10 ether;
 
-        // Bridge home → destination.
+        // Bridge home -> destination.
         _bridgeToDestination(userA, userB, tokensToSend);
         assertEq(stAztec.balanceOf(userA), INITIAL_BALANCE - tokensToSend);
         assertEq(oft.balanceOf(userB), tokensToSend);
 
-        // Bridge destination → home.
+        // Bridge destination -> home.
         _bridgeToHome(userB, userA, tokensToSend);
         assertEq(stAztec.balanceOf(userA), INITIAL_BALANCE);
         assertEq(oft.balanceOf(userB), 0);
@@ -294,7 +294,7 @@ contract StAztecOFTAdapterTest is TestHelperOz5 {
         SendParam memory sendParam = _sendParamHomeToDestination(userB, tokensToSend);
         MessagingFee memory fee = adapter.quoteSend(sendParam, false);
 
-        // Don't approve — should revert.
+        // Don't approve -- should revert.
         vm.prank(userA);
         vm.expectRevert();
         adapter.send{ value: fee.nativeFee }(sendParam, fee, payable(userA));

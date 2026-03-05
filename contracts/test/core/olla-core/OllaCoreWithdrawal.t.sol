@@ -129,12 +129,6 @@ contract OllaCoreWithdrawalTest is Test {
         permitOwner = vm.addr(permitOwnerKey);
         permitAttackerKey = 0xB0B;
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        core.grantRole(operatorRole, address(this));
-        vm.stopPrank();
-
         // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
         vm.warp(block.timestamp + 1 hours);
     }

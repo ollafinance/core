@@ -2,6 +2,7 @@
 pragma solidity 0.8.27;
 
 import { AccessControl } from "@oz/access/AccessControl.sol";
+import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
@@ -11,7 +12,7 @@ import { RolesLib } from "src/shared/RolesLib.sol";
 /// @author Olla Core contributors
 /// @dev SafetyModule is intentionally **not** UUPS-upgradeable:
 ///  1. It is the protocol's safety/pause mechanism (circuit breaker). Making
-///     it silently upgradeable would undermine its purpose as a trust anchor —
+///     it silently upgradeable would undermine its purpose as a trust anchor --
 ///     users must be able to reason about what can pause the protocol.
 ///  2. Its logic is simple (circuit breakers + pause) with minimal attack
 ///     surface, so the upgrade complexity/risk outweighs the benefit.
@@ -67,16 +68,16 @@ contract SafetyModule is AccessControl, ISafetyModule {
     bool public paused;
 
     /// @notice Minimum rate drop threshold in basis points.
-    uint256 public minRateDropBps;
+    uint16 public minRateDropBps;
 
     /// @notice Maximum queued ratio in basis points.
-    uint256 public maxQueueRatioBps;
+    uint16 public maxQueueRatioBps;
 
     /// @notice Maximum delay allowed for accounting updates.
-    uint256 public maxAccountingDelay;
+    uint32 public maxAccountingDelay;
 
     /// @notice Last accounting update timestamp.
-    uint256 public lastAccountingTimestamp;
+    uint48 public lastAccountingTimestamp;
 
     /*//////////////////////////////////////////////////////////////
                                  MODIFIERS
@@ -139,10 +140,10 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
         depositCap = depositCap_;
         withdrawalMinimum = 0;
-        minRateDropBps = minRateDropBps_;
-        maxQueueRatioBps = maxQueueRatioBps_;
-        maxAccountingDelay = maxAccountingDelay_;
-        lastAccountingTimestamp = block.timestamp;
+        minRateDropBps = SafeCast.toUint16(minRateDropBps_);
+        maxQueueRatioBps = SafeCast.toUint16(maxQueueRatioBps_);
+        maxAccountingDelay = SafeCast.toUint32(maxAccountingDelay_);
+        lastAccountingTimestamp = SafeCast.toUint48(block.timestamp);
 
         CORE = core_;
         VAULT = vault_;
@@ -240,7 +241,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         if (minRateDropBps_ < MIN_RATE_DROP_BPS || minRateDropBps_ > MAX_RATE_DROP_BPS) {
             revert SafetyModule__InvalidParameter();
         }
-        minRateDropBps = minRateDropBps_;
+        minRateDropBps = SafeCast.toUint16(minRateDropBps_);
         emit RateDropLimitUpdated(minRateDropBps_);
     }
 
@@ -249,7 +250,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         if (maxQueueRatioBps_ < MIN_QUEUE_RATIO_BPS || maxQueueRatioBps_ > MAX_QUEUE_RATIO_BPS) {
             revert SafetyModule__InvalidParameter();
         }
-        maxQueueRatioBps = maxQueueRatioBps_;
+        maxQueueRatioBps = SafeCast.toUint16(maxQueueRatioBps_);
         emit QueueRatioLimitUpdated(maxQueueRatioBps_);
     }
 
@@ -258,7 +259,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         if (maxAccountingDelay_ < MIN_ACCOUNTING_DELAY || maxAccountingDelay_ > MAX_ACCOUNTING_DELAY) {
             revert SafetyModule__InvalidParameter();
         }
-        maxAccountingDelay = maxAccountingDelay_;
+        maxAccountingDelay = SafeCast.toUint32(maxAccountingDelay_);
         emit AccountingDelayUpdated(maxAccountingDelay_);
     }
 
@@ -267,7 +268,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         // Reject future timestamps; block.timestamp comparison is intentional.
         // slither-disable-next-line timestamp
         if (latestAccountingTimestamp_ > block.timestamp) revert SafetyModule__InvalidParameter();
-        lastAccountingTimestamp = latestAccountingTimestamp_;
+        lastAccountingTimestamp = SafeCast.toUint48(latestAccountingTimestamp_);
         emit AccountingTimestampUpdated(latestAccountingTimestamp_);
     }
 

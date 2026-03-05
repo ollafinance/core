@@ -46,8 +46,6 @@ contract OllaCore is
 
     /// @notice Role for guardian pause/unpause actions.
     bytes32 public constant GUARDIAN_ROLE = RolesLib.GUARDIAN_ROLE;
-    /// @notice Role for operator accounting actions.
-    bytes32 public constant OPERATOR_ROLE = RolesLib.OPERATOR_ROLE;
 
     /// @notice Basis points divisor.
     uint256 public constant BP_DIVISOR = 10_000;
@@ -81,33 +79,33 @@ contract OllaCore is
 
     IOllaCore.RebalanceProgress private _rebalanceProgress;
 
-    /// @notice The protocol fee in basis points.
-    uint256 public protocolFeeBP;
-
-    /// @notice The treasury fee split in basis points.
-    uint256 public treasuryFeeSplitBP;
-
     /// @notice Target liquid assets to keep buffered for withdrawals.
     uint256 public targetBufferedAssets;
-
-    /// @notice Gas threshold used to gate rebalance step execution.
-    uint256 public rebalanceGasThreshold;
 
     /// @notice Snapshot of bufferedAssets at the end of an unproductive rebalance cycle.
     uint256 private _rebalanceIdleBuffer;
 
+    /// @notice The protocol fee in basis points.
+    uint16 public protocolFeeBP;
+
+    /// @notice The treasury fee split in basis points.
+    uint16 public treasuryFeeSplitBP;
+
+    /// @notice Gas threshold used to gate rebalance step execution.
+    uint32 public rebalanceGasThreshold;
+
     /// @notice Minimum seconds between permissionless rebalance cycles.
-    uint256 public rebalanceCooldown;
+    uint32 public rebalanceCooldown;
 
     /// @notice Timestamp of the last completed rebalance cycle.
-    uint256 private _lastRebalanceTimestamp;
+    uint48 private _lastRebalanceTimestamp;
 
     /// @notice Storage gap for upgradability.
-    /// @dev State variables occupy 32 slots. When adding new state variables, append them above
+    /// @dev State variables occupy 28 slots. When adding new state variables, append them above
     ///      this gap and reduce its length by the number of slots consumed.
     // Reserved storage gap for future upgrades; intentionally unused.
     // slither-disable-next-line unused-state
-    uint256[45] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -170,10 +168,10 @@ contract OllaCore is
             safetyModule: safetyModule_
         });
 
-        protocolFeeBP = protocolFeeBP_;
-        treasuryFeeSplitBP = treasuryFeeSplitBP_;
+        protocolFeeBP = SafeCast.toUint16(protocolFeeBP_);
+        treasuryFeeSplitBP = SafeCast.toUint16(treasuryFeeSplitBP_);
         targetBufferedAssets = 0;
-        rebalanceGasThreshold = _REBALANCE_GAS_THRESHOLD;
+        rebalanceGasThreshold = SafeCast.toUint32(_REBALANCE_GAS_THRESHOLD);
         _rebalanceProgress.step = IOllaCore.RebalanceStep.Done;
 
         _modules.stakingManager.setGasThreshold(rebalanceGasThreshold);
@@ -183,14 +181,13 @@ contract OllaCore is
         // slither-disable-next-line timestamp
         _latestReport.timestamp = block.timestamp;
 
-        rebalanceCooldown = 1 hours;
+        rebalanceCooldown = SafeCast.toUint32(1 hours);
         // Initial rebalance timestamp set at deployment; miner manipulation is negligible.
         // slither-disable-next-line timestamp
-        _lastRebalanceTimestamp = block.timestamp;
+        _lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governanceContract_);
         _grantRole(GUARDIAN_ROLE, governanceContract_);
-        _grantRole(OPERATOR_ROLE, governanceContract_);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -219,7 +216,7 @@ contract OllaCore is
     function setProtocolFeeBP(uint256 newFeeBP) external override onlyOwner whenNotPaused whenRebalanceDone {
         if (newFeeBP > MAX_PROTOCOL_FEE_BP) revert OllaCore__InvalidFeeBP(newFeeBP);
         uint256 oldFeeBP = protocolFeeBP;
-        protocolFeeBP = newFeeBP;
+        protocolFeeBP = SafeCast.toUint16(newFeeBP);
         emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
     }
 
@@ -229,7 +226,7 @@ contract OllaCore is
             revert OllaCore__InvalidSplitBP(newSplitBP);
         }
         uint256 oldSplitBP = treasuryFeeSplitBP;
-        treasuryFeeSplitBP = newSplitBP;
+        treasuryFeeSplitBP = SafeCast.toUint16(newSplitBP);
         emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
     }
 
@@ -259,7 +256,7 @@ contract OllaCore is
             revert OllaCore__InvalidGasThreshold(newThreshold);
         }
         uint256 oldThreshold = rebalanceGasThreshold;
-        rebalanceGasThreshold = newThreshold;
+        rebalanceGasThreshold = SafeCast.toUint32(newThreshold);
         emit RebalanceGasThresholdUpdated(oldThreshold, newThreshold);
         GovernanceLib.propagateGasThreshold(_modules, newThreshold);
     }
@@ -270,7 +267,7 @@ contract OllaCore is
             revert OllaCore__InvalidParameter();
         }
         uint256 old = rebalanceCooldown;
-        rebalanceCooldown = cooldown_;
+        rebalanceCooldown = SafeCast.toUint32(cooldown_);
         emit RebalanceCooldownUpdated(old, cooldown_);
     }
 
@@ -465,7 +462,7 @@ contract OllaCore is
 
         if (_rebalanceCompletionSatisfied(progress)) {
             // slither-disable-next-line timestamp
-            _lastRebalanceTimestamp = block.timestamp;
+            _lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
             _updateAccountingInternal();
         }
 
@@ -761,7 +758,7 @@ contract OllaCore is
             if (actualStaked > stakeable) revert OllaCore__StakeFailed(actualStaked);
             totalStaked = actualStaked;
         } catch {
-            // Stake failed entirely — return all assets to Vault
+            // Stake failed entirely -- return all assets to Vault
             assetRef.safeTransfer(address(vaultRef), stakeable);
             vaultRef.receiveUnstaked(stakeable);
             return 0;

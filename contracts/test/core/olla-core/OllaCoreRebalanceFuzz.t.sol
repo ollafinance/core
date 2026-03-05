@@ -238,10 +238,6 @@ contract OllaCoreRebalanceFuzzTest is Test {
         vault.unpause();
 
         operator = makeAddr("operator");
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
 
         handler = new OllaCoreRebalanceFuzzHandler(
             asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator, governance

@@ -141,12 +141,7 @@ contract OllaCoreRecoverStAztecTest is Test {
         vm.prank(alice);
         stAztec.transfer(address(vault), recoverAmount);
 
-        // Grant operator role and trigger rebalance with limited gas so it
-        // stops mid-cycle at PullUnstaked.
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, address(this));
-
+        // Trigger rebalance with limited gas so it stops mid-cycle at PullUnstaked.
         // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
         vm.warp(block.timestamp + 1 hours);
 

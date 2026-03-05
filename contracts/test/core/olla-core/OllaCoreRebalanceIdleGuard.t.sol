@@ -77,11 +77,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
-
         vm.warp(block.timestamp + 1 hours);
     }
 
@@ -154,7 +149,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
         vm.prank(operator);
         core.rebalance();
 
-        // Check if a new Rebalanced event was emitted — this means a full cycle ran unnecessarily
+        // Check if a new Rebalanced event was emitted -- this means a full cycle ran unnecessarily
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 rebalancedSig = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
         uint256 rebalancedCount = 0;

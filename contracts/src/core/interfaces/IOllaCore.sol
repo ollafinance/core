@@ -7,7 +7,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 
 /// @title IOllaCore
-/// @notice Interface for OllaCore — orchestration + accounting layer.
+/// @notice Interface for OllaCore -- orchestration + accounting layer.
 /// @dev User-facing vault functions (deposit, redeem, claim) are on IOllaVault.
 /// @author Olla Core contributors
 interface IOllaCore {
@@ -351,7 +351,7 @@ interface IOllaCore {
 
     /// @notice Returns the rebalance gas threshold.
     /// @return The rebalance gas threshold.
-    function rebalanceGasThreshold() external view returns (uint256);
+    function rebalanceGasThreshold() external view returns (uint32);
 
     /// @notice Returns the latest accounting report snapshot.
     /// @return The latest accounting report snapshot.
@@ -394,13 +394,13 @@ interface IOllaCore {
 
     /// @notice Returns the rebalance cooldown in seconds.
     /// @return The rebalance cooldown in seconds.
-    function rebalanceCooldown() external view returns (uint256);
+    function rebalanceCooldown() external view returns (uint32);
 
     /// @notice Returns the protocol fee in basis points.
     /// @return The protocol fee in basis points.
-    function protocolFeeBP() external view returns (uint256);
+    function protocolFeeBP() external view returns (uint16);
 
     /// @notice Returns the treasury fee split in basis points.
     /// @return The treasury fee split in basis points.
-    function treasuryFeeSplitBP() external view returns (uint256);
+    function treasuryFeeSplitBP() external view returns (uint16);
 }

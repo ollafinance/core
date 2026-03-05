@@ -221,7 +221,7 @@ contract OllaVaultOperatorTest is Test {
                     REDEEM (SYNC ERC-4626 CLAIM PATH)
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Full lifecycle: deposit → requestRedeem → finalize → redeem.
+    /// @notice Full lifecycle: deposit -> requestRedeem -> finalize -> redeem.
     function test_Redeem_ClaimsFinalized() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 shares = _performDeposit(alice, depositAmount);

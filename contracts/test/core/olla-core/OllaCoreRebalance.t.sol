@@ -37,7 +37,7 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
 
     function setGasThreshold(uint256) external override { }
 
-    function gasThreshold() external pure override returns (uint256) {
+    function gasThreshold() external pure override returns (uint32) {
         return 50_000;
     }
 
@@ -63,11 +63,11 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
         return 0;
     }
 
-    function nextRequestId() external pure override returns (uint256) {
+    function nextRequestId() external pure override returns (uint64) {
         return 1;
     }
 
-    function nextPendingId() external pure override returns (uint256) {
+    function nextPendingId() external pure override returns (uint64) {
         return 1;
     }
 
@@ -106,7 +106,7 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
 
     function setGasThreshold(uint256) external override { }
 
-    function gasThreshold() external pure override returns (uint256) {
+    function gasThreshold() external pure override returns (uint32) {
         return 50_000;
     }
 
@@ -132,11 +132,11 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
         return 0;
     }
 
-    function nextRequestId() external pure override returns (uint256) {
+    function nextRequestId() external pure override returns (uint64) {
         return 1;
     }
 
-    function nextPendingId() external pure override returns (uint256) {
+    function nextPendingId() external pure override returns (uint64) {
         return 1;
     }
 
@@ -244,11 +244,6 @@ contract OllaCoreRebalanceTest is Test {
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
-
         // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
         vm.warp(block.timestamp + 1 hours);
     }
@@ -288,11 +283,6 @@ contract OllaCoreRebalanceTest is Test {
 
     function test_RevertWhen_OperatorWithoutAdminSetsRebalanceGasThreshold() external {
         address otherOperator = makeAddr("otherOperator");
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, otherOperator);
-
-        assertTrue(core.hasRole(operatorRole, otherOperator), "test operator role");
 
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, otherOperator));
         vm.prank(otherOperator);
@@ -1421,11 +1411,6 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
-
         vm.warp(block.timestamp + 1 hours);
     }
 
@@ -1496,11 +1481,6 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
 
         vm.prank(governance);
         vault.unpause();
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
     }
@@ -1582,12 +1562,6 @@ contract OllaCoreRebalanceReentrancyTest is Test {
 
         vm.prank(governance);
         vault.unpause();
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        core.grantRole(operatorRole, address(stakingManager));
-        vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
     }
@@ -1721,11 +1695,6 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
 
         vm.prank(governance);
         vault.unpause();
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
     }
 
     function test_Rebalance_RevertsWhen_AccountingStale() external {
@@ -1930,11 +1899,6 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
 
         vm.prank(governance);
         vault.unpause();
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
     }

@@ -71,11 +71,6 @@ contract OllaCoreRemoveOwnerRequestTest is Test {
         vault.unpause();
 
         alice = makeAddr("alice");
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, address(this));
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////
