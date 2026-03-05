@@ -509,21 +509,16 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Step 1: Complete a rebalance cycle (sets _lastRebalanceTimestamp to block.timestamp)
         core.rebalance();
-        uint256 rebalanceCompletionTime = block.timestamp;
 
         // Step 2: Warp forward 30 minutes (not past the 1-hour cooldown)
-        vm.warp(rebalanceCompletionTime + 30 minutes);
+        vm.warp(block.timestamp + 30 minutes);
 
         // Step 3: Call updateAccounting() (updates _latestReport.timestamp but NOT _lastRebalanceTimestamp)
         core.updateAccounting();
 
         // Verify the report timestamp was updated
         IOllaCore.LatestReport memory report = core.latestReport();
-        assertEq(
-            report.timestamp,
-            rebalanceCompletionTime + 30 minutes,
-            "report timestamp should reflect updateAccounting call"
-        );
+        assertEq(report.timestamp, block.timestamp, "report timestamp should reflect updateAccounting call");
 
         // Step 4: Immediately try to start a new rebalance — should still revert because
         // _lastRebalanceTimestamp was NOT affected by the updateAccounting() call.
@@ -537,7 +532,7 @@ contract OllaCorePermissionlessRebalance is Test {
         core.rebalance();
 
         // Step 5: Warp past the original cooldown from step 1 (30 more minutes + 1 second)
-        vm.warp(rebalanceCompletionTime + 1 hours + 1);
+        vm.warp(block.timestamp + 30 minutes + 1);
 
         // Step 6: Rebalance now succeeds (cooldown measured from _lastRebalanceTimestamp, not _latestReport)
         core.rebalance();
