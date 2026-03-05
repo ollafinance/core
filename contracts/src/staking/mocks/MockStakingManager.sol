@@ -71,12 +71,6 @@ contract MockStakingManager is IStakingManager {
         return;
     }
 
-    /// @notice No-op in mock.
-    function setGasThreshold(uint256) external pure override { }
-
-    /// @notice No-op in mock.
-    function refreshAttesterState(address[] calldata) external pure override { }
-
     /// @notice Records a stake request.
     /// @param amount The amount to stake.
     /// @return stakedAmount The amount staked.
@@ -182,4 +176,10 @@ contract MockStakingManager is IStakingManager {
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
     }
+
+    /// @notice No-op in mock.
+    function setGasThreshold(uint256) external pure override { }
+
+    /// @notice No-op in mock.
+    function refreshAttesterState(address[] calldata) external pure override { }
 }
