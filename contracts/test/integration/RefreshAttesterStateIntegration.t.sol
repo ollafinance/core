@@ -122,12 +122,6 @@ contract RefreshAttesterStateIntegration is Test {
         operator = makeAddr("operator");
         alice = makeAddr("alice");
 
-        // Grant OPERATOR_ROLE on both OllaCore and StakingManager
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), operator);
-        stakingManager.grantRole(stakingManager.OPERATOR_ROLE(), operator);
-        vm.stopPrank();
-
         // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
         vm.warp(block.timestamp + 1 hours);
     }

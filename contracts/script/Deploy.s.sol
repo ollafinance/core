@@ -217,7 +217,7 @@ contract DeployScript is BaseDeployer {
         json = _addAddressToJson(json, "SafetyModule", safetyModule, false);
 
         // 6. Initialize OllaCore with OllaGovernance as owner
-        //    OllaGovernance holds: owner(), DEFAULT_ADMIN_ROLE, GUARDIAN_ROLE, OPERATOR_ROLE
+        //    OllaGovernance holds: owner(), DEFAULT_ADMIN_ROLE, GUARDIAN_ROLE
 
         config.withdrawalQueue = withdrawalQueue;
         config.rewardsAccumulator = rewardsAccumulator;

@@ -232,9 +232,6 @@ contract OllaCoreDepositTest is Test {
         // Seed initial deposit + rewards to move rate off 1:1
         _performDeposit(alice, 100 * DECIMALS);
         stakingManager.setClaimableRewards(50 * DECIMALS);
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, address(this));
         core.updateAccounting();
 
         uint256 expectedShares = core.convertToShares(25 * DECIMALS);
@@ -388,9 +385,6 @@ contract OllaCoreDepositTest is Test {
 
         // Simulate rewards to change the exchange rate
         stakingManager.setClaimableRewards(rewards);
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, address(this));
         core.updateAccounting();
 
         // Snapshot state before Bob's deposit

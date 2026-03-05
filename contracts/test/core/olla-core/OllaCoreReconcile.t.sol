@@ -217,12 +217,6 @@ contract OllaCoreReconcileTest is Test {
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        core.grantRole(operatorRole, address(this));
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////

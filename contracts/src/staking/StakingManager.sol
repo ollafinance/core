@@ -9,7 +9,6 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { EnumerableSet } from "@oz/utils/structs/EnumerableSet.sol";
-import { RolesLib } from "src/shared/RolesLib.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -29,9 +28,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Role identifier for operator access control.
-    bytes32 public constant OPERATOR_ROLE = RolesLib.OPERATOR_ROLE;
 
     /// @notice Maximum allowed gas threshold (30 million).
     uint256 private constant _MAX_GAS_THRESHOLD = 30_000_000;
@@ -161,7 +157,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         gasThreshold = 50_000;
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
-        _grantRole(OPERATOR_ROLE, defaultAdmin_);
     }
 
     /*//////////////////////////////////////////////////////////////

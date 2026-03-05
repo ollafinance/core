@@ -90,10 +90,8 @@ contract OllaCorePermissionlessRebalance is Test {
         alice = makeAddr("alice");
         bob = makeAddr("bob");
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
         bytes32 guardianRole = core.GUARDIAN_ROLE();
         vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
         core.grantRole(guardianRole, guardian);
         vm.stopPrank();
 
@@ -112,7 +110,7 @@ contract OllaCorePermissionlessRebalance is Test {
                     PERMISSIONLESS REBALANCE TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Anyone (not just OPERATOR_ROLE holders) can start a new rebalance cycle
+    /// @notice Anyone can start a new rebalance cycle
     /// after the cooldown has elapsed.
     function test_Rebalance_AnyoneCanStartNewCycle() external {
         // Set a target buffer so not all assets are staked (some remain in buffer)
@@ -124,7 +122,6 @@ contract OllaCorePermissionlessRebalance is Test {
         address randomCaller = makeAddr("randomCaller");
 
         // randomCaller has no roles
-        assertFalse(core.hasRole(core.OPERATOR_ROLE(), randomCaller));
         assertFalse(core.hasRole(core.GUARDIAN_ROLE(), randomCaller));
         assertFalse(core.hasRole(core.DEFAULT_ADMIN_ROLE(), randomCaller));
 
@@ -392,7 +389,6 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Random address calls updateAccounting (no role required)
         address randomCaller = makeAddr("randomCaller");
-        assertFalse(core.hasRole(core.OPERATOR_ROLE(), randomCaller));
 
         vm.prank(randomCaller);
         core.updateAccounting();
@@ -509,21 +505,19 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Step 1: Complete a rebalance cycle (sets _lastRebalanceTimestamp to block.timestamp)
         core.rebalance();
-        uint256 rebalanceCompletionTime = block.timestamp;
 
         // Step 2: Warp forward 30 minutes (not past the 1-hour cooldown)
-        vm.warp(rebalanceCompletionTime + 30 minutes);
+        // NOTE: We compute warp targets inline to avoid viaIR re-materialization of TIMESTAMP
+        // across vm.warp boundaries (block.timestamp stored in a local may be re-evaluated).
+        uint256 accountingWarpTarget = block.timestamp + 30 minutes;
+        vm.warp(accountingWarpTarget);
 
         // Step 3: Call updateAccounting() (updates _latestReport.timestamp but NOT _lastRebalanceTimestamp)
         core.updateAccounting();
 
         // Verify the report timestamp was updated
         IOllaCore.LatestReport memory report = core.latestReport();
-        assertEq(
-            report.timestamp,
-            rebalanceCompletionTime + 30 minutes,
-            "report timestamp should reflect updateAccounting call"
-        );
+        assertEq(report.timestamp, block.timestamp, "report timestamp should reflect updateAccounting call");
 
         // Step 4: Immediately try to start a new rebalance — should still revert because
         // _lastRebalanceTimestamp was NOT affected by the updateAccounting() call.
@@ -537,7 +531,7 @@ contract OllaCorePermissionlessRebalance is Test {
         core.rebalance();
 
         // Step 5: Warp past the original cooldown from step 1 (30 more minutes + 1 second)
-        vm.warp(rebalanceCompletionTime + 1 hours + 1);
+        vm.warp(accountingWarpTarget + 30 minutes + 1);
 
         // Step 6: Rebalance now succeeds (cooldown measured from _lastRebalanceTimestamp, not _latestReport)
         core.rebalance();

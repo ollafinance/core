@@ -88,11 +88,6 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
-
         vm.warp(block.timestamp + 1 hours);
     }
 

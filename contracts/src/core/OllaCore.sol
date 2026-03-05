@@ -46,8 +46,6 @@ contract OllaCore is
 
     /// @notice Role for guardian pause/unpause actions.
     bytes32 public constant GUARDIAN_ROLE = RolesLib.GUARDIAN_ROLE;
-    /// @notice Role for operator accounting actions.
-    bytes32 public constant OPERATOR_ROLE = RolesLib.OPERATOR_ROLE;
 
     /// @notice Basis points divisor.
     uint256 public constant BP_DIVISOR = 10_000;
@@ -190,7 +188,6 @@ contract OllaCore is
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governanceContract_);
         _grantRole(GUARDIAN_ROLE, governanceContract_);
-        _grantRole(OPERATOR_ROLE, governanceContract_);
     }
 
     /*//////////////////////////////////////////////////////////////

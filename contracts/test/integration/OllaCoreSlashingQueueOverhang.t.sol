@@ -69,7 +69,6 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         core.setVault(address(vault));
         core.unpause();
         vault.unpause();
-        core.grantRole(core.OPERATOR_ROLE(), operator);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours + 1);
