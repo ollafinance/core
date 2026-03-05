@@ -72,16 +72,10 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @notice No-op in mock.
-    /// @param threshold Unused.
-    function setGasThreshold(uint256 threshold) external override {
-        threshold; // solhint-disable-line no-unused-vars
-    }
+    function setGasThreshold(uint256) external pure override {}
 
     /// @notice No-op in mock.
-    /// @param attesters Unused.
-    function refreshAttesterState(address[] calldata attesters) external override {
-        attesters; // solhint-disable-line no-unused-vars
-    }
+    function refreshAttesterState(address[] calldata) external pure override {}
 
     /// @notice Records a stake request.
     /// @param amount The amount to stake.

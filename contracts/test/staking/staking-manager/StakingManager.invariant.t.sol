@@ -320,7 +320,7 @@ contract StakingManagerInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Staking state amounts are never negative
-    function invariant_StakingStateNonNegative() external {
+    function invariant_StakingStateNonNegative() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
 
         assertGe(state.stakedAmount, 0, "stakedAmount should never be negative");
@@ -382,7 +382,7 @@ contract StakingManagerInvariantTest is Test {
     }
 
     /// @notice Total assets consistency across all states
-    function invariant_TotalAssetsConsistency() external {
+    function invariant_TotalAssetsConsistency() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
 
         // The sum of all states should be reasonable (can't exceed total minted tokens)
@@ -420,7 +420,7 @@ contract StakingManagerInvariantTest is Test {
     }
 
     /// @notice Registry only contains Active/Exiting entries; removed attesters are not counted as staked
-    function invariant_InactiveEntriesNotStaked() external {
+    function invariant_InactiveEntriesNotStaked() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         uint256 eligibleCount = _countRollupEligible();
         uint256 activationThreshold = rollup.getActivationThreshold();
@@ -457,7 +457,7 @@ contract StakingManagerInvariantTest is Test {
     }
 
     /// @notice Staking operations respect activation threshold
-    function invariant_ActivationThresholdRespected() external {
+    function invariant_ActivationThresholdRespected() external view {
         // Check that staking operations only occur when sufficient conditions are met
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         uint256 queueLength = stakingProviderRegistry.getQueueLength();

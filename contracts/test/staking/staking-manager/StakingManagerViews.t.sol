@@ -10,7 +10,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
                             VIEW TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_GetStakingState_InitiallyZero() external {
+    function test_GetStakingState_InitiallyZero() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, 0);
         assertEq(state.pendingUnstakeAmount, 0);

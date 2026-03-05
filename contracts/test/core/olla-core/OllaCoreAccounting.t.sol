@@ -339,8 +339,6 @@ contract OllaCoreAccountingTest is Test {
         IOllaCore.FlowCounters memory flowsBefore = core.flowCounters();
         uint256 rvBalance = rewardsAccumulator.balance();
         uint256 currentRewards = accountingAfterRebalance.cumulativeRewards + claimableRewards;
-        uint256 rDelta =
-            currentRewards > reportBefore.rewardsSnapshot ? currentRewards - reportBefore.rewardsSnapshot : 0;
         uint256 expectedTotalAssets = vault.bufferedAssets() + stakedPrincipal + rvBalance + claimableRewards - slashing;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
         (int256 expectedNetFlows,,) = core.exposedComputeNetFlows(flowsBefore);
