@@ -10,10 +10,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
                             VIEW TESTS
     //////////////////////////////////////////////////////////////*/
 
-    function test_GetStakingState_InitiallyZero() external {
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
+    function test_GetStakingState_InitiallyZero() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, 0);
         assertEq(state.pendingUnstakeAmount, 0);
@@ -47,14 +44,11 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
 
         rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
         bool hasExitable = stakingManager.hasExitableUnstakes();
         assertFalse(hasExitable, "hasExitableUnstakes should be false with only pending exits");
     }
 
-    function test_HasExitableUnstakes_ReturnsTrueWhenWithdrawable() external {
+    function test_HasExitableUnstakes_ReturnsFalseBeforeRefresh() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(keys);
@@ -67,24 +61,37 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
         bool hasExitable = stakingManager.hasExitableUnstakes();
-        assertTrue(hasExitable, "hasExitableUnstakes should be true when exits are withdrawable");
+        assertFalse(hasExitable, "hasExitableUnstakes should be false before refresh finalizes exits");
     }
 
-    function test_HasExitableUnstakes_ReturnsTrueWhenActiveExitIsExitable() external {
+    function test_HasExitableUnstakes_ReturnsTrueAfterRefreshFinalizesExit() external {
         _setupStakedAttester();
 
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
-        rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp);
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
+        // Refresh finalizes the exit (mock sets exitableAt to block.timestamp)
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         bool hasExitable = stakingManager.hasExitableUnstakes();
-        assertTrue(hasExitable, "hasExitableUnstakes should be true for active exitable exits");
+        assertTrue(hasExitable, "hasExitableUnstakes should be true after refresh finalizes an exit");
+    }
+
+    function test_HasExitableUnstakes_ReturnsFalseAfterClaim() external {
+        _setupStakedAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        assertTrue(stakingManager.hasExitableUnstakes(), "should be true after finalization");
+
+        // Claim resets _pendingClaimAmount
+        vm.prank(core);
+        stakingManager.getUnstakedFunds();
+
+        assertFalse(stakingManager.hasExitableUnstakes(), "should be false after claim drains pending");
     }
 
     function test_HasExitableUnstakes_ReturnsFalseWhenActiveExitNotExitable() external {
@@ -92,9 +99,6 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
 
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
-
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
 
         bool hasExitable = stakingManager.hasExitableUnstakes();
         assertFalse(hasExitable, "hasExitableUnstakes should be false for active pending exits");
@@ -106,9 +110,6 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
 
     function test_GetStakingState_ReturnsCorrectValuesAfterStake() external {
         _setupMultipleStakedAttesters(3);
-
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3);
@@ -122,15 +123,10 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
-        // stakedAmount includes exiting attesters (all 3 counted)
-        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3);
-        // In the mock, exitableAt is set to block.timestamp (immediate), so it's withdrawable
-        assertEq(state.pendingUnstakeAmount, 0);
-        assertEq(state.withdrawableAmount, ACTIVATION_THRESHOLD * 2);
+        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 1);
+        assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD * 2);
+        assertEq(state.withdrawableAmount, 0);
     }
 
     function test_GetStakingState_ReturnsCorrectValuesWithDelayedExit() external {
@@ -144,12 +140,8 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
-        // stakedAmount includes exiting attesters (both are counted)
-        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 2);
+        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 1);
         assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD);
         assertEq(state.withdrawableAmount, 0);
     }

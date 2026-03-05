@@ -415,7 +415,7 @@ contract OllaCore is
                 progress.stakeRemaining = _computeStakeRemaining(requiredBuffer);
                 // slither-disable-next-line incorrect-equality,timestamp
                 if (progress.stakeRemaining == 0) {
-                    progress.step = IOllaCore.RebalanceStep.ComputeAttesterState;
+                    progress.step = IOllaCore.RebalanceStep.Done;
                 }
             }
             // slither-disable-next-line incorrect-equality,timestamp
@@ -433,30 +433,13 @@ contract OllaCore is
                     // slither-disable-next-line incorrect-equality
                     if (stakedAmount == 0) {
                         progress.stakeRemaining = 0;
-                        progress.step = IOllaCore.RebalanceStep.ComputeAttesterState;
+                        progress.step = IOllaCore.RebalanceStep.Done;
                     } else {
                         _rebalanceProgress = progress;
                         return (rewardsDelta, finalizedAmount, stakedAmount, vaultRef.bufferedAssets());
                     }
                 }
-                progress.step = IOllaCore.RebalanceStep.ComputeAttesterState;
-            }
-        }
-
-        // slither-disable-next-line incorrect-equality,timestamp
-        if (progress.step == IOllaCore.RebalanceStep.ComputeAttesterState) {
-            if (!_hasGasForStep()) {
-                _rebalanceProgress = progress;
-                return (rewardsDelta, finalizedAmount, stakedAmount, vaultRef.bufferedAssets());
-            }
-            // First return value (processed count) is unused; only computeCompleted drives flow.
-            // slither-disable-next-line unused-return
-            (, bool computeCompleted) = _modules.stakingManager.computeAttesterState();
-            if (computeCompleted) {
                 progress.step = IOllaCore.RebalanceStep.Done;
-            } else {
-                _rebalanceProgress = progress;
-                return (rewardsDelta, finalizedAmount, stakedAmount, vaultRef.bufferedAssets());
             }
         }
 

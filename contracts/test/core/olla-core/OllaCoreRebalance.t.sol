@@ -278,7 +278,6 @@ contract OllaCoreRebalanceTest is Test {
 
     function test_DefaultRebalanceGasThreshold() external view {
         assertEq(core.rebalanceGasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "default gas threshold");
-        assertEq(stakingManager.gasThreshold(), DEFAULT_REBALANCE_GAS_THRESHOLD, "staking manager threshold set");
     }
 
     function test_RevertWhen_NonAdminSetsRebalanceGasThreshold() external {
@@ -300,16 +299,13 @@ contract OllaCoreRebalanceTest is Test {
         core.setRebalanceGasThreshold(200_000);
     }
 
-    function test_SetRebalanceGasThreshold_UpdatesAndForwards() external {
+    function test_SetRebalanceGasThreshold_UpdatesThreshold() external {
         uint256 newThreshold = 240_000;
-
-        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.setGasThreshold, (newThreshold)));
 
         vm.prank(governance);
         core.setRebalanceGasThreshold(newThreshold);
 
         assertEq(core.rebalanceGasThreshold(), newThreshold, "core gas threshold updated");
-        assertEq(stakingManager.gasThreshold(), newThreshold, "staking manager threshold forwarded");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1197,35 +1193,6 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                     ATTESTER STATE STALENESS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Rebalance self-heals stale attester state via the ComputeAttesterState step
-    /// instead of reverting. The step calls computeAttesterState() which refreshes the timestamp,
-    /// allowing subsequent accounting reads (totalStaked, getSlashingDelta) to succeed.
-    function test_Rebalance_SelfHealsStaleAttesterState() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        stakingManager.setTotalStaked(5 * DECIMALS);
-        (uint256 lastUpdated,,) = stakingManager.getAttesterStateLiveness();
-
-        uint256 maxAge = 1 hours;
-        stakingManager.setAttesterStateMaxAge(maxAge);
-
-        vm.warp(lastUpdated + maxAge + 1);
-
-        // Rebalance should succeed — the ComputeAttesterState step refreshes the stale state
-        vm.prank(operator);
-        core.rebalance();
-
-        // Verify the attester state is no longer stale after rebalance
-        (uint256 updatedAt,, bool isStale) = stakingManager.getAttesterStateLiveness();
-        assertEq(updatedAt, block.timestamp, "attester state timestamp should be current");
-        assertFalse(isStale, "attester state should not be stale after rebalance");
-    }
-
-    /*//////////////////////////////////////////////////////////////
                              STAKE SURPLUS
     //////////////////////////////////////////////////////////////*/
 
@@ -1792,9 +1759,6 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     uint256 public claimable;
     uint256 public slashing;
     address public rewardsRecipient;
-    uint256 private _attesterStateLastUpdated = 1;
-    uint256 private _attesterStateMaxAge = type(uint256).max;
-
     ProviderConfig internal _providerConfig;
 
     constructor(IERC20 stakingAsset_) {
@@ -1807,7 +1771,6 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function setSlashingDelta(uint256 value) external {
         slashing = value;
-        _attesterStateLastUpdated = block.timestamp;
     }
 
     function setPendingUnstakes(uint256 value) external {
@@ -1828,6 +1791,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function initialize(IERC20, address, address, address, address, address) external pure override { }
 
+    function setGasThreshold(uint256) external override { }
+
     function stake(uint256 amount) external override returns (uint256 stakedAmount) {
         STAKING_ASSET.safeTransferFrom(msg.sender, address(this), amount);
         staked += amount;
@@ -1842,11 +1807,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
         return amount;
     }
 
-    function setGasThreshold(uint256) external pure override { }
-
-    function finalizeExits() external pure override returns (uint256) {
-        return 0;
-    }
+    function refreshAttesterState(address[] calldata) external override { }
 
     function getUnstakedFunds()
         external
@@ -1867,46 +1828,11 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function getSlashingDelta() external view override returns (uint256 slashingDelta) {
-        if (_isAttesterStateStale()) {
-            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
-        }
         return slashing;
-    }
-
-    function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
-        uint256 lastUpdated = _attesterStateLastUpdated;
-        bool wasStale = _isAttesterStateStale();
-
-        _attesterStateLastUpdated = block.timestamp;
-        emit AttesterStateUpdated(slashing, staked, pending, withdrawable, block.timestamp);
-        if (wasStale) {
-            emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
-        }
-
-        return (slashing, true);
-    }
-
-    function setAttesterStateMaxAge(uint256 maxAge) external override {
-        if (maxAge == 0) {
-            revert StakingManager__ZeroAmount();
-        }
-        _attesterStateMaxAge = maxAge;
     }
 
     function getClaimableRewards() external view override returns (uint256 claimableRewards) {
         return claimable;
-    }
-
-    function getAttesterStateLiveness()
-        external
-        view
-        override
-        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
-    {
-        lastUpdated = _attesterStateLastUpdated;
-        maxAge = _attesterStateMaxAge;
-        isStale = _isAttesterStateStale();
-        return (lastUpdated, maxAge, isStale);
     }
 
     function totalStaked() external view override returns (uint256 stakedTotal) {
@@ -1930,10 +1856,6 @@ contract UnstakeRevertingStakingManager is IStakingManager {
         return withdrawable != 0;
     }
 
-    function getUnstakeCursor() external pure override returns (uint256 cursor) {
-        return 0;
-    }
-
     function getProviderConfig() external view override returns (ProviderConfig memory) {
         return _providerConfig;
     }
@@ -1948,14 +1870,6 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function isUnstakePending(address) external pure override returns (bool) {
         return false;
-    }
-
-    function _isAttesterStateStale() internal view returns (bool) {
-        uint256 lastUpdated = _attesterStateLastUpdated;
-        if (lastUpdated == 0) {
-            return true;
-        }
-        return block.timestamp - lastUpdated > _attesterStateMaxAge;
     }
 
     function core() external pure override returns (address) {
