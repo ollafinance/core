@@ -2,11 +2,11 @@
 
 This document summarizes rebalance and accounting flows in Olla Core.
 
-> **Note:** `rebalance()`, `updateAccounting()`, `finalizeExits()`, and `computeAttesterState()` are **permissionless** — anyone can call them. The diagrams below use "Caller" to represent any address. New rebalance cycles are rate-limited by a cooldown (`_lastRebalanceTimestamp + rebalanceCooldown`); continuing in-progress cycles has no cooldown.
+> **Note:** `rebalance()`, `updateAccounting()`, and `refreshAttesterState(address[])` are **permissionless** — anyone can call them. The diagrams below use "Caller" to represent any address. New rebalance cycles are rate-limited by a cooldown (`_lastRebalanceTimestamp + rebalanceCooldown`); continuing in-progress cycles has no cooldown.
 
 ## Rebalance
 
-### Finalize exits (separate from rebalance)
+### Refresh attester state (separate from rebalance)
 
 ```mermaid
 sequenceDiagram
@@ -14,13 +14,17 @@ sequenceDiagram
     participant SM as StakingManager
     participant AR as AztecRollup (canonical)
 
-    A->>SM: finalizeExits()
-    loop for each exiting attester
-        SM->>AR: finalizeWithdraw(attester)
-        AR-->>SM: AZTEC transferred
+    A->>SM: refreshAttesterState(address[] attesters)
+    loop for each attester in array
+        SM->>AR: getInfo(attester)
+        AR-->>SM: attester state
+        SM->>SM: delta-update _aggregateState
+        alt attester is exitable
+            SM->>AR: finalizeWithdraw(attester)
+            AR-->>SM: AZTEC transferred
+            SM->>SM: _pendingClaimAmount += finalized
+        end
     end
-    SM->>SM: _pendingClaimAmount += finalized
-    SM-->>A: finalized amount
 ```
 
 ### Harvest rewards
@@ -83,13 +87,11 @@ sequenceDiagram
     C->>SAF: checkQueueRatio(queued, total)
     Note right of C: queued = WQ.totalPendingAssets()
     Note right of C: total = C.totalAssets()
-    C->>C: syncBufferedWithBalance()
     Note right of C: available = bufferedAssets
-    C->>WQ: previewFinalizeWithdrawals(available)
-    WQ-->>C: used
-    C->>WQ: finalizeWithdrawals(available)
-    WQ-->>C: finalized
-    Note right of C: require finalized == used
+    C->>WQ: finalizeWithdrawals(available, currentRate)
+    WQ-->>C: (used, finalizedCount, totalAdjusted)
+    Note right of WQ: payout = shares * min(currentRate, lockedRate) / 1e18
+    Note right of WQ: adjusts assetsExpected down if slashing occurred
 ```
 
 ### Initiate unstake
@@ -146,13 +148,9 @@ sequenceDiagram
     participant RV as RewardsVault
     participant WQ as WithdrawalQueue
 
-    Note over A,SM: Pre-step: finalize exits (can be separate tx)
-    A->>SM: finalizeExits()
-    SM->>AR: finalizeWithdraw() per attester
-    SM->>SM: _pendingClaimAmount += finalized
-
-    A->>SM: computeAttesterState()
-    Note right of SM: syncs attester states + caches staking data
+    Note over A,SM: Pre-step: refresh attester state (optional, can be separate tx)
+    A->>SM: refreshAttesterState(address[] attesters)
+    Note right of SM: delta-updates aggregate state + finalizes exits
 
     A->>C: rebalance()
     Note over C: Cooldown gate: block.timestamp - _lastRebalanceTimestamp >= rebalanceCooldown
@@ -176,10 +174,10 @@ sequenceDiagram
     C->>C: available = bufferedAssets
     C->>WQ: totalPendingAssets()
     C->>SAF: checkQueueRatio(queued, totalAssets)
-    C->>WQ: previewFinalizeWithdrawals(available)
-    C->>WQ: finalizeWithdrawals(available)
-    WQ-->>C: amountUsed
-    C->>C: bufferedAssets -= amountUsed
+    C->>WQ: finalizeWithdrawals(available, currentRate)
+    WQ-->>C: (used, finalizedCount, totalAdjusted)
+    Note right of WQ: payout = shares * min(currentRate, lockedRate) / 1e18
+    C->>C: bufferedAssets -= used
 
     Note over C: Step 4: Initiate unstake (recomputed from current state)
     C->>WQ: totalPendingAssets()
@@ -197,9 +195,6 @@ sequenceDiagram
         C->>C: bufferedAssets -= stakedAmount
         C->>C: stakedPrincipal += stakedAmount
     end
-
-    Note over C: Step 6: Compute attester state
-    C->>SM: computeAttesterState()
 
     Note over C: On completion:
     C->>C: _lastRebalanceTimestamp = block.timestamp
@@ -246,8 +241,6 @@ sequenceDiagram
     participant WQ as WithdrawalQueue
     participant ST as StAztec
 
-    A->>SM: computeAttesterState()
-    Note right of SM: syncs attester states + caches staking data
     A->>C: updateAccounting()
     Note right of C: permissionless, requires rebalance step == Done
     C->>SAF: checkAccountingLiveness()

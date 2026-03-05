@@ -16,7 +16,6 @@ subgraph "Actors"
     anyone[Anyone]
     governanceActor[Governance]
     guardianActor[Guardian]
-    ollaOperatorActor[Olla Protocol Operator]
     stakingProviderActor[Staking Provider Admin]
 end
 
@@ -25,14 +24,12 @@ subgraph "Wallets"
     stakingProviderAdminWallet[Staking Provider Admin]
     stakingProviderRewardsWallet[Staking Provider Rewards]
     guardianWallet[Guardian]
-    ollaOperatorWallet[Olla Protocol Operator]
     governanceAdminWallet[Governance Admin]
     treasury[Governance Treasury]
     user --- userWallet
     stakingProviderActor --- stakingProviderAdminWallet
     stakingProviderActor --- stakingProviderRewardsWallet
     guardianActor --- guardianWallet
-    ollaOperatorActor --- ollaOperatorWallet
     governanceActor --- treasury
     governanceActor --- governanceAdminWallet
 end
@@ -95,13 +92,12 @@ vault -->|"mint / burn"| stAztec
 vault -->|"checkDepositAllowed / checkWithdrawalMinimum"| safety
 
 %% Permissionless operations (anyone can call)
-anyone -->|"finalizeExits()"| stkMan
-anyone -->|"computeAttesterState()"| stkMan
+anyone -->|"refreshAttesterState(address[])"| stkMan
 anyone -->|"rebalance() (cooldown-gated)"| core
 anyone -->|"updateAccounting()"| core
 
-%% Operator-only
-ollaOperatorWallet -->|"setAttesterStateMaxAge()"| stkMan
+%% refreshAttesterState finalizes exits via rollup
+stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, exitAmount)"| rollup
 
 %% Guardian control
 guardianWallet -->|"forceRebalanceReset()"| core
@@ -121,7 +117,6 @@ core -->|"unstake(amount)"| stkMan
 stkMan -->|"initiateWithdraw"| rollup
 
 core -->|"claimUnstakedFunds >Aztec< transferFrom(StakingManager, vault, unstakedAmount)"| stkMan
-stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, unstakedAmount)"| rollup
 
 core -->|"harvestRewards()"| stkMan
 stkMan -->|"getCanonicalRollup()"| rollupRegistry
@@ -142,7 +137,6 @@ oftAdapter <-->|"LayerZero messages"| oftDest
 
 style user fill:#900
 style anyone fill:#555
-style ollaOperatorActor stroke:#050,stroke-width:2px
 style stakingProviderActor fill:#009
 style rollup stroke:#ff6,stroke-width:2px
 style core stroke:#090,stroke-width:4px
@@ -237,10 +231,7 @@ stkMan -->|"deposit >Aztec< transferFrom(StakingManager, AztecRollup, stakeAmoun
 core -->|"unstake(amount)"| stkMan
 stkMan -->|"initiateWithdraw"| rollup
 
-%% Finalize exits (permissionless, separate from rebalance)
-stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, exitAmount)"| rollup
-
-%% Sweep unstaked funds during rebalance
+%% Sweep unstaked funds during rebalance (exits finalized via refreshAttesterState)
 core -->|"claimUnstakedFunds >Aztec< transferFrom(StakingManager, vault, balance)"| stkMan
 
 %% Rewards harvesting
@@ -311,30 +302,10 @@ end
 
 anyoneWallet -->|"rebalance() (cooldown-gated)"| core
 anyoneWallet -->|"updateAccounting()"| core
-anyoneWallet -->|"finalizeExits()"| stkMan
-anyoneWallet -->|"computeAttesterState()"| stkMan
+anyoneWallet -->|"refreshAttesterState(address[])"| stkMan
 
 style anyoneWallet fill:#555
 style core stroke:#090,stroke-width:4px
-style stkMan stroke:#090,stroke-width:3px
-```
-
-## Olla Protocol Operator
-
-Requires `OPERATOR_ROLE` on StakingManager for operational configuration.
-
-```mermaid
-flowchart LR
-
-ollaOperatorWallet[Operator Wallet]
-
-subgraph "Olla Staking Components"
-    stkMan[StakingManager]
-end
-
-ollaOperatorWallet -->|"setAttesterStateMaxAge()"| stkMan
-
-style ollaOperatorWallet stroke:#050,stroke-width:2px
 style stkMan stroke:#090,stroke-width:3px
 ```
 

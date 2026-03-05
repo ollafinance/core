@@ -1,6 +1,7 @@
 import type { WalletClient, PublicClient } from "viem";
 import type { AccountingScenario, DeploymentAddresses, ActionResult } from "../types.js";
-import { getOllaCore, getStakingManager, createUserWallet } from "../client.js";
+import { getOllaCore, createUserWallet, loadAbi } from "../client.js";
+import { findAllAttesters } from "./attesters.js";
 
 export async function executeAccounting(
   _scenario: AccountingScenario,
@@ -14,10 +15,19 @@ export async function executeAccounting(
     : clients.operatorWallet;
 
   const ollaCore = getOllaCore(addresses, callerWallet);
-  const stakingManager = getStakingManager(addresses, callerWallet);
 
   try {
-    await stakingManager.write.computeAttesterState([]);
+    const stakingManagerAbi = loadAbi("StakingManager");
+    const stakingManagerAddress = addresses.StakingManagerProxy as `0x${string}`;
+    const allAttesters = await findAllAttesters(clients.publicClient, stakingManagerAddress);
+    await callerWallet.writeContract({
+      address: stakingManagerAddress,
+      abi: stakingManagerAbi,
+      functionName: "refreshAttesterState",
+      args: [allAttesters],
+      chain: null,
+      account: callerWallet.account,
+    } as any);
     const txHash = await ollaCore.write.updateAccounting([]);
 
     return {

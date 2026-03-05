@@ -28,8 +28,6 @@ contract MockHarvestStakingManager is IStakingManager {
     IERC20 public rewardsToken;
     address public rewardsAccumulator;
     uint256 public harvestedRewards;
-    uint256 private _attesterStateLastUpdated = 1;
-    uint256 private _attesterStateMaxAge = type(uint256).max;
 
     function setRewardsToken(IERC20 token) external {
         rewardsToken = token;
@@ -45,9 +43,7 @@ contract MockHarvestStakingManager is IStakingManager {
 
     function harvestRewards() external override returns (uint256 harvested) {
         harvested = harvestedRewards;
-        // Actually transfer tokens to rewards vault to simulate real harvest
         if (harvested > 0 && address(rewardsToken) != address(0) && rewardsAccumulator != address(0)) {
-            // Cast to MockAztec/MaliciousAztec and mint tokens to this contract first, then transfer to vault
             MockAztec(address(rewardsToken)).mint(address(this), harvested);
             rewardsToken.transfer(rewardsAccumulator, harvested);
         }
@@ -62,21 +58,17 @@ contract MockHarvestStakingManager is IStakingManager {
         return IStakingProviderRegistry(address(0));
     }
 
+    function setGasThreshold(uint256) external override { }
+
     function stake(uint256) external pure override returns (uint256) {
         return 0;
-    }
-
-    function setGasThreshold(uint256 threshold) external pure override {
-        threshold;
     }
 
     function unstake(uint256) external pure override returns (uint256) {
         return 0;
     }
 
-    function finalizeExits() external pure override returns (uint256) {
-        return 0;
-    }
+    function refreshAttesterState(address[] calldata) external override { }
 
     function getUnstakedFunds() external pure override returns (uint256, uint256, bool) {
         return (0, 0, false);
@@ -86,31 +78,8 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function getSlashingDelta() external view override returns (uint256) {
-        if (_isAttesterStateStale()) {
-            revert StakingManager__AttesterStateStale(_attesterStateLastUpdated, _attesterStateMaxAge);
-        }
+    function getSlashingDelta() external pure override returns (uint256) {
         return 0;
-    }
-
-    function computeAttesterState() external override returns (uint256 slashingDelta, bool completed) {
-        uint256 lastUpdated = _attesterStateLastUpdated;
-        bool wasStale = _isAttesterStateStale();
-
-        _attesterStateLastUpdated = block.timestamp;
-        emit AttesterStateUpdated(0, 0, 0, 0, block.timestamp);
-        if (wasStale) {
-            emit AttesterStateStale(lastUpdated, _attesterStateMaxAge);
-        }
-
-        return (0, true);
-    }
-
-    function setAttesterStateMaxAge(uint256 maxAge) external override {
-        if (maxAge == 0) {
-            revert StakingManager__ZeroAmount();
-        }
-        _attesterStateMaxAge = maxAge;
     }
 
     function totalStaked() external pure override returns (uint256) {
@@ -133,18 +102,6 @@ contract MockHarvestStakingManager is IStakingManager {
         return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
     }
 
-    function getAttesterStateLiveness()
-        external
-        view
-        override
-        returns (uint256 lastUpdated, uint256 maxAge, bool isStale)
-    {
-        lastUpdated = _attesterStateLastUpdated;
-        maxAge = _attesterStateMaxAge;
-        isStale = _isAttesterStateStale();
-        return (lastUpdated, maxAge, isStale);
-    }
-
     function getActivatedAttesterCount() external pure override returns (uint256) {
         return 0;
     }
@@ -157,19 +114,7 @@ contract MockHarvestStakingManager is IStakingManager {
         return false;
     }
 
-    function getUnstakeCursor() external pure override returns (uint256) {
-        return 0;
-    }
-
     function initialize(IERC20, address, address, address, address, address) external pure override { }
-
-    function _isAttesterStateStale() internal view returns (bool) {
-        uint256 lastUpdated = _attesterStateLastUpdated;
-        if (lastUpdated == 0) {
-            return true;
-        }
-        return block.timestamp - lastUpdated > _attesterStateMaxAge;
-    }
 }
 
 contract OllaCoreReentrancyTest is Test {
@@ -335,7 +280,7 @@ contract OllaCoreReentrancyTest is Test {
 
         // Finalize the request so the claim path reaches the queue callback
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.claimRequestById, (requestId)));
         withdrawalQueue.setReenterOnClaim(true);
@@ -354,7 +299,7 @@ contract OllaCoreReentrancyTest is Test {
 
         // Finalize the request so the claim path reaches the queue callback
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         withdrawalQueue.setReentry(address(this), abi.encodeCall(this.assertRequestCleared, (bob, requestId)));
         withdrawalQueue.setReenterOnClaim(true);

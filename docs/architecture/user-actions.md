@@ -50,12 +50,13 @@ sequenceDiagram
     WQ->>WQ: enqueue withdrawalRequest (FIFO)
 
     Note over U,WQ: Phase 2 - later, after liquidity and operator action
+    Note over WQ: If slashing occurred after request, finalization adjusts:
+    Note over WQ: payout = shares * min(currentRate, lockedRate) / 1e18
 
     U->>C: claimRequestById(requestId)
     C->>WQ: claimWithdrawal(requestId)
     WQ-->>C: assetsClaimed
-    Note right of C: require assetsClaimed == assetsExpected
-    C->>AZ: transfer(recipient, assetsExpected)
+    C->>AZ: transfer(recipient, assetsClaimed)
 ```
 
 ## Instant redemption

@@ -13,17 +13,22 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     function test_Unstake_InitiatesWithdrawal() external {
         _setupStakedAttester();
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
-        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount);
+        assertEq(
+            stateAfter.stakedAmount,
+            stateBefore.stakedAmount - ACTIVATION_THRESHOLD,
+            "stakedAmount should decrease by unstaked amount"
+        );
+        assertEq(
+            stateAfter.pendingUnstakeAmount,
+            ACTIVATION_THRESHOLD,
+            "pendingUnstakeAmount should increase by unstaked amount"
+        );
         assertEq(stakingManager.getActivatedAttesterCount(), 0);
         assertEq(stakingManager.getPendingUnstakeCount(), 1);
     }
@@ -47,22 +52,18 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
 
         vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeFinalized(keys[0].attester, ACTIVATION_THRESHOLD);
-        stakingManager.finalizeExits();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         vm.prank(core);
         stakingManager.getUnstakedFunds();
     }
 
     function test_Unstake_NoStaked_ReturnsZero() external {
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
         vm.prank(core);
         uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(unstakedAmount, 0, "unstake should return zero when nothing is staked");
         assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "staked amount should remain unchanged");
@@ -89,13 +90,14 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         vm.prank(core);
         uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(unstakedAmount, ACTIVATION_THRESHOLD * 2, "unstake should return requested amount");
-        // stakedAmount includes exiting attesters (all 3 are still counted)
-        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3);
+        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 1, "stakedAmount should decrease by unstaked amount");
+        assertEq(
+            state.pendingUnstakeAmount,
+            ACTIVATION_THRESHOLD * 2,
+            "pendingUnstakeAmount should increase by unstaked amount"
+        );
         assertEq(stakingManager.getActivatedAttesterCount(), 1);
         assertEq(stakingManager.getPendingUnstakeCount(), 2);
     }
@@ -103,19 +105,19 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     function test_Unstake_ExceedsStaked_ClampsAndUpdates() external {
         _setupMultipleStakedAttesters(2);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
         vm.prank(core);
         uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(unstakedAmount, stateBefore.stakedAmount, "unstake should clamp to staked amount");
-        // stakedAmount still includes exiting attesters
-        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "staked amount includes exiting attesters");
+        assertEq(stateAfter.stakedAmount, 0, "stakedAmount should be zero after all attesters exited");
+        assertEq(
+            stateAfter.pendingUnstakeAmount,
+            stateBefore.stakedAmount,
+            "pendingUnstakeAmount should equal the total unstaked amount"
+        );
         assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be unstaked");
         assertEq(stakingManager.getPendingUnstakeCount(), 2, "pending count should match attesters");
     }
@@ -233,56 +235,6 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         assertEq(totalUnstaked, requested, "total unstaked should equal requested");
     }
 
-    function test_Unstake_Bounded_CursorTracksProgress() external {
-        uint256 attesterCount = 4;
-        _setupMultipleStakedAttesters(attesterCount);
-
-        uint256 requested = ACTIVATION_THRESHOLD * attesterCount;
-
-        vm.prank(core);
-        stakingManager.setGasThreshold(180_000);
-
-        uint256 snapshotId = vm.snapshotState();
-        uint256 selectedGas;
-        uint256[5] memory gasOptions = [uint256(220_000), 240_000, 260_000, 280_000, 300_000];
-
-        for (uint256 i; i < gasOptions.length; ++i) {
-            vm.revertToState(snapshotId);
-            vm.prank(core);
-            (bool success, bytes memory data) =
-                address(stakingManager).call{ gas: gasOptions[i] }(abi.encodeCall(stakingManager.unstake, (requested)));
-            if (!success) {
-                continue;
-            }
-            uint256 unstakedCandidate = abi.decode(data, (uint256));
-            if (unstakedCandidate > 0 && unstakedCandidate < requested) {
-                selectedGas = gasOptions[i];
-                break;
-            }
-        }
-
-        assertGt(selectedGas, 0, "should find gas stipend for partial unstake");
-
-        vm.revertToState(snapshotId);
-
-        uint256 cursorBefore = stakingManager.getUnstakeCursor();
-
-        vm.prank(core);
-        stakingManager.unstake{ gas: selectedGas }(requested);
-
-        uint256 cursorAfter = stakingManager.getUnstakeCursor();
-        uint256 remaining = stakingManager.getActivatedAttesterCount();
-        assertLe(cursorAfter, remaining, "cursor should stay within activated bounds");
-        assertEq(cursorBefore, 0, "cursor should start at 0");
-
-        vm.prank(core);
-        stakingManager.setGasThreshold(1);
-        vm.prank(core);
-        stakingManager.unstake(requested);
-
-        assertEq(stakingManager.getUnstakeCursor(), 0, "cursor should reset after completion");
-    }
-
     function test_IsUnstakePending() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
@@ -333,12 +285,17 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         vm.prank(core);
         stakingManager.unstake(unstakeAmount);
 
-        vm.prank(defaultAdmin);
-        stakingManager.computeAttesterState();
-
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
-        // stakedAmount includes exiting attesters (all stakeCount are still counted)
-        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * stakeCount);
+        assertEq(
+            state.stakedAmount,
+            ACTIVATION_THRESHOLD * (stakeCount - unstakeCount),
+            "stakedAmount should decrease by unstaked amount"
+        );
+        assertEq(
+            state.pendingUnstakeAmount,
+            ACTIVATION_THRESHOLD * unstakeCount,
+            "pendingUnstakeAmount should increase by unstaked amount"
+        );
         assertEq(stakingManager.getActivatedAttesterCount(), stakeCount - unstakeCount);
     }
 }

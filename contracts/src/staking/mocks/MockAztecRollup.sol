@@ -231,6 +231,12 @@ contract MockAztecRollup is IMockAztecRollup {
         claimShouldFail[_sequencer] = _shouldFail;
     }
 
+    /// @inheritdoc IMockAztecRollup
+    function clearAttester(address _attester) external override {
+        stakes[_attester] = 0;
+        delete _exits[_attester];
+    }
+
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/

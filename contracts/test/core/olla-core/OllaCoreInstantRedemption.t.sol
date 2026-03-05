@@ -419,9 +419,6 @@ contract OllaCoreInstantRedemptionTest is Test {
         vm.prank(alice);
         vault.instantRedeem(sharesToRedeem, bob, 0);
 
-        IOllaCore.AccountingState memory stateAfter = core.accountingState();
-        // After sync (150) minus grossAssets
-        uint256 rate = core.exchangeRate();
         // Note: rate may have changed slightly due to totalAssets increase from sync
         // But the key point is buffer should be > depositAmount - grossAssets
         assertGt(vault.bufferedAssets(), depositAmount - sharesToRedeem, "buffer reflects sync before deduction");
@@ -551,7 +548,7 @@ contract OllaCoreInstantRedemptionTest is Test {
      19. availableForInstantRedemption — FULLY ENCUMBERED
     //////////////////////////////////////////////////////////////*/
 
-    function test_AvailableForInstantRedemption_ReturnsZeroWhenFullyEncumbered() external {
+    function test_AvailableForInstantRedemption_ReturnsZeroWhenFullyEncumbered() external view {
         // available = bufferedAssets.
         // A fresh vault (no deposits) has bufferedAssets = 0.
         assertEq(vault.availableForInstantRedemption(), 0, "zero when no deposits");
@@ -706,7 +703,7 @@ contract OllaCoreInstantRedemptionTest is Test {
 
         // Finalize the request before claiming
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         // Claim should work
         vm.prank(alice);
@@ -728,11 +725,9 @@ contract OllaCoreInstantRedemptionTest is Test {
 
         // Run rebalance — should not revert
         vm.prank(governance);
-        (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
-            core.rebalance();
+        (,,, uint256 resultingBuffer) = core.rebalance();
 
         // Accounting should be consistent
-        IOllaCore.AccountingState memory stateAfter = core.accountingState();
         assertEq(vault.bufferedAssets(), resultingBuffer, "accounting consistent after rebalance");
     }
 

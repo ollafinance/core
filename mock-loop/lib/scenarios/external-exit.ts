@@ -59,13 +59,13 @@ export async function executeExternalExit(
       0n, // exitableAt = 0 (immediately finalizable)
     ]);
 
-    // Process the exit via computeAttesterState
+    // Process the exit via refreshAttesterState
     // This detects the exit and transitions the attester to Exiting status
     const computeTx = await clients.operatorWallet.writeContract({
       address: stakingManagerAddress,
       abi: stakingManagerAbi,
-      functionName: "computeAttesterState",
-      args: [],
+      functionName: "refreshAttesterState",
+      args: [[attester]],
       gas: 500_000n,
       chain: null,
       account: clients.operatorWallet.account,

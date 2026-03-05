@@ -18,10 +18,9 @@ export async function executeFinalizeExits(
 
     const exitCountBefore = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
     // Use explicit gas limit to avoid gas estimation undercount.
-    // StakingManager._finalizeExits has a gas-bounded loop (gasleft < gasThreshold)
-    // that breaks early without reverting, causing eth_estimateGas to return a
-    // value too low for the loop to actually reach the exiting attester.
-    const txHash = await stakingManager.write.finalizeExits([], { gas: 1_000_000n });
+    // StakingManager._refreshSingleAttester calls rollup.finalizeWithdraw which
+    // may have complex gas requirements.
+    const txHash = await stakingManager.write.refreshAttesterState([[]], { gas: 1_000_000n });
     const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: txHash });
     const exitCountAfter = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
 

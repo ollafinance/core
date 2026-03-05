@@ -22,6 +22,9 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @notice Total pending assets (not enforced in mock).
     uint256 public override totalPendingAssets;
 
+    /// @notice Total pending shares (not enforced in mock).
+    uint256 public override totalPendingShares;
+
     /// @notice Last request snapshot recorded.
     WithdrawalRequest public lastRequest;
 
@@ -75,15 +78,23 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         lastRequest = request;
         _requests[requestId] = request;
         totalPendingAssets += assetsExpected;
+        totalPendingShares += shares;
         return requestId;
     }
 
     /// @notice Records finalize calls and returns available amount.
     /// @param available The available assets to finalize.
+    /// @param currentRate The current exchange rate (ignored in mock).
     /// @return used The assets used for finalization.
     /// @return finalizedCount The number of requests finalized.
-    function finalizeWithdrawals(uint256 available) external override returns (uint256 used, uint256 finalizedCount) {
+    /// @return totalAdjusted Always 0 in mock.
+    function finalizeWithdrawals(uint256 available, uint256 currentRate)
+        external
+        override
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
+    {
         lastAvailable = available;
+        currentRate; // silence unused warning
         used = 0;
         finalizedCount = 0;
         uint256 id = nextPendingId;
@@ -99,7 +110,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         if (totalPendingAssets >= used) {
             totalPendingAssets -= used;
         }
-        return (used, finalizedCount);
+        return (used, finalizedCount, 0);
     }
 
     /// @notice Marks a request as claimed.
