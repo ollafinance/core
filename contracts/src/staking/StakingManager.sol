@@ -302,7 +302,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function hasExitableUnstakes() external view override returns (bool) {
-        return _aggregateState.withdrawableAmount != 0;
+        return _pendingClaimAmount > 0;
     }
 
     /// @inheritdoc IStakingManager
@@ -445,9 +445,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param stakedAmount The amount staked for this attester.
     function _setActive(address attester, uint256 stakedAmount) internal {
         AttesterInfo storage info = _getOrCreateAttester(attester);
+        uint256 oldAmount = info.stakedAmount;
         info.stakedAmount = stakedAmount;
         _setAttesterStatus(attester, InternalAttesterStatus.Active);
-        _aggregateState.stakedAmount += stakedAmount;
+        _aggregateState.stakedAmount = _aggregateState.stakedAmount + stakedAmount - oldAmount;
     }
 
     /// @notice Processes a single attester unstake attempt.
@@ -476,6 +477,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         _setAttesterStatus(attester, InternalAttesterStatus.Exiting);
         info.stakedAmount = 0;
+        info.pendingExitAmount = exitAmount;
 
         // Update running state
         _aggregateState.stakedAmount -= exitAmount;
@@ -528,6 +530,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (info.status == InternalAttesterStatus.Active && view_.exit.exists) {
             _setAttesterStatus(attester, InternalAttesterStatus.Exiting);
             uint256 exitAmount = view_.exit.amount;
+            info.pendingExitAmount = exitAmount;
             _aggregateState.pendingUnstakeAmount += exitAmount;
         }
 
@@ -542,11 +545,19 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         // Handle Exiting attesters
         if (info.status == InternalAttesterStatus.Exiting) {
             if (!view_.exit.exists) {
-                // Externally finalized — remove from registry
+                // Externally finalized — reconcile accounting and remove
+                uint256 pendingExit = info.pendingExitAmount;
+                if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
+                    _aggregateState.pendingUnstakeAmount -= pendingExit;
+                } else {
+                    _aggregateState.pendingUnstakeAmount = 0;
+                }
+                _pendingClaimAmount += pendingExit;
                 _removeAttester(attester);
             } else if (_isExitExitable(view_)) {
                 // Exitable — finalize the exit
                 uint256 exitAmount = view_.exit.amount;
+                uint256 pendingExit = info.pendingExitAmount;
 
                 _removeAttester(attester);
                 emit UnstakeFinalized(attester, exitAmount);
@@ -555,8 +566,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
                 _pendingClaimAmount += exitAmount;
 
-                if (_aggregateState.pendingUnstakeAmount >= exitAmount) {
-                    _aggregateState.pendingUnstakeAmount -= exitAmount;
+                if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
+                    _aggregateState.pendingUnstakeAmount -= pendingExit;
+                } else {
+                    _aggregateState.pendingUnstakeAmount = 0;
                 }
                 if (_aggregateState.withdrawableAmount >= exitAmount) {
                     _aggregateState.withdrawableAmount -= exitAmount;

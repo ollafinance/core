@@ -35,10 +35,12 @@ interface IStakingManager {
     /// @notice Tracks an attester with their originally staked amount and last seen status.
     /// @param attester The attester address.
     /// @param stakedAmount The amount originally staked (activation threshold at stake time).
+    /// @param pendingExitAmount The amount added to aggregate pendingUnstakeAmount for this attester.
     /// @param status The local registry status.
     struct AttesterInfo {
         address attester;
         uint256 stakedAmount;
+        uint256 pendingExitAmount;
         InternalAttesterStatus status;
     }
 
