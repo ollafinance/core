@@ -2,7 +2,7 @@
  * Permissionless Rebalance Test Config
  *
  * Exercises the FULL rebalance lifecycle with permissionless callers:
- *   stake → unstake → finalizeExits → pullUnstaked → finalizeWithdrawals → claim
+ *   stake → unstake → refreshAttesterState → pullUnstaked → finalizeWithdrawals → claim
  *
  * Key design choices:
  * - rateBps=1 (0.01%/sec) so rewards don't flood the buffer, forcing unstaking
@@ -15,10 +15,10 @@
  * 1. Permissionless rebalance — rotating non-operator callers (accounts 2/3/4)
  * 2. Permissionless accounting — different caller from rebalance each cycle
  * 3. Permissionless computeAttesterState — called by rebalance/accounting callers
- * 4. Permissionless finalizeExits — called standalone by account 2
+ * 4. Permissionless refreshAttesterState — called standalone by account 2
  * 5. Exchange rate monotonically non-decreasing
  * 6. Cooldown enforcement blocks premature rebalance
- * 7. Full unstake flow: InitiateUnstake → finalizeExits → PullUnstaked → FinalizeWithdrawals
+ * 7. Full unstake flow: InitiateUnstake → refreshAttesterState → PullUnstaked → FinalizeWithdrawals
  *
  * Timeline:
  *  Tick  1: Setup — provider keys, mock rewards, user deposit (acct 1: 200k)

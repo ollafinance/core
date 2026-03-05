@@ -38,7 +38,7 @@ export async function executeRebalance(
   const gasBumpSteps = [1_000_000n, 2_500_000n, 5_000_000n, 10_000_000n];
   let gasBumpIndex = 0;
   let chainGasLimit: bigint | null = null;
-  let finalizeExitsRetries = 0;
+  let refreshAttesterRetries = 0;
   const MAX_FINALIZE_RETRIES = 3;
 
   try {
@@ -206,22 +206,22 @@ export async function executeRebalance(
         progress.stakeRemaining === lastProgress.stakeRemaining &&
         progress.unstakeRemaining === lastProgress.unstakeRemaining
       ) {
-        // When stuck at PullUnstaked, call finalizeExits() to move exiting attesters
+        // When stuck at PullUnstaked, call refreshAttesterState() to move exiting attesters
         // through the exit queue, then retry the rebalance.
-        if (progress.step === REBALANCE_STEP_PULL_UNSTAKED && finalizeExitsRetries < MAX_FINALIZE_RETRIES) {
-          finalizeExitsRetries++;
+        if (progress.step === REBALANCE_STEP_PULL_UNSTAKED && refreshAttesterRetries < MAX_FINALIZE_RETRIES) {
+          refreshAttesterRetries++;
           const stakingManager = getStakingManager(addresses, callerWallet);
           const stakingManagerRead = getStakingManager(addresses, clients.publicClient);
           const exitCountBefore = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
           // Use explicit gas limit — see finalize-exits.ts for rationale.
-          const finalizeTx = await stakingManager.write.finalizeExits([], { gas: 1_000_000n });
+          const finalizeTx = await stakingManager.write.refreshAttesterState([[]], { gas: 1_000_000n });
           await clients.publicClient.waitForTransactionReceipt({ hash: finalizeTx });
           const exitCountAfter = await stakingManagerRead.read.getPendingUnstakeCount() as bigint;
           iterations.push(finalizeTx);
           stepHistory.push({
             iter: iteration,
             step: progress.step,
-            stepName: `FinalizeExits (inline) exits:${exitCountBefore}->${exitCountAfter}`,
+            stepName: `RefreshAttesterState (inline) exits:${exitCountBefore}->${exitCountAfter}`,
             stakeRemaining: progress.stakeRemaining.toString(),
             unstakeRemaining: progress.unstakeRemaining.toString(),
           });
