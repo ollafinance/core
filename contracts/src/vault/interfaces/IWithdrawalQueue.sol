@@ -131,11 +131,11 @@ interface IWithdrawalQueue {
 
     /// @notice Returns the next request id to assign.
     /// @return requestId The next request id.
-    function nextRequestId() external view returns (uint256 requestId);
+    function nextRequestId() external view returns (uint64 requestId);
 
     /// @notice Returns the next pending request id to finalize.
     /// @return requestId The next pending request id.
-    function nextPendingId() external view returns (uint256 requestId);
+    function nextPendingId() external view returns (uint64 requestId);
 
     /// @notice Returns the total pending assets.
     /// @return totalPending The total assets for unfinalized requests.
@@ -156,7 +156,7 @@ interface IWithdrawalQueue {
 
     /// @notice Returns the gas threshold for the finalization loop.
     /// @return The gas threshold.
-    function gasThreshold() external view returns (uint256);
+    function gasThreshold() external view returns (uint32);
 
     /// @notice Returns the vault address.
     /// @return The vault contract address.

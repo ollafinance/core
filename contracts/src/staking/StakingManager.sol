@@ -7,6 +7,7 @@ import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { EnumerableSet } from "@oz/utils/structs/EnumerableSet.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
@@ -51,24 +52,23 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice The StakingProviderRegistry contract.
     IStakingProviderRegistry public stakingProviderRegistry;
 
-    /// @dev Count of active attesters in the registry.
-    uint256 private _activeCount;
-
-    /// @dev Count of exiting attesters in the registry.
-    uint256 private _exitingCount;
-
     /// @dev Tracks finalized but unclaimed exit amounts for correct accounting.
     uint256 private _pendingClaimAmount;
 
+    /// @dev Count of active attesters in the registry.
+    uint64 private _activeCount;
+
+    /// @dev Count of exiting attesters in the registry.
+    uint64 private _exitingCount;
+
+    /// @dev Total number of registered attesters in the mapping.
+    uint64 private _attesterCount;
+
     /// @dev Gas threshold for bounded staking batch work.
-    // solhint-disable-next-line private-vars-leading-underscore
-    uint256 private gasThreshold;
+    uint32 private _gasThreshold;
 
     /// @dev Mapping-based attester registry. O(1) access by address.
     mapping(address attester => AttesterInfo info) private _attesterMap;
-
-    /// @dev Total number of registered attesters in the mapping.
-    uint256 private _attesterCount;
 
     /// @dev Incrementally maintained aggregate staking state accumulator.
     StakingState private _aggregateState;
@@ -78,7 +78,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Storage gap for future upgrades.
     // slither-disable-next-line unused-state
-    uint256[49] private __gap;
+    uint256[52] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -154,7 +154,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         rewardsAccumulator = rewardsAccumulator_;
         core = core_;
         stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
-        gasThreshold = 50_000;
+        _gasThreshold = 50_000;
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
     }
@@ -175,8 +175,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function setGasThreshold(uint256 threshold) external override onlyCore {
         if (threshold == 0) revert StakingManager__ZeroAmount();
         if (threshold > _MAX_GAS_THRESHOLD) revert StakingManager__InvalidParameter();
-        uint256 previousThreshold = gasThreshold;
-        gasThreshold = threshold;
+        uint256 previousThreshold = _gasThreshold;
+        _gasThreshold = SafeCast.toUint32(threshold);
         emit GasThresholdUpdated(previousThreshold, threshold);
     }
 
@@ -600,7 +600,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         returns (uint256 stakedCount)
     {
         for (uint256 i; i < attestersToStakeTo; ++i) {
-            if (gasleft() < gasThreshold) {
+            if (gasleft() < _gasThreshold) {
                 break;
             }
             KeyStore memory keyStore = stakingProviderRegistry.getAttesterKeystore();

@@ -37,7 +37,7 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
 
     function setGasThreshold(uint256) external override { }
 
-    function gasThreshold() external pure override returns (uint256) {
+    function gasThreshold() external pure override returns (uint32) {
         return 50_000;
     }
 
@@ -63,11 +63,11 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
         return 0;
     }
 
-    function nextRequestId() external pure override returns (uint256) {
+    function nextRequestId() external pure override returns (uint64) {
         return 1;
     }
 
-    function nextPendingId() external pure override returns (uint256) {
+    function nextPendingId() external pure override returns (uint64) {
         return 1;
     }
 
@@ -106,7 +106,7 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
 
     function setGasThreshold(uint256) external override { }
 
-    function gasThreshold() external pure override returns (uint256) {
+    function gasThreshold() external pure override returns (uint32) {
         return 50_000;
     }
 
@@ -132,11 +132,11 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
         return 0;
     }
 
-    function nextRequestId() external pure override returns (uint256) {
+    function nextRequestId() external pure override returns (uint64) {
         return 1;
     }
 
-    function nextPendingId() external pure override returns (uint256) {
+    function nextPendingId() external pure override returns (uint64) {
         return 1;
     }
 
