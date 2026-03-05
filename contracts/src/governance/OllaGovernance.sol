@@ -291,6 +291,8 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
                           INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    // slither-disable-start calls-loop
+    // slither-disable-start reentrancy-events
     /// @notice Propagates DEFAULT_ADMIN_ROLE changes to all satellite contracts.
     /// @param oldGovernance The old governance address to revoke from.
     /// @param newGovernance The new governance address to grant to.
@@ -301,20 +303,29 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         address sm = IOllaCore(coreAddr).stakingManager();
         address spr = address(IStakingManager(sm).stakingProviderRegistry());
 
+        address[4] memory satellites = [vaultAddr, rv, sm, spr];
+
         // Grant DEFAULT_ADMIN_ROLE to new governance on all satellites
-        AccessControlUpgradeable(vaultAddr).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-        AccessControlUpgradeable(rv).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-        AccessControlUpgradeable(sm).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-        AccessControlUpgradeable(spr).grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
+        for (uint256 i; i < satellites.length; ++i) {
+            try AccessControlUpgradeable(satellites[i]).grantRole(DEFAULT_ADMIN_ROLE, newGovernance) { }
+            catch {
+                emit AdminRolePropagationFailed(satellites[i], newGovernance, true);
+            }
+        }
 
         // Revoke from old governance
         if (oldGovernance != address(0) && oldGovernance != newGovernance) {
-            AccessControlUpgradeable(vaultAddr).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-            AccessControlUpgradeable(rv).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-            AccessControlUpgradeable(sm).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
-            AccessControlUpgradeable(spr).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
+            for (uint256 i; i < satellites.length; ++i) {
+                try AccessControlUpgradeable(satellites[i]).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance) { }
+                catch {
+                    emit AdminRolePropagationFailed(satellites[i], oldGovernance, false);
+                }
+            }
         }
     }
+
+    // slither-disable-end reentrancy-events
+    // slither-disable-end calls-loop
 
     /// @notice Authorizes UUPS upgrades. Only the timelock (self) can upgrade this contract.
     /// @param newImplementation The new implementation address to authorize.
