@@ -17,7 +17,7 @@
 | Variable | Required | Environments | Description |
 |---|---|---|---|
 | `DEPLOY_ENV` | Yes | All | One of `local`, `testnet-mocked`, `testnet` |
-| `PRIVATE_KEY` | Yes (testnet) | `testnet`, `testnet-mocked` | Deployer EOA private key (hex, no `0x` prefix) |
+| `PRIVATE_KEY` | Yes (non-local) | `testnet`, `testnet-mocked` | Deployer EOA private key (hex, no `0x` prefix) |
 | `LZ_ENDPOINT` | Optional | `testnet` | LayerZero EndpointV2 address for stAztec bridging. If unset, OFT adapter is skipped. |
 | `PROVIDER_KEY_COUNT` | Optional | `local`, `testnet-mocked` | Number of dummy provider keys to seed (default: 5) |
 
