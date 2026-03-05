@@ -244,7 +244,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         // Finalize requests before claiming
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         vm.prank(alice);
         vault.claimRequestById(secondRequestId);
@@ -308,7 +308,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         // Finalize requests before claiming
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         uint256 bobBalanceBefore = asset.balanceOf(bob);
         uint256 aliceBalanceBefore = asset.balanceOf(alice);
@@ -342,7 +342,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         // Finalize request before claiming
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         uint256 balanceBefore = asset.balanceOf(bob);
 

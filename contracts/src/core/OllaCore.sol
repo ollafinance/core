@@ -725,7 +725,7 @@ contract OllaCore is
         uint256 finalizedCount;
         // Trusted Vault; finalizes pending withdrawal queue entries.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
-        (finalizedAmount, finalizedCount) = vaultRef.finalizeWithdrawals(available);
+        (finalizedAmount, finalizedCount) = vaultRef.finalizeWithdrawals(available, _withdrawalRate(vaultRef));
 
         emit WithdrawalFinalized(available, finalizedAmount);
         return finalizedAmount;
@@ -1173,6 +1173,19 @@ contract OllaCore is
     ///      The Vault delegates pricing to Core via cross-contract calls to avoid circular dependencies.
     function _exchangeRate() internal view returns (uint256) {
         return (totalAssets() + 1).mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + 1, Math.Rounding.Floor);
+    }
+
+    /// @notice Computes the exchange rate for withdrawal queue finalization.
+    /// @dev Uses gross total assets (before subtracting pending withdrawals) and gross total supply
+    ///      (including shares burned for pending requests). This ensures the rate reflects the true
+    ///      backing per share for adjustment after slashing, matching the rate stored at request time.
+    /// @param vaultRef The vault reference.
+    /// @return The withdrawal-safe exchange rate.
+    function _withdrawalRate(IOllaVault vaultRef) internal view returns (uint256) {
+        uint256 buffered = vaultRef.bufferedAssets();
+        uint256 grossAssets = _computeTotalAssets(_accountingState, buffered, 0);
+        uint256 grossSupply = _modules.stAztec.totalSupply() + vaultRef.pendingWithdrawalShares();
+        return (grossAssets + 1).mulDiv(_EXCHANGE_RATE_SCALE, grossSupply + 1, Math.Rounding.Floor);
     }
 
     /// @notice Converts a share amount to assets using floor rounding.

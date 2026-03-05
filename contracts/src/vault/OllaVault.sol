@@ -379,7 +379,7 @@ contract OllaVault is
 
     // solhint-disable function-max-lines
     /// @inheritdoc IOllaVault
-    function finalizeWithdrawals(uint256 availableAssets)
+    function finalizeWithdrawals(uint256 availableAssets, uint256 currentRate)
         external
         override
         onlyRole(CORE_ROLE)
@@ -398,11 +398,12 @@ contract OllaVault is
         if (queued == 0) return (0, 0);
 
         uint256 prevPending = queue.nextUnfinalized();
-        (finalizedAmount, finalizedCount) = queue.finalizeWithdrawals(availableAssets);
+        uint256 totalAdjusted;
+        (finalizedAmount, finalizedCount, totalAdjusted) = queue.finalizeWithdrawals(availableAssets, currentRate);
 
         uint256 queuedAfter = queue.totalPendingAssets();
-        if (queued - queuedAfter != finalizedAmount) {
-            revert OllaVault__FinalizeAmountMismatch(queued - queuedAfter, finalizedAmount);
+        if (queued - queuedAfter != finalizedAmount + totalAdjusted) {
+            revert OllaVault__FinalizeAmountMismatch(queued - queuedAfter, finalizedAmount + totalAdjusted);
         }
 
         uint256 buffered = _bufferedAssets;
@@ -418,10 +419,17 @@ contract OllaVault is
 
         // Nothing finalized; short circuit.
         // slither-disable-next-line incorrect-equality
-        if (finalizedAmount == 0) return (0, 0);
+        if (finalizedAmount == 0 && totalAdjusted == 0) return (0, 0);
 
-        _bufferedAssets = buffered - finalizedAmount;
-        _finalizedUnclaimedAssets += finalizedAmount;
+        if (finalizedAmount > 0) {
+            _bufferedAssets = buffered - finalizedAmount;
+            _finalizedUnclaimedAssets += finalizedAmount;
+        }
+
+        // Correct flow accounting: slashing adjustments reduce the withdrawal liability.
+        if (totalAdjusted > 0) {
+            cumulativeWithdrawals -= totalAdjusted;
+        }
 
         // Update per-controller claimable shares for O(1) maxRedeem.
         // slither-disable-start calls-loop
@@ -648,6 +656,11 @@ contract OllaVault is
     /// @return The current pending withdrawal assets.
     function pendingWithdrawalAssets() external view override returns (uint256) {
         return _modules.withdrawalQueue.totalPendingAssets();
+    }
+
+    /// @inheritdoc IOllaVault
+    function pendingWithdrawalShares() external view override returns (uint256) {
+        return _modules.withdrawalQueue.totalPendingShares();
     }
 
     /// @notice Converts assets to shares (delegates to Core).

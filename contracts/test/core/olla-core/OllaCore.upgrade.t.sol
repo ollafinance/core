@@ -246,7 +246,7 @@ contract OllaCoreUpgradeTest is Test {
 
         // Finalize the request before claiming (ERC-7540 requires finalization)
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
 
         vm.prank(bob);
         uint256 claimedAssets = vault.claimRequestById(requestId);
