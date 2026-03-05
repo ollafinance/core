@@ -189,7 +189,7 @@ interface IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Refreshes cached state for specific attesters by reading the rollup.
-    /// @dev Permissionless — anyone can call. Reads rollup state (source of truth) and
+    /// @dev Permissionless -- anyone can call. Reads rollup state (source of truth) and
     ///      delta-updates the aggregate accumulator. Also finalizes exits when exitable.
     ///      Idempotent: calling twice for the same attester in the same block is safe.
     /// @param attesters The attester addresses to refresh.

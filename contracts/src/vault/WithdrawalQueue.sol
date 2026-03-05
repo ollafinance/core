@@ -5,6 +5,7 @@ import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUp
 import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
@@ -41,10 +42,13 @@ contract WithdrawalQueue is
     address public override vault;
 
     /// @notice Next request id to assign.
-    uint256 public override nextRequestId;
+    uint64 public override nextRequestId;
 
     /// @notice Next pending request id to finalize.
-    uint256 public override nextPendingId;
+    uint64 public override nextPendingId;
+
+    /// @notice Gas threshold used to gate the finalization loop.
+    uint32 private _gasThreshold;
 
     /// @notice Tracks all withdrawal requests.
     mapping(uint256 requestId => WithdrawalRequest request) private _requests;
@@ -52,18 +56,15 @@ contract WithdrawalQueue is
     /// @notice Total assets outstanding across unfinalized requests.
     uint256 public override totalPendingAssets;
 
-    /// @notice Gas threshold used to gate the finalization loop.
-    uint256 private _gasThreshold;
-
     /// @notice Total shares outstanding across unfinalized requests (burned but not yet finalized).
     uint256 public override totalPendingShares;
 
     /// @notice Storage gap for upgradability.
-    /// @dev State variables occupy 7 slots. When adding new state variables, append them above
+    /// @dev State variables occupy 5 slots. When adding new state variables, append them above
     ///      this gap and reduce its length by the number of slots consumed.
     // Reserved storage gap for future upgrades; intentionally unused.
     // slither-disable-next-line unused-state
-    uint256[43] private __gap;
+    uint256[45] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   ERRORS
@@ -111,7 +112,7 @@ contract WithdrawalQueue is
         vault = vault_;
         nextRequestId = 1;
         nextPendingId = 1;
-        _gasThreshold = gasThreshold_;
+        _gasThreshold = SafeCast.toUint32(gasThreshold_);
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, admin_);
     }
@@ -125,7 +126,7 @@ contract WithdrawalQueue is
             revert WithdrawalQueue__InvalidParameter();
         }
         uint256 oldThreshold = _gasThreshold;
-        _gasThreshold = threshold;
+        _gasThreshold = SafeCast.toUint32(threshold);
         emit GasThresholdUpdated(oldThreshold, threshold);
     }
 
@@ -148,7 +149,7 @@ contract WithdrawalQueue is
         }
 
         requestId = nextRequestId;
-        nextRequestId = requestId + 1;
+        ++nextRequestId;
         totalPendingAssets += assetsExpected;
         totalPendingShares += shares;
 
@@ -238,7 +239,7 @@ contract WithdrawalQueue is
 
         totalPendingAssets = pendingAssets;
         totalPendingShares = pendingShares_;
-        nextPendingId = currentId;
+        nextPendingId = SafeCast.toUint64(currentId);
         return (used, finalizedCount, totalAdjusted);
     }
 
@@ -286,7 +287,7 @@ contract WithdrawalQueue is
     }
 
     /// @inheritdoc IWithdrawalQueue
-    function gasThreshold() external view override returns (uint256) {
+    function gasThreshold() external view override returns (uint32) {
         return _gasThreshold;
     }
 

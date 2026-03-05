@@ -87,7 +87,7 @@ contract OllaCoreBoundsValidationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                  INSTANT REDEMPTION FEE — REVERT TESTS
+                  INSTANT REDEMPTION FEE -- REVERT TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_SetInstantRedemptionFeeBP_ExceedsMax() external {
@@ -98,7 +98,7 @@ contract OllaCoreBoundsValidationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                  INSTANT REDEMPTION FEE — BOUNDARY TESTS
+                  INSTANT REDEMPTION FEE -- BOUNDARY TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_SetInstantRedemptionFeeBP_AllowsZero() external {
@@ -115,7 +115,7 @@ contract OllaCoreBoundsValidationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                  INSTANT REDEMPTION FEE — FUZZ TESTS
+                  INSTANT REDEMPTION FEE -- FUZZ TESTS
     //////////////////////////////////////////////////////////////*/
 
     function testFuzz_SetInstantRedemptionFeeBP_ValidRange(uint256 newFeeBP) external {
@@ -143,7 +143,7 @@ contract OllaCoreBoundsValidationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                REBALANCE GAS THRESHOLD — REVERT TESTS
+                REBALANCE GAS THRESHOLD -- REVERT TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_SetRebalanceGasThreshold_ExceedsMax() external {
@@ -161,7 +161,7 @@ contract OllaCoreBoundsValidationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                REBALANCE GAS THRESHOLD — BOUNDARY TESTS
+                REBALANCE GAS THRESHOLD -- BOUNDARY TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_SetRebalanceGasThreshold_AllowsMin() external {
@@ -179,7 +179,7 @@ contract OllaCoreBoundsValidationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                REBALANCE GAS THRESHOLD — FUZZ TESTS
+                REBALANCE GAS THRESHOLD -- FUZZ TESTS
     //////////////////////////////////////////////////////////////*/
 
     function testFuzz_SetRebalanceGasThreshold_ValidRange(uint256 newThreshold) external {

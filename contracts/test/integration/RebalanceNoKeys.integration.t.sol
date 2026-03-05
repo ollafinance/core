@@ -99,11 +99,6 @@ contract RebalanceNoKeysIntegrationTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
     }
 
     /// @notice When no keys are registered, rebalance completes gracefully without staking.

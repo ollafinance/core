@@ -122,12 +122,6 @@ contract RefreshAttesterStateIntegration is Test {
         operator = makeAddr("operator");
         alice = makeAddr("alice");
 
-        // Grant OPERATOR_ROLE on both OllaCore and StakingManager
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), operator);
-        stakingManager.grantRole(stakingManager.OPERATOR_ROLE(), operator);
-        vm.stopPrank();
-
         // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
         vm.warp(block.timestamp + 1 hours);
     }
@@ -303,7 +297,7 @@ contract RefreshAttesterStateIntegration is Test {
     }
 
     /// @notice Verifies that totalAssets (and exchange rate) never drops during the
-    ///         unstake lifecycle: rebalance(InitiateUnstake) → refreshAttesterState → accounting → rebalance(PullUnstaked).
+    ///         unstake lifecycle: rebalance(InitiateUnstake) -> refreshAttesterState -> accounting -> rebalance(PullUnstaked).
     ///         Regression test for a bug where _processUnstakeAttester eagerly reduced stakedAmount
     ///         but the pending exit wasn't reflected in totalAssets until PullUnstaked.
     function test_totalAssets_neverDrops_duringUnstakeLifecycle() external {

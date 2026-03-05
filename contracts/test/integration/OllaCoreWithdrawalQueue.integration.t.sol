@@ -116,11 +116,6 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, address(this));
-        vm.stopPrank();
-
         alice = makeAddr("alice");
         bob = makeAddr("bob");
 
@@ -528,11 +523,6 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
 
         // Initialize staking manager with asset
         stakingManager.initialize(asset, address(0), address(0), address(core), address(0), address(0));
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, address(this));
-        vm.stopPrank();
 
         alice = makeAddr("alice");
 

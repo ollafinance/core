@@ -200,7 +200,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    1. HAPPY PATH — redeem succeeds
+                    1. HAPPY PATH -- redeem succeeds
     //////////////////////////////////////////////////////////////*/
 
     function test_Redeem_TransfersCorrectNetAssetsToRecipient() external {
@@ -308,12 +308,12 @@ contract OllaCoreInstantRedemptionTest is Test {
         _performDeposit(alice, depositAmount);
 
         // Reduce available liquidity via finalized encumbrance.
-        // Deposit 100 → balance = 100, buffered = 100, alice has 100 shares.
+        // Deposit 100 -> balance = 100, buffered = 100, alice has 100 shares.
         // Mint 30 to vault, set finalized = 80, set buffered = 50, set stakedPrincipal = 50.
-        // totalAssets = buffered(50) + staked(50) = 100, totalSupply = 100 → rate = 1:1.
-        // Reconcile: available = balance(130) - finalized(80) = 50 >= buffered(50) ✓ (no delta).
+        // totalAssets = buffered(50) + staked(50) = 100, totalSupply = 100 -> rate = 1:1.
+        // Reconcile: available = balance(130) - finalized(80) = 50 >= buffered(50) (ok) (no delta).
         // available = bufferedAssets = 50.
-        // At 1:1 rate, 60 shares → grossAssets = 60 > available (50) → revert.
+        // At 1:1 rate, 60 shares -> grossAssets = 60 > available (50) -> revert.
         asset.mint(address(vault), 30 * DECIMALS);
         _setFinalizedUnclaimedAssets(80 * DECIMALS);
         _setBufferedAssets(50 * DECIMALS);
@@ -527,7 +527,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-     18. availableForInstantRedemption — CORRECT COMPUTATION
+     18. availableForInstantRedemption -- CORRECT COMPUTATION
     //////////////////////////////////////////////////////////////*/
 
     function test_AvailableForInstantRedemption_ReturnsCorrectValue() external {
@@ -545,7 +545,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-     19. availableForInstantRedemption — FULLY ENCUMBERED
+     19. availableForInstantRedemption -- FULLY ENCUMBERED
     //////////////////////////////////////////////////////////////*/
 
     function test_AvailableForInstantRedemption_ReturnsZeroWhenFullyEncumbered() external view {
@@ -555,7 +555,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-        20. setInstantRedemptionFeeBP — ADMIN SETTER
+        20. setInstantRedemptionFeeBP -- ADMIN SETTER
     //////////////////////////////////////////////////////////////*/
 
     function test_SetInstantRedemptionFeeBP_UpdatesAndEmits() external {
@@ -569,7 +569,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-      21. setInstantRedemptionFeeBP — NON-ADMIN REVERT
+      21. setInstantRedemptionFeeBP -- NON-ADMIN REVERT
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_SetInstantRedemptionFeeBP_NonAdmin() external {
@@ -579,7 +579,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-      22. setInstantRedemptionFeeBP — EXCEEDS MAX
+      22. setInstantRedemptionFeeBP -- EXCEEDS MAX
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_SetInstantRedemptionFeeBP_ExceedsMax() external {
@@ -590,7 +590,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-      23. setInstantRedemptionFeeBP — PAUSED / REBALANCE-PAUSED
+      23. setInstantRedemptionFeeBP -- PAUSED / REBALANCE-PAUSED
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_SetInstantRedemptionFeeBP_Paused() external {
@@ -614,7 +614,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-               24. ZERO FEE — NO DEDUCTION
+               24. ZERO FEE -- NO DEDUCTION
     //////////////////////////////////////////////////////////////*/
 
     function test_Redeem_ZeroFee_FullAssetsToRecipient() external {
@@ -723,7 +723,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         vm.prank(alice);
         vault.instantRedeem(30 * DECIMALS, bob, 0);
 
-        // Run rebalance — should not revert
+        // Run rebalance -- should not revert
         vm.prank(governance);
         (,,, uint256 resultingBuffer) = core.rebalance();
 
@@ -757,7 +757,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         _performDeposit(alice, depositAmount);
 
         // available = bufferedAssets = 100 after deposit.
-        // Try to redeem 101 shares at 1:1 rate → grossAssets = 101 > available (100).
+        // Try to redeem 101 shares at 1:1 rate -> grossAssets = 101 > available (100).
         // Liquidity check fires before burn, so alice not having 101 shares doesn't matter.
         uint256 redeemAmount = depositAmount + 1;
         vm.expectRevert(
@@ -873,7 +873,7 @@ contract OllaCoreInstantRedemptionTest is Test {
             address(malVault), abi.encodeCall(malVault.instantRedeem, (sharesToRedeem, bob, 0)), true
         );
 
-        // The outer redeem triggers safeTransfer → transfer hook → re-enters redeem → nonReentrant reverts.
+        // The outer redeem triggers safeTransfer -> transfer hook -> re-enters redeem -> nonReentrant reverts.
         // The revert from the inner call propagates through Address.functionCall, reverting the outer call.
         vm.prank(alice);
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
@@ -941,7 +941,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         // totalSupply = 100e18 shares, so rate = 150e18 * 1e18 / 100e18 = 1.5e18
         uint256 sharesToRedeem = 50 * DECIMALS;
 
-        // Perform redeem — this triggers _syncBufferedWithBalance() first
+        // Perform redeem -- this triggers _syncBufferedWithBalance() first
         vm.prank(alice);
         uint256 netAssets = vault.instantRedeem(sharesToRedeem, bob, 0);
 
@@ -1011,7 +1011,7 @@ contract OllaCoreInstantRedemptionTest is Test {
     ///         convertToAssets view, proving there is no double-mulDiv rounding
     ///         discrepancy between the two paths.  Uses a non-trivial exchange
     ///         rate that would surface a 1-wei divergence under the old
-    ///         two-step _exchangeRate() → mulDiv(rate, scale) approach.
+    ///         two-step _exchangeRate() -> mulDiv(rate, scale) approach.
     function test_Redeem_GrossAssetsMatchesConvertToAssets() external {
         // Deposit an amount that produces a non-trivial rate when rewards arrive.
         // 3 is chosen because totalAssets / supply won't divide evenly.
@@ -1029,7 +1029,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         // supply = 3
         uint256 sharesToRedeem = 2;
 
-        // Read preview from convertToAssets — this is a view that doesn't sync,
+        // Read preview from convertToAssets -- this is a view that doesn't sync,
         // but after sync totalAssets = actual balance = depositAmount + rewards.
         // We can't call convertToAssets post-sync without actually syncing, so we
         // compute it manually with the single-step formula.
@@ -1037,7 +1037,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 supply = stAztec.totalSupply();
         uint256 expectedGross = sharesToRedeem.mulDiv(expectedTotalAssets + 1, supply + 1, Math.Rounding.Floor);
 
-        // Perform the redeem — triggers _syncBufferedWithBalance() then _convertToAssets()
+        // Perform the redeem -- triggers _syncBufferedWithBalance() then _convertToAssets()
         _setInstantRedemptionFee(0); // zero fee so netAssets == grossAssets
         vm.prank(alice);
         uint256 netAssets = vault.instantRedeem(sharesToRedeem, bob, 0);

@@ -189,10 +189,6 @@ contract OllaCoreReentrancyTest is Test {
         vault.unpause();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), address(withdrawalQueue));
-        vm.stopPrank();
-
         alice = makeAddr("alice");
         bob = makeAddr("bob");
         permitOwnerKey = 0xA11CE;
@@ -447,11 +443,6 @@ contract OllaCoreHarvestReentrancyTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), governance);
-        core.grantRole(core.OPERATOR_ROLE(), address(rewardsAccumulator));
-        vm.stopPrank();
-
         alice = makeAddr("alice");
 
         vm.warp(block.timestamp + 1 hours);
@@ -550,10 +541,6 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), governance);
-        vm.stopPrank();
-
         alice = makeAddr("alice");
     }
 
@@ -576,7 +563,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
     function test_RevertWhen_UpdateAccounting_ReenteredFromSafetyModuleCheck() external {
         _deposit(alice, 10 * DECIMALS);
 
-        // Re-entry targets updateAccounting() on core — same nonReentrant guard applies
+        // Re-entry targets updateAccounting() on core -- same nonReentrant guard applies
         safetyModule.setReentry(address(core), abi.encodeCall(core.updateAccounting, ()));
         safetyModule.setReenterOnCheckAccountingLiveness(true);
 

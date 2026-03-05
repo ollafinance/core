@@ -37,10 +37,10 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
     /// @notice When there are no exiting attesters, refreshAttesterState() is a no-op.
     function test_RefreshAttesterState_NoOp_WhenNoExitableAttesters() external {
-        // No attesters registered or staked at all — should not revert
+        // No attesters registered or staked at all -- should not revert
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        // With staked attesters but none unstaking — should not revert
+        // With staked attesters but none unstaking -- should not revert
         _setupStakedAttester();
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
@@ -191,7 +191,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     function test_RefreshAttesterState_ExternalFinalization_ReconcilesPendingUnstake() external {
         _setupStakedAttester();
 
-        // Unstake via StakingManager — creates exit on rollup, increments pendingUnstakeAmount
+        // Unstake via StakingManager -- creates exit on rollup, increments pendingUnstakeAmount
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
@@ -270,7 +270,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         // totalStaked should remain 2x (stakedAmount + pendingUnstakeAmount)
         assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD * 2, "total should be unchanged after unstake");
 
-        // External finalization of the unstaked attester (keys[1] — the one that was unstaked)
+        // External finalization of the unstaked attester (keys[1] -- the one that was unstaked)
         rollup.finalizeWithdraw(keys[1].attester);
 
         // Refresh reconciles the accounting

@@ -107,11 +107,6 @@ contract WithdrawalQueueClaimDirectTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-
-        // Grant operator role
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), operator);
-        vm.stopPrank();
     }
 
     /*//////////////////////////////////////////////////////////////

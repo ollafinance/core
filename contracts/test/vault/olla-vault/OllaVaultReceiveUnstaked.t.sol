@@ -76,7 +76,7 @@ contract OllaVaultReceiveUnstakedTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                      receiveUnstaked — HAPPY PATH
+                      receiveUnstaked -- HAPPY PATH
     //////////////////////////////////////////////////////////////*/
 
     /// @notice receiveUnstaked succeeds when tokens are transferred before the call.
@@ -112,7 +112,7 @@ contract OllaVaultReceiveUnstakedTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-              receiveUnstaked — BALANCE MISMATCH REVERT
+              receiveUnstaked -- BALANCE MISMATCH REVERT
     //////////////////////////////////////////////////////////////*/
 
     /// @notice receiveUnstaked reverts when called without transferring tokens.
@@ -156,7 +156,7 @@ contract OllaVaultReceiveUnstakedTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    receiveUnstaked — ACCESS CONTROL
+                    receiveUnstaked -- ACCESS CONTROL
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Only CORE_ROLE can call receiveUnstaked.
@@ -170,7 +170,7 @@ contract OllaVaultReceiveUnstakedTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                      receiveUnstaked — FUZZ
+                      receiveUnstaked -- FUZZ
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Fuzz: receiveUnstaked always succeeds when balance covers the amount.
