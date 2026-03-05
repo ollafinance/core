@@ -302,6 +302,12 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         claimShouldFail[_sequencer] = _shouldFail;
     }
 
+    /// @inheritdoc IMockAztecRollup
+    function clearAttester(address _attester) external override {
+        stakes[_attester] = 0;
+        delete _exits[_attester];
+    }
+
     /// @notice Get the exit record for an attester.
     /// @param _attester The attester address.
     /// @return The exit record.

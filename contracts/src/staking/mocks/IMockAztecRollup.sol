@@ -134,6 +134,10 @@ interface IMockAztecRollup {
     /// @param shouldFail Whether the claim should revert.
     function setClaimShouldFail(address coinbase, bool shouldFail) external;
 
+    /// @notice Clears all rollup state for an attester, simulating an external full exit (test helper).
+    /// @param attester The attester address.
+    function clearAttester(address attester) external;
+
     /// @notice Accrues time-based rewards for a given coinbase.
     /// @dev Uses `rewardRatePerSecond` and updates `lastTick`.
     /// @param coinbase The coinbase/attester address to accrue rewards for.

@@ -89,33 +89,15 @@ interface IStakingManager {
     /// @param amount The amount harvested.
     event RewardsHarvested(uint256 indexed amount);
 
-    /// @notice Emitted when the cached attester state is updated.
-    /// @param slashingDelta The updated slashing delta.
-    /// @param totalStaked The updated total staked.
-    /// @param pendingUnstakeAmount The updated pending unstake amount.
-    /// @param withdrawableAmount The updated withdrawable amount.
-    /// @param timestamp The timestamp when the cache was updated.
-    event AttesterStateUpdated(
-        uint256 indexed slashingDelta,
-        uint256 indexed totalStaked,
-        uint256 pendingUnstakeAmount,
-        uint256 withdrawableAmount,
-        uint256 indexed timestamp
-    );
-
-    /// @notice Emitted when an attester state update detects stale state.
-    /// @param lastUpdated The last attester state update timestamp.
-    /// @param maxAge The configured maximum age for freshness.
-    event AttesterStateStale(uint256 indexed lastUpdated, uint256 indexed maxAge);
-
-    /// @notice Emitted when the attester state max age is updated.
-    /// @param oldMaxAge The previous maximum age.
-    /// @param newMaxAge The new maximum age.
-    event AttesterStateMaxAgeUpdated(uint256 indexed oldMaxAge, uint256 indexed newMaxAge);
-
     /// @notice Emitted when an attester is removed from the registry.
     /// @param attester The removed attester address.
     event AttesterRemoved(address indexed attester);
+
+    /// @notice Emitted when an attester's state is refreshed.
+    /// @param attester The attester address.
+    /// @param oldBalance The previous cached balance.
+    /// @param newBalance The new balance from rollup.
+    event AttesterStateRefreshed(address indexed attester, uint256 indexed oldBalance, uint256 indexed newBalance);
 
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
@@ -145,11 +127,11 @@ interface IStakingManager {
     /// @notice Thrown when caller is not authorized core.
     error StakingManager__UnauthorizedCore(address caller);
 
-    /// @notice Thrown when the cached attester state is stale.
-    error StakingManager__AttesterStateStale(uint256 lastUpdated, uint256 maxAge);
-
     /// @notice Thrown when a configuration parameter is out of bounds.
     error StakingManager__InvalidParameter();
+
+    /// @notice Thrown when attempting to remove an attester that is still active.
+    error StakingManager__RemoveAttesterFailed(address attester);
 
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
@@ -175,16 +157,17 @@ interface IStakingManager {
                               CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Sets the gas threshold used for bounded rebalance work.
+    /// @param threshold The gas threshold to enforce.
+    function setGasThreshold(uint256 threshold) external;
+
     /// @notice Stakes assets using provider attesters.
     /// @param amount The amount requested to stake.
     /// @return stakedAmount The actual amount staked.
     function stake(uint256 amount) external returns (uint256 stakedAmount);
 
-    /// @notice Sets the gas threshold used for bounded rebalance work.
-    /// @param threshold The gas threshold to enforce.
-    function setGasThreshold(uint256 threshold) external;
-
     /// @notice Initiates an unstake with the staking provider.
+    /// @dev Only callable by core. Iterates internal active attester set until amount is met.
     /// @param amount The amount to unstake.
     /// @return unstakedAmount The amount initiated for unstake in this call.
     function unstake(uint256 amount) external returns (uint256 unstakedAmount);
@@ -203,24 +186,12 @@ interface IStakingManager {
                         PERMISSIONLESS FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Finalizes exitable attesters on the rollup. Permissionless.
-    /// Tokens move from rollup to StakingManager. Attesters removed from registry.
-    /// @return finalized The amount of assets finalized.
-    function finalizeExits() external returns (uint256 finalized);
-
-    /// @notice Computes all attester-derived state (slashing delta, total staked, pending unstakes, withdrawable)
-    ///         using bounded work and caches the results on completion.
-    /// @return slashingDelta The cached slashing delta after this call.
-    /// @return completed True if the computation completed in this call.
-    function computeAttesterState() external returns (uint256 slashingDelta, bool completed);
-
-    /*//////////////////////////////////////////////////////////////
-                           OPERATOR FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Sets the maximum allowed age for the cached attester state.
-    /// @param maxAge The maximum age in seconds.
-    function setAttesterStateMaxAge(uint256 maxAge) external;
+    /// @notice Refreshes cached state for specific attesters by reading the rollup.
+    /// @dev Permissionless — anyone can call. Reads rollup state (source of truth) and
+    ///      delta-updates the aggregate accumulator. Also finalizes exits when exitable.
+    ///      Idempotent: calling twice for the same attester in the same block is safe.
+    /// @param attesters The attester addresses to refresh.
+    function refreshAttesterState(address[] calldata attesters) external;
 
     /*//////////////////////////////////////////////////////////////
                               VIEW FUNCTIONS
@@ -236,30 +207,19 @@ interface IStakingManager {
     /// @return claimableRewards The total rewards claimalbe to rewards recipient.
     function getClaimableRewards() external view returns (uint256 claimableRewards);
 
-    /// @notice Returns attester state liveness data.
-    /// @dev Covers all cached attester-derived state (slashing delta, total staked, pending unstakes, withdrawable).
-    /// @return lastUpdated The last timestamp when attester state was updated.
-    /// @return maxAge The maximum age allowed for freshness.
-    /// @return isStale True if the cached attester state is stale.
-    function getAttesterStateLiveness() external view returns (uint256 lastUpdated, uint256 maxAge, bool isStale);
-
     /// @notice Returns the cached total staked principal.
-    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return stakedTotal The total staked principal.
     function totalStaked() external view returns (uint256 stakedTotal);
 
     /// @notice Returns the cached aggregated staking state.
-    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return state The aggregated staking state.
     function getStakingState() external view returns (StakingState memory state);
 
     /// @notice Returns the cached total amount pending unstake.
-    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return pendingUnstakeAmount The total pending unstake amount.
     function pendingUnstakes() external view returns (uint256 pendingUnstakeAmount);
 
     /// @notice Returns true if any exitable unstake exists from cached state.
-    /// @dev Cached read with liveness enforcement. Reverts if the attester state is stale.
     /// @return True if there are unstake exits ready to be finalized.
     function hasExitableUnstakes() external view returns (bool);
 
@@ -267,10 +227,6 @@ interface IStakingManager {
     /// @dev Delegates to the StakingProviderRegistry.
     /// @return The provider config struct.
     function getProviderConfig() external view returns (ProviderConfig memory);
-
-    /// @notice Returns the current unstake cursor.
-    /// @return cursor The current cursor into the attester registry.
-    function getUnstakeCursor() external view returns (uint256 cursor);
 
     /// @notice Returns the number of active attesters.
     /// @return The count of active attesters.
