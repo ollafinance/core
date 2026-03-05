@@ -507,10 +507,7 @@ contract OllaCorePermissionlessRebalance is Test {
         core.rebalance();
 
         // Step 2: Warp forward 30 minutes (not past the 1-hour cooldown)
-        // NOTE: We compute warp targets inline to avoid viaIR re-materialization of TIMESTAMP
-        // across vm.warp boundaries (block.timestamp stored in a local may be re-evaluated).
-        uint256 accountingWarpTarget = block.timestamp + 30 minutes;
-        vm.warp(accountingWarpTarget);
+        vm.warp(block.timestamp + 30 minutes);
 
         // Step 3: Call updateAccounting() (updates _latestReport.timestamp but NOT _lastRebalanceTimestamp)
         core.updateAccounting();
@@ -531,7 +528,7 @@ contract OllaCorePermissionlessRebalance is Test {
         core.rebalance();
 
         // Step 5: Warp past the original cooldown from step 1 (30 more minutes + 1 second)
-        vm.warp(accountingWarpTarget + 30 minutes + 1);
+        vm.warp(block.timestamp + 30 minutes + 1);
 
         // Step 6: Rebalance now succeeds (cooldown measured from _lastRebalanceTimestamp, not _latestReport)
         core.rebalance();
