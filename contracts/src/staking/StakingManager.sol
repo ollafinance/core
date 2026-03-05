@@ -307,7 +307,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
-        return _aggregateState.stakedAmount;
+        return _aggregateState.stakedAmount + _aggregateState.pendingUnstakeAmount + _pendingClaimAmount;
     }
 
     /// @inheritdoc IStakingManager
