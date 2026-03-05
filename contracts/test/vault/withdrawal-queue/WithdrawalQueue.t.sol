@@ -17,6 +17,7 @@ contract WithdrawalQueueTest is Test {
         uint256 indexed id, address indexed recipient, uint256 shares, uint256 assetsExpected, uint256 rate
     );
     event WithdrawalFinalized(uint256 indexed id, uint256 assets);
+    event WithdrawalAdjusted(uint256 indexed id, uint256 originalAmount, uint256 adjustedAmount);
     event WithdrawalClaimed(uint256 indexed id, address indexed recipient, uint256 assetsExpected);
 
     /*//////////////////////////////////////////////////////////////
@@ -207,6 +208,76 @@ contract WithdrawalQueueTest is Test {
 
         assertEq(queue.nextPendingId(), totalRequests + 1, "next pending id reaches end");
         assertEq(queue.totalPendingAssets(), 0, "pending assets drained");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                     ZERO-PAYOUT SLASHING ADJUSTMENT
+    //////////////////////////////////////////////////////////////*/
+
+    function test_FinalizeWithdrawals_ZeroPayoutAfterSlashing_DoesNotCountAsFinalized() public {
+        address alice = makeAddr("alice");
+        uint256 shares = 100;
+        uint256 assetsExpected = 100;
+        uint256 lockedRate = 1e18;
+
+        _request(alice, shares, assetsExpected, lockedRate);
+
+        // Rate drops to 0 (extreme slashing: total assets ≈ 0).
+        uint256 currentRate = 0;
+
+        vm.expectEmit(true, false, false, true, address(queue));
+        emit WithdrawalAdjusted(1, assetsExpected, 0);
+
+        vm.expectEmit(true, false, false, true, address(queue));
+        emit WithdrawalFinalized(1, 0);
+
+        vm.prank(vault);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(assetsExpected, currentRate);
+
+        // Zero-payout request must NOT be counted in used/finalizedCount
+        // to preserve the vault invariant (finalizedAmount == 0) == (finalizedCount == 0).
+        assertEq(used, 0, "zero-payout request should not consume liquidity");
+        assertEq(finalizedCount, 0, "zero-payout request should not count as finalized");
+        assertEq(totalAdjusted, assetsExpected, "full original amount should be reported as adjusted");
+
+        // The request itself should be marked finalized in storage so the queue advances.
+        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(1);
+        assertTrue(req.finalized, "request should be marked finalized in storage");
+        assertEq(req.assetsExpected, 0, "assetsExpected should be adjusted to zero");
+
+        // Queue bookkeeping should be fully cleared.
+        assertEq(queue.totalPendingAssets(), 0, "pending assets should be zero");
+        assertEq(queue.totalPendingShares(), 0, "pending shares should be zero");
+        assertEq(queue.nextPendingId(), 2, "next pending id should advance past the request");
+    }
+
+    function test_FinalizeWithdrawals_ZeroPayoutDoesNotBlockSubsequentRequests() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+
+        // Alice's request will adjust to zero payout; Bob's will adjust to a non-zero payout.
+        _request(alice, 100, 100, 1e18);
+        _request(bob, 200, 200, 1e18);
+
+        // Rate drops so payout = shares * rate / 1e18.
+        // Alice: 100 * 1 / 1e18 = 0 (rounds to zero).
+        // Bob:   200 * 1 / 1e18 = 0 (also rounds to zero).
+        uint256 currentRate = 1; // near-zero rate
+
+        vm.prank(vault);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(300, currentRate);
+
+        // Both requests adjust to zero, so both finalize via the zero-payout path.
+        assertEq(used, 0, "no liquidity should be consumed");
+        assertEq(finalizedCount, 0, "no requests should count as finalized");
+        assertEq(totalAdjusted, 300, "full amount should be adjusted");
+
+        assertTrue(queue.getRequest(1).finalized, "alice request should be finalized");
+        assertTrue(queue.getRequest(2).finalized, "bob request should be finalized");
+        assertEq(queue.totalPendingAssets(), 0, "all pending assets should be cleared");
+        assertEq(queue.totalPendingShares(), 0, "all pending shares should be cleared");
+        assertEq(queue.nextPendingId(), 3, "queue should advance past both requests");
     }
 
     /*//////////////////////////////////////////////////////////////

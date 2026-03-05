@@ -208,6 +208,17 @@ contract WithdrawalQueue is
                     }
                 }
 
+                // Slashing reduced payout to zero; finalize without consuming liquidity
+                // so the queue advances and the vault invariant
+                // (finalizedAmount == 0) == (finalizedCount == 0) is preserved.
+                if (assetsExpected == 0) {
+                    pendingShares_ -= request.shares;
+                    request.finalized = true;
+                    emit WithdrawalFinalized(currentId, 0);
+                    ++currentId;
+                    continue;
+                }
+
                 // Breaks on first under-funded request; does not skip.
                 if (available < assetsExpected) {
                     break;
