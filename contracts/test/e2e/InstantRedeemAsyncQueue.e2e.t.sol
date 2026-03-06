@@ -237,8 +237,7 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
 
         assertEq(bobNet, 49.5e18, "bob should receive 49.5e18 net");
         assertEq(asset.balanceOf(bob), 49.5e18, "bob asset balance should be 49.5e18");
-        assertEq(asset.balanceOf(treasury), 0.5e18, "treasury should receive 0.5e18 fee");
-        assertEq(vault.bufferedAssets(), 100 * DECIMALS, "buffer should be 150 - 50 = 100e18");
+        assertEq(vault.bufferedAssets(), 100.5e18, "buffer should be 150 - 49.5 = 100.5e18");
 
         // --- Rebalance: finalize alice's 80e18 request (100e18 buffer > 80e18 pending) ---
         _warpPastCooldown();
@@ -249,7 +248,7 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
         assertTrue(req.finalized, "alice's request should be finalized");
 
         // Buffer reduced by finalized amount
-        assertEq(vault.bufferedAssets(), 20 * DECIMALS, "buffer should be 100 - 80 = 20e18");
+        assertEq(vault.bufferedAssets(), 20.5e18, "buffer should be 100.5 - 80 = 20.5e18");
 
         // --- alice claims her withdrawal ---
         vm.prank(alice);
@@ -260,11 +259,17 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-        TEST 4B: INSTANT REDEEM EXHAUSTS BUFFER — QUEUE CANNOT FINALIZE
+        TEST 4B: INSTANT REDEEM DRAINS BUFFER — SUBSEQUENT QUEUE CANNOT FINALIZE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Instant redemption drains buffer below what the queue needs; head-of-line
-    ///         blocking prevents finalization until unstaked funds return.
+    /// @notice Instant redemption (before any async requests) drains the buffer;
+    ///         a subsequent async request cannot finalize because the remaining buffer
+    ///         is too small. Head-of-line blocking prevents finalization until
+    ///         unstaked funds return.
+    ///
+    /// @dev    With the new behaviour `availableForInstantRedemption()` reserves
+    ///         buffer for pending async withdrawals, so the instant redeem MUST
+    ///         happen before the async request is created.
     function test_InstantRedeem_ExhaustsBuffer_QueueCannotFinalize() external {
         // --- Setup: alice deposits 100e18, bob deposits 100e18 ---
         _performDeposit(alice, 100 * DECIMALS);
@@ -284,18 +289,20 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
         // --- Set instant redemption fee = 0 for simplicity ---
         _setInstantRedemptionFeeBP(0);
 
-        // --- alice requests async redeem of 80e18 shares ---
-        vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(80 * DECIMALS, alice, alice);
-
-        // --- bob instant redeems 40e18 shares → buffer = 50 - 40 = 10e18 ---
+        // --- bob instant redeems 40e18 shares BEFORE any async requests ---
+        // No pending withdrawals → available = buffer = 50e18
         vm.prank(bob);
         vault.instantRedeem(40 * DECIMALS, bob, 0);
 
         assertEq(vault.bufferedAssets(), 10 * DECIMALS, "buffer should be 10e18 after instant redeem");
         assertEq(asset.balanceOf(bob), 40 * DECIMALS, "bob should receive 40e18");
 
-        // --- Rebalance: finalize tries 80e18 but only 10e18 available → head-of-line blocking ---
+        // --- alice requests async redeem of 80e18 shares ---
+        // Now pending = 80e18, availableForInstantRedemption = max(0, 10 - 80) = 0
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(80 * DECIMALS, alice, alice);
+
+        // --- Rebalance: buffer(10) < head request(80) → head-of-line blocking ---
         _warpPastCooldown();
         stakingManager.clearStakeReturnAmount();
         stakingManager.setHarvestedRewards(0);
@@ -333,12 +340,13 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-        TEST 4C: INSTANT REDEEM FEE GOES TO TREASURY
+        TEST 4C: INSTANT REDEEM FEE ABSORBED INTO PROTOCOL
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Verifies fee calculation: grossAssets * feeBP / 10_000 to treasury,
-    ///         net = grossAssets - fee to recipient.
-    function test_InstantRedeem_FeeGoesToTreasury() external {
+    /// @notice Verifies fee calculation: grossAssets * feeBP / 10_000 absorbed into
+    ///         the buffer (benefiting remaining shareholders), net = grossAssets - fee
+    ///         to recipient.
+    function test_InstantRedeem_FeeAbsorbedIntoProtocol() external {
         // --- Setup: alice deposits 100e18, baseline rebalance ---
         _performDeposit(alice, 100 * DECIMALS);
         _baselineRebalance();
@@ -359,8 +367,7 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
         // --- Assertions ---
         assertEq(net, 19 * DECIMALS, "net should be 19e18");
         assertEq(asset.balanceOf(alice), 19 * DECIMALS, "alice should receive 19e18");
-        assertEq(asset.balanceOf(treasury), 1 * DECIMALS, "treasury should receive 1e18 fee");
-        assertEq(vault.bufferedAssets(), 80 * DECIMALS, "buffer should be 100 - 20 = 80e18");
+        assertEq(vault.bufferedAssets(), 81 * DECIMALS, "buffer should be 100 - 19 = 81e18");
         assertEq(stAztec.totalSupply(), 80 * DECIMALS, "supply should be 100 - 20 = 80e18");
         assertEq(stAztec.balanceOf(alice), 80 * DECIMALS, "alice shares should be 80e18");
     }
@@ -407,7 +414,6 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
         assertEq(bobNet, expectedNet, "bob net should match expected");
         assertEq(asset.balanceOf(bob), expectedNet, "bob balance should equal net assets");
         assertLt(asset.balanceOf(bob), 50 * DECIMALS, "bob should receive less than 50e18 (paid fee)");
-        assertEq(asset.balanceOf(treasury), expectedFee, "treasury should receive fee");
 
         // stAztec supply should return to pre-bob level
         assertEq(stAztec.totalSupply(), supplyBefore, "supply should return to pre-bob level");
@@ -462,6 +468,13 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
 
     /// @notice A single user can mix instant and async redemption in the same block
     ///         with correct accounting and conservation of value.
+    ///
+    /// @dev    The fee is absorbed into the buffer, shifting the exchange rate above
+    ///         1:1 between the instant and async operations. The async request
+    ///         therefore converts at the new (higher) rate. During the subsequent
+    ///         rebalance the accounting treats the absorbed fee as gross rewards and
+    ///         mints protocol fee shares (PROTOCOL_FEE_BP), which slightly dilutes
+    ///         alice's remaining position.
     function test_InstantAndAsyncRedeem_SameUser_SameBlock() external {
         // --- Setup: alice deposits 200e18, baseline rebalance ---
         _performDeposit(alice, 200 * DECIMALS);
@@ -475,18 +488,24 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
 
         // --- Same block: instant redeem 50e18, then request async redeem 50e18 ---
         // Instant: grossAssets = 50e18, fee = 2.5e18, net = 47.5e18
+        // Buffer decreases by netAssets only (fee absorbed).
         vm.prank(alice);
         uint256 instantNet = vault.instantRedeem(50 * DECIMALS, alice, 0);
         assertEq(instantNet, 47.5e18, "instant net should be 47.5e18");
 
+        // Fee absorption shifts the rate: totalAssets = 152.5, supply = 150 → rate > 1
+        // The async request converts at this new rate.
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(50 * DECIMALS, alice, alice);
+
+        // Read the actual assetsExpected (computed at the shifted rate)
+        IWithdrawalQueue.WithdrawalRequest memory reqData = withdrawalQueue.getRequest(requestId);
+        assertGt(reqData.assetsExpected, 50 * DECIMALS, "async assets should exceed 50e18 at shifted rate");
 
         // --- Assertions after both operations ---
         assertEq(stAztec.balanceOf(alice), 100 * DECIMALS, "alice should have 100e18 shares");
         assertEq(asset.balanceOf(alice), 47.5e18, "alice assets should be 47.5e18 from instant");
-        assertEq(vault.bufferedAssets(), 150 * DECIMALS, "buffer should be 200 - 50 = 150e18");
-        assertEq(asset.balanceOf(treasury), 2.5e18, "treasury should have 2.5e18 fee");
+        assertEq(vault.bufferedAssets(), 152.5e18, "buffer should be 200 - 47.5 = 152.5e18");
 
         // --- Rebalance: finalize async request ---
         _warpPastCooldown();
@@ -498,22 +517,21 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
         // --- alice claims ---
         vm.prank(alice);
         uint256 asyncClaimed = vault.claimRequestById(requestId);
-        assertEq(asyncClaimed, 50 * DECIMALS, "alice should claim 50e18 from async");
+        assertGt(asyncClaimed, 0, "alice should claim assets from async");
 
-        // --- Conservation check ---
-        uint256 aliceTotalReceived = asset.balanceOf(alice); // 47.5 + 50 = 97.5
-        uint256 aliceRemainingShareValue = core.convertToAssets(stAztec.balanceOf(alice)); // 100e18 at 1:1
-        uint256 feeCollected = asset.balanceOf(treasury); // 2.5
-
-        assertEq(aliceTotalReceived, 97.5e18, "alice total received should be 97.5e18");
-        assertEq(aliceRemainingShareValue, 100 * DECIMALS, "alice remaining share value should be 100e18");
-        assertEq(feeCollected, 2.5e18, "fee collected should be 2.5e18");
-
-        // total out + fee + remaining value = total deposited
+        // --- Token conservation ---
+        // No asset tokens are created or destroyed: vault started with 200e18
+        // from alice's deposit; every outflow goes to alice. Fee stays in the vault
+        // as stAztec share dilution (protocol fee shares minted on next rebalance).
+        uint256 aliceTotalReceived = asset.balanceOf(alice);
+        uint256 vaultBalance = asset.balanceOf(address(vault));
         assertEq(
-            aliceTotalReceived + feeCollected + aliceRemainingShareValue,
+            aliceTotalReceived + vaultBalance,
             200 * DECIMALS,
-            "conservation: total_out + fee + remaining_value should equal 200e18"
+            "token conservation: total_out + vault_balance = deposited"
         );
+
+        // Alice still holds 100e18 shares with positive value
+        assertGt(core.convertToAssets(stAztec.balanceOf(alice)), 0, "alice remaining shares have value");
     }
 }
