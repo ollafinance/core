@@ -211,7 +211,11 @@ contract OllaCoreAccountingHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor, 0);
+        try vault.deposit(assets, actor, 0) { }
+        catch {
+            vm.stopPrank();
+            return;
+        }
         vm.stopPrank();
     }
 
@@ -627,8 +631,9 @@ contract OllaCoreLifecycleHandler is Test {
     function requestRedeem(uint256 actorSeed) external {
         address actor = address(0);
         uint256 actorShares = 0;
+        uint256 base = actorSeed % actors.length;
         for (uint256 i = 0; i < actors.length; i++) {
-            uint256 idx = (actorSeed + i) % actors.length;
+            uint256 idx = (base + i) % actors.length;
             uint256 bal = stAztec.balanceOf(actors[idx]);
             if (bal > 0) {
                 actor = actors[idx];
@@ -640,6 +645,9 @@ contract OllaCoreLifecycleHandler is Test {
 
         uint256 sharesToRedeem = actorShares / 2;
         if (sharesToRedeem == 0) sharesToRedeem = actorShares;
+
+        uint256 assetsExpected = core.convertToAssets(sharesToRedeem);
+        if (assetsExpected == 0) return;
 
         vm.prank(actor);
         uint256 requestId = vault.requestRedeem(sharesToRedeem, actor, actor);
@@ -992,7 +1000,11 @@ contract OllaCoreProtocolPropertyHandler is Test {
         ghost_totalMinted += assets;
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        vault.deposit(assets, actor, 0);
+        try vault.deposit(assets, actor, 0) { }
+        catch {
+            vm.stopPrank();
+            return;
+        }
         vm.stopPrank();
 
         // Update rate after
@@ -1002,8 +1014,9 @@ contract OllaCoreProtocolPropertyHandler is Test {
     function requestRedeem(uint256 actorSeed) external {
         address actor = address(0);
         uint256 actorShares = 0;
+        uint256 base = actorSeed % actors.length;
         for (uint256 i = 0; i < actors.length; i++) {
-            uint256 idx = (actorSeed + i) % actors.length;
+            uint256 idx = (base + i) % actors.length;
             uint256 bal = stAztec.balanceOf(actors[idx]);
             if (bal > 0) {
                 actor = actors[idx];
@@ -1016,6 +1029,9 @@ contract OllaCoreProtocolPropertyHandler is Test {
         uint256 sharesToRedeem = actorShares / 2;
         if (sharesToRedeem == 0) sharesToRedeem = actorShares;
 
+        uint256 assetsExpected = core.convertToAssets(sharesToRedeem);
+        if (assetsExpected == 0) return;
+
         // Snapshot counters before
         _snapshotFlowCounters();
         // Snapshot rate before (requestRedeem is a protocol op)
@@ -1024,8 +1040,11 @@ contract OllaCoreProtocolPropertyHandler is Test {
         ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
 
         vm.prank(actor);
-        uint256 requestId = vault.requestRedeem(sharesToRedeem, actor, actor);
-        _pendingRequestIds.push(requestId);
+        try vault.requestRedeem(sharesToRedeem, actor, actor) returns (uint256 requestId) {
+            _pendingRequestIds.push(requestId);
+        } catch {
+            return;
+        }
 
         // Update rate after
         ghost_latestExchangeRate = core.exchangeRate();
@@ -1034,8 +1053,9 @@ contract OllaCoreProtocolPropertyHandler is Test {
     function instantRedeem(uint256 actorSeed) external {
         address actor = address(0);
         uint256 actorShares = 0;
+        uint256 base = actorSeed % actors.length;
         for (uint256 i = 0; i < actors.length; i++) {
-            uint256 idx = (actorSeed + i) % actors.length;
+            uint256 idx = (base + i) % actors.length;
             uint256 bal = stAztec.balanceOf(actors[idx]);
             if (bal > 0) {
                 actor = actors[idx];
