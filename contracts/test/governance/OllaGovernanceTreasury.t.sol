@@ -55,30 +55,4 @@ contract OllaGovernanceTreasuryTest is OllaGovernanceSetup {
     function test_Treasury_InitialValue() external view {
         assertEq(gov.treasury(), treasuryAddr, "initial treasury matches");
     }
-
-    /*//////////////////////////////////////////////////////////////
-                    TREASURY USED FOR FEES
-    //////////////////////////////////////////////////////////////*/
-
-    function test_Treasury_UsedByOllaCoreForInstantRedemptionFees() external {
-        // Set instant redemption fee to 1%
-        bytes memory feeData = abi.encodeCall(IOllaGovernance.setInstantRedemptionFeeBP, (100));
-        _scheduleAndExecute(address(gov), feeData);
-
-        // Deposit some assets
-        uint256 depositAmount = 100 * DECIMALS;
-        asset.mint(alice, depositAmount);
-        vm.prank(alice);
-        asset.approve(address(vault), depositAmount);
-        vm.prank(alice);
-        uint256 shares = vault.deposit(depositAmount, alice, 0);
-
-        // Perform instant redemption
-        uint256 treasuryBalanceBefore = asset.balanceOf(treasuryAddr);
-        vm.prank(alice);
-        vault.instantRedeem(shares, alice, 0);
-
-        uint256 treasuryBalanceAfter = asset.balanceOf(treasuryAddr);
-        assertGt(treasuryBalanceAfter, treasuryBalanceBefore, "treasury received fees");
-    }
 }

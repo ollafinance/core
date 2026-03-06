@@ -486,6 +486,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-start reentrancy-benign
     // slither-disable-start reentrancy-no-eth
     // slither-disable-start pess-multiple-storage-read
+    // slither-disable-next-line cyclomatic-complexity
     function _refreshSingleAttester(IAztecRollup rollup, address attester) internal {
         AttesterInfo storage info = _attesterMap[attester];
         if (info.attester == address(0)) return; // Unknown attester -- skip silently
@@ -514,6 +515,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         // Handle Active attesters with an exit (externally initiated exit)
         if (info.status == InternalAttesterStatus.Active && view_.exit.exists) {
+            // Zombie exit (isRecipient=false): claim it by calling initiateWithdraw to set recipient
+            if (!view_.exit.isRecipient) {
+                // slither-disable-next-line calls-loop,unused-return
+                rollup.initiateWithdraw(attester, address(this));
+            }
             _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
             uint256 exitAmount = view_.exit.amount;
             info.pendingExitAmount = exitAmount;

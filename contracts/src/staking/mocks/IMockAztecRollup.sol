@@ -134,6 +134,11 @@ interface IMockAztecRollup {
     /// @param shouldFail Whether the claim should revert.
     function setClaimShouldFail(address coinbase, bool shouldFail) external;
 
+    /// @notice Sets the exit recipient for an attester (test helper).
+    /// @param attester The attester address.
+    /// @param recipient The recipient address.
+    function setExitRecipient(address attester, address recipient) external;
+
     /// @notice Clears all rollup state for an attester, simulating an external full exit (test helper).
     /// @param attester The attester address.
     function clearAttester(address attester) external;
