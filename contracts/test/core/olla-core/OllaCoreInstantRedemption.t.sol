@@ -242,40 +242,41 @@ contract OllaCoreInstantRedemptionTest is Test {
                      3. BUFFER DECREASE
     //////////////////////////////////////////////////////////////*/
 
-    function test_Redeem_DecreasesBufferedAssetsByGrossAssets() external {
+    function test_Redeem_DecreasesBufferedAssetsByNetAssets() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
         uint256 bufferBefore = vault.bufferedAssets();
         uint256 sharesToRedeem = 30 * DECIMALS;
-        uint256 rate = core.exchangeRate();
-        uint256 grossAssets = sharesToRedeem.mulDiv(rate, DECIMALS, Math.Rounding.Floor);
 
         vm.prank(alice);
-        vault.instantRedeem(sharesToRedeem, bob, 0);
+        uint256 netAssets = vault.instantRedeem(sharesToRedeem, bob, 0);
 
-        assertEq(vault.bufferedAssets(), bufferBefore - grossAssets, "buffer decreased by grossAssets");
+        assertEq(vault.bufferedAssets(), bufferBefore - netAssets, "buffer decreased by netAssets");
     }
 
     /*//////////////////////////////////////////////////////////////
                   4. FEE TRANSFER TO TREASURY
     //////////////////////////////////////////////////////////////*/
 
-    function test_Redeem_TransfersFeeToGovernance() external {
+    function test_Redeem_FeeAbsorbedIntoBuffer() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        uint256 govBalanceBefore = asset.balanceOf(governance);
+        uint256 bufferBefore = vault.bufferedAssets();
         uint256 sharesToRedeem = 50 * DECIMALS;
         uint256 rate = core.exchangeRate();
         uint256 grossAssets = sharesToRedeem.mulDiv(rate, DECIMALS, Math.Rounding.Floor);
         uint256 expectedFee = grossAssets * 500 / BP_DIVISOR;
 
         vm.prank(alice);
-        vault.instantRedeem(sharesToRedeem, bob, 0);
+        uint256 netAssets = vault.instantRedeem(sharesToRedeem, bob, 0);
 
-        uint256 govBalanceAfter = asset.balanceOf(governance);
-        assertEq(govBalanceAfter - govBalanceBefore, expectedFee, "governance receives fee");
+        uint256 bufferAfter = vault.bufferedAssets();
+        assertEq(bufferAfter, bufferBefore - netAssets, "buffer decreased by netAssets only (fee stays)");
+        assertEq(bufferAfter, bufferBefore - grossAssets + expectedFee, "fee remains in the buffer");
+        // No finalized unclaimed in this test, so vault balance == buffer
+        assertEq(asset.balanceOf(address(vault)), bufferAfter, "vault balance matches buffer");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -313,14 +314,14 @@ contract OllaCoreInstantRedemptionTest is Test {
         // totalAssets = buffered(50) + staked(50) = 100, totalSupply = 100 -> rate = 1:1.
         // Reconcile: available = balance(130) - finalized(80) = 50 >= buffered(50) (ok) (no delta).
         // available = bufferedAssets = 50.
-        // At 1:1 rate, 60 shares -> grossAssets = 60 > available (50) -> revert.
+        // At 1:1 rate, 60 shares -> grossAssets = 60, fee = 60*0.05 = 3, netAssets = 57 > available (50) -> revert.
         asset.mint(address(vault), 30 * DECIMALS);
         _setFinalizedUnclaimedAssets(80 * DECIMALS);
         _setBufferedAssets(50 * DECIMALS);
         _setStakedPrincipal(50 * DECIMALS);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IOllaVault.OllaVault__InsufficientLiquidity.selector, 60 * DECIMALS, 50 * DECIMALS)
+            abi.encodeWithSelector(IOllaVault.OllaVault__InsufficientLiquidity.selector, 57 * DECIMALS, 50 * DECIMALS)
         );
         vm.prank(alice);
         vault.instantRedeem(60 * DECIMALS, bob, 0);
@@ -646,40 +647,27 @@ contract OllaCoreInstantRedemptionTest is Test {
         _performDeposit(alice, depositAmount);
 
         uint256 bufferStart = vault.bufferedAssets();
-        IOllaCore.FlowCounters memory flowsStart = core.flowCounters();
 
-        uint256 rate = core.exchangeRate();
-        uint256 totalGross;
+        uint256 totalNet;
 
         // Redeem 20
-        uint256 gross1 = uint256(20 * DECIMALS).mulDiv(rate, DECIMALS, Math.Rounding.Floor);
         vm.prank(alice);
-        vault.instantRedeem(20 * DECIMALS, bob, 0);
-        totalGross += gross1;
+        uint256 net1 = vault.instantRedeem(20 * DECIMALS, bob, 0);
+        totalNet += net1;
 
         // Redeem 30
-        rate = core.exchangeRate();
-        uint256 gross2 = uint256(30 * DECIMALS).mulDiv(rate, DECIMALS, Math.Rounding.Floor);
         vm.prank(alice);
-        vault.instantRedeem(30 * DECIMALS, bob, 0);
-        totalGross += gross2;
+        uint256 net2 = vault.instantRedeem(30 * DECIMALS, bob, 0);
+        totalNet += net2;
 
         // Redeem 10
-        rate = core.exchangeRate();
-        uint256 gross3 = uint256(10 * DECIMALS).mulDiv(rate, DECIMALS, Math.Rounding.Floor);
         vm.prank(alice);
-        vault.instantRedeem(10 * DECIMALS, bob, 0);
-        totalGross += gross3;
+        uint256 net3 = vault.instantRedeem(10 * DECIMALS, bob, 0);
+        totalNet += net3;
 
         uint256 bufferEnd = vault.bufferedAssets();
-        IOllaCore.FlowCounters memory flowsEnd = core.flowCounters();
 
-        assertEq(bufferEnd, bufferStart - totalGross, "buffer decreased by sum of grossAssets");
-        assertEq(
-            flowsEnd.cumulativeWithdrawals,
-            flowsStart.cumulativeWithdrawals + totalGross,
-            "cumulative withdrawals match"
-        );
+        assertEq(bufferEnd, bufferStart - totalNet, "buffer decreased by sum of netAssets");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -739,13 +727,16 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // fee=5%, so grossAssets = shares at 1:1. We need grossAssets <= available (100).
-        // At 1:1 rate, grossAssets = shares. So redeem exactly 100 shares => grossAssets = 100 = available.
+        // fee=5%, so grossAssets = shares at 1:1 = 100e18. netAssets = 95e18.
+        // New check: netAssets(95) <= available(100) -> passes.
+        // Buffer decreases by netAssets(95), so remaining buffer = 5e18 (the fee stays).
+        uint256 grossAssets = 100 * DECIMALS; // 1:1 rate
+        uint256 fee = grossAssets * 500 / BP_DIVISOR; // 5e18
         vm.prank(alice);
         uint256 netAssets = vault.instantRedeem(100 * DECIMALS, bob, 0);
 
         assertGt(netAssets, 0, "redemption succeeded");
-        assertEq(vault.availableForInstantRedemption(), 0, "buffer fully drained");
+        assertEq(vault.availableForInstantRedemption(), fee, "buffer retains fee amount");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -756,9 +747,12 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
+        // Set fee to 0 so netAssets == grossAssets, keeping the edge-case clean.
+        _setInstantRedemptionFee(0);
+
         // available = bufferedAssets = 100 after deposit.
-        // Try to redeem 101 shares at 1:1 rate -> grossAssets = 101 > available (100).
-        // Liquidity check fires before burn, so alice not having 101 shares doesn't matter.
+        // Try to redeem 100e18+1 shares at 1:1 rate, 0% fee -> netAssets = 100e18+1 > available (100e18).
+        // Liquidity check fires before burn, so alice not having 100e18+1 shares doesn't matter.
         uint256 redeemAmount = depositAmount + 1;
         vm.expectRevert(
             abi.encodeWithSelector(IOllaVault.OllaVault__InsufficientLiquidity.selector, redeemAmount, depositAmount)
@@ -800,7 +794,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 expectedFee = grossAssets * feeBP / BP_DIVISOR;
         uint256 expectedNet = grossAssets - expectedFee;
 
-        uint256 govBefore = asset.balanceOf(governance);
+        uint256 bufferBefore = vault.bufferedAssets();
 
         vm.prank(alice);
         uint256 netAssets = vault.instantRedeem(redeemShares, bob, 0);
@@ -808,7 +802,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         assertEq(netAssets, expectedNet, "net assets match");
         assertEq(netAssets + expectedFee, grossAssets, "net + fee == gross");
         assertEq(asset.balanceOf(bob), expectedNet, "bob receives net");
-        assertEq(asset.balanceOf(governance) - govBefore, expectedFee, "governance receives fee");
+        assertEq(vault.bufferedAssets(), bufferBefore - expectedNet, "buffer decreased by netAssets (fee absorbed)");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -908,13 +902,15 @@ contract OllaCoreInstantRedemptionTest is Test {
        34. RECIPIENT IS GOVERNANCE (fee + net same address)
     //////////////////////////////////////////////////////////////*/
 
-    function test_Redeem_RecipientIsGovernance_ReceivesGrossAssets() external {
+    function test_Redeem_RecipientIsGovernance_ReceivesNetAssets() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
         uint256 sharesToRedeem = 50 * DECIMALS;
         uint256 rate = core.exchangeRate();
         uint256 grossAssets = sharesToRedeem.mulDiv(rate, DECIMALS, Math.Rounding.Floor);
+        uint256 fee = grossAssets * 500 / BP_DIVISOR;
+        uint256 expectedNet = grossAssets - fee;
 
         uint256 govBalanceBefore = asset.balanceOf(governance);
 
@@ -922,7 +918,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         vault.instantRedeem(sharesToRedeem, governance, 0);
 
         uint256 govBalanceAfter = asset.balanceOf(governance);
-        assertEq(govBalanceAfter - govBalanceBefore, grossAssets, "governance receives gross assets (net + fee)");
+        assertEq(govBalanceAfter - govBalanceBefore, expectedNet, "governance receives net assets only (fee absorbed)");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -940,6 +936,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         // After sync (triggered by redeem), bufferedAssets = 150e18
         // totalSupply = 100e18 shares, so rate = 150e18 * 1e18 / 100e18 = 1.5e18
         uint256 sharesToRedeem = 50 * DECIMALS;
+        uint256 syncedBuffer = depositAmount + rewards; // 150e18
 
         // Perform redeem -- this triggers _syncBufferedWithBalance() first
         vm.prank(alice);
@@ -956,7 +953,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         assertGt(expectedGross, sharesToRedeem, "grossAssets > shares at rate > 1e18");
         assertEq(netAssets, expectedNet, "net assets match expected at higher rate");
         assertEq(asset.balanceOf(bob), expectedNet, "bob receives correct net assets");
-        assertEq(asset.balanceOf(governance), expectedFee, "governance receives correct fee");
+        assertEq(vault.bufferedAssets(), syncedBuffer - netAssets, "fee stays in buffer");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -987,20 +984,18 @@ contract OllaCoreInstantRedemptionTest is Test {
       37. totalAssets DECREASES AFTER REDEMPTION
     //////////////////////////////////////////////////////////////*/
 
-    function test_Redeem_TotalAssetsDecreasesbyGrossAssets() external {
+    function test_Redeem_TotalAssetsDecreasesByNetAssets() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
         uint256 totalAssetsBefore = core.totalAssets();
         uint256 sharesToRedeem = 40 * DECIMALS;
-        uint256 rate = core.exchangeRate();
-        uint256 grossAssets = sharesToRedeem.mulDiv(rate, DECIMALS, Math.Rounding.Floor);
 
         vm.prank(alice);
-        vault.instantRedeem(sharesToRedeem, bob, 0);
+        uint256 netAssets = vault.instantRedeem(sharesToRedeem, bob, 0);
 
         uint256 totalAssetsAfter = core.totalAssets();
-        assertEq(totalAssetsAfter, totalAssetsBefore - grossAssets, "totalAssets decreased by grossAssets");
+        assertEq(totalAssetsAfter, totalAssetsBefore - netAssets, "totalAssets decreased by netAssets");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1102,12 +1097,12 @@ contract OllaCoreInstantRedemptionTest is Test {
         uint256 grossAssets = sharesToRedeem.mulDiv(rate, DECIMALS, Math.Rounding.Floor);
         uint256 expectedFee = grossAssets * 2_000 / BP_DIVISOR;
         uint256 expectedNet = grossAssets - expectedFee;
-        uint256 govBefore = asset.balanceOf(governance);
+        uint256 bufferBefore = vault.bufferedAssets();
 
         vm.prank(alice);
         uint256 netAssets = vault.instantRedeem(sharesToRedeem, bob, 0);
 
         assertEq(netAssets, expectedNet, "20% fee: netAssets == grossAssets - fee");
-        assertEq(asset.balanceOf(governance) - govBefore, expectedFee, "20% fee: governance gets fee");
+        assertEq(vault.bufferedAssets(), bufferBefore - expectedNet, "20% fee: buffer decreased by netAssets");
     }
 }
