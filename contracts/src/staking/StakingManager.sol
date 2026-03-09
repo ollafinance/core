@@ -462,7 +462,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
         info.stakedAmount = 0;
-        info.pendingExitAmount = exitAmount;
+        info.exitRollup = address(rollup);
+        info.pendingExitAmount = SafeCast.toUint96(exitAmount);
 
         // Update running state
         _aggregateState.stakedAmount -= exitAmount;
@@ -479,7 +480,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Refreshes a single attester's cached state from the rollup.
     /// @dev Reads rollup state (source of truth), delta-updates the aggregate accumulator,
     ///      and finalizes exits when exitable. Silently skips unknown attesters.
-    /// @param rollup The rollup staking interface.
+    ///      Active attesters are queried on the canonical rollup (they follow upgrades via GSE).
+    ///      Exiting attesters are queried on their stored exitRollup to prevent phantom credits
+    ///      after a rollup upgrade (exit state is local to the rollup instance that initiated it).
+    /// @param canonicalRollup The current canonical rollup interface.
     /// @param attester The attester address to refresh.
     // slither-disable-start calls-loop
     // slither-disable-start costly-loop
@@ -487,9 +491,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-start reentrancy-no-eth
     // slither-disable-start pess-multiple-storage-read
     // slither-disable-next-line cyclomatic-complexity
-    function _refreshSingleAttester(IAztecRollup rollup, address attester) internal {
+    function _refreshSingleAttester(IAztecRollup canonicalRollup, address attester) internal {
         AttesterInfo storage info = _attesterMap[attester];
         if (info.attester == address(0)) return; // Unknown attester -- skip silently
+
+        // Exiting attesters must be queried on the rollup where their exit was initiated,
+        // because exit state is local to each rollup instance and does not migrate on upgrade.
+        IAztecRollup rollup = (info.status == InternalAttesterStatus.Exiting && info.exitRollup != address(0))
+            ? IAztecRollup(info.exitRollup)
+            : canonicalRollup;
 
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
@@ -522,7 +532,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             }
             _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
             uint256 exitAmount = view_.exit.amount;
-            info.pendingExitAmount = exitAmount;
+            info.exitRollup = address(rollup);
+            info.pendingExitAmount = SafeCast.toUint96(exitAmount);
             _aggregateState.pendingUnstakeAmount += exitAmount;
         }
 
