@@ -76,6 +76,9 @@ contract OllaGovernanceDeployer is BaseDeployer {
     /// @param config The deployment configuration.
     /// @param govProxy The OllaGovernance proxy address.
     function renounceDeployerRoles(DeployConfig memory config, address govProxy) external {
+        if (config.deployer == config.governance) {
+            return;
+        }
         OllaGovernance gov = OllaGovernance(payable(govProxy));
         vm.startBroadcast(config.deployerPrivateKey);
         // Revoke operational roles granted during initialization

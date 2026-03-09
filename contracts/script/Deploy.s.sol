@@ -84,6 +84,7 @@ contract DeployScript is BaseDeployer {
         // Initialize deployment JSON
         string memory json = _initDeploymentJson(config.name, config.chainId, config.deployer);
         bool isFirstAddress = true;
+        bool shouldRenounceDeployerRoles = config.deployer != config.governance;
 
         // 1. Deploy OllaGovernance (implementation + proxy + initialize)
         //    Must deploy first so it can be set as OllaCore's owner.
@@ -288,7 +289,9 @@ contract DeployScript is BaseDeployer {
         // 9. Renounce deployer's temporary roles on OllaGovernance.
         //    Revokes PROPOSER_ROLE, EXECUTOR_ROLE, CANCELLER_ROLE and DEFAULT_ADMIN_ROLE.
         //    After this, only config.governance holds operational roles.
-        _ollaGovernanceDeployer.renounceDeployerRoles(config, ollaGovProxy);
+        if (shouldRenounceDeployerRoles) {
+            _ollaGovernanceDeployer.renounceDeployerRoles(config, ollaGovProxy);
+        }
 
         // 10. Write deployment JSON
         json = _closeAddressesJson(json);
