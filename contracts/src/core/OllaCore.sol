@@ -1288,8 +1288,8 @@ contract OllaCore is
         uint256 bufferedAssets,
         uint256 pendingWithdrawals
     ) internal pure returns (uint256 totalAssets_) {
-        uint256 total = bufferedAssets + buckets.stakedPrincipal + buckets.rewardsAccumulatorBalance
-            + buckets.claimableRewards;
+        uint256 total =
+            bufferedAssets + buckets.stakedPrincipal + buckets.rewardsAccumulatorBalance + buckets.claimableRewards;
         // Underflow guard; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (buckets.slashingDelta >= total) return 0;

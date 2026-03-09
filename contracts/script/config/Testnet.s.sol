@@ -23,20 +23,21 @@ contract TestnetConfig is ConfigHelper {
             deployer: deployer,
             // Feature flags - do NOT deploy mocks on testnet
             deployMocks: false,
-            // External addresses - TODO: replace with real addresses
-            asset: address(0), // TODO: Set real asset address
-            stakingManager: address(0), // TODO: Set real staking manager address
-            // Protocol fee config - TODO: set real values
+            // External addresses - real Aztec Sepolia contracts
+            asset: 0x5595cb9ED193cAc2C0Bc5393313bc6115817954B,
+            rollupRegistry: 0xA0BFb1B494FB49041e5c6e8c2C1BE09cD171c6Ba,
+            // Protocol fee config
             protocolFeeBP: 500,
             treasuryFeeSplitBP: 5000,
             // Governance config - TODO: replace with real addresses
             governance: deployer, // TODO: Set real governance multisig
             treasury: deployer, // TODO: Set real treasury address
-            timelockMinDelay: 1 days,
-            // Satellite addresses - TODO: replace with real addresses
-            withdrawalQueue: deployer, // TODO: Set real withdrawal queue address
-            rewardsAccumulator: deployer, // TODO: Set real rewards vault address
-            safetyModule: deployer // TODO: Set real safety module address
+            providerAdmin: deployer, // TODO: Set real provider admin address
+            timelockMinDelay: 0, // zero for initial testnet — allows atomic wiring
+            // Satellite addresses - populated during deployment
+            withdrawalQueue: deployer,
+            rewardsAccumulator: deployer,
+            safetyModule: deployer
         });
     }
 }

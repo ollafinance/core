@@ -15,13 +15,14 @@ struct DeployConfig {
     bool deployMocks;
     // External addresses (used when deployMocks is false)
     address asset;
-    address stakingManager;
+    address rollupRegistry;
     // Protocol fee config
     uint256 protocolFeeBP;
     uint256 treasuryFeeSplitBP;
     // Governance config
     address governance; // EOA/multisig that controls OllaGovernance
     address treasury; // fee recipient
+    address providerAdmin; // StakingProviderRegistry provider admin + rewards recipient
     uint256 timelockMinDelay; // minimum timelock delay in seconds
     // Satellite addresses (populated during deployment)
     address withdrawalQueue;
