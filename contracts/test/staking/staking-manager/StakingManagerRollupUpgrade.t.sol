@@ -1,0 +1,271 @@
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity >=0.8.27 <0.9.0;
+
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
+
+import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
+
+/// @title StakingManagerRollupUpgradeTest
+/// @notice Tests that exiting attesters survive a rollup upgrade without phantom credits or stranded funds.
+contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
+    MockAztecRollup internal rollupB;
+
+    function setUp() public override {
+        super.setUp();
+        // Deploy a second rollup instance to simulate an upgrade
+        rollupB = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    ROLLUP UPGRADE -- EXITING ATTESTER
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Core scenario: an attester has an in-flight exit on rollup A when the registry
+    ///         upgrades to rollup B. refreshAttesterState must still query rollup A for the exit
+    ///         and must NOT credit a phantom exit amount just because rollup B has no exit record.
+    function test_RefreshAttesterState_ExitingAttester_SurvivesRollupUpgrade() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // 1. Initiate unstake on rollup A -- attester transitions to Exiting
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        assertTrue(stakingManager.isUnstakePending(attester), "attester should be exiting");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should be 1");
+
+        // 2. Make the exit NOT yet exitable (future timestamp) so it stays pending
+        rollup.setExitReady(attester, block.timestamp + 1 days);
+
+        // 3. Simulate rollup upgrade: registry now points to rollup B
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        // 4. Refresh -- should query rollup A (stored exitRollup), NOT rollup B
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        // The attester must still be in Exiting state -- NOT removed with a phantom credit
+        assertTrue(stakingManager.isUnstakePending(attester), "attester should still be exiting after upgrade");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should still be 1");
+
+        // No phantom funds should be credited
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        assertEq(exitAmount, 0, "exitAmount should be 0 -- no phantom credit");
+        assertEq(received, 0, "received should be 0 -- no funds transferred");
+    }
+
+    /// @notice After a rollup upgrade, once the exit on rollup A becomes exitable,
+    ///         refreshAttesterState must finalize it on rollup A and recover the funds.
+    function test_RefreshAttesterState_ExitingAttester_FinalizesOnOldRollupAfterUpgrade() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // 1. Initiate unstake on rollup A
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        // 2. Make exit not yet exitable
+        rollup.setExitReady(attester, block.timestamp + 1 days);
+
+        // 3. Upgrade to rollup B
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        // 4. Advance time so exit becomes exitable on rollup A
+        vm.warp(block.timestamp + 2 days);
+
+        // 5. Refresh -- should finalize on rollup A
+        uint256 managerBalanceBefore = aztec.balanceOf(address(stakingManager));
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        // Attester should be removed now
+        assertFalse(stakingManager.isUnstakePending(attester), "attester should no longer be exiting");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "exiting count should be 0");
+
+        // Funds should have arrived at StakingManager from rollup A
+        uint256 managerBalanceAfter = aztec.balanceOf(address(stakingManager));
+        assertEq(
+            managerBalanceAfter - managerBalanceBefore,
+            ACTIVATION_THRESHOLD,
+            "funds should be transferred from old rollup"
+        );
+
+        // Core can claim the funds
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match finalized amount");
+        assertEq(received, ACTIVATION_THRESHOLD, "received should match transferred tokens");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core should receive funds");
+    }
+
+    /// @notice Mixed scenario: one attester is active (follows upgrade), one is exiting (stays on old rollup).
+    ///         After upgrade, active attester works on rollup B, exiting attester finalizes on rollup A.
+    function test_RefreshAttesterState_MixedActiveAndExiting_AfterUpgrade() external {
+        _setupMultipleStakedAttesters(2);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+        address activeAttester = keys[0].attester;
+        address exitingAttester = keys[1].attester;
+
+        // Unstake one attester (picks from end of set → keys[1])
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        assertTrue(stakingManager.isUnstakePending(exitingAttester), "attester[1] should be exiting");
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "1 active attester remains");
+
+        // Make exit not yet exitable
+        rollup.setExitReady(exitingAttester, block.timestamp + 1 days);
+
+        // Simulate rollup upgrade: register the active attester on rollup B
+        // (mimics GSE _moveWithLatestRollup=true migrating the active attester)
+        aztec.mint(address(rollupB), ACTIVATION_THRESHOLD);
+        rollupB.setStake(activeAttester, ACTIVATION_THRESHOLD, address(stakingManager));
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        // Refresh both attesters
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
+
+        // Active attester should still be tracked as active (visible on rollup B)
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "active attester should remain active");
+        // Exiting attester should still be pending (exit on rollup A not yet exitable)
+        assertTrue(stakingManager.isUnstakePending(exitingAttester), "exiting attester should still be pending");
+
+        // Advance time and finalize the exit on rollup A
+        vm.warp(block.timestamp + 2 days);
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
+
+        assertFalse(stakingManager.isUnstakePending(exitingAttester), "exiting attester should be finalized");
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "active attester unaffected");
+
+        // Claim funds
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match finalized exit");
+        assertEq(received, ACTIVATION_THRESHOLD, "received should match tokens from old rollup");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core should get the funds");
+    }
+
+    /// @notice Regression test for the phantom credit bug: without the exitRollup fix, an Exiting
+    ///         attester queried against the new rollup (which has no exit record) would be
+    ///         interpreted as "externally finalized", crediting _pendingClaimAmount without
+    ///         any actual token transfer.
+    function test_RefreshAttesterState_NoPhantomCredit_AfterUpgrade() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // Unstake on rollup A
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        // Make exit not yet exitable
+        rollup.setExitReady(attester, block.timestamp + 1 days);
+
+        // Upgrade to rollup B
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        // Refresh multiple times -- should never produce phantom credits
+        for (uint256 i; i < 3; ++i) {
+            stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+            vm.prank(core);
+            (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+
+            assertEq(exitAmount, 0, "exitAmount must be 0 on each refresh -- no phantom credit");
+            assertEq(received, 0, "received must be 0 -- no funds have been transferred");
+        }
+
+        // Attester must still be tracked as exiting
+        assertTrue(stakingManager.isUnstakePending(attester), "attester should remain exiting");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should be 1");
+    }
+
+    /// @notice Multiple attesters exiting on rollup A: after upgrade, all should finalize correctly
+    ///         on the old rollup once their exits become exitable.
+    function test_RefreshAttesterState_MultipleExitingAttesters_AllFinalizeOnOldRollup() external {
+        uint256 count = 3;
+        _setupMultipleStakedAttesters(count);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
+
+        // Unstake all
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD * count);
+        assertEq(stakingManager.getPendingUnstakeCount(), count, "all should be exiting");
+
+        // Stagger exit times
+        for (uint256 i; i < count; ++i) {
+            rollup.setExitReady(keys[i].attester, block.timestamp + (i + 1) * 1 days);
+        }
+
+        // Upgrade to rollup B
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        // Advance past all exit times
+        vm.warp(block.timestamp + (count + 1) * 1 days);
+
+        // Refresh all
+        stakingManager.refreshAttesterState(_attesterAddresses(count));
+
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "all exits should be finalized");
+
+        // Claim
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+
+        uint256 expectedTotal = ACTIVATION_THRESHOLD * count;
+        assertEq(exitAmount, expectedTotal, "exitAmount should match all finalized exits");
+        assertEq(received, expectedTotal, "received should match total tokens from old rollup");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + expectedTotal, "core should receive all funds");
+    }
+
+    /// @notice An externally initiated exit detected during refresh on rollup A should store
+    ///         the correct exitRollup, so it survives a subsequent upgrade.
+    function test_RefreshAttesterState_ExternalExitOnOldRollup_SurvivesUpgrade() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // External party initiates exit on rollup A (zombie exit with future exitable time)
+        rollup.setExternalExit(attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+
+        // First refresh: detects the external exit, transitions Active -> Exiting, stores exitRollup = rollup A
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        assertTrue(stakingManager.isUnstakePending(attester), "should detect external exit");
+
+        // Upgrade to rollup B
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        // Refresh after upgrade -- should still see the exit on rollup A
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        assertTrue(stakingManager.isUnstakePending(attester), "should still be exiting after upgrade");
+
+        // No phantom credits
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        assertEq(exitAmount, 0, "no phantom credit");
+        assertEq(received, 0, "no funds transferred");
+
+        // Advance time and finalize
+        vm.warp(block.timestamp + 2 days);
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertFalse(stakingManager.isUnstakePending(attester), "exit should be finalized");
+
+        uint256 coreBalanceBefore = aztec.balanceOf(core);
+        vm.prank(core);
+        (received, exitAmount,) = stakingManager.getUnstakedFunds();
+
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match finalized amount");
+        assertEq(received, ACTIVATION_THRESHOLD, "received should match transferred tokens");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core gets the funds");
+    }
+}

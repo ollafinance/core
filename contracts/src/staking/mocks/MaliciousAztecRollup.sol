@@ -317,6 +317,12 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
+    function setStake(address _attester, uint256 _amount, address _withdrawer) external override {
+        stakes[_attester] = _amount;
+        withdrawers[_attester] = _withdrawer;
+    }
+
+    /// @inheritdoc IMockAztecRollup
     function clearAttester(address _attester) external override {
         stakes[_attester] = 0;
         delete _exits[_attester];
