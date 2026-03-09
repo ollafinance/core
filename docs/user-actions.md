@@ -68,7 +68,6 @@ sequenceDiagram
     participant SAF as SafetyModule
     participant ST as StAztec
     participant AZ as AssetToken
-    participant T as Treasury
 
     U->>C: redeem(shares, recipient)
     C->>SAF: isPaused()
@@ -79,13 +78,11 @@ sequenceDiagram
     C->>C: grossAssets = convertToAssets(shares)
     C->>C: fee = grossAssets * feeBP / BP_DIVISOR
     C->>C: netAssets = grossAssets - fee
-    C->>C: available = availableForInstantRedemption()
-    C->>C: require grossAssets <= available
+    C->>C: available = bufferedAssets - pendingWithdrawalAssets
+    C->>C: require netAssets <= available
     C->>ST: burn(owner=U, amount=shares)
-    C->>C: bufferedAssets -= grossAssets
+    C->>C: bufferedAssets -= netAssets
+    Note right of C: Fee stays in buffer, accruing to remaining shareholders
     C->>AZ: transfer(recipient, netAssets)
-    opt fee > 0
-        C->>AZ: transfer(treasury, fee)
-    end
     C-->>U: netAssets
 ```
