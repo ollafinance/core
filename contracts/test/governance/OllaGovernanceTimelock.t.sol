@@ -125,7 +125,7 @@ contract OllaGovernanceTimelockTest is OllaGovernanceSetup {
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(0), MIN_DELAY);
 
-        // Same operation, same salt → duplicate
+        // Same operation, same salt -> duplicate
         vm.expectRevert();
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(0), MIN_DELAY);
@@ -137,7 +137,7 @@ contract OllaGovernanceTimelockTest is OllaGovernanceSetup {
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(0), MIN_DELAY);
 
-        // Different salt → allowed
+        // Different salt -> allowed
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(uint256(1)), MIN_DELAY);
     }

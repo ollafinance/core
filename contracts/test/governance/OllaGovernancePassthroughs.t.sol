@@ -154,7 +154,7 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
 
     function test_SetDepositCap_ViaTimelock() external {
         bytes memory data = abi.encodeCall(IOllaGovernance.setDepositCap, (1_000 * DECIMALS));
-        // Should not revert — MockSafetyModule accepts any cap
+        // Should not revert -- MockSafetyModule accepts any cap
         _scheduleAndExecute(address(gov), data);
     }
 

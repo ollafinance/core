@@ -10,7 +10,7 @@ pragma solidity >=0.8.27 <0.9.0;
 ///           `@custom:stateless`, meaning it uses ERC-7201 namespaced storage and is safe for
 ///           both upgradeable and non-upgradeable contracts.
 ///         - The `ReentrancyGuard` constructor sets the namespaced slot to `NOT_ENTERED (1)`,
-///           but this only executes on the **implementation** — not on the proxy.
+///           but this only executes on the **implementation** -- not on the proxy.
 ///         - On a freshly deployed proxy the slot starts at `0` (uninitialized).
 ///         - The guard still works because `_reentrancyGuardEntered()` checks `value == ENTERED (2)`,
 ///           so `0` passes the check just as `1` does.
@@ -140,7 +140,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Proves that `initialize()` does NOT touch the ReentrancyGuard
-    ///         slot — it remains `0`.  This confirms the guard does not rely
+    ///         slot -- it remains `0`.  This confirms the guard does not rely
     ///         on an `__ReentrancyGuard_init()` call.
     function test_ReentrancyGuardSlot_RemainsZeroAfterInitialize() external {
         _initializeVault();
@@ -164,7 +164,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         vm.prank(alice);
         asset.approve(address(vault), amount);
 
-        // First nonReentrant call — must not revert
+        // First nonReentrant call -- must not revert
         vm.prank(alice);
         uint256 shares = vault.deposit(amount, alice, 0);
 
@@ -216,11 +216,11 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     ///         This highlights the decoupling between implementation and proxy
     ///         storage, which the ERC-7201 + stateless pattern handles safely.
     function test_ReentrancyGuardSlot_ImplementationVsProxy() external view {
-        // Implementation slot — set to 1 by the constructor
+        // Implementation slot -- set to 1 by the constructor
         bytes32 implSlot = vm.load(address(vaultImplementation), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(implSlot), NOT_ENTERED, "implementation slot should be NOT_ENTERED (1)");
 
-        // Proxy slot — uninitialised, defaults to 0
+        // Proxy slot -- uninitialised, defaults to 0
         bytes32 proxySlot = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(proxySlot), 0, "proxy slot should be 0 (uninitialized)");
     }
@@ -230,7 +230,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice After the very first `nonReentrant` call on the proxy, the slot
-    ///         transitions from `0` → `2` (ENTERED) → `1` (NOT_ENTERED).
+    ///         transitions from `0` -> `2` (ENTERED) -> `1` (NOT_ENTERED).
     ///         Subsequent calls therefore start from `1`, identical to a
     ///         non-proxy deployment.
     function test_ReentrancyGuardSlot_NormalizedAfterFirstDeposit() external {

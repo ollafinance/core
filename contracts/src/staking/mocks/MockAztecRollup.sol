@@ -95,7 +95,13 @@ contract MockAztecRollup is IMockAztecRollup {
         if (withdrawers[_attester] != msg.sender) {
             revert MockAztecRollup__NotWithdrawer();
         }
+        // Zombie exit (isRecipient=false): claim it by setting recipient
         if (_exits[_attester].exists) {
+            if (!_exits[_attester].isRecipient) {
+                _exits[_attester].recipientOrWithdrawer = _recipient;
+                _exits[_attester].isRecipient = true;
+                return true;
+            }
             revert MockAztecRollup__AlreadyExiting();
         }
 
@@ -123,6 +129,9 @@ contract MockAztecRollup is IMockAztecRollup {
         Exit memory exit = _exits[_attester];
         if (!exit.exists) {
             revert MockAztecRollup__NotExiting();
+        }
+        if (!exit.isRecipient) {
+            revert MockAztecRollup__InitiateWithdrawNeeded();
         }
         if (Timestamp.unwrap(exit.exitableAt) > block.timestamp) {
             revert MockAztecRollup__NotReady();
@@ -227,14 +236,34 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
+    function setExitRecipient(address _attester, address _recipient) external override {
+        if (_exits[_attester].exists) {
+            _exits[_attester].recipientOrWithdrawer = _recipient;
+            _exits[_attester].isRecipient = true;
+        }
+    }
+
+    /// @inheritdoc IMockAztecRollup
     function setClaimShouldFail(address _sequencer, bool _shouldFail) external override {
         claimShouldFail[_sequencer] = _shouldFail;
     }
 
     /// @inheritdoc IMockAztecRollup
+    function setStake(address _attester, uint256 _amount, address _withdrawer) external override {
+        stakes[_attester] = _amount;
+        withdrawers[_attester] = _withdrawer;
+    }
+
+    /// @inheritdoc IMockAztecRollup
     function clearAttester(address _attester) external override {
+        uint256 currentStake = stakes[_attester];
+        if (currentStake > 0) {
+            totalStaked -= currentStake;
+        }
         stakes[_attester] = 0;
+        withdrawers[_attester] = address(0);
         delete _exits[_attester];
+        delete _publicKeys[_attester];
     }
 
     /*//////////////////////////////////////////////////////////////

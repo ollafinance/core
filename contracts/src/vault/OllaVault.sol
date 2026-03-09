@@ -43,7 +43,7 @@ contract OllaVault is
     /// @notice Role for guardian pause/unpause actions.
     bytes32 public constant GUARDIAN_ROLE = RolesLib.GUARDIAN_ROLE;
 
-    /// @notice Role that only OllaCore holds — for rebalance instructions.
+    /// @notice Role that only OllaCore holds -- for rebalance instructions.
     bytes32 public constant CORE_ROLE = keccak256("CORE_ROLE");
 
     /// @notice Basis points divisor.
@@ -59,7 +59,7 @@ contract OllaVault is
     /// @notice Contract related interfaces and addresses.
     VaultModules private _modules;
 
-    /// @notice Buffer tracking — liquid assets held by the vault.
+    /// @notice Buffer tracking -- liquid assets held by the vault.
     uint256 private _bufferedAssets;
 
     /// @notice Assets that have been finalized but not yet claimed.
@@ -698,7 +698,7 @@ contract OllaVault is
         revert OllaVault__NotSupported();
     }
 
-    /// @notice Returns 0 — withdraw is async (ERC-7540).
+    /// @notice Returns 0 -- withdraw is async (ERC-7540).
     /// @return Always 0.
     // solhint-disable-next-line use-natspec
     function maxWithdraw(address) external pure override returns (uint256) {
@@ -732,16 +732,20 @@ contract OllaVault is
     }
 
     /// @notice Returns the total assets attributable to shareholders (ERC-4626).
-    /// @dev Proxies to Core.totalAssets() — Core owns the pricing computation.
+    /// @dev Proxies to Core.totalAssets() -- Core owns the pricing computation.
     /// @return The total assets.
     function totalAssets() public view override returns (uint256) {
         return IOllaCore(_modules.core).totalAssets();
     }
 
     /// @notice Returns the maximum assets currently available for instant redemptions.
+    /// @dev Excludes assets reserved for pending async withdrawals so that instant
+    ///      redemptions cannot consume liquidity earmarked for the withdrawal queue.
     /// @return The maximum assets available.
     function availableForInstantRedemption() public view override returns (uint256) {
-        return _bufferedAssets;
+        uint256 pending = _modules.withdrawalQueue.totalPendingAssets();
+        if (pending >= _bufferedAssets) return 0;
+        return _bufferedAssets - pending;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -843,7 +847,9 @@ contract OllaVault is
         return (requestId, assetsExpected);
     }
 
-    /// @notice Burns shares, deducts instant redemption fee, transfers net assets, and sends fee to treasury.
+    /// @notice Burns shares, deducts instant redemption fee, and transfers net assets.
+    /// @dev The fee is absorbed into the protocol (remains in _bufferedAssets), benefiting
+    ///      all remaining shareholders.
     /// @param owner The address whose shares are burned.
     /// @param shares The amount of shares to redeem.
     /// @param recipient The address that receives the net assets.
@@ -868,24 +874,18 @@ contract OllaVault is
         netAssets = grossAssets - fee;
 
         uint256 available = availableForInstantRedemption();
-        // Liquidity sufficiency check; not a timestamp concern.
+        // Liquidity sufficiency check; only netAssets leaves the buffer (fee is absorbed).
         // slither-disable-next-line timestamp
-        if (grossAssets > available) revert OllaVault__InsufficientLiquidity(grossAssets, available);
+        if (netAssets > available) revert OllaVault__InsufficientLiquidity(netAssets, available);
 
         // Trusted stAztec token; burn reduces supply before asset transfer.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
         modules.stAztec.burn(owner, shares);
 
-        _bufferedAssets -= grossAssets;
+        // Only subtract netAssets; the fee stays in _bufferedAssets, benefiting remaining shareholders.
+        _bufferedAssets -= netAssets;
 
         modules.asset.safeTransfer(recipient, netAssets);
-
-        // Skip treasury transfer when fee is zero.
-        // slither-disable-next-line incorrect-equality
-        if (fee != 0) {
-            address treasuryAddr = _treasury();
-            modules.asset.safeTransfer(treasuryAddr, fee);
-        }
 
         cumulativeWithdrawals += grossAssets;
 

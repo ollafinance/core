@@ -221,7 +221,7 @@ contract WithdrawalQueueTest is Test {
 
         _request(alice, shares, assetsExpected, lockedRate);
 
-        // Rate drops to 0 (extreme slashing: total assets ≈ 0).
+        // Rate drops to 0 (extreme slashing: total assets ~= 0).
         uint256 currentRate = 0;
 
         vm.expectEmit(true, false, false, true, address(queue));

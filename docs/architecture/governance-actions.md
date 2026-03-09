@@ -93,7 +93,7 @@ sequenceDiagram
 
 ## Treasury management
 
-The treasury address (where instant redemption fees are sent) is managed by `OllaGovernance` via the timelock.
+The treasury address is managed by `OllaGovernance` via the timelock. Note: instant redemption fees are no longer sent to the treasury — they are absorbed into the protocol buffer, benefiting remaining shareholders.
 
 ```mermaid
 sequenceDiagram

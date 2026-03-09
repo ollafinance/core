@@ -32,6 +32,13 @@ interface IOllaGovernance {
     /// @param core The OllaCore contract address.
     event CoreSet(address indexed core);
 
+    /// @notice Emitted when a grantRole or revokeRole call fails during admin role propagation.
+    /// @dev Governance should retry the failed operation via a timelock-scheduled call.
+    /// @param satellite The satellite contract where the call failed.
+    /// @param account The account that was being granted/revoked.
+    /// @param isGrant True if the failed call was grantRole, false if revokeRole.
+    event AdminRolePropagationFailed(address indexed satellite, address indexed account, bool indexed isGrant);
+
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
     //////////////////////////////////////////////////////////////*/

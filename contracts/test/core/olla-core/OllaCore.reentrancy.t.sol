@@ -189,10 +189,6 @@ contract OllaCoreReentrancyTest is Test {
         vault.unpause();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), address(withdrawalQueue));
-        vm.stopPrank();
-
         alice = makeAddr("alice");
         bob = makeAddr("bob");
         permitOwnerKey = 0xA11CE;
@@ -334,26 +330,6 @@ contract OllaCoreReentrancyTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                          INSTANT REDEMPTION (FEE PATH)
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_Redeem_ReenteredFromFeeTransfer() external {
-        _deposit(alice, 100 * DECIMALS);
-
-        uint256 sharesToRedeem = 10 * DECIMALS;
-
-        // Skip first transfer (net assets to recipient), fire re-entry on second (fee to governance)
-        asset.setTransferReentrySkipCount(1);
-        asset.configureTransferReentry(
-            address(vault), abi.encodeCall(vault.instantRedeem, (sharesToRedeem, bob, 0)), true
-        );
-
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        vm.prank(alice);
-        vault.instantRedeem(sharesToRedeem, bob, 0);
-    }
-
-    /*//////////////////////////////////////////////////////////////
                      INSTANT REDEMPTION WITH PERMIT
     //////////////////////////////////////////////////////////////*/
 
@@ -446,11 +422,6 @@ contract OllaCoreHarvestReentrancyTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), governance);
-        core.grantRole(core.OPERATOR_ROLE(), address(rewardsAccumulator));
-        vm.stopPrank();
 
         alice = makeAddr("alice");
 
@@ -550,10 +521,6 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        vm.startPrank(governance);
-        core.grantRole(core.OPERATOR_ROLE(), governance);
-        vm.stopPrank();
-
         alice = makeAddr("alice");
     }
 
@@ -576,7 +543,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
     function test_RevertWhen_UpdateAccounting_ReenteredFromSafetyModuleCheck() external {
         _deposit(alice, 10 * DECIMALS);
 
-        // Re-entry targets updateAccounting() on core — same nonReentrant guard applies
+        // Re-entry targets updateAccounting() on core -- same nonReentrant guard applies
         safetyModule.setReentry(address(core), abi.encodeCall(core.updateAccounting, ()));
         safetyModule.setReenterOnCheckAccountingLiveness(true);
 

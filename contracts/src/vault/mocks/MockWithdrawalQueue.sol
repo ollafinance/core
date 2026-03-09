@@ -14,10 +14,10 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     address public override vault;
 
     /// @notice Next request id to assign.
-    uint256 public override nextRequestId = 1;
+    uint64 public override nextRequestId = 1;
 
     /// @notice Next pending request id to finalize.
-    uint256 public override nextPendingId = 1;
+    uint64 public override nextPendingId = 1;
 
     /// @notice Total pending assets (not enforced in mock).
     uint256 public override totalPendingAssets;
@@ -32,7 +32,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     mapping(uint256 requestId => WithdrawalRequest request) internal _requests;
 
     /// @notice Gas threshold value.
-    uint256 private _gasThresholdValue;
+    uint32 private _gasThresholdValue;
 
     /*//////////////////////////////////////////////////////////////
                              VAULT FUNCTIONS
@@ -44,14 +44,14 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @param gasThreshold_ Initial gas threshold.
     function initialize(address vault_, address admin_, uint256 gasThreshold_) external override {
         vault = vault_;
-        _gasThresholdValue = gasThreshold_;
+        _gasThresholdValue = uint32(gasThreshold_);
         admin_;
     }
 
     /// @notice Sets the gas threshold.
     /// @param threshold The new gas threshold.
     function setGasThreshold(uint256 threshold) external override {
-        _gasThresholdValue = threshold;
+        _gasThresholdValue = uint32(threshold);
     }
 
     /// @notice Records a withdrawal request.
@@ -106,7 +106,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
             used += request.assetsExpected;
             ++finalizedCount;
         }
-        nextPendingId = id;
+        nextPendingId = uint64(id);
         if (totalPendingAssets >= used) {
             totalPendingAssets -= used;
         }
@@ -152,7 +152,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
 
     /// @notice Returns the gas threshold.
     /// @return The gas threshold.
-    function gasThreshold() external view override returns (uint256) {
+    function gasThreshold() external view override returns (uint32) {
         return _gasThresholdValue;
     }
 }

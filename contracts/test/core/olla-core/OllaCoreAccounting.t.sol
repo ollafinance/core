@@ -109,12 +109,6 @@ contract OllaCoreAccountingTest is Test {
 
         alice = makeAddr("alice");
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        core.grantRole(operatorRole, address(this));
-        vm.stopPrank();
-
         vm.warp(block.timestamp + 1 hours);
     }
 
@@ -267,7 +261,7 @@ contract OllaCoreAccountingTest is Test {
 
         IOllaCore.LatestReport memory reportAfter = core.latestReport();
         assertEq(reportAfter.netFlows, -int256(assetsExpected), "net flows negative");
-        // No actual rewards accrued — pending withdrawal assets are excluded from totalAssets
+        // No actual rewards accrued -- pending withdrawal assets are excluded from totalAssets
         // so the formula correctly computes grossRewards = 0 instead of phantom rewards.
         assertEq(reportAfter.grossRewards, 0, "no phantom rewards from withdrawal requests");
         assertEq(reportAfter.totalAssets, depositAmount - assetsExpected, "total assets excludes pending withdrawals");
@@ -625,7 +619,7 @@ contract OllaCoreAccountingTest is Test {
         // Fuzz the asset amount to convert
         uint256 assets = bound(uint256(assetsSeed), 1, type(uint96).max);
 
-        // Roundtrip: assets → shares → assets
+        // Roundtrip: assets -> shares -> assets
         uint256 shares = core.convertToShares(assets);
         uint256 assetsBack = core.convertToAssets(shares);
 
@@ -658,7 +652,7 @@ contract OllaCoreAccountingTest is Test {
     }
 
     function test_ConvertToAssetsCeil_MatchesFloor_WhenExact() external {
-        // 1:1 rate — both rounding modes yield the same result
+        // 1:1 rate -- both rounding modes yield the same result
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 

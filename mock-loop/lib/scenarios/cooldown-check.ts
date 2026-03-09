@@ -17,7 +17,7 @@ export async function executeCooldownCheck(
     const ollaCoreRead = getOllaCore(addresses, clients.publicClient);
 
     // Read cooldown state for reporting
-    const cooldown = (await ollaCoreRead.read.rebalanceCooldown()) as bigint;
+    const cooldown = BigInt(await ollaCoreRead.read.rebalanceCooldown());
 
     // Attempt rebalance - should revert with CooldownActive
     try {

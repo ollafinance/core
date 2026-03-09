@@ -35,12 +35,14 @@ interface IStakingManager {
     /// @notice Tracks an attester with their originally staked amount and last seen status.
     /// @param attester The attester address.
     /// @param stakedAmount The amount originally staked (activation threshold at stake time).
-    /// @param pendingExitAmount The amount added to aggregate pendingUnstakeAmount for this attester.
+    /// @param exitRollup The rollup instance where the attester's exit was initiated.
+    /// @param pendingExitAmount The amount added to aggregate pendingUnstakeAmount for this attester (uint96).
     /// @param status The local registry status.
     struct AttesterInfo {
         address attester;
         uint256 stakedAmount;
-        uint256 pendingExitAmount;
+        address exitRollup;
+        uint96 pendingExitAmount;
         InternalAttesterStatus status;
     }
 
@@ -189,7 +191,7 @@ interface IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Refreshes cached state for specific attesters by reading the rollup.
-    /// @dev Permissionless — anyone can call. Reads rollup state (source of truth) and
+    /// @dev Permissionless -- anyone can call. Reads rollup state (source of truth) and
     ///      delta-updates the aggregate accumulator. Also finalizes exits when exitable.
     ///      Idempotent: calling twice for the same attester in the same block is safe.
     /// @param attesters The attester addresses to refresh.

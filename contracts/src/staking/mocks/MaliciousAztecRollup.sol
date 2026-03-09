@@ -163,7 +163,13 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         if (withdrawers[_attester] != msg.sender) {
             revert MockAztecRollup__NotWithdrawer();
         }
+        // Zombie exit (isRecipient=false): claim it by setting recipient
         if (_exits[_attester].exists) {
+            if (!_exits[_attester].isRecipient) {
+                _exits[_attester].recipientOrWithdrawer = _recipient;
+                _exits[_attester].isRecipient = true;
+                return true;
+            }
             revert MockAztecRollup__AlreadyExiting();
         }
 
@@ -300,6 +306,20 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @param _shouldFail Whether to revert.
     function setClaimShouldFail(address _sequencer, bool _shouldFail) external override {
         claimShouldFail[_sequencer] = _shouldFail;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setExitRecipient(address _attester, address _recipient) external override {
+        if (_exits[_attester].exists) {
+            _exits[_attester].recipientOrWithdrawer = _recipient;
+            _exits[_attester].isRecipient = true;
+        }
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setStake(address _attester, uint256 _amount, address _withdrawer) external override {
+        stakes[_attester] = _amount;
+        withdrawers[_attester] = _withdrawer;
     }
 
     /// @inheritdoc IMockAztecRollup

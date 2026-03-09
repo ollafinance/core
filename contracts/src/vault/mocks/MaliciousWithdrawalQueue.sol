@@ -18,10 +18,10 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
     address public override vault;
 
     /// @notice Next request id to assign.
-    uint256 public override nextRequestId = 1;
+    uint64 public override nextRequestId = 1;
 
     /// @notice Next pending request id to finalize.
-    uint256 public override nextPendingId = 1;
+    uint64 public override nextPendingId = 1;
 
     /// @notice Total pending assets (not enforced in mock).
     uint256 public override totalPendingAssets;
@@ -46,7 +46,7 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Gas threshold value.
-    uint256 private _gasThresholdValue;
+    uint32 private _gasThresholdValue;
 
     /// @notice Initializes the mock with a vault address.
     /// @param vault_ OllaVault address.
@@ -54,14 +54,14 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
     /// @param gasThreshold_ Initial gas threshold.
     function initialize(address vault_, address admin_, uint256 gasThreshold_) external override {
         vault = vault_;
-        _gasThresholdValue = gasThreshold_;
+        _gasThresholdValue = uint32(gasThreshold_);
         admin_;
     }
 
     /// @notice Sets the gas threshold.
     /// @param threshold The new gas threshold.
     function setGasThreshold(uint256 threshold) external override {
-        _gasThresholdValue = threshold;
+        _gasThresholdValue = uint32(threshold);
     }
 
     /// @notice Configure the call to perform during a reentrancy attempt.
@@ -156,7 +156,7 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
             used += request.assetsExpected;
             ++finalizedCount;
         }
-        nextPendingId = id;
+        nextPendingId = uint64(id);
         if (totalPendingAssets >= used) {
             totalPendingAssets -= used;
         }
@@ -197,7 +197,7 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
 
     /// @notice Returns the gas threshold.
     /// @return The gas threshold.
-    function gasThreshold() external view override returns (uint256) {
+    function gasThreshold() external view override returns (uint32) {
         return _gasThresholdValue;
     }
 }

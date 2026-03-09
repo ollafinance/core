@@ -313,12 +313,7 @@ contract OllaCoreInvariantTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        bytes32 operatorRole = core.OPERATOR_ROLE();
         operator = makeAddr("operator");
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, address(this));
-        core.grantRole(operatorRole, operator);
-        vm.stopPrank();
 
         handler =
             new OllaCoreAccountingHandler(asset, core, vault, stAztec, stakingManager, rewardsAccumulator, operator);
@@ -516,10 +511,6 @@ contract OllaCoreDepositInvariantTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, address(this));
 
         handler = new OllaCoreDepositHandler(asset, core, vault, stAztec);
         targetContract(address(handler));
@@ -809,12 +800,6 @@ contract OllaCoreLifecycleInvariantTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        core.grantRole(operatorRole, address(this));
-        vm.stopPrank();
 
         handler = new OllaCoreLifecycleHandler(
             asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator
@@ -1314,12 +1299,6 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.startPrank(governance);
-        core.grantRole(operatorRole, operator);
-        core.grantRole(operatorRole, address(this));
-        vm.stopPrank();
 
         handler = new OllaCoreProtocolPropertyHandler(
             asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator, governance

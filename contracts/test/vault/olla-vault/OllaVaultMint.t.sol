@@ -131,9 +131,6 @@ contract OllaVaultMintTest is Test {
         // Seed initial deposit + rewards to move rate off 1:1
         _performDeposit(alice, 100 * DECIMALS);
         stakingManager.setClaimableRewards(50 * DECIMALS);
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, address(this));
         core.updateAccounting();
 
         uint256 sharesToMint = 20 * DECIMALS;
@@ -151,9 +148,6 @@ contract OllaVaultMintTest is Test {
     function test_Mint_MatchesPreviewMint() external {
         _performDeposit(alice, 100 * DECIMALS);
         stakingManager.setClaimableRewards(33 * DECIMALS);
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, address(this));
         core.updateAccounting();
 
         uint256 sharesToMint = 15 * DECIMALS;
@@ -213,9 +207,6 @@ contract OllaVaultMintTest is Test {
         _performDeposit(alice, deposit);
 
         stakingManager.setClaimableRewards(rewards);
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, address(this));
         core.updateAccounting();
 
         uint256 balanceBefore = stAztec.balanceOf(bob);
@@ -232,9 +223,6 @@ contract OllaVaultMintTest is Test {
         _performDeposit(alice, initialDeposit);
 
         // Simulate slashing: set slashingDelta > 0 so totalAssets drops below totalSupply
-        bytes32 operatorRole = core.OPERATOR_ROLE();
-        vm.prank(governance);
-        core.grantRole(operatorRole, address(this));
         stakingManager.setSlashingDelta(60 * DECIMALS);
         core.updateAccounting();
 

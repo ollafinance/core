@@ -120,7 +120,7 @@ contract DeployScript is BaseDeployer {
         // Record asset early (now known)
         json = _addAddressToJson(json, "Asset", asset, false);
 
-        // 5. Deploy StAztec (linked to OllaVault proxy — vault mints/burns shares)
+        // 5. Deploy StAztec (linked to OllaVault proxy -- vault mints/burns shares)
 
         stAztec = _stAztecDeployer.deploy(config, ollaVaultProxy);
         json = _addAddressToJson(json, "StAztec", stAztec, false);
@@ -142,7 +142,7 @@ contract DeployScript is BaseDeployer {
             oftAdapter = _stAztecOFTAdapterDeployer.deploy(config, stAztec, lzEndpoint, oftDelegate);
             json = _addAddressToJson(json, "StAztecOFTAdapter", oftAdapter, false);
         }
-        // 5.1 Deploy WithdrawalQueue (linked to OllaVault proxy — vault manages requests)
+        // 5.1 Deploy WithdrawalQueue (linked to OllaVault proxy -- vault manages requests)
         //     OllaGovernance is the admin so it can manage roles and upgrades.
 
         (withdrawalQueueImpl, withdrawalQueue) =
@@ -191,6 +191,24 @@ contract DeployScript is BaseDeployer {
 
             json = _addAddressToJson(json, "MockAztecRollup", rollup, false);
             json = _addAddressToJson(json, "MockAztecRollupRegistry", rollupRegistry, false);
+
+            // Deploy real SafetyModule with generous local-dev defaults.
+            // CORE must be the proxy (not impl) so onlyCore modifier works.
+            vm.startBroadcast(config.deployerPrivateKey);
+            safetyModule = address(
+                new SafetyModule(
+                    config.deployer, // admin
+                    config.deployer, // guardian (deployer can pause/unpause locally)
+                    ollaCoreProxy, // core -- must match OllaCore proxy address
+                    ollaVaultProxy, // vault -- must match OllaVault proxy address
+                    1_000_000_000e18, // depositCap -- 1B tokens, effectively unlimited
+                    500, // minRateDropBps -- 5% rate drop triggers breaker
+                    5_000, // maxQueueRatioBps -- 50% queue ratio triggers breaker
+                    2 hours // maxAccountingDelay -- must exceed rebalanceCooldown (1h) to tolerate block-time drift
+                )
+            );
+            vm.stopBroadcast();
+            _logDeployment("SafetyModule", safetyModule);
         }
 
         // 7. Deploy SafetyModule (always — deployer EOA as guardian for fast emergency pause)
@@ -214,8 +232,8 @@ contract DeployScript is BaseDeployer {
         json = _addAddressToJson(json, "StakingManager", stakingManager, false);
         json = _addAddressToJson(json, "SafetyModule", safetyModule, false);
 
-        // 8. Initialize OllaCore with OllaGovernance as owner
-        //    OllaGovernance holds: owner(), DEFAULT_ADMIN_ROLE, GUARDIAN_ROLE, OPERATOR_ROLE
+        // 6. Initialize OllaCore with OllaGovernance as owner
+        //    OllaGovernance holds: owner(), DEFAULT_ADMIN_ROLE, GUARDIAN_ROLE
 
         config.withdrawalQueue = withdrawalQueue;
         config.rewardsAccumulator = rewardsAccumulator;
@@ -229,10 +247,10 @@ contract DeployScript is BaseDeployer {
             config, ollaVaultProxy, asset, stAztec, withdrawalQueue, ollaCoreProxy, ollaGovProxy
         );
 
-        // 8.2 Wire OllaGovernance → OllaCore
+        // 6.2 Wire OllaGovernance -> OllaCore
         _ollaGovernanceDeployer.setCore(config, ollaGovProxy, ollaCoreProxy);
 
-        // 8.3 Wire OllaCore → OllaVault and unpause both via governance timelock.
+        // 6.3 For local dev: wire OllaCore -> OllaVault and unpause both via governance timelock.
         //     With timelockMinDelay=0 the deployer can schedule+execute immediately.
         //     vm.warp is only needed on Anvil because Forge starts block.timestamp at 1,
         //     which collides with OZ TimelockController's _DONE_TIMESTAMP sentinel (also 1).
@@ -241,7 +259,7 @@ contract DeployScript is BaseDeployer {
                 vm.warp(block.timestamp + 1);
             }
 
-            // setVault on OllaCore (onlyOwner → must go through governance timelock)
+            // setVault on OllaCore (onlyOwner -> must go through governance timelock)
             bytes memory setVaultData = abi.encodeCall(OllaCore.setVault, (ollaVaultProxy));
             vm.startBroadcast(config.deployerPrivateKey);
 
