@@ -31,6 +31,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-forge-out-
       - name: Forge unit tests
-        run: forge test --match-path "test/**/*.t.sol" --no-match-path "test/**/*.{integration,invariant}.t.sol"
+        run: forge test --match-path "test/**/*.t.sol" --no-match-path "test/**/*.{integration,invariant,e2e}.t.sol"
         env:
           FOUNDRY_PROFILE: ci

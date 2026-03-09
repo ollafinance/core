@@ -78,6 +78,15 @@ remappings_generate = false
 runs = 8
 depth = 8
 
+# Stress profile, more and deeper runs
+[profile.stress.invariant]
+runs = 1000
+depth = 256
+fail_on_revert = true
+dictionary_weight = 80
+include_storage = true
+include_push_bytes = true
+
 # CI profile - dynamic_test_linking only compiles test files needed per job,
 # avoiding OOM from compiling all 182 files with via_ir on standard runners.
 [profile.ci]

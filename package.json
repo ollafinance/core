@@ -26,6 +26,7 @@
     "test:unit": "cd contracts && forge test --match-path \"test/**/*.t.sol\" --no-match-path \"test/**/*.{integration,invariant}.t.sol\"",
     "test:invariant": "cd contracts && forge test --match-path \"test/**/*.invariant.t.sol\"",
     "test:integration": "cd contracts && forge test --match-path \"test/**/*.integration.t.sol\"",
+    "test:e2e": "cd contracts && forge test --match-path \"test/e2e/*.e2e.t.sol\" -vvv",
     "test:interface-compat": "cd contracts && forge test --match-path \"test/integration/AztecInterfaceCompatibility.integration.t.sol\"",
     "dev:chain": "anvil --order fifo",
     "dev:build": "cd contracts && FOUNDRY_PROFILE=dev forge build --force --threads 0",
