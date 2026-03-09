@@ -249,6 +249,12 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
+    function setStake(address _attester, uint256 _amount, address _withdrawer) external override {
+        stakes[_attester] = _amount;
+        withdrawers[_attester] = _withdrawer;
+    }
+
+    /// @inheritdoc IMockAztecRollup
     function clearAttester(address _attester) external override {
         uint256 currentStake = stakes[_attester];
         if (currentStake > 0) {
