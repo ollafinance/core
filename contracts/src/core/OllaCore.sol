@@ -1288,12 +1288,14 @@ contract OllaCore is
         uint256 bufferedAssets,
         uint256 pendingWithdrawals
     ) internal pure returns (uint256 totalAssets_) {
+        // stakedPrincipal is already net-of-slashing (StakingManager.totalStaked() returns the
+        // actual staked amount after slashing reduces it), so we must NOT subtract slashingDelta
+        // again — doing so would double-count the loss.
         uint256 total =
             bufferedAssets + buckets.stakedPrincipal + buckets.rewardsAccumulatorBalance + buckets.claimableRewards;
+        
         // Underflow guard; not a timestamp concern.
         // slither-disable-next-line timestamp
-        if (buckets.slashingDelta >= total) return 0;
-        total -= buckets.slashingDelta;
         totalAssets_ = pendingWithdrawals >= total ? 0 : total - pendingWithdrawals;
         return totalAssets_;
     }

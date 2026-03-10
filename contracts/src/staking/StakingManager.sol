@@ -537,6 +537,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             info.exitRollup = address(rollup);
             info.pendingExitAmount = SafeCast.toUint96(exitAmount);
             _aggregateState.pendingUnstakeAmount += exitAmount;
+
+            // Track slashing loss for externally-exited attesters: the difference between
+            // what was staked and what the exit recovers is a slashing loss.
+            if (oldBalance > exitAmount) {
+                _aggregateState.slashingDelta += (oldBalance - exitAmount);
+            }
         }
 
         // Handle Active attesters that were externally fully exited (no exit record, zero balance)
