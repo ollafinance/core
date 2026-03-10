@@ -222,8 +222,16 @@ contract OllaVaultMintTest is Test {
         uint256 initialDeposit = 100 * DECIMALS;
         _performDeposit(alice, initialDeposit);
 
-        // Simulate slashing: set slashingDelta > 0 so totalAssets drops below totalSupply
-        stakingManager.setSlashingDelta(60 * DECIMALS);
+        // Move assets to staking so slashing actually reduces totalAssets
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(initialDeposit);
+        core.rebalance();
+
+        // Simulate slashing: totalStaked goes from 100 to 40
+        stakingManager.setTotalStaked(initialDeposit);
+        stakingManager.setSlashingDelta(60 * DECIMALS); // totalStaked → 40
         core.updateAccounting();
 
         uint256 totalAssets = core.totalAssets();

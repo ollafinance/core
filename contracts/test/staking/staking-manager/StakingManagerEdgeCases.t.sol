@@ -157,6 +157,8 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         // Should handle the decrease without underflow
         assertEq(stateAfter.stakedAmount, ACTIVATION_THRESHOLD, "remaining attester should have threshold staked");
+        // Pure slashing (balance decreased, no exit) should increment slashingDelta
+        assertEq(stateAfter.slashingDelta, ACTIVATION_THRESHOLD, "slashingDelta should track the full slash amount");
     }
 
     function test_RefreshAttesterState_PendingUnstakeUnderflowGuard_ExternalFinalize() external {
@@ -208,15 +210,37 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
 
         address attester1 = address(uint160(1));
 
-        // Simulate external exit for attester1
+        // Simulate external exit for attester1 (full recovery, no slashing)
         rollup.setExternalExit(attester1, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
 
         // Refresh should detect the external exit
         address[] memory attesters = _attesterAddresses(2);
         stakingManager.refreshAttesterState(attesters);
 
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "only 1 attester should remain active");
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "1 attester should be exiting");
+        // Full recovery: exitAmount == oldBalance, so no slashing loss
+        assertEq(stateAfter.slashingDelta, 0, "no slashingDelta when exit recovers full stake");
+    }
+
+    function test_RefreshAttesterState_ExternalExitWithSlashing() external {
+        // Setup: stake 2 attesters
+        _setupMultipleStakedAttesters(2);
+
+        address attester1 = address(uint160(1));
+
+        // Simulate external exit with partial recovery (75% recovered, 25% slashed)
+        uint256 recoveredAmount = ACTIVATION_THRESHOLD * 3 / 4;
+        rollup.setExternalExit(attester1, recoveredAmount, block.timestamp + 1 days);
+
+        address[] memory attesters = _attesterAddresses(2);
+        stakingManager.refreshAttesterState(attesters);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        uint256 expectedSlashLoss = ACTIVATION_THRESHOLD - recoveredAmount;
+        assertEq(stateAfter.slashingDelta, expectedSlashLoss, "slashingDelta should track external exit loss");
+        assertEq(stateAfter.pendingUnstakeAmount, recoveredAmount, "pendingUnstake should be the exit amount");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -272,6 +296,8 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
 
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stateAfter.stakedAmount, 0, "stakedAmount should saturate to 0");
+        // Pure slashing (balance decreased, no exit) should still increment slashingDelta
+        assertEq(stateAfter.slashingDelta, ACTIVATION_THRESHOLD, "slashingDelta should track full slash");
     }
 
     /// @notice Tests line 556: _aggregateState.pendingUnstakeAmount saturates to 0
