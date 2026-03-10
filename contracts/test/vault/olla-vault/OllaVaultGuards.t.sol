@@ -418,4 +418,57 @@ contract OllaVaultGuardsTest is Test {
             10 * DECIMALS, alice, 0, block.timestamp + 1, 27, bytes32(uint256(1)), bytes32(uint256(2))
         );
     }
+
+    /*//////////////////////////////////////////////////////////////
+              UNEXPECTED REQUEST ID IN _executeRedeemRequest
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_RequestRedeem_UnexpectedRequestId() external {
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
+
+        // The mock queue's nextRequestId() returns 1 (the expected ID).
+        // Mock requestWithdrawal to return a different ID (999) to trigger the mismatch.
+        uint64 expectedId = withdrawalQueue.nextRequestId();
+        uint256 mismatchedId = 999;
+
+        vm.mockCall(
+            address(withdrawalQueue),
+            abi.encodeWithSelector(MockWithdrawalQueue.requestWithdrawal.selector),
+            abi.encode(mismatchedId)
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IOllaVault.OllaVault__UnexpectedRequestId.selector, expectedId, mismatchedId)
+        );
+        vm.prank(alice);
+        vault.requestRedeem(shares, alice, alice);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            BUFFERED BALANCE MISMATCH (SECOND BRANCH)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_ReconcileBufferedAssets_AvailableBelowBuffered() external {
+        // Deposit so that vault has assets and _bufferedAssets > 0
+        _performDeposit(alice, 10 * DECIMALS);
+
+        uint256 buffered = vault.bufferedAssets();
+        assertGt(buffered, 0, "buffered should be positive after deposit");
+
+        // Transfer some tokens out of vault directly, creating
+        // available (= actual - finalizedUnclaimed) < _bufferedAssets
+        // while actual >= _finalizedUnclaimedAssets (which is 0 here, so that's trivially true).
+        uint256 drainAmount = 1 * DECIMALS;
+        vm.prank(address(vault));
+        asset.transfer(address(1), drainAmount);
+
+        // Now vault actual balance = 9e18, _bufferedAssets = 10e18, _finalizedUnclaimedAssets = 0
+        // available = 9e18 - 0 = 9e18 < 10e18 = buffered => second branch fires
+        uint256 available = asset.balanceOf(address(vault));
+        vm.expectRevert(
+            abi.encodeWithSelector(IOllaVault.OllaVault__BufferedBalanceMismatch.selector, buffered, available)
+        );
+        vm.prank(address(governance));
+        vault.reconcileBufferedAssets();
+    }
 }

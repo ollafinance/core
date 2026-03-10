@@ -241,4 +241,91 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         // Attester should still be Exiting (not removed)
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "attester should remain exiting");
     }
+
+    /*//////////////////////////////////////////////////////////////
+      SATURATING SUBTRACTION FALLBACKS IN _refreshSingleAttester
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Tests line 517: _aggregateState.stakedAmount saturates to 0
+    ///         when the balance decrease exceeds the corrupted aggregate.
+    function test_RefreshAttesterState_StakedAmountSaturatesToZero() external {
+        // Setup: stake one attester at ACTIVATION_THRESHOLD
+        _setupStakedAttester();
+
+        // _aggregateState.stakedAmount is at storage slot 9 in the proxy
+        // (slot 8 = slashingDelta, slot 9 = stakedAmount)
+        // Corrupt it to 1 wei — much less than ACTIVATION_THRESHOLD
+        vm.store(address(stakingManager), bytes32(uint256(9)), bytes32(uint256(1)));
+
+        // Verify corruption
+        IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
+        assertEq(corrupted.stakedAmount, 1, "corrupted stakedAmount should be 1");
+
+        // Slash attester to 0 on rollup -> decrease = ACTIVATION_THRESHOLD > 1
+        address attester = address(uint160(1));
+        bytes32 rollupSlot = keccak256(abi.encode(attester, uint256(1)));
+        vm.store(address(rollup), rollupSlot, bytes32(uint256(0)));
+
+        // Refresh should saturate to 0 rather than underflow
+        address[] memory attesters = _attesterAddresses(1);
+        stakingManager.refreshAttesterState(attesters);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.stakedAmount, 0, "stakedAmount should saturate to 0");
+    }
+
+    /// @notice Tests line 556: _aggregateState.pendingUnstakeAmount saturates to 0
+    ///         when an externally finalized exit's pendingExit exceeds the corrupted aggregate.
+    function test_RefreshAttesterState_PendingUnstakeAmountSaturatesToZero_ExternalFinalize() external {
+        // Setup: stake then unstake (creates Exiting attester with pendingUnstakeAmount)
+        _setupStakedAttester();
+        address attester = address(uint160(1));
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "should have 1 exiting attester");
+
+        // Corrupt _aggregateState.pendingUnstakeAmount (slot 10) to 1 wei
+        vm.store(address(stakingManager), bytes32(uint256(10)), bytes32(uint256(1)));
+
+        IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
+        assertEq(corrupted.pendingUnstakeAmount, 1, "corrupted pendingUnstakeAmount should be 1");
+
+        // Externally finalize the exit on rollup (clears exit record)
+        rollup.finalizeWithdraw(attester);
+
+        // Refresh should detect externally-finalized exit, and saturate pendingUnstake to 0
+        address[] memory attesters = _attesterAddresses(1);
+        stakingManager.refreshAttesterState(attesters);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.pendingUnstakeAmount, 0, "pendingUnstakeAmount should saturate to 0");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "exiting count should be 0 after reconciliation");
+    }
+
+    /// @notice Tests line 575: _aggregateState.pendingUnstakeAmount saturates to 0
+    ///         when a locally-finalized (exitable) exit's pendingExit exceeds the corrupted aggregate.
+    function test_RefreshAttesterState_PendingUnstakeAmountSaturatesToZero_ExitableFinalize() external {
+        // Setup: stake then unstake
+        _setupStakedAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "should have 1 exiting attester");
+
+        // Corrupt _aggregateState.pendingUnstakeAmount (slot 10) to 1 wei
+        vm.store(address(stakingManager), bytes32(uint256(10)), bytes32(uint256(1)));
+
+        IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
+        assertEq(corrupted.pendingUnstakeAmount, 1, "corrupted pendingUnstakeAmount should be 1");
+
+        // The exit is already exitable (mock sets exitableAt = block.timestamp by default)
+        // Refresh should finalize the exit and saturate pendingUnstake to 0
+        address[] memory attesters = _attesterAddresses(1);
+        stakingManager.refreshAttesterState(attesters);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.pendingUnstakeAmount, 0, "pendingUnstakeAmount should saturate to 0");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "exiting count should be 0 after finalization");
+    }
 }

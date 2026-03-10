@@ -1358,6 +1358,128 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakedAmount, actualStaked, "staked amount uses staking manager return");
         assertEq(resultingBuffer, expectedBufferAfter, "resulting buffer accounts for stake");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    GAS EXHAUSTION: InitiateUnstake
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtInitiateUnstake() external {
+        uint256 depositAmount = 100 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        // Create many small withdrawal requests so _finalizeWithdrawals consumes gas
+        uint256 numRequests = 50;
+        for (uint256 i = 0; i < numRequests; i++) {
+            _requestWithdrawal(alice, 1 * DECIMALS);
+        }
+
+        // Target much higher than current buffer so unstakeRemaining > 0 after finalization
+        vm.prank(governance);
+        core.setTargetBufferedAssets(200 * DECIMALS);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+
+        // Search for gas level that stops exactly at InitiateUnstake
+        for (uint256 gasLimit = 200_000; gasLimit <= 2_000_000; gasLimit += 5_000) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success, bytes memory data) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
+            if (!success) {
+                continue;
+            }
+
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.InitiateUnstake) {
+                (, uint256 loopFinalizedAmount, uint256 loopStakedAmount,) =
+                    abi.decode(data, (uint256, uint256, uint256, uint256));
+                if (loopStakedAmount == 0) {
+                    selectedGas = gasLimit;
+                    break;
+                }
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for initiate-unstake stop");
+
+        vm.revertToState(snapshotId);
+        vm.prank(operator);
+        (,, uint256 stakedAmount,) = core.rebalance{ gas: selectedGas }();
+
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.InitiateUnstake),
+            "rebalance should stop at initiate unstake"
+        );
+        assertEq(stakedAmount, 0, "staked amount should be zero on partial progress");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    GAS EXHAUSTION: StakeSurplus
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtStakeSurplus() external {
+        uint256 depositAmount = 100 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        // Create many small withdrawal requests so _finalizeWithdrawals consumes gas
+        // before reaching StakeSurplus
+        uint256 numRequests = 20;
+        for (uint256 i = 0; i < numRequests; i++) {
+            _requestWithdrawal(alice, 1 * DECIMALS);
+        }
+
+        // Target is low so buffer > required: stakeRemaining will be > 0
+        vm.prank(governance);
+        core.setTargetBufferedAssets(10 * DECIMALS);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+
+        // Search for gas level that stops exactly at StakeSurplus
+        for (uint256 gasLimit = 200_000; gasLimit <= 2_000_000; gasLimit += 5_000) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success, bytes memory data) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
+            if (!success) {
+                continue;
+            }
+
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
+                (,, uint256 loopStakedAmount,) = abi.decode(data, (uint256, uint256, uint256, uint256));
+                if (loopStakedAmount == 0) {
+                    selectedGas = gasLimit;
+                    break;
+                }
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for stake-surplus stop");
+
+        vm.revertToState(snapshotId);
+        vm.prank(operator);
+        (,, uint256 stakedAmount,) = core.rebalance{ gas: selectedGas }();
+
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.StakeSurplus),
+            "rebalance should stop at stake surplus"
+        );
+        assertEq(stakedAmount, 0, "staked amount should be zero on partial progress");
+    }
 }
 
 contract OllaCoreRebalanceInconsistentQueueTest is Test {
