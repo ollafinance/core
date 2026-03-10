@@ -405,10 +405,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (info.attester == address(0)) revert StakingManager__InvalidParameter();
 
         InternalAttesterStatus status = info.status;
-        if (status == InternalAttesterStatus.Active) {
-            revert StakingManager__RemoveAttesterFailed(attester);
-        } else if (status == InternalAttesterStatus.Exiting) {
+        if (status == InternalAttesterStatus.Exiting) {
             --_exitingCount;
+
+            /// @dev guard to prevent futue code regressions, this path should never be triggerable
+        } else if (status == InternalAttesterStatus.Active) {
+            revert StakingManager__RemoveAttesterFailed(attester);
         }
 
         delete _attesterMap[attester];
@@ -573,9 +575,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                     _aggregateState.pendingUnstakeAmount -= pendingExit;
                 } else {
                     _aggregateState.pendingUnstakeAmount = 0;
-                }
-                if (_aggregateState.withdrawableAmount >= exitAmount) {
-                    _aggregateState.withdrawableAmount -= exitAmount;
                 }
 
                 // Attester removed -- skip balance update below

@@ -169,11 +169,6 @@ contract SafetyModule is AccessControl, ISafetyModule {
             return;
         }
 
-        if (oldRate == 0) {
-            _triggerBreaker(ISafetyModule.BreakerReason.RateDrop);
-            return;
-        }
-
         uint256 dropBps = (oldRate - nextRate) * BPS_DENOMINATOR / oldRate;
         // solhint-disable-next-line gas-strict-inequalities
         if (dropBps >= minRateDropBps) {

@@ -252,6 +252,19 @@ contract StAztecTest is Test {
         assertEq(token.allowance(alice, charlie), 0, "allowance after transferFrom");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        ZERO ADDRESS GUARD
+    //////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_ConstructorZeroAddress() external {
+        vm.expectRevert(IStAztec.StAztecZeroAddress.selector);
+        new StAztec(address(0));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
     function testFuzz_UnauthorizedMintBurnReverts(address attacker, uint96 amount) external {
         vm.assume(attacker != core);
         amount = uint96(bound(amount, 1, type(uint96).max));

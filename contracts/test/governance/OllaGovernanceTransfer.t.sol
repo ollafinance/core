@@ -274,4 +274,47 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(uint256(100)), MIN_DELAY);
     }
+
+    /*//////////////////////////////////////////////////////////////
+            REVOKE ROLE CATCH BLOCK IN _propagateAdminRole
+    //////////////////////////////////////////////////////////////*/
+
+    function test_AcceptGovernance_EmitsEventOnRevokeRoleFailure() external {
+        // Propose
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+
+        // Mock stakingProviderRegistry() to return a valid address
+        vm.mockCall(
+            address(stakingManager),
+            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
+            abi.encode(sprMock)
+        );
+
+        // Mock grantRole to succeed on ALL satellites
+        address[4] memory sats =
+            [address(withdrawalQueue), address(rewardsAccumulator), address(stakingManager), sprMock];
+        for (uint256 i; i < sats.length; i++) {
+            vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        }
+
+        // Mock revokeRole to succeed on all EXCEPT stakingManager
+        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCallRevert(
+            address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "mock revert"
+        );
+        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+
+        // Expect the failure event for stakingManager revoke (isGrant = false)
+        vm.expectEmit(true, true, true, true);
+        emit IOllaGovernance.AdminRolePropagationFailed(address(stakingManager), admin, false);
+
+        // Accept should NOT revert despite the satellite revoke failure
+        vm.prank(newGov);
+        gov.acceptGovernance();
+
+        // Core governance transfer still completed
+        assertEq(gov.governanceAdmin(), newGov, "admin updated despite satellite revoke failure");
+        assertTrue(gov.hasRole(gov.PROPOSER_ROLE(), newGov), "newGov has PROPOSER_ROLE");
+    }
 }
