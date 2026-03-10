@@ -408,7 +408,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (status == InternalAttesterStatus.Exiting) {
             --_exitingCount;
 
-        /// @dev guard to prevent futue code regressions, this path should never be triggerable
+            /// @dev guard to prevent futue code regressions, this path should never be triggerable
         } else if (status == InternalAttesterStatus.Active) {
             revert StakingManager__RemoveAttesterFailed(attester);
         }
