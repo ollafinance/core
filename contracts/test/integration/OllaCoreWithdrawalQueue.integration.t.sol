@@ -438,6 +438,10 @@ contract RealisticStakingManager is IStakingManager {
         return address(0);
     }
 
+    function canStake(uint256) external pure override returns (bool) {
+        return true;
+    }
+
     function stakingProviderRegistry() external pure override returns (IStakingProviderRegistry) {
         return IStakingProviderRegistry(address(0));
     }

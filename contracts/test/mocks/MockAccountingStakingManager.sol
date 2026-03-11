@@ -266,6 +266,11 @@ contract MockAccountingStakingManager is IStakingManager {
         return address(0);
     }
 
+    function canStake(uint256) external view override returns (bool) {
+        if (useStakeReturnAmount) return stakeReturnAmount > 0;
+        return true;
+    }
+
     function stakingProviderRegistry() external pure override returns (IStakingProviderRegistry) {
         return IStakingProviderRegistry(address(0));
     }
