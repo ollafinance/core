@@ -1289,8 +1289,7 @@ contract OllaCore is
         uint256 pendingWithdrawals
     ) internal pure returns (uint256 totalAssets_) {
         // stakedPrincipal is already net-of-slashing (StakingManager.totalStaked() returns the
-        // actual staked amount after slashing reduces it), so we must NOT subtract slashingDelta
-        // again — doing so would double-count the loss.
+        // actual staked amount after slashing reduces it)
         uint256 total =
             bufferedAssets + buckets.stakedPrincipal + buckets.rewardsAccumulatorBalance + buckets.claimableRewards;
         
