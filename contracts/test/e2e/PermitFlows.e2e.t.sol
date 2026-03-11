@@ -356,13 +356,8 @@ contract PermitFlowsE2ETest is Test {
         assertGt(requestId, 0, "requestId should be > 0");
         assertEq(stAztec.balanceOf(alice), 50 * DECIMALS, "alice should have 50e18 shares remaining");
         assertEq(IERC20Permit(address(stAztec)).nonces(alice), 1, "stAztec nonce should be 1");
-        // Note: vault burns shares directly via StAztec.burn(), not via transferFrom,
-        // so the permit-set allowance is not consumed.
-        assertEq(
-            stAztec.allowance(alice, address(vault)),
-            50 * DECIMALS,
-            "stAztec allowance should remain (vault burns directly)"
-        );
+        // Permit-set allowance is consumed by safeTransferFrom in the permit path.
+        assertEq(stAztec.allowance(alice, address(vault)), 0, "stAztec allowance consumed by transferFrom");
 
         // Verify withdrawal request was created
         IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
@@ -375,6 +370,8 @@ contract PermitFlowsE2ETest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Replaying the same permit signature after nonce increment reverts.
+    ///         The first call consumes the permit-set allowance via transferFrom,
+    ///         so the second call has no allowance fallback.
     function test_RequestRedeemWithPermit_ReplayPrevented() external {
         // --- Setup: alice deposits 100e18 → 100e18 stAztec ---
         _performDeposit(alice, 100 * DECIMALS);
@@ -384,17 +381,18 @@ contract PermitFlowsE2ETest is Test {
         (uint8 v, bytes32 r, bytes32 s) =
             _signPermit(address(stAztec), aliceKey, alice, address(vault), 30 * DECIMALS, deadline);
 
-        // --- First call: succeeds ---
+        // --- First call: succeeds (permit-set allowance consumed by transferFrom) ---
         vm.prank(alice);
         uint256 requestId = vault.requestRedeemWithPermit(30 * DECIMALS, alice, deadline, v, r, s);
 
         assertGt(requestId, 0, "first call should succeed");
         assertEq(stAztec.balanceOf(alice), 70 * DECIMALS, "alice should have 70e18 shares after first request");
         assertEq(IERC20Permit(address(stAztec)).nonces(alice), 1, "nonce should be 1 after first call");
+        assertEq(stAztec.allowance(alice, address(vault)), 0, "allowance consumed by transferFrom");
 
-        // --- Second call: same (v, r, s) → reverts (nonce now 1, signature was for nonce 0) ---
+        // --- Second call: same (v, r, s) → reverts (nonce consumed, no allowance fallback) ---
         vm.prank(alice);
-        vm.expectRevert(); // OllaVault__PermitFailed (nonce mismatch)
+        vm.expectRevert(); // OllaVault__PermitFailed (nonce mismatch, no allowance)
         vault.requestRedeemWithPermit(30 * DECIMALS, alice, deadline, v, r, s);
 
         // No state changes from failed replay
@@ -406,11 +404,10 @@ contract PermitFlowsE2ETest is Test {
         TEST 5G: DEPOSIT WITH PERMIT — FRONTRUN APPROVE DOCUMENTED
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Documents what happens when a frontrunner uses the permit signature
-    ///         before the user's depositWithPermit tx lands. The try/catch in the vault
-    ///         does NOT check whether allowance is already sufficient before reverting.
-    ///         User must fall back to a normal deposit().
-    function test_DepositWithPermit_FrontrunApprove_DocumentedBehavior() external {
+    /// @notice Validates frontrun protection: when an attacker frontruns the permit
+    ///         signature, the vault's try/catch detects that the allowance is already
+    ///         sufficient and proceeds with the deposit instead of reverting.
+    function test_DepositWithPermit_FrontrunProtection() external {
         asset.mint(alice, 100 * DECIMALS);
 
         uint256 deadline = block.timestamp + 1 hours;
@@ -426,19 +423,13 @@ contract PermitFlowsE2ETest is Test {
         assertEq(asset.allowance(alice, address(vault)), 100 * DECIMALS, "allowance should be set by attacker");
         assertEq(IERC20Permit(address(asset)).nonces(alice), 1, "nonce should be 1 after attacker's permit");
 
-        // --- Step 2: alice's depositWithPermit reverts (nonce already consumed) ---
+        // --- Step 2: alice's depositWithPermit succeeds despite frontrun ---
+        //     The permit call fails (nonce consumed) but the catch block sees
+        //     sufficient allowance and falls through to _deposit().
         vm.prank(alice);
-        vm.expectRevert(); // OllaVault__PermitFailed (nonce mismatch → invalid signature)
-        vault.depositWithPermit(100 * DECIMALS, alice, 0, deadline, v, r, s);
+        uint256 shares = vault.depositWithPermit(100 * DECIMALS, alice, 0, deadline, v, r, s);
 
-        // No deposit happened
-        assertEq(stAztec.balanceOf(alice), 0, "no shares should be minted from failed permit deposit");
-
-        // --- Step 3: alice falls back to normal deposit() using the already-set allowance ---
-        vm.prank(alice);
-        uint256 shares = vault.deposit(100 * DECIMALS, alice, 0);
-
-        assertEq(shares, 100 * DECIMALS, "alice should receive 100e18 shares via fallback deposit");
+        assertEq(shares, 100 * DECIMALS, "alice should receive 100e18 shares despite frontrun");
         assertEq(stAztec.balanceOf(alice), 100 * DECIMALS, "alice stAztec balance should be 100e18");
         assertEq(asset.balanceOf(address(vault)), 100 * DECIMALS, "vault should hold 100e18 assets");
         assertEq(asset.allowance(alice, address(vault)), 0, "allowance should be consumed by deposit");
