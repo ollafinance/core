@@ -378,7 +378,7 @@ contract OllaCoreWithdrawalTest is Test {
         assertEq(recordedShares, shares, "queue receives share amount");
         assertEq(recordedAssets, assetsExpected, "queue receives assetsExpected");
         assertEq(recordedRate, rate, "queue receives exchange rate");
-        assertEq(stAztec.allowance(permitOwner, address(vault)), shares, "allowance set by permit");
+        assertEq(stAztec.allowance(permitOwner, address(vault)), 0, "allowance consumed by transferFrom");
         assertEq(IERC20Permit(address(stAztec)).nonces(permitOwner), 1, "nonce incremented");
     }
 
@@ -462,6 +462,7 @@ contract OllaCoreWithdrawalTest is Test {
         vm.prank(permitOwner);
         vault.requestRedeemWithPermit(shares, permitOwner, deadline, v, r, s);
 
+        // Permit-set allowance was consumed by transferFrom, so no allowance fallback exists.
         uint256 nonce = IERC20Permit(address(stAztec)).nonces(permitOwner);
         bytes32 digest =
             _buildPermitDigest(IERC20Permit(address(stAztec)), permitOwner, address(vault), shares, nonce, deadline);
