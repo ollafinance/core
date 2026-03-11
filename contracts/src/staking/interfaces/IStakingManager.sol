@@ -249,6 +249,11 @@ interface IStakingManager {
     /// @return The core contract address.
     function core() external view returns (address);
 
+    /// @notice Returns true if the given amount can be staked (keys available and amount >= threshold).
+    /// @param amount The amount of assets to check.
+    /// @return True if at least one attester can be staked with the given amount.
+    function canStake(uint256 amount) external view returns (bool);
+
     /// @notice Returns the staking provider registry address.
     /// @return The staking provider registry contract.
     function stakingProviderRegistry() external view returns (IStakingProviderRegistry);

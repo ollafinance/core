@@ -148,6 +148,11 @@ contract MockStakingManager is IStakingManager {
         return _cachedState.withdrawableAmount != 0;
     }
 
+    /// @inheritdoc IStakingManager
+    function canStake(uint256) external pure override returns (bool) {
+        return true;
+    }
+
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
