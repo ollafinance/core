@@ -301,6 +301,15 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
+    function canStake(uint256 amount) external view override returns (bool) {
+        uint256 availableKeys = stakingProviderRegistry.getQueueLength();
+        if (availableKeys == 0) return false;
+        (, IAztecRollup rollup) = _getRollup();
+        uint256 threshold = rollup.getActivationThreshold();
+        return _calculateAttestersToStake(amount, threshold, availableKeys) > 0;
+    }
+
+    /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
         return _aggregateState.stakedAmount + _aggregateState.pendingUnstakeAmount + _pendingClaimAmount;
     }

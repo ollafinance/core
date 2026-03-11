@@ -414,6 +414,10 @@ contract OllaCore is
                 if (progress.stakeRemaining == 0) {
                     progress.step = IOllaCore.RebalanceStep.Done;
                 }
+            } else if (!_modules.stakingManager.canStake(progress.stakeRemaining)) {
+                // Resuming a partial stake but no keys or amount below threshold.
+                progress.stakeRemaining = 0;
+                progress.step = IOllaCore.RebalanceStep.Done;
             }
             // slither-disable-next-line incorrect-equality,timestamp
             if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
@@ -1064,6 +1068,13 @@ contract OllaCore is
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();
         if (pendingWithdrawals > 0 && vaultRef.bufferedAssets() > 0) return true;
 
+        // Surplus buffer that can actually be staked (keys available + amount >= threshold).
+        uint256 currentBuffer = vaultRef.bufferedAssets();
+        if (currentBuffer > targetBufferedAssets) {
+            uint256 surplus = currentBuffer - targetBufferedAssets;
+            if (_modules.stakingManager.canStake(surplus)) return true;
+        }
+
         return false;
     }
 
@@ -1292,7 +1303,7 @@ contract OllaCore is
         // actual staked amount after slashing reduces it)
         uint256 total =
             bufferedAssets + buckets.stakedPrincipal + buckets.rewardsAccumulatorBalance + buckets.claimableRewards;
-        
+
         // Underflow guard; not a timestamp concern.
         // slither-disable-next-line timestamp
         totalAssets_ = pendingWithdrawals >= total ? 0 : total - pendingWithdrawals;
