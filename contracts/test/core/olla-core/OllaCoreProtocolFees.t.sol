@@ -322,10 +322,23 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
+        // Stake all assets so buffer is empty
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        stakingManager.setRewardsToken(asset);
+        vm.prank(operator);
+        core.rebalance();
+
+        // First accounting: establishes baseline
+        vm.warp(block.timestamp + 1 hours + 1);
+        stakingManager.setTotalStaked(depositAmount);
         vm.prank(operator);
         core.updateAccounting();
 
-        stakingManager.setSlashingDelta(depositAmount);
+        // Slash all staked assets
+        stakingManager.setSlashingDelta(depositAmount); // totalStaked → 0
 
         uint256 oldSupply = stAztec.totalSupply();
         uint256 oldGovShares = stAztec.balanceOf(governance);

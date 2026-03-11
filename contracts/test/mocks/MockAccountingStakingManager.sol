@@ -57,7 +57,14 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function setSlashingDelta(uint256 value) external {
+        // Mirror real StakingManager behaviour: slashing reduces stakedAmount AND
+        // increments slashingDelta. Compute the incremental increase and deduct it
+        // from totalStakedAmount so that totalStaked() is net-of-slashing.
+        uint256 increase = value > slashingDelta ? value - slashingDelta : 0;
         slashingDelta = value;
+        if (increase > 0) {
+            totalStakedAmount = totalStakedAmount >= increase ? totalStakedAmount - increase : 0;
+        }
     }
 
     function setTotalStaked(uint256 value) external {

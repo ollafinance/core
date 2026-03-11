@@ -201,7 +201,18 @@ contract OllaCoreSafetyModuleTest is Test {
     function test_UpdateAccounting_TriggersRateDropBreaker() external {
         _performDeposit(alice, 100 * DECIMALS);
 
-        stakingManager.setSlashingDelta(10 * DECIMALS);
+        // Simulate staked assets by setting totalStaked on the mock (no rebalance needed).
+        // totalAssets = buffer(100) + staked(100) = 200, rate = 2e18.
+        stakingManager.setTotalStaked(100 * DECIMALS);
+        core.updateAccounting(); // establishes baseline rate = 2e18
+
+        // Slash 10% of staked: totalStaked goes from 100 → 90.
+        // totalAssets = buffer(100) + staked(90) = 190, rate = 1.9e18.
+        // Drop = (2e18 - 1.9e18) / 2e18 = 5% → triggers breaker (threshold = 5%).
+        stakingManager.setTotalStaked(100 * DECIMALS);
+        stakingManager.setSlashingDelta(10 * DECIMALS); // totalStaked → 90
+
+        vm.warp(block.timestamp + 1);
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
         emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.RateDrop);

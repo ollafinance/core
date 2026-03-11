@@ -118,8 +118,8 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         assertEq(withdrawalQueue.totalPendingAssets(), 70 * DECIMALS, "queue tracks both requests");
 
         // Realized slash after requests are already locked in the queue.
-        // totalStaked stays at original pre-slash principal (100e18) -- the real StakingManager
-        // returns the original principal; slashingDelta tracks cumulative loss separately.
+        // setSlashingDelta mirrors real StakingManager: it reduces totalStakedAmount by 50e18
+        // (from 100e18 to 50e18) and records the cumulative loss.
         stakingManager.setSlashingDelta(50 * DECIMALS);
         core.updateAccounting();
 

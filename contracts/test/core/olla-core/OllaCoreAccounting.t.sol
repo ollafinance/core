@@ -153,9 +153,10 @@ contract OllaCoreAccountingTest is Test {
         assertEq(accounting.claimableRewards, claimableRewards, "claimableRewards matches claimable rewards");
         assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
+
         assertEq(
             core.totalAssets(),
-            assets + staked + rewardsAccumulatorBalance + claimableRewards - slashingDelta,
+            assets + staked + rewardsAccumulatorBalance + claimableRewards,
             "totalAssets sums buckets"
         );
     }
@@ -191,7 +192,9 @@ contract OllaCoreAccountingTest is Test {
 
         uint256 totalAssets = core.exposedComputeTotalAssets(buckets, 3 * DECIMALS, 0);
 
-        assertEq(totalAssets, 9 * DECIMALS, "total assets computed");
+        // stakedPrincipal is net-of-slashing; slashingDelta is informational only
+        // total = buffered(3) + staked(4) + ra(2) + claimable(5) = 14
+        assertEq(totalAssets, 14 * DECIMALS, "total assets computed");
     }
 
     function test_ComputeGrossRewards() external view {
@@ -274,7 +277,16 @@ contract OllaCoreAccountingTest is Test {
         vm.prank(governance);
         core.setProtocolFeeBP(1_000);
 
-        stakingManager.setSlashingDelta(depositAmount);
+        // Move all assets to staking so buffer is empty, then slash everything
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        vm.prank(operator);
+        core.rebalance();
+
+        // Mock needs totalStaked set (stake() doesn't auto-update it)
+        stakingManager.setTotalStaked(depositAmount);
+        stakingManager.setSlashingDelta(depositAmount); // reduces totalStaked to 0
 
         uint256 supplyBefore = stAztec.totalSupply();
         uint256 treasuryBalanceBefore = stAztec.balanceOf(governance);
@@ -328,12 +340,19 @@ contract OllaCoreAccountingTest is Test {
         stakingManager.setClaimableRewards(claimableRewards);
         stakingManager.setSlashingDelta(slashing);
 
+        // After setSlashingDelta, mock mirrors real StakingManager: totalStaked is reduced
+        // by slashing (11 - 2 = 9). Core reads totalStaked() for stakedPrincipal, so
+        // totalAssets = buffered + netStaked(9) + rvBalance + claimable. slashingDelta is
+        // NOT subtracted from totalAssets — it's informational only.
+        uint256 netStaked = stakingManager.totalStaked();
+        assertEq(netStaked, stakedPrincipal - slashing, "mock totalStaked should be net-of-slashing");
+
         IOllaCore.AccountingState memory accountingAfterRebalance = core.accountingState();
         IOllaCore.LatestReport memory reportBefore = core.latestReport();
         IOllaCore.FlowCounters memory flowsBefore = core.flowCounters();
         uint256 rvBalance = rewardsAccumulator.balance();
         uint256 currentRewards = accountingAfterRebalance.cumulativeRewards + claimableRewards;
-        uint256 expectedTotalAssets = vault.bufferedAssets() + stakedPrincipal + rvBalance + claimableRewards - slashing;
+        uint256 expectedTotalAssets = vault.bufferedAssets() + netStaked + rvBalance + claimableRewards;
         uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
         (int256 expectedNetFlows,,) = core.exposedComputeNetFlows(flowsBefore);
         (uint256 expectedGrossRewards,) =
@@ -555,7 +574,11 @@ contract OllaCoreAccountingTest is Test {
             staked, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
         );
 
-        assertEq(core.totalAssets(), positiveTotal - slashingDelta, "totalAssets includes slashing delta");
+        // exposedApplyAccountingUpdates sets stakedPrincipal directly (not via mock),
+        // so stakedPrincipal is already the value we passed. slashingDelta is informational only.
+        assertEq(
+            core.totalAssets(), positiveTotal, "totalAssets equals positive total (slashingDelta is informational)"
+        );
     }
 
     function testFuzz_ComputeNetFlows(
@@ -694,58 +717,73 @@ contract OllaCoreAccountingTest is Test {
                         SLASHING DELTA UNDERFLOW
     //////////////////////////////////////////////////////////////*/
 
-    function test_TotalAssets_ClampsToZero_WhenSlashingDeltaExceedsSum() external {
+    function test_TotalAssets_ClampsToZero_WhenAllStakedAssetsSlashed() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // Set slashing delta to more than the deposited amount
-        uint256 excessiveSlashing = depositAmount + 5 * DECIMALS;
-        stakingManager.setSlashingDelta(excessiveSlashing);
+        // Move all to staked so buffer is empty
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        vm.prank(operator);
+        core.rebalance();
+
+        // Slash all staked assets
+        stakingManager.setTotalStaked(depositAmount);
+        stakingManager.setSlashingDelta(depositAmount); // totalStaked → 0
 
         vm.prank(operator);
         core.updateAccounting();
 
-        // totalAssets should clamp to zero rather than reverting with underflow
-        assertEq(core.totalAssets(), 0, "totalAssets should clamp to zero when slashing exceeds sum");
+        // totalAssets should be zero because buffer=0 and totalStaked=0
+        assertEq(core.totalAssets(), 0, "totalAssets should clamp to zero when all staked assets slashed");
     }
 
-    function test_TotalAssets_ClampsToZero_WhenSlashingDeltaEqualsSum() external {
+    function test_TotalAssets_BufferedAssetsSurviveSlashing() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // Set slashing delta exactly equal to the deposit amount
-        stakingManager.setSlashingDelta(depositAmount);
+        // All assets in buffer, nothing staked — slashing doesn't affect buffered assets
+        stakingManager.setTotalStaked(0);
+        stakingManager.setSlashingDelta(5 * DECIMALS);
 
         vm.prank(operator);
         core.updateAccounting();
 
-        // totalAssets should clamp to zero when slashing equals the sum
-        assertEq(core.totalAssets(), 0, "totalAssets should clamp to zero when slashing equals sum");
+        // Buffered assets are NOT reduced by slashingDelta
+        assertEq(core.totalAssets(), depositAmount, "buffered assets survive slashing");
     }
 
-    function test_ComputeTotalAssets_ClampsToZero_WhenSlashingDeltaExceedsSum() external view {
+    function test_ComputeTotalAssets_ClampsToZero_WhenPendingWithdrawalsExceedsSum() external view {
         IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             stakedPrincipal: 4 * DECIMALS,
             rewardsAccumulatorBalance: 2 * DECIMALS,
             claimableRewards: 1 * DECIMALS,
             rewardsDelta: 0,
-            slashingDelta: 20 * DECIMALS,
+            slashingDelta: 0,
             cumulativeRewards: 0
         });
 
-        uint256 result = core.exposedComputeTotalAssets(buckets, 3 * DECIMALS, 0);
+        // pendingWithdrawals (20e18) > total (10e18), so result should clamp to 0
+        uint256 result = core.exposedComputeTotalAssets(buckets, 3 * DECIMALS, 20 * DECIMALS);
 
-        // slashingDelta (20e18) > sum of other buckets (10e18), so result should be 0
-        assertEq(result, 0, "computeTotalAssets should return zero when slashing exceeds sum");
+        assertEq(result, 0, "computeTotalAssets should return zero when pendingWithdrawals exceeds sum");
     }
 
     function test_DepositStillWorks_AfterSlashingClampsToZero() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // Set massive slashing to force totalAssets to zero
-        uint256 massiveSlashing = depositAmount + 100 * DECIMALS;
-        stakingManager.setSlashingDelta(massiveSlashing);
+        // Move all to staked so buffer is empty
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        vm.prank(operator);
+        core.rebalance();
+
+        // Slash all staked assets → totalAssets = 0
+        stakingManager.setTotalStaked(depositAmount);
+        stakingManager.setSlashingDelta(depositAmount); // totalStaked → 0
 
         vm.prank(operator);
         core.updateAccounting();
@@ -761,17 +799,16 @@ contract OllaCoreAccountingTest is Test {
         vm.prank(bob);
         vault.deposit(secondDeposit, bob, 0);
 
-        // After deposit, totalAssets should still clamp to zero because slashingDelta is still massive
-        // (buffered increased by secondDeposit, but slashing still exceeds the total)
-        assertEq(core.totalAssets(), 0, "totalAssets should still clamp to zero after deposit when slashing is massive");
+        // After deposit, totalAssets = new buffer (secondDeposit), since staked is still 0
+        assertEq(core.totalAssets(), secondDeposit, "totalAssets should reflect new deposit in buffer");
     }
 
-    function testFuzz_TotalAssets_NeverRevertsOnSlashing(
+    function testFuzz_TotalAssets_NeverRevertsWithPendingWithdrawals(
         uint96 buffered,
         uint96 staked,
         uint96 rvBalance,
         uint96 claimable,
-        uint96 slashingSeed
+        uint96 pendingWithdrawalsSeed
     ) external view {
         buffered = uint96(bound(buffered, 0, type(uint96).max));
         staked = uint96(bound(staked, 0, type(uint96).max));
@@ -780,25 +817,76 @@ contract OllaCoreAccountingTest is Test {
 
         uint256 positiveTotal = uint256(buffered) + uint256(staked) + uint256(rvBalance) + uint256(claimable);
 
-        // Allow slashing to exceed the positive total
-        uint256 slashing = bound(uint256(slashingSeed), 0, positiveTotal + 100 * DECIMALS);
+        // Allow pending withdrawals to exceed the positive total
+        uint256 pending = bound(uint256(pendingWithdrawalsSeed), 0, positiveTotal + 100 * DECIMALS);
 
         IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             stakedPrincipal: staked,
             rewardsAccumulatorBalance: rvBalance,
             claimableRewards: claimable,
             rewardsDelta: 0,
-            slashingDelta: slashing,
+            slashingDelta: 0,
             cumulativeRewards: 0
         });
 
-        uint256 result = core.exposedComputeTotalAssets(buckets, buffered, 0);
+        uint256 result = core.exposedComputeTotalAssets(buckets, buffered, pending);
 
-        // Result should be clamped: zero when slashing >= sum, otherwise sum - slashing
-        if (slashing >= positiveTotal) {
-            assertEq(result, 0, "should clamp to zero when slashing >= sum");
+        // Result should be clamped: zero when pendingWithdrawals >= sum, otherwise sum - pending
+        if (pending >= positiveTotal) {
+            assertEq(result, 0, "should clamp to zero when pending >= sum");
         } else {
-            assertEq(result, positiveTotal - slashing, "should return sum minus slashing");
+            assertEq(result, positiveTotal - pending, "should return sum minus pending withdrawals");
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              MOCK setSlashingDelta COUPLING WITH totalStaked
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice setSlashingDelta reduces totalStaked by the incremental increase.
+    function test_MockSetSlashingDelta_ReducesTotalStaked() external {
+        stakingManager.setTotalStaked(100 * DECIMALS);
+        assertEq(stakingManager.totalStaked(), 100 * DECIMALS);
+
+        stakingManager.setSlashingDelta(30 * DECIMALS);
+
+        assertEq(stakingManager.totalStaked(), 70 * DECIMALS, "totalStaked should decrease by slashingDelta");
+        assertEq(stakingManager.slashingDelta(), 30 * DECIMALS, "slashingDelta stored correctly");
+    }
+
+    /// @notice Incremental setSlashingDelta calls only reduce by the increment.
+    function test_MockSetSlashingDelta_IncrementalReduction() external {
+        stakingManager.setTotalStaked(100 * DECIMALS);
+
+        stakingManager.setSlashingDelta(10 * DECIMALS);
+        assertEq(stakingManager.totalStaked(), 90 * DECIMALS, "first slash: 100 - 10 = 90");
+
+        stakingManager.setSlashingDelta(25 * DECIMALS);
+        assertEq(stakingManager.totalStaked(), 75 * DECIMALS, "second slash: 90 - 15 = 75");
+
+        // Setting same value again should not reduce further
+        stakingManager.setSlashingDelta(25 * DECIMALS);
+        assertEq(stakingManager.totalStaked(), 75 * DECIMALS, "no-op when slashingDelta unchanged");
+    }
+
+    /// @notice setSlashingDelta saturates totalStaked to 0 when slash exceeds staked.
+    function test_MockSetSlashingDelta_SaturatesToZero() external {
+        stakingManager.setTotalStaked(10 * DECIMALS);
+
+        stakingManager.setSlashingDelta(50 * DECIMALS);
+
+        assertEq(stakingManager.totalStaked(), 0, "totalStaked should saturate to 0");
+        assertEq(stakingManager.slashingDelta(), 50 * DECIMALS, "slashingDelta stored even when exceeding staked");
+    }
+
+    /// @notice setTotalStaked after setSlashingDelta overrides the reduced value.
+    function test_MockSetTotalStaked_OverridesSlashingReduction() external {
+        stakingManager.setTotalStaked(100 * DECIMALS);
+        stakingManager.setSlashingDelta(30 * DECIMALS);
+        assertEq(stakingManager.totalStaked(), 70 * DECIMALS);
+
+        // setTotalStaked directly overrides — caller is responsible for consistency
+        stakingManager.setTotalStaked(200 * DECIMALS);
+        assertEq(stakingManager.totalStaked(), 200 * DECIMALS, "setTotalStaked should override");
     }
 }
