@@ -84,7 +84,7 @@ ollaGov -. "DEFAULT_ADMIN_ROLE" .-> stkMan
 ollaGov -. "DEFAULT_ADMIN_ROLE" .-> spr
 
 %% User flows (asset + call-path)
-userWallet -->|"deposit/requestRedeem/claimRequestById/instantRedeem"| vault
+userWallet -->|"deposit / depositWithPermit / requestRedeem / requestRedeemWithPermit / claimRequestById / instantRedeem / instantRedeemWithPermit"| vault
 
 vault -->|"convertToShares / convertToAssets / totalAssets"| core
 vault -->|"requestWithdrawal / claimWithdrawal / finalizeWithdrawals"| withdrawQ
@@ -275,10 +275,10 @@ subgraph "Olla Vault"
     vault[OllaVault]
 end
 
-userWallet -->|"deposit()"| vault
-userWallet -->|"requestRedeem()"| vault
+userWallet -->|"deposit() / depositWithPermit()"| vault
+userWallet -->|"requestRedeem() / requestRedeemWithPermit()"| vault
 userWallet -->|"claimRequestById()"| vault
-userWallet -->|"instantRedeem()"| vault
+userWallet -->|"instantRedeem() / instantRedeemWithPermit()"| vault
 
 style userWallet fill:#900
 style vault stroke:#090,stroke-width:4px
