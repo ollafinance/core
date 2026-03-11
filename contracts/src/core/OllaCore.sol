@@ -205,7 +205,7 @@ contract OllaCore is
     }
 
     /// @inheritdoc IOllaCore
-    function forceRebalanceReset() external override onlyRole(GUARDIAN_ROLE) whenNotPaused {
+    function forceRebalanceReset() external override onlyRole(GUARDIAN_ROLE) {
         _rebalanceProgress =
             IOllaCore.RebalanceProgress({ step: IOllaCore.RebalanceStep.Done, stakeRemaining: 0, unstakeRemaining: 0 });
         _rebalanceIdleBuffer = 0;

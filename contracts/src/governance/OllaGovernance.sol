@@ -265,6 +265,34 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     // slither-disable-end pess-event-setter
 
     /*//////////////////////////////////////////////////////////////
+                         EMERGENCY FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    // slither-disable-start reentrancy-events
+    /// @inheritdoc IOllaGovernance
+    function emergencyPauseAll() external override {
+        if (msg.sender != governanceAdmin) revert OllaGovernance__OnlyGovernanceAdmin();
+        address vaultAddr = IOllaCore(core).vault();
+        IOllaCore(core).pause();
+        IOllaVault(vaultAddr).pause();
+        emit EmergencyPauseAll();
+    }
+
+    // slither-disable-end reentrancy-events
+
+    // slither-disable-start reentrancy-events
+    /// @inheritdoc IOllaGovernance
+    function emergencyUnpauseAll() external override {
+        if (msg.sender != governanceAdmin) revert OllaGovernance__OnlyGovernanceAdmin();
+        address vaultAddr = IOllaCore(core).vault();
+        IOllaCore(core).unpause();
+        IOllaVault(vaultAddr).unpause();
+        emit EmergencyUnpauseAll();
+    }
+
+    // slither-disable-end reentrancy-events
+
+    /*//////////////////////////////////////////////////////////////
                           UPGRADE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 

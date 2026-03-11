@@ -739,7 +739,7 @@ contract OllaCoreRebalancePauseTest is Test {
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "new rebalance completes");
     }
 
-    function test_ForceRebalanceReset_RevertsWhenGlobalPauseActive() external {
+    function test_ForceRebalanceReset_SucceedsWhenGlobalPauseActive() external {
         _performDeposit(alice, 4 * DECIMALS);
 
         _enterRebalanceInProgress();
@@ -748,10 +748,12 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(guardian);
         core.pause();
 
-        // forceRebalanceReset should revert due to global pause (whenNotPaused modifier)
-        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
+        // forceRebalanceReset works even while paused (guardian emergency action)
         vm.prank(guardian);
         core.forceRebalanceReset();
+
+        IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
+        assertEq(uint256(p.step), uint256(IOllaCore.RebalanceStep.Done), "Reset should succeed while paused");
     }
 
     function test_ForceRebalanceReset_MidCycle_ResetsIdleBuffer() external {

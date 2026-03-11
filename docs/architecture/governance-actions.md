@@ -128,6 +128,30 @@ sequenceDiagram
     G->>SAF: unpause()
 ```
 
+## Emergency pause / unpause
+
+The governance admin can pause or unpause both `OllaCore` and `OllaVault` in a single call. These functions are **not timelocked** — they are callable directly by the governance admin for rapid incident response.
+
+```mermaid
+sequenceDiagram
+    participant GOV as Governance Admin
+    participant OG as OllaGovernance
+    participant C as OllaCore
+    participant V as OllaVault
+
+    Note over GOV,V: Emergency pause
+    GOV->>OG: emergencyPauseAll()
+    OG->>C: pause()
+    OG->>V: pause()
+    OG-->>GOV: EmergencyPauseAll()
+
+    Note over GOV,V: Emergency unpause
+    GOV->>OG: emergencyUnpauseAll()
+    OG->>C: unpause()
+    OG->>V: unpause()
+    OG-->>GOV: EmergencyUnpauseAll()
+```
+
 ## Upgrades
 
 All contract upgrades are timelocked. `OllaGovernance` has dedicated functions for upgrading OllaCore, satellite contracts, and itself.

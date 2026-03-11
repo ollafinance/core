@@ -28,6 +28,12 @@ interface IOllaGovernance {
     /// @param pendingGovernance The cancelled pending governance address.
     event GovernanceTransferCancelled(address indexed pendingGovernance);
 
+    /// @notice Emitted when both OllaCore and OllaVault are emergency-paused.
+    event EmergencyPauseAll();
+
+    /// @notice Emitted when both OllaCore and OllaVault are emergency-unpaused.
+    event EmergencyUnpauseAll();
+
     /// @notice Emitted when the core contract reference is set.
     /// @param core The OllaCore contract address.
     event CoreSet(address indexed core);
@@ -54,6 +60,9 @@ interface IOllaGovernance {
 
     /// @notice Thrown when a governance transfer is already pending.
     error OllaGovernance__PendingGovernanceAlreadySet(address pendingGovernance);
+
+    /// @notice Thrown when the caller is not the governance admin.
+    error OllaGovernance__OnlyGovernanceAdmin();
 
     /// @notice Thrown when no governance transfer is pending.
     error OllaGovernance__NoPendingGovernance();
@@ -188,6 +197,18 @@ interface IOllaGovernance {
     /// @param proxy The proxy address of the satellite.
     /// @param newImplementation The new implementation address.
     function upgradeSatellite(address proxy, address newImplementation) external;
+
+    /*//////////////////////////////////////////////////////////////
+                         EMERGENCY FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Pauses both OllaCore and OllaVault in one call.
+    /// @dev NOT timelocked — callable directly by the governance admin.
+    function emergencyPauseAll() external;
+
+    /// @notice Unpauses both OllaCore and OllaVault in one call.
+    /// @dev NOT timelocked — callable directly by the governance admin.
+    function emergencyUnpauseAll() external;
 
     /*//////////////////////////////////////////////////////////////
                           SETUP FUNCTIONS
