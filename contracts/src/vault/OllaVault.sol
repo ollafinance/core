@@ -160,12 +160,15 @@ contract OllaVault is
         bytes32 s
     ) external override nonReentrant whenNotPaused returns (uint256 shares) {
         // ERC-20 permit call on trusted asset token; sets allowance only.
-        // Wrapped in try/catch so opaque OZ permit errors (ERC2612InvalidSigner,
-        // ERC2612ExpiredSignature) surface as a named OllaVault error.
+        // Wrapped in try/catch for frontrun protection: if an attacker consumes the
+        // permit signature first, the allowance is already set and the deposit can
+        // proceed. Only reverts when the permit fails AND no sufficient allowance exists.
         // slither-disable-next-line reentrancy-benign
         try IERC20Permit(address(_modules.asset)).permit(msg.sender, address(this), assets, deadline, v, r, s) { }
         catch (bytes memory reason) {
-            revert OllaVault__PermitFailed(reason);
+            if (_modules.asset.allowance(msg.sender, address(this)) < assets) {
+                revert OllaVault__PermitFailed(reason);
+            }
         }
         shares = _deposit(msg.sender, assets, recipient);
         // Slippage bound check; not a timestamp concern.
@@ -184,15 +187,23 @@ contract OllaVault is
         bytes32 s
     ) external override nonReentrant whenNotPaused returns (uint256 requestId) {
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
+        IStAztec stAztecRef = _modules.stAztec;
         // ERC-20 permit call on trusted stAztec token; sets allowance only.
-        // Wrapped in try/catch so opaque OZ permit errors surface as a named OllaVault error.
+        // Wrapped in try/catch for frontrun protection: if an attacker consumes the
+        // permit signature first, the allowance is already set and the redeem request
+        // can proceed. Only reverts when the permit fails AND no sufficient allowance exists.
         // slither-disable-next-line reentrancy-benign
-        try _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s) { }
+        try stAztecRef.permit(msg.sender, address(this), shares, deadline, v, r, s) { }
         catch (bytes memory reason) {
-            revert OllaVault__PermitFailed(reason);
+            if (stAztecRef.allowance(msg.sender, address(this)) < shares) {
+                revert OllaVault__PermitFailed(reason);
+            }
         }
+        // Pull shares to vault via transferFrom, consuming the permit-set allowance.
+        // slither-disable-next-line reentrancy-benign
+        IERC20(address(stAztecRef)).safeTransferFrom(msg.sender, address(this), shares);
         uint256 assets;
-        (requestId, assets) = _executeRedeemRequest(msg.sender, controller, controller, shares);
+        (requestId, assets) = _executeRedeemRequest(msg.sender, controller, controller, shares, true);
 
         emit RedeemRequest(controller, msg.sender, requestId, msg.sender, assets);
         return requestId;
@@ -214,7 +225,7 @@ contract OllaVault is
         whenNotPaused
         returns (uint256 assetsAfterFee)
     {
-        return _instantRedeem(shares, recipient, minAssetsOut);
+        return _instantRedeem(shares, recipient, minAssetsOut, false);
     }
 
     /// @inheritdoc IOllaVault
@@ -227,14 +238,22 @@ contract OllaVault is
         bytes32 r,
         bytes32 s
     ) external override nonReentrant whenNotPaused returns (uint256 assetsAfterFee) {
+        IStAztec stAztecRef = _modules.stAztec;
         // ERC-20 permit call on trusted stAztec token; sets allowance only.
-        // Wrapped in try/catch so opaque OZ permit errors surface as a named OllaVault error.
+        // Wrapped in try/catch for frontrun protection: if an attacker consumes the
+        // permit signature first, the allowance is already set and the instant redeem
+        // can proceed. Only reverts when the permit fails AND no sufficient allowance exists.
         // slither-disable-next-line reentrancy-benign
-        try _modules.stAztec.permit(msg.sender, address(this), shares, deadline, v, r, s) { }
+        try stAztecRef.permit(msg.sender, address(this), shares, deadline, v, r, s) { }
         catch (bytes memory reason) {
-            revert OllaVault__PermitFailed(reason);
+            if (stAztecRef.allowance(msg.sender, address(this)) < shares) {
+                revert OllaVault__PermitFailed(reason);
+            }
         }
-        return _instantRedeem(shares, recipient, minAssetsOut);
+        // Pull shares to vault via transferFrom, consuming the permit-set allowance.
+        // slither-disable-next-line reentrancy-benign
+        IERC20(address(stAztecRef)).safeTransferFrom(msg.sender, address(this), shares);
+        return _instantRedeem(shares, recipient, minAssetsOut, true);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -340,7 +359,7 @@ contract OllaVault is
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
 
         uint256 assets;
-        (requestId, assets) = _executeRedeemRequest(owner, controller, controller, shares);
+        (requestId, assets) = _executeRedeemRequest(owner, controller, controller, shares, false);
 
         emit RedeemRequest(controller, owner, requestId, msg.sender, assets);
         return requestId;
@@ -756,12 +775,14 @@ contract OllaVault is
     /// @param shares The amount of shares to redeem.
     /// @param recipient The address that will receive the redeemed assets.
     /// @param minAssetsOut The minimum acceptable net assets after fee.
+    /// @param sharesPulledToVault True when shares were already transferred to the vault
+    ///        (permit paths use safeTransferFrom to consume the allowance).
     /// @return assetsAfterFee The net assets received after fee deduction.
-    function _instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut)
+    function _instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut, bool sharesPulledToVault)
         internal
         returns (uint256 assetsAfterFee)
     {
-        assetsAfterFee = _redeem(msg.sender, shares, recipient);
+        assetsAfterFee = _redeem(msg.sender, shares, recipient, sharesPulledToVault);
         // Slippage bound check; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (assetsAfterFee < minAssetsOut) revert OllaVault__SlippageExceeded(assetsAfterFee, minAssetsOut);
@@ -813,12 +834,17 @@ contract OllaVault is
     /// @param controller  Address that owns the withdrawal request (bookkeeping).
     /// @param recipient   Address passed to the WithdrawalQueue as the payout destination.
     /// @param shares      The amount of shares to redeem.
+    /// @param sharesPulledToVault True when shares were already transferred to the vault
+    ///        (permit paths use safeTransferFrom to consume the allowance).
     /// @return requestId  The withdrawal request id.
     /// @return assetsExpected The expected asset amount for the redeemed shares.
-    function _executeRedeemRequest(address shareOwner, address controller, address recipient, uint256 shares)
-        internal
-        returns (uint256 requestId, uint256 assetsExpected)
-    {
+    function _executeRedeemRequest(
+        address shareOwner,
+        address controller,
+        address recipient,
+        uint256 shares,
+        bool sharesPulledToVault
+    ) internal returns (uint256 requestId, uint256 assetsExpected) {
         if (shares == 0) revert OllaVault__InvalidAmount();
 
         VaultModules memory modules = _modules;
@@ -834,7 +860,9 @@ contract OllaVault is
         _ownerRequestIds[controller].push(expectedRequestId);
         cumulativeWithdrawals += assetsExpected;
 
-        modules.stAztec.burn(shareOwner, shares);
+        // Permit paths pull shares to vault via safeTransferFrom before calling this function,
+        // so burn from vault's balance. Non-permit paths burn directly from the share owner.
+        modules.stAztec.burn(sharesPulledToVault ? address(this) : shareOwner, shares);
 
         requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
         // Request ID consistency check; not a timestamp concern.
@@ -853,8 +881,13 @@ contract OllaVault is
     /// @param owner The address whose shares are burned.
     /// @param shares The amount of shares to redeem.
     /// @param recipient The address that receives the net assets.
+    /// @param sharesPulledToVault True when shares were already transferred to the vault
+    ///        (permit paths use safeTransferFrom to consume the allowance).
     /// @return netAssets The amount of assets transferred after fee deduction.
-    function _redeem(address owner, uint256 shares, address recipient) internal returns (uint256 netAssets) {
+    function _redeem(address owner, uint256 shares, address recipient, bool sharesPulledToVault)
+        internal
+        returns (uint256 netAssets)
+    {
         if (recipient == address(0)) revert OllaVault__ZeroAddress("recipient");
         if (shares == 0) revert OllaVault__InvalidAmount();
 
@@ -878,9 +911,10 @@ contract OllaVault is
         // slither-disable-next-line timestamp
         if (netAssets > available) revert OllaVault__InsufficientLiquidity(netAssets, available);
 
-        // Trusted stAztec token; burn reduces supply before asset transfer.
+        // Permit paths pull shares to vault via safeTransferFrom before calling this function,
+        // so burn from vault's balance. Non-permit paths burn directly from the owner.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
-        modules.stAztec.burn(owner, shares);
+        modules.stAztec.burn(sharesPulledToVault ? address(this) : owner, shares);
 
         // Only subtract netAssets; the fee stays in _bufferedAssets, benefiting remaining shareholders.
         _bufferedAssets -= netAssets;
