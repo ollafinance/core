@@ -1,4 +1,4 @@
-name: Forge Integration Tests
+name: Forge Integration
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ on:
 jobs:
   integration:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge integration tests
+    name: test integration
     runs-on: ubuntu-latest
     defaults:
       run:

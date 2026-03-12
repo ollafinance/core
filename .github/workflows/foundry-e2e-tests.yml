@@ -1,4 +1,4 @@
-name: Forge E2E Tests
+name: Forge E2E
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ on:
 jobs:
   e2e:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge e2e tests
+    name: test e2e
     runs-on: ubuntu-latest
     defaults:
       run:

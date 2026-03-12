@@ -1,4 +1,4 @@
-name: Forge Invariant Tests
+name: Forge Invariant
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ on:
 jobs:
   prepare:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge invariant prepare
+    name: prepare
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,7 +33,7 @@ jobs:
 
   invariant:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge invariant tests
+    name: test ${{ matrix.package }}
     needs: prepare
     runs-on: ubuntu-latest
     strategy:

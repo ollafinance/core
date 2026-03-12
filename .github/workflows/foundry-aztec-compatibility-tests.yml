@@ -1,4 +1,4 @@
-name: Forge Aztec Compatibility Tests
+name: Forge Aztec Compatibility
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ on:
 jobs:
   compatibility:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge Aztec compatibility tests
+    name: test aztec-compat
     runs-on: ubuntu-latest
     defaults:
       run:
