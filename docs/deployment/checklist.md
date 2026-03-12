@@ -1,150 +1,158 @@
 # Deployment Checklist
 
-## Environments
+Use this as the operator runbook for `contracts/script/Deploy.s.sol`.
 
-| DEPLOY_ENV | Chain | Mocks | Description |
-|---|---|---|---|
-| `local` | Anvil (31337) | Yes | Local dev — everything mocked, default Anvil key |
-| `testnet-mocked` | Sepolia (11155111) | Yes | Sepolia with mock Aztec token + rollup |
-| `testnet` | Sepolia (11155111) | No | Sepolia with real Aztec contracts |
+## 1. Network model
 
----
+- Deployment profile is selected by `ETHEREUM_CHAIN_ID`.
+- Supported values: `31337` (local), `11155111` (sepolia), `1` (mainnet).
+- `Deploy.s.sol` enforces `block.chainid == ETHEREUM_CHAIN_ID`.
 
-## 1. Pre-deployment preparation
+## 2. Env setup
 
-### Environment variables
+For live deploys, use `contracts/.env`:
 
-| Variable | Required | Environments | Description |
-|---|---|---|---|
-| `DEPLOY_ENV` | Yes | All | One of `local`, `testnet-mocked`, `testnet` |
-| `PRIVATE_KEY` | Yes (non-local) | `testnet`, `testnet-mocked` | Deployer EOA private key (hex, no `0x` prefix) |
-| `LZ_ENDPOINT` | Optional | `testnet` | LayerZero EndpointV2 address for stAztec bridging. If unset, OFT adapter is skipped. |
-| `PROVIDER_KEY_COUNT` | Optional | `local`, `testnet-mocked` | Number of dummy provider keys to seed (default: 5) |
+- Copy `contracts/.env.example` to `contracts/.env`.
+- Optionally copy values from one of these templates:
+  - `contracts/.example-sepolia.env`
+  - `contracts/.example-sepolia-mocked-aztec.env`
+  - `contracts/.example-mainnet.env`
+- Edit `contracts/.env` for your target live network.
 
-### Hardcoded addresses to verify before deploying
+For local deploys, `yarn deploy:local` uses:
 
-These live in the config files under `contracts/script/config/`. Review and update them as needed.
+- `contracts/.example-local.env`
 
-#### `Testnet.s.sol` (real Aztec on Sepolia)
+Notes:
 
-- [ ] `asset` — AZTEC token on Sepolia (currently `0x5595cb9ED193cAc2C0Bc5393313bc6115817954B`)
-- [ ] `rollupRegistry` — Aztec Registry on Sepolia (currently `0xA0BFb1B494FB49041e5c6e8c2C1BE09cD171c6Ba`)
-- [ ] `governance` — currently set to `deployer` (TODO: replace with real governance multisig)
-- [ ] `treasury` — currently set to `deployer` (TODO: replace with real treasury address)
-- [ ] `providerAdmin` — currently set to `deployer` (TODO: replace with real provider admin); used as both StakingProviderRegistry provider admin and rewards recipient
-- [ ] `timelockMinDelay` — currently `0` for atomic wiring; increase via governance post-deploy
-- [ ] `protocolFeeBP` — currently `500` (5%)
-- [ ] `treasuryFeeSplitBP` — currently `5000` (50%)
+- Forge reads `contracts/.env` automatically when run from `contracts/`.
+- Set both `SEPOLIA_RPC_URL` and `MAINNET_RPC_URL` in `.env` and choose alias with `--rpc-url sepolia` or `--rpc-url mainnet`.
+- `yarn deploy:local` intentionally keeps using `contracts/.example-local.env`.
 
-#### `TestnetMocked.s.sol` (mocked Aztec on Sepolia)
+Per-network requirements:
 
-- [ ] `governance` — set to `deployer` (OK for testing)
-- [ ] `treasury` — set to `deployer` (OK for testing)
-- [ ] `providerAdmin` — set to `deployer` (OK for testing)
-- [ ] `asset` and `rollupRegistry` — must be `address(0)` (populated by mock deployer)
+- **Local (`31337`)**: `MOCK_AZTEC=true` and `TIMELOCK_DURATION=0` are typical defaults.
+- **Sepolia (`11155111`)**: `PRIVATE_KEY`, explicit `MOCK_AZTEC`, and `LZ_ENDPOINT` are required.
+- **Sepolia with real Aztec (`MOCK_AZTEC=false`)**: `ASSET` and `ROLLUP_REGISTRY` are required.
+- **Mainnet (`1`)**: `PRIVATE_KEY`, `LZ_ENDPOINT`, `ASSET`, `ROLLUP_REGISTRY`, `GOVERNANCE`, `TREASURY`, `PROVIDER_ADMIN`, and `GUARDIAN` are required.
+- **Mainnet**: `MOCK_AZTEC=true` is forbidden.
+- **Strict address separation (Sepolia/Mainnet when `MOCK_AZTEC=false`)**:
+  - `deployer` must differ from `governance`, `treasury`, `providerAdmin`, and `guardian`.
+  - `governance` must differ from `providerAdmin`.
 
-#### `Local.s.sol` (Anvil)
+## 3. Preflight
 
-- [ ] No changes needed — uses default Anvil key and deploys everything locally
+- [ ] Install dependencies once: `cd contracts && forge soldeer install`
+- [ ] Build: `yarn forge:build`
+- [ ] Run tests: `yarn test`
 
-### Deployer account
+## 4. Deploy
 
-- [ ] Deployer EOA has enough Sepolia ETH for gas (testnet deploys)
-- [ ] Deployer EOA private key is correct and corresponds to the intended address
-- [ ] Understand that the deployer becomes SafetyModule **guardian** (can emergency-pause) — changeable later via governance
-- [ ] `providerAdmin` is set to the correct address — this controls StakingProviderRegistry provider admin and rewards recipient from day one
-
-### Build
-
-- [ ] Dependencies installed: `forge soldeer install` (from `contracts/`)
-- [ ] Clean build passes: `forge build --skip test` (from `contracts/`)
-- [ ] Tests pass: `forge test` (from `contracts/`)
-
----
-
-## 2. Deployment steps
-
-All commands run from the `contracts/` directory.
+`DEPLOY_WITH_VERIFY=true` is an intent/guardrail flag checked by `Deploy.s.sol`; actual explorer verification only runs when `--verify` is included.
 
 ### Local (Anvil)
 
 ```bash
-# Start Anvil in a separate terminal
-anvil
+# terminal 1
+yarn dev:chain
 
-# Deploy
-DEPLOY_ENV=local forge script script/Deploy.s.sol --broadcast --rpc-url http://127.0.0.1:8545
+# terminal 2
+yarn deploy:local
 ```
 
-### Testnet — mocked Aztec on Sepolia
+### Sepolia (enforced two-step flow)
 
 ```bash
-# Dry-run first (no --broadcast)
-DEPLOY_ENV=testnet-mocked PRIVATE_KEY=<key> forge script script/Deploy.s.sol --rpc-url sepolia
+cd contracts
 
-# If dry-run looks good, broadcast
-DEPLOY_ENV=testnet-mocked PRIVATE_KEY=<key> forge script script/Deploy.s.sol --broadcast --rpc-url sepolia
+# 1) dry-run
+DEPLOY_STEP=dry-run forge script script/Deploy.s.sol --rpc-url sepolia
+
+# NOTE: do not pass --broadcast for dry-run (enforced by Deploy.s.sol)
+
+# 2) broadcast (no verify)
+DEPLOY_STEP=broadcast DEPLOY_DRY_RUN_DONE=true DEPLOY_WITH_VERIFY=true \
+forge script script/Deploy.s.sol --broadcast --rpc-url sepolia
+
+# 3) optional separate verify pass
+DEPLOY_STEP=broadcast DEPLOY_DRY_RUN_DONE=true DEPLOY_WITH_VERIFY=true \
+forge script script/Deploy.s.sol --broadcast --verify --rpc-url sepolia
 ```
 
-### Testnet — real Aztec on Sepolia
+### Mainnet (enforced two-step flow)
 
 ```bash
-# Dry-run first (no --broadcast)
-DEPLOY_ENV=testnet PRIVATE_KEY=<key> forge script script/Deploy.s.sol --rpc-url sepolia
+cd contracts
 
-# If dry-run looks good, broadcast and verify on Etherscan
-DEPLOY_ENV=testnet PRIVATE_KEY=<key> forge script script/Deploy.s.sol \
-  --broadcast --rpc-url sepolia --verify
+# 1) dry-run
+DEPLOY_STEP=dry-run forge script script/Deploy.s.sol --rpc-url mainnet
+
+# NOTE: do not pass --broadcast for dry-run (enforced by Deploy.s.sol)
+
+# 2) broadcast (no verify)
+DEPLOY_STEP=broadcast DEPLOY_DRY_RUN_DONE=true DEPLOY_WITH_VERIFY=true \
+forge script script/Deploy.s.sol --broadcast --rpc-url mainnet
+
+# 3) optional separate verify pass
+DEPLOY_STEP=broadcast DEPLOY_DRY_RUN_DONE=true DEPLOY_WITH_VERIFY=true \
+forge script script/Deploy.s.sol --broadcast --verify --rpc-url mainnet
 ```
 
----
+`Deploy.s.sol` enforces on strict chains:
 
-## 3. Post-deployment verification
+- `DEPLOY_STEP` must be `dry-run` or `broadcast`.
+- `DEPLOY_STEP=dry-run` cannot be executed with `--broadcast`.
+- Broadcast requires `DEPLOY_DRY_RUN_DONE=true` and `DEPLOY_WITH_VERIFY=true`.
 
-- [ ] Check `deployments/<env-name>.json` was written with all expected addresses
-- [ ] Verify OllaCore is unpaused (if `timelockMinDelay == 0`)
-- [ ] Verify OllaVault is unpaused (if `timelockMinDelay == 0`)
-- [ ] Verify OllaGovernance.core() points to OllaCore proxy
-- [ ] Verify OllaCore.vault() points to OllaVault proxy
-- [ ] Verify deployer holds **no roles** on OllaGovernance (all temporary roles renounced)
-- [ ] Verify `config.governance` holds PROPOSER_ROLE, EXECUTOR_ROLE, CANCELLER_ROLE on OllaGovernance
-- [ ] Verify SafetyModule guardian is the deployer EOA
-- [ ] Verify SafetyModule admin is OllaGovernance proxy
-- [ ] Verify StakingProviderRegistry provider admin is `config.providerAdmin`
-- [ ] Verify StakingProviderRegistry rewards recipient is `config.providerAdmin`
-- [ ] Etherscan verification succeeded (for `--verify` deploys)
+## 5. Resume after failure
 
-### Contracts deployed (all environments)
+If deploy/broadcast fails mid-run, rerun the same command with the same env values.
 
-| Contract | Type | Notes |
-|---|---|---|
-| OllaGovernance | impl + proxy | TimelockController-based governance |
-| OllaCore | impl + proxy | Core accounting, owned by OllaGovernance |
-| OllaVault | impl + proxy | ERC-7575 vault |
-| StAztec | standalone | ERC-20 share token, minter = OllaVault |
-| WithdrawalQueue | impl + proxy | FIFO queue, admin = OllaGovernance |
-| RewardsAccumulator | impl + proxy | Linked to OllaCore |
-| StakingManager | impl + proxy | Always deployed (not mock-gated) |
-| StakingProviderRegistry | impl + proxy | Always deployed; provider admin + rewards recipient = `config.providerAdmin` |
-| SafetyModule | standalone | Guardian = deployer, admin = OllaGovernance |
+- Resume source: `deployments/<network>.json`.
+- Default behavior: dry-run resume off, broadcast resume on.
+- Optional override: set `DEPLOY_RESUME=true` to force resume in dry-run mode.
 
-### Additional contracts and setup (mock environments only)
+Rules:
 
-| Contract | Type | Notes |
-|---|---|---|
-| MockAztec | standalone | ERC-20 mock staking token |
-| MockAztecRollup | standalone | Mock rollup with `tick()` rewards |
-| MockAztecRollupRegistry | standalone | Points to MockAztecRollup |
-| EndpointV2Mock | standalone | Mock LZ endpoint for OFT adapter |
+- [ ] Do not hand-edit deployment addresses in `deployments/<network>.json`.
+- [ ] If you hit `ADDRESS_STATE_MISMATCH` or `CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT`, fix env/config mismatch before retrying.
 
-Dummy attester keys are seeded into the StakingProviderRegistry only in mock environments (`local`, `testnet-mocked`). For real deployments (`testnet`), keys must be registered separately by the provider admin after deploy.
+## 6. Post-deploy activation (strict chains)
 
----
+On strict chains (Sepolia/Mainnet), deployment is complete but protocol is not fully operational
+until governance actions execute (including when `TIMELOCK_DURATION=0`).
 
-## 4. Post-deploy governance actions (when ready)
+```bash
+ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/GovSetVault.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
+ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/GovUnpauseCore.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
+ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/GovUnpauseVault.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
+```
 
-These are not part of the deploy script — they require separate governance proposals or direct calls:
+Each ops script is idempotent: first run may schedule, later run executes, re-runs become no-op.
 
-- [ ] Increase `timelockMinDelay` on OllaGovernance (currently 0 for atomic wiring)
-- [ ] Transfer `governance` and `treasury` roles from deployer EOA to real multisig addresses
-- [ ] Transfer SafetyModule guardian from deployer EOA to an ops multisig
+Optional override env vars for ops scripts:
+
+- `GOVERNANCE_PROXY`, `CORE`, `VAULT`
+
+## 7. Post-deploy bridge hardening (LayerZero)
+
+- [ ] Configure `StAztecOFTAdapter.setEnforcedOptions(...)` for each destination EID.
+- [ ] Set msgType `1` (`SEND`) with a baseline receive gas budget (for example `200_000`).
+- [ ] If `SEND_AND_CALL` is enabled, also set msgType `2` with a higher budget (`~350k-500k`).
+
+## 8. Final verification
+
+```bash
+ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/PrintDeployment.s.sol --rpc-url <sepolia-or-mainnet>
+ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/PrintState.s.sol --rpc-url <sepolia-or-mainnet>
+```
+
+- [ ] `deployments/<network>.json` exists (`local.json`, `sepolia.json`, or `mainnet.json`).
+- [ ] `deployments/<network>.json` has compatible `mode.mockAztec` and `inputs.*` values for current env.
+- [ ] `OllaGovernance.core()` points to `OllaCore` proxy.
+- [ ] On strict chains, `OllaCore.vault()` is either unset (pre-activation) or points to `OllaVault` after `GovSetVault`.
+- [ ] On non-strict chains with `TIMELOCK_DURATION==0`: `OllaCore.vault()` points to `OllaVault` proxy.
+- [ ] On non-strict chains with `TIMELOCK_DURATION>0`: `OllaCore.vault()` stays unset until `GovSetVault` executes.
+- [ ] `OllaCore.safetyModule()` and `OllaVault.withdrawalQueue()` point to deployed addresses.
+- [ ] If `TIMELOCK_DURATION>0`: core and vault are unpaused only after governance ops scripts complete.
+- [ ] On strict chains, deployer no longer retains governance admin roles (and, for non-mock deploys, SafetyModule guardian).

@@ -15,19 +15,26 @@ contract LocalConfig is ConfigHelper {
     function getConfig() external view override returns (DeployConfig memory) {
         uint256 deployerPrivateKey = vm.envOr("PRIVATE_KEY", _ANVIL_PRIVATE_KEY);
         address deployer = vm.addr(deployerPrivateKey);
+        bool mockAztec = vm.envOr("MOCK_AZTEC", true);
+        uint256 timelockDuration = vm.envOr("TIMELOCK_DURATION", uint256(0));
+        bool lzEndpointDefined = vm.envExists("LZ_ENDPOINT");
+        address lzEndpoint = lzEndpointDefined ? vm.envAddress("LZ_ENDPOINT") : address(0);
 
         return DeployConfig({
-            // Environment
+            // Network
             name: "local",
             chainId: _ANVIL_CHAIN_ID,
             // Deployer
             deployerPrivateKey: deployerPrivateKey,
             deployer: deployer,
-            // Feature flags - deploy mocks for local development
-            deployMocks: true,
-            // External addresses - not used in local (mocks deployed instead)
-            asset: address(0),
-            rollupRegistry: address(0),
+            // Feature flags
+            deployMocks: mockAztec,
+            // Bridge configuration
+            lzEndpointDefined: lzEndpointDefined,
+            lzEndpoint: lzEndpoint,
+            // External addresses - used when MOCK_AZTEC=false
+            asset: vm.envOr("ASSET", address(0)),
+            rollupRegistry: vm.envOr("ROLLUP_REGISTRY", address(0)),
             // Protocol fee config
             protocolFeeBP: 500,
             treasuryFeeSplitBP: 5000,
@@ -35,7 +42,8 @@ contract LocalConfig is ConfigHelper {
             governance: deployer,
             treasury: deployer,
             providerAdmin: deployer,
-            timelockMinDelay: 0, // instant for local dev
+            guardian: deployer,
+            timelockMinDelay: timelockDuration,
             // Satellite addresses - populated during deployment
             withdrawalQueue: deployer,
             rewardsAccumulator: deployer,

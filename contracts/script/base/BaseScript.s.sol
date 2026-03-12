@@ -11,7 +11,15 @@ abstract contract BaseScript is BaseDeployer {
     uint256 internal constant _ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
     function _deployEnv() internal view returns (string memory) {
-        return vm.envOr("DEPLOY_ENV", string("local"));
+        if (vm.envExists("DEPLOY_ENV")) {
+            return vm.envString("DEPLOY_ENV");
+        }
+
+        uint256 chainId = vm.envOr("ETHEREUM_CHAIN_ID", uint256(block.chainid));
+        if (chainId == 31337) return "local";
+        if (chainId == 11155111) return "sepolia";
+        if (chainId == 1) return "mainnet";
+        revert("Unsupported ETHEREUM_CHAIN_ID");
     }
 
     function _privateKey() internal view returns (uint256 pk) {

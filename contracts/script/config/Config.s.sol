@@ -5,7 +5,7 @@ import { Script } from "@forge-std/Script.sol";
 
 /// @notice Deployment configuration struct
 struct DeployConfig {
-    // Environment info
+    // Network info
     string name;
     uint256 chainId;
     // Deployer
@@ -13,6 +13,9 @@ struct DeployConfig {
     address deployer;
     // Feature flags
     bool deployMocks;
+    // Bridge configuration
+    bool lzEndpointDefined;
+    address lzEndpoint;
     // External addresses (used when deployMocks is false)
     address asset;
     address rollupRegistry;
@@ -23,6 +26,7 @@ struct DeployConfig {
     address governance; // EOA/multisig that controls OllaGovernance
     address treasury; // fee recipient
     address providerAdmin; // StakingProviderRegistry provider admin + rewards recipient
+    address guardian; // SafetyModule guardian
     uint256 timelockMinDelay; // minimum timelock delay in seconds
     // Satellite addresses (populated during deployment)
     address withdrawalQueue;
@@ -32,23 +36,10 @@ struct DeployConfig {
 
 /// @title ConfigHelper
 /// @author Olla
-/// @notice Helper to load the correct config based on DEPLOY_ENV
+/// @notice Helper to load deployment configuration.
 abstract contract ConfigHelper is Script {
-    /// @notice Load config based on DEPLOY_ENV environment variable
+    /// @notice Load deployment config.
     /// @dev Override this in child configs
     /// @return The deployment configuration
     function getConfig() external virtual returns (DeployConfig memory);
-
-    /// @notice Get environment name from DEPLOY_ENV, defaults to "local"
-    /// @return The environment name string
-    function _getEnvName() internal view returns (string memory) {
-        return vm.envOr("DEPLOY_ENV", string("local"));
-    }
-
-    /// @notice Check if current environment matches the given name
-    /// @param env The environment name to check
-    /// @return True if the current environment matches
-    function _isEnv(string memory env) internal view returns (bool) {
-        return keccak256(bytes(_getEnvName())) == keccak256(bytes(env));
-    }
 }

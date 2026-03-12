@@ -1,0 +1,44 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "deployer": "0x637019700f47a874fa5fe936d60035e404d47dcd",
+  "mode": {
+    "mockAztec": true
+  },
+  "inputs": {
+    "asset": "0x0000000000000000000000000000000000000000",
+    "rollupRegistry": "0x0000000000000000000000000000000000000000",
+    "lzEndpoint": "0x6edce65403992e310a62460808c4b910d972f10f"
+  },
+  "addresses": {
+    "OllaGovernanceImplementation": "0xf4d083a28f99531a7c71ea5c6c3ff07df5cd9498",
+    "OllaGovernanceProxy": "0xc8fac8b52033f4b40acc84a429e8689dc51ecc28",
+    "OllaCoreImplementation": "0xdba09383c33fbf73db5784cc1b3547c08c608a7a",
+    "OllaCoreProxy": "0xd1baeddad919b5c35306c6ab1ce253ecd0407cf1",
+    "OllaVaultImplementation": "0x0e745a775d419493e3189fe9d66b0775e9ff03e5",
+    "OllaVaultProxy": "0xba38b6c37a83446c751c039c69d94397216e7545",
+    "Asset": "0xb8b8a167f50f23235a61a9d64b093c72070a23eb",
+    "StAztec": "0xdb7a802d4d7ad3eee569ae700e199000838f6292",
+    "StAztecOFTAdapter": "0xd2847ed4adc4e8a788986c52dd86db3c6fd76721",
+    "WithdrawalQueueImplementation": "0x8556c85baf2bb066a95c20694641b4a8be90b6b4",
+    "WithdrawalQueueProxy": "0x2662e7da3bb36500b3e2e3df10d2c206ac249888",
+    "RewardsAccumulatorImplementation": "0xabc188afef93a48c3330fbbac3188176ec2cd91d",
+    "RewardsAccumulatorProxy": "0x332ead43112c0b33e0df8f077cfb2ee9afd2d7bc",
+    "StakingManagerImplementation": "0xd350918360a6f178f5dfbac0ed0e0f5afd21171f",
+    "StakingManagerProxy": "0xac565896a09eb5ee73f460512c6fd10900765c3a",
+    "StakingProviderRegistryImplementation": "0x44458ac3c707bd0eaf0c3684303522ce216e3078",
+    "StakingProviderRegistryProxy": "0x69f07d36ffb103621ac448fad62b17df0a5b48a5",
+    "MockAztecRollup": "0xab4565b2d9cf83a37ce2b1ce5d7bd2735e3282e9",
+    "MockAztecRollupRegistry": "0x4351aaf10e6ab85a5144ce206a525ef4e7077e8b",
+    "StakingManager": "0xac565896a09eb5ee73f460512c6fd10900765c3a",
+    "SafetyModule": "0x624ad64b60e21a5c50e517fae1db6a7daa1250fa"
+  },
+  "stAztecName": "stAztec",
+  "stAztecVersion": "1",
+  "status": {
+    "phase": "D",
+    "completed": true,
+    "updatedAtBlock": 10425547,
+    "flags": {}
+  }
+}
