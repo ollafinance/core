@@ -206,11 +206,11 @@ contract OllaCoreSafetyModuleTest is Test {
         stakingManager.setTotalStaked(100 * DECIMALS);
         core.updateAccounting(); // establishes baseline rate = 2e18
 
-        // Slash 10% of staked: totalStaked goes from 100 → 90.
-        // totalAssets = buffer(100) + staked(90) = 190, rate = 1.9e18.
-        // Drop = (2e18 - 1.9e18) / 2e18 = 5% → triggers breaker (threshold = 5%).
+        // Slash 11% of staked: totalStaked goes from 100 -> 89.
+        // totalAssets = buffer(100) + staked(89) = 189, rate ~= 1.89e18.
+        // Drop = (2e18 - 1.89e18) / 2e18 = 5.5% -> triggers breaker (threshold = 5%).
         stakingManager.setTotalStaked(100 * DECIMALS);
-        stakingManager.setSlashingDelta(10 * DECIMALS); // totalStaked → 90
+        stakingManager.setSlashingDelta(11 * DECIMALS); // totalStaked -> 89
 
         vm.warp(block.timestamp + 1);
 
