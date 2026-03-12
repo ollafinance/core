@@ -350,7 +350,7 @@ contract OllaCoreInvariantTest is Test {
 
     function invariant_ExchangeRateMatchesTotals() external view {
         uint256 supply = stAztec.totalSupply();
-        uint256 expectedRate = (core.totalAssets() + 1).mulDiv(1e18, supply + 1, Math.Rounding.Floor);
+        uint256 expectedRate = (core.totalAssets() + 1e3).mulDiv(1e18, supply + 1e3, Math.Rounding.Floor);
 
         assertEq(core.exchangeRate(), expectedRate, "exchange rate matches totals");
     }
@@ -365,7 +365,7 @@ contract OllaCoreInvariantTest is Test {
         uint256 supply = stAztec.totalSupply();
         IOllaCore.LatestReport memory report = core.latestReport();
         IOllaCore.FlowCounters memory flows = core.flowCounters();
-        uint256 expectedRate = (report.totalAssets + 1).mulDiv(1e18, supply + 1, Math.Rounding.Floor);
+        uint256 expectedRate = (report.totalAssets + 1e3).mulDiv(1e18, supply + 1e3, Math.Rounding.Floor);
 
         assertEq(report.exchangeRate, expectedRate, "stored exchange rate matches snapshot");
         assertEq(report.totalAssets, core.totalAssets(), "snapshot total assets matches total assets");
@@ -395,11 +395,11 @@ contract OllaCoreInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function _expectedShares(uint256 assets) internal view returns (uint256) {
-        return assets.mulDiv(stAztec.totalSupply() + 1, core.totalAssets() + 1, Math.Rounding.Floor);
+        return assets.mulDiv(stAztec.totalSupply() + 1e3, core.totalAssets() + 1e3, Math.Rounding.Floor);
     }
 
     function _expectedAssets(uint256 shares) internal view returns (uint256) {
-        return shares.mulDiv(core.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
+        return shares.mulDiv(core.totalAssets() + 1e3, stAztec.totalSupply() + 1e3, Math.Rounding.Floor);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -444,19 +444,19 @@ contract OllaCoreInvariantTest is Test {
         uint256 assets = 1e18;
         uint256 shares = 1e18;
 
-        // With virtual offset: exchangeRate = (total + 1) * 1e18 / (0 + 1)
-        uint256 expectedRate = (total + 1).mulDiv(1e18, 1, Math.Rounding.Floor);
+        // With virtual offset: exchangeRate = (total + 1e3) * 1e18 / (0 + 1e3)
+        uint256 expectedRate = (total + 1e3).mulDiv(1e18, 1e3, Math.Rounding.Floor);
         assertEq(core.exchangeRate(), expectedRate, "zero supply: exchangeRate with virtual offset");
 
-        // convertToShares = assets * (0 + 1) / (total + 1)
-        uint256 expectedShares = assets.mulDiv(1, total + 1, Math.Rounding.Floor);
+        // convertToShares = assets * (0 + 1e3) / (total + 1e3)
+        uint256 expectedShares = assets.mulDiv(1e3, total + 1e3, Math.Rounding.Floor);
         assertEq(core.convertToShares(assets), expectedShares, "zero supply: convertToShares with virtual offset");
 
-        // convertToAssets = shares * (total + 1) / (0 + 1)
-        uint256 expectedAssets = shares.mulDiv(total + 1, 1, Math.Rounding.Floor);
+        // convertToAssets = shares * (total + 1e3) / (0 + 1e3)
+        uint256 expectedAssets = shares.mulDiv(total + 1e3, 1e3, Math.Rounding.Floor);
         assertEq(core.convertToAssets(shares), expectedAssets, "zero supply: convertToAssets with virtual offset");
 
-        // previewDeposit = assets * (0 + 1) / (total + 1)
+        // previewDeposit = assets * (0 + 1e3) / (total + 1e3)
         assertEq(vault.previewDeposit(assets), expectedShares, "zero supply: previewDeposit with virtual offset");
     }
 }
@@ -1488,7 +1488,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         // would overflow. This arises from mock-driven accounting divergence (the mock
         // staking manager's totalStaked doesn't track actual stakes), not a protocol bug.
         uint256 testAmount = 1e18;
-        if (supply > 0 && (supply + 1) / (total + 1) >= type(uint256).max / testAmount) {
+        if (supply > 0 && (supply + 1e3) / (total + 1e3) >= type(uint256).max / testAmount) {
             return;
         }
 

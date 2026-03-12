@@ -159,7 +159,7 @@ contract OllaCoreDepositTest is Test {
 
         uint256 depositAssetAmountBob = 50 * DECIMALS;
         uint256 expectedShares = (depositAssetAmountBob)
-        .mulDiv(totalSharesBeforeSecondDeposit, totalAssetsBeforeSecondDeposit, Math.Rounding.Floor);
+        .mulDiv(totalSharesBeforeSecondDeposit + 1e3, totalAssetsBeforeSecondDeposit + 1e3, Math.Rounding.Floor);
         uint256 secondShares = _performDeposit(bob, depositAssetAmountBob);
 
         assertEq(secondShares, expectedShares, "second deposit: shares follow exchange rate");
@@ -396,7 +396,7 @@ contract OllaCoreDepositTest is Test {
 
         // Assert: Bob's shares follow the ERC4626 formula with virtual offset
         uint256 expectedBobShares =
-            uint256(deposit2).mulDiv(supplyBeforeBob + 1, totalAssetsBeforeBob + 1, Math.Rounding.Floor);
+            uint256(deposit2).mulDiv(supplyBeforeBob + 1e3, totalAssetsBeforeBob + 1e3, Math.Rounding.Floor);
         assertEq(bobShares, expectedBobShares, "Bob shares match ERC4626 formula");
     }
 }

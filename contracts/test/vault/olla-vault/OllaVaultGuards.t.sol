@@ -394,6 +394,44 @@ contract OllaVaultGuardsTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+              ERC-4626 INFLATION ATTACK (2-ARG DEPOSIT)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The standard ERC-4626 deposit(uint256, address) has no slippage
+    ///         parameter. Verify the shares == 0 guard in _processDeposit prevents
+    ///         a first-depositor inflation attack from minting 0 shares.
+    function test_RevertWhen_ERC4626Deposit_ZeroSharesAfterInflation() external {
+        address attacker = makeAddr("attacker");
+        address victim = makeAddr("victim");
+
+        // Step 1: Attacker deposits 1 wei to get 1 share.
+        asset.mint(attacker, 1);
+        vm.prank(attacker);
+        asset.approve(address(vault), 1);
+        vm.prank(attacker);
+        vault.deposit(1, attacker);
+
+        // Step 2: Attacker donates a large amount directly to inflate the share price.
+        uint256 donation = 1000 * DECIMALS;
+        asset.mint(attacker, donation);
+        vm.prank(attacker);
+        asset.transfer(address(vault), donation);
+        vm.prank(address(governance));
+        vault.reconcileBufferedAssets();
+
+        // Step 3: Victim tries the standard 2-arg ERC-4626 deposit.
+        //         convertToShares should floor to 0 → _processDeposit reverts.
+        uint256 victimDeposit = 1; // 1 wei — guaranteed 0 shares after inflation
+        asset.mint(victim, victimDeposit);
+        vm.prank(victim);
+        asset.approve(address(vault), victimDeposit);
+
+        vm.expectRevert(IOllaVault.OllaVault__InvalidAmount.selector);
+        vm.prank(victim);
+        vault.deposit(victimDeposit, victim);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                        PERMIT FLOW REVERTS
     //////////////////////////////////////////////////////////////*/
 

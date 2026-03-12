@@ -300,7 +300,7 @@ contract OllaCoreReconcileTest is Test {
 
         uint256 supplyBefore = stAztec.totalSupply();
         uint256 totalAssetsWithDonation = initialDeposit + bonus;
-        uint256 expectedShares = secondDeposit * supplyBefore / totalAssetsWithDonation;
+        uint256 expectedShares = secondDeposit * (supplyBefore + 1e3) / (totalAssetsWithDonation + 1e3);
 
         vm.expectEmit(true, true, true, true, address(vault));
         emit BufferedAssetsReconciled(bonus, totalAssetsWithDonation, address(vault));
@@ -318,10 +318,10 @@ contract OllaCoreReconcileTest is Test {
                 DONATION ATTACK MITIGATION (C1)
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Documents donation attack mitigation via virtual offset (+1).
+    /// @notice Documents donation attack mitigation via virtual offset (+1e3).
     /// When an attacker deposits 1 wei (getting 1 share) and donates 10_000e18 directly,
     /// a victim depositing 9_999e18 still receives shares thanks to the virtual offset
-    /// in _convertToShares: assets * (totalSupply + 1) / (totalAssets + 1).
+    /// in _convertToShares: assets * (totalSupply + 1e3) / (totalAssets + 1e3).
     function test_ReconcileBufferedAssets_DonationAttack_FirstDepositor() external {
         address attacker = makeAddr("attacker");
         address victim = makeAddr("victim");
@@ -350,10 +350,10 @@ contract OllaCoreReconcileTest is Test {
         // Virtual offset protects the victim: they get shares > 0
         assertGt(victimShares, 0, "victim should receive shares > 0 due to virtual offset protection");
 
-        // Compute expected shares via the formula: assets * (supply + 1) / (totalAssets + 1)
+        // Compute expected shares via the formula: assets * (supply + 1e3) / (totalAssets + 1e3)
         uint256 supplyAtConversion = 1;
         uint256 totalAssetsAtConversion = 1 + donationAmount;
-        uint256 expectedVictimShares = (victimDeposit * (supplyAtConversion + 1)) / (totalAssetsAtConversion + 1);
+        uint256 expectedVictimShares = (victimDeposit * (supplyAtConversion + 1e3)) / (totalAssetsAtConversion + 1e3);
         assertEq(victimShares, expectedVictimShares, "victim shares should match virtual offset formula");
 
         // Document: attacker still holds disproportionate share value, but victim is not zeroed out

@@ -194,13 +194,13 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 grossRewards = rewards;
         uint256 protocolFeeAssets = grossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
 
-        uint256 rateBeforeRewards = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
+        uint256 rateBeforeRewards = (expectedTotalAssets + 1e3).mulDiv(DECIMALS, oldSupply + 1e3, Math.Rounding.Floor);
         uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Floor);
         uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
         uint256 providerShares = protocolSharesTotal - treasuryShares;
 
         uint256 expectedRateAfter =
-            expectedTotalAssets.mulDiv(DECIMALS, oldSupply + protocolSharesTotal, Math.Rounding.Floor);
+            (expectedTotalAssets + 1e3).mulDiv(DECIMALS, oldSupply + protocolSharesTotal + 1e3, Math.Rounding.Floor);
         uint256 expectedTimestamp = block.timestamp;
 
         vm.expectEmit(true, true, true, true, address(core));
@@ -243,7 +243,7 @@ contract OllaCoreProtocolFeesTest is Test {
 
         uint256 expectedTotalAssets = depositAmount + rewards;
         uint256 protocolFeeAssets = rewards * PROTOCOL_FEE_BP / BP_DIVISOR;
-        uint256 rateBeforeRewards = expectedTotalAssets.mulDiv(DECIMALS, oldSupply, Math.Rounding.Floor);
+        uint256 rateBeforeRewards = (expectedTotalAssets + 1e3).mulDiv(DECIMALS, oldSupply + 1e3, Math.Rounding.Floor);
         uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Floor);
         uint256 protocolSharesCeil = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeRewards, Math.Rounding.Ceil);
 
@@ -350,7 +350,9 @@ contract OllaCoreProtocolFeesTest is Test {
         IOllaCore.LatestReport memory reportAfter = core.latestReport();
         assertEq(reportAfter.grossRewards, 0, "gross rewards zero");
         assertEq(reportAfter.totalAssets, 0, "report total assets zero");
-        assertEq(reportAfter.exchangeRate, 0, "exchange rate zero");
+        // With +1e3 virtual offset, rate is tiny but non-zero when totalAssets=0 and supply>0
+        uint256 expectedRate = uint256(1e3).mulDiv(DECIMALS, oldSupply + 1e3, Math.Rounding.Floor);
+        assertEq(reportAfter.exchangeRate, expectedRate, "exchange rate near-zero with virtual offset");
         assertEq(core.totalAssets(), 0, "total assets zeroed");
         assertEq(stAztec.totalSupply(), oldSupply, "no fee shares minted");
         assertEq(stAztec.balanceOf(governance), oldGovShares, "no treasury shares minted");
@@ -386,8 +388,8 @@ contract OllaCoreProtocolFeesTest is Test {
         // Contract's implementation (uses virtual offset)
         uint256 contractResult = core.convertToAssets(shares);
 
-        // Expected result with virtual offset: shares * (total + 1) / (supply + 1)
-        uint256 expectedResult = shares.mulDiv(total + 1, supply + 1, Math.Rounding.Floor);
+        // Expected result with virtual offset: shares * (total + 1e3) / (supply + 1e3)
+        uint256 expectedResult = shares.mulDiv(total + 1e3, supply + 1e3, Math.Rounding.Floor);
 
         assertEq(contractResult, expectedResult, "convertToAssets matches spec");
     }

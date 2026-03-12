@@ -505,7 +505,7 @@ contract OllaCoreWithdrawalTest is Test {
         uint256 sharesToRedeem = 2;
 
         // Single-step expected value (what convertToAssets returns)
-        uint256 expectedAssets = sharesToRedeem.mulDiv(totalAssetsBefore, supplyBefore, Math.Rounding.Floor);
+        uint256 expectedAssets = sharesToRedeem.mulDiv(totalAssetsBefore + 1e3, supplyBefore + 1e3, Math.Rounding.Floor);
         uint256 viewAssets = core.convertToAssets(sharesToRedeem);
         assertEq(viewAssets, expectedAssets, "convertToAssets matches single-step formula");
 
