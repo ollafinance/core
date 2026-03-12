@@ -946,7 +946,8 @@ contract OllaCoreInstantRedemptionTest is Test {
         // After sync: totalAssets = 150e18, supply = 100e18 (pre-redeem values used in contract)
         uint256 syncedTotalAssets = depositAmount + rewards; // 150e18
         uint256 preRedeemSupply = depositAmount; // 100e18 (supply before the redeem burned shares)
-        uint256 expectedGross = sharesToRedeem.mulDiv(syncedTotalAssets + 1, preRedeemSupply + 1, Math.Rounding.Floor);
+        uint256 expectedGross =
+            sharesToRedeem.mulDiv(syncedTotalAssets + 1e3, preRedeemSupply + 1e3, Math.Rounding.Floor);
         uint256 expectedFee = expectedGross * 500 / BP_DIVISOR;
         uint256 expectedNet = expectedGross - expectedFee;
 
@@ -1030,7 +1031,7 @@ contract OllaCoreInstantRedemptionTest is Test {
         // compute it manually with the single-step formula.
         uint256 expectedTotalAssets = depositAmount + rewards;
         uint256 supply = stAztec.totalSupply();
-        uint256 expectedGross = sharesToRedeem.mulDiv(expectedTotalAssets + 1, supply + 1, Math.Rounding.Floor);
+        uint256 expectedGross = sharesToRedeem.mulDiv(expectedTotalAssets + 1e3, supply + 1e3, Math.Rounding.Floor);
 
         // Perform the redeem -- triggers _syncBufferedWithBalance() then _convertToAssets()
         _setInstantRedemptionFee(0); // zero fee so netAssets == grossAssets
@@ -1047,7 +1048,7 @@ contract OllaCoreInstantRedemptionTest is Test {
             uint256 viewAssets = core.convertToAssets(remainingShares);
             uint256 postTotal = core.totalAssets();
             uint256 postSupply = stAztec.totalSupply();
-            uint256 expectedRemaining = remainingShares.mulDiv(postTotal + 1, postSupply + 1, Math.Rounding.Floor);
+            uint256 expectedRemaining = remainingShares.mulDiv(postTotal + 1e3, postSupply + 1e3, Math.Rounding.Floor);
             assertEq(viewAssets, expectedRemaining, "convertToAssets consistent post-redeem");
         }
     }

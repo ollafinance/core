@@ -282,7 +282,8 @@ contract FeeMintingDistributionE2ETest is Test {
         uint256 providerBal = stAztec.balanceOf(providerRewards);
         assertGt(treasuryBal, 0, "treasury should hold stAztec");
         assertGt(providerBal, 0, "provider should hold stAztec");
-        assertEq(treasuryBal, providerBal, "50/50 split: treasury == provider shares");
+        // Treasury gets floor(total * 5000 / 10000), provider gets remainder -- may differ by 1 wei
+        assertApproxEqAbs(treasuryBal, providerBal, 1, "50/50 split: treasury ~= provider shares");
         assertEq(treasuryBal, eventTreasuryShares, "treasury balance matches event");
         assertEq(providerBal, eventProviderShares, "provider balance matches event");
 

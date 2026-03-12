@@ -509,7 +509,7 @@ contract OllaCoreSlippageTest is Test {
         // totalAssets = 100 + 50 = 150, supply = 100
         // grossAssets = 50 * (150 + 1) / (100 + 1) = floor(7550/101) = 74 (with virtual offset)
         uint256 grossAssets =
-            sharesToPreview.mulDiv(core.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
+            sharesToPreview.mulDiv(core.totalAssets() + 1e3, stAztec.totalSupply() + 1e3, Math.Rounding.Floor);
         uint256 expectedFee = grossAssets * 500 / BP_DIVISOR;
         uint256 expectedNet = grossAssets - expectedFee;
 
@@ -526,7 +526,7 @@ contract OllaCoreSlippageTest is Test {
 
         uint256 sharesToPreview = 50 * DECIMALS;
         uint256 grossAssets =
-            sharesToPreview.mulDiv(core.totalAssets() + 1, stAztec.totalSupply() + 1, Math.Rounding.Floor);
+            sharesToPreview.mulDiv(core.totalAssets() + 1e3, stAztec.totalSupply() + 1e3, Math.Rounding.Floor);
 
         uint256 previewNet = vault.previewInstantRedeem(sharesToPreview);
 

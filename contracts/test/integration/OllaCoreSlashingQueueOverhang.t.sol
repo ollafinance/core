@@ -141,9 +141,10 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         assertTrue(bobRequest.finalized, "bob request finalizes after adjustment");
 
         // Payouts are proportional: each share gets (50 total / 100 original shares) = 0.5 per share.
-        // Alice: 60 shares * 0.5 = 30; Bob: 10 shares * 0.5 = 5.
-        assertEq(aliceRequest.assetsExpected, 30 * DECIMALS, "alice payout adjusted to post-slash rate");
-        assertEq(bobRequest.assetsExpected, 5 * DECIMALS, "bob payout adjusted to post-slash rate");
+        // Alice: 60 shares * 0.5 ~= 30; Bob: 10 shares * 0.5 ~= 5.
+        // Virtual offset (1e3) introduces sub-wei rounding in the withdrawal rate.
+        assertApproxEqAbs(aliceRequest.assetsExpected, 30 * DECIMALS, 1e3, "alice payout adjusted to post-slash rate");
+        assertApproxEqAbs(bobRequest.assetsExpected, 5 * DECIMALS, 1e3, "bob payout adjusted to post-slash rate");
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue fully drained");
     }
 

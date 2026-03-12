@@ -298,7 +298,9 @@ contract OllaCoreAccountingTest is Test {
         IOllaCore.LatestReport memory reportAfter = core.latestReport();
         assertEq(reportAfter.grossRewards, 0, "gross rewards zero");
         assertEq(reportAfter.totalAssets, 0, "total assets zero");
-        assertEq(reportAfter.exchangeRate, 0, "exchange rate zero");
+        // With +1e3 virtual offset, rate is tiny but non-zero when totalAssets=0 and supply>0
+        uint256 expectedRate = uint256(1e3).mulDiv(DECIMALS, supplyBefore + 1e3, Math.Rounding.Floor);
+        assertEq(reportAfter.exchangeRate, expectedRate, "exchange rate near-zero with virtual offset");
         assertEq(stAztec.totalSupply(), supplyBefore, "no fee shares minted");
         assertEq(stAztec.balanceOf(governance), treasuryBalanceBefore, "treasury shares unchanged");
         assertEq(stAztec.balanceOf(providerRewardsRecipient), providerBalanceBefore, "provider shares unchanged");
@@ -353,7 +355,8 @@ contract OllaCoreAccountingTest is Test {
         uint256 rvBalance = rewardsAccumulator.balance();
         uint256 currentRewards = accountingAfterRebalance.cumulativeRewards + claimableRewards;
         uint256 expectedTotalAssets = vault.bufferedAssets() + netStaked + rvBalance + claimableRewards;
-        uint256 expectedRate = expectedTotalAssets.mulDiv(DECIMALS, stAztec.totalSupply(), Math.Rounding.Floor);
+        uint256 expectedRate =
+            (expectedTotalAssets + 1e3).mulDiv(DECIMALS, stAztec.totalSupply() + 1e3, Math.Rounding.Floor);
         (int256 expectedNetFlows,,) = core.exposedComputeNetFlows(flowsBefore);
         (uint256 expectedGrossRewards,) =
             core.exposedComputeGrossRewards(reportBefore.totalAssets, expectedTotalAssets, expectedNetFlows);

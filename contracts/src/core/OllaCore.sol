@@ -42,6 +42,7 @@ contract OllaCore is
     //////////////////////////////////////////////////////////////*/
 
     uint256 private constant _EXCHANGE_RATE_SCALE = 1e18;
+    uint256 private constant _VIRTUAL_OFFSET = 1e3;
     uint256 private constant _REBALANCE_GAS_THRESHOLD = 180_000;
 
     /// @notice Role for guardian pause/unpause actions.
@@ -568,7 +569,9 @@ contract OllaCore is
 
     /// @inheritdoc IOllaCore
     function convertToAssetsCeil(uint256 shares) external view override returns (uint256 assets) {
-        return shares.mulDiv(totalAssets() + 1, _modules.stAztec.totalSupply() + 1, Math.Rounding.Ceil);
+        return shares.mulDiv(
+            totalAssets() + _VIRTUAL_OFFSET, _modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, Math.Rounding.Ceil
+        );
     }
 
     /// @inheritdoc IOllaCore
@@ -1180,7 +1183,8 @@ contract OllaCore is
     /// @dev Core is the pricing authority because it owns totalAssets() (computed from _accountingState).
     ///      The Vault delegates pricing to Core via cross-contract calls to avoid circular dependencies.
     function _exchangeRate() internal view returns (uint256) {
-        return (totalAssets() + 1).mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + 1, Math.Rounding.Floor);
+        return (totalAssets() + _VIRTUAL_OFFSET)
+        .mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, Math.Rounding.Floor);
     }
 
     /// @notice Computes the exchange rate for withdrawal queue finalization.
@@ -1193,14 +1197,17 @@ contract OllaCore is
         uint256 buffered = vaultRef.bufferedAssets();
         uint256 grossAssets = _computeTotalAssets(_accountingState, buffered, 0);
         uint256 grossSupply = _modules.stAztec.totalSupply() + vaultRef.pendingWithdrawalShares();
-        return (grossAssets + 1).mulDiv(_EXCHANGE_RATE_SCALE, grossSupply + 1, Math.Rounding.Floor);
+        return (grossAssets + _VIRTUAL_OFFSET)
+        .mulDiv(_EXCHANGE_RATE_SCALE, grossSupply + _VIRTUAL_OFFSET, Math.Rounding.Floor);
     }
 
     /// @notice Converts a share amount to assets using floor rounding.
     /// @param shares The share amount to convert.
     /// @return The equivalent asset amount.
     function _convertToAssets(uint256 shares) internal view returns (uint256) {
-        return shares.mulDiv(totalAssets() + 1, _modules.stAztec.totalSupply() + 1, Math.Rounding.Floor);
+        return shares.mulDiv(
+            totalAssets() + _VIRTUAL_OFFSET, _modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, Math.Rounding.Floor
+        );
     }
 
     /// @notice Converts an asset amount to shares using the specified rounding direction.
@@ -1208,7 +1215,8 @@ contract OllaCore is
     /// @param rounding The rounding direction to apply.
     /// @return The equivalent share amount.
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view returns (uint256) {
-        return assets.mulDiv(_modules.stAztec.totalSupply() + 1, totalAssets() + 1, rounding);
+        return
+            assets.mulDiv(_modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, totalAssets() + _VIRTUAL_OFFSET, rounding);
     }
 
     /// @notice Returns the treasury address from the OllaGovernance owner.

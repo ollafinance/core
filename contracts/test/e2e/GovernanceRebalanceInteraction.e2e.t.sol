@@ -367,7 +367,8 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
         assertGt(providerBal1, 0, "cycle1: provider should have shares");
 
         // With 50/50 split, treasury and provider should be equal
-        assertEq(treasuryBal1, providerBal1, "cycle1: 50/50 split should yield equal shares");
+        // Treasury gets floor(total * 5000 / 10000), provider gets remainder -- may differ by 1 wei
+        assertApproxEqAbs(treasuryBal1, providerBal1, 1, "cycle1: 50/50 split should yield equal shares");
 
         // --- Change treasuryFeeSplitBP from 5000 to 9000 (90/10) via governance ---
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.setTreasuryFeeSplitBP, (9_000)));
