@@ -462,8 +462,10 @@ contract FeeMintingDistributionE2ETest is Test {
         // --- Action: slashing 15e18, small reward 5e18 ---
         // totalStaked = 105 (original 100 + 5 newly staked from harvested rewards).
         // slashingDelta = 15 → effective = 105 - 15 = 90.
-        stakingManager.setSlashingDelta(15 * DECIMALS);
+        // MockAccountingStakingManager applies slashing by reducing totalStakedAmount
+        // when slashingDelta increases. Set pre-slash total first, then apply slashing.
         stakingManager.setTotalStaked(105 * DECIMALS);
+        stakingManager.setSlashingDelta(15 * DECIMALS);
         stakingManager.setHarvestedRewards(5 * DECIMALS);
         stakingManager.clearStakeReturnAmount();
 
