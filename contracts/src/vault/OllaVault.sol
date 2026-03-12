@@ -819,6 +819,8 @@ contract OllaVault is
     /// @param shares The amount of shares to mint.
     /// @param recipient The receiver of the minted shares.
     function _processDeposit(address caller, uint256 assets, uint256 shares, address recipient) internal {
+        if (shares == 0) revert OllaVault__InvalidAmount();
+
         VaultModules memory modules = _modules;
         modules.asset.safeTransferFrom(caller, address(this), assets);
         _bufferedAssets += assets;
