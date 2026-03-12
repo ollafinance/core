@@ -53,6 +53,12 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @notice Recipient used for tick() reward accrual.
     address public rewardsCoinbase;
 
+    /// @notice Activated attester count (for interface compliance).
+    uint256 private _activatedAttesterCount;
+
+    /// @notice Whether transfer mode is enabled (for interface compliance).
+    bool private _useTransferMode;
+
     /// @notice Target called during reentrancy.
     address public reentryTarget;
 
@@ -328,6 +334,16 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         delete _exits[_attester];
     }
 
+    /// @inheritdoc IMockAztecRollup
+    function setActivatedAttesterCount(uint256 _count) external override {
+        _activatedAttesterCount = _count;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setUseTransferMode(bool _enabled) external override {
+        _useTransferMode = _enabled;
+    }
+
     /// @notice Get the exit record for an attester.
     /// @param _attester The attester address.
     /// @return The exit record.
@@ -387,7 +403,7 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
 
     /// @notice Get the activated attester count.
     /// @return The activated attester count.
-    function getActivatedAttesterCount() external pure override returns (uint256) {
-        return 0;
+    function getActivatedAttesterCount() external view override returns (uint256) {
+        return _activatedAttesterCount;
     }
 }

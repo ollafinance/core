@@ -27,7 +27,8 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public unstakedExitAmountOverride;
     bool public useUnstakedExitAmountOverride;
     uint256 public pendingUnstakeAmount;
-    uint256 public withdrawableUnstakeAmount;
+    bool public hasExitableUnstakesValue;
+    bool public hasRemainingExitsValue;
     uint256 public activatedAttesterCount;
     uint256 public pendingUnstakeCount;
     uint256 public lastUnstakeAmount;
@@ -96,8 +97,13 @@ contract MockAccountingStakingManager is IStakingManager {
         pendingUnstakeAmount = value;
     }
 
+    function setHasRemainingExits(bool value) external {
+        hasRemainingExitsValue = value;
+    }
+
     function setWithdrawableUnstakes(uint256 value) external {
-        withdrawableUnstakeAmount = value;
+        hasRemainingExitsValue = value != 0;
+        hasExitableUnstakesValue = value != 0;
     }
 
     function setActivatedAttesterCount(uint256 value) external {
@@ -200,7 +206,7 @@ contract MockAccountingStakingManager is IStakingManager {
             }
         }
 
-        bool _hasRemainingExits = withdrawableUnstakeAmount > 0;
+        bool _hasRemainingExits = hasRemainingExitsValue;
 
         uint256 amount = unstakedAmount;
         if (amount == 0) {
@@ -247,10 +253,7 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function getStakingState() external view override returns (StakingState memory) {
         return StakingState({
-            slashingDelta: slashingDelta,
-            stakedAmount: totalStakedAmount,
-            pendingUnstakeAmount: pendingUnstakeAmount,
-            withdrawableAmount: withdrawableUnstakeAmount
+            slashingDelta: slashingDelta, stakedAmount: totalStakedAmount, pendingUnstakeAmount: pendingUnstakeAmount
         });
     }
 
@@ -259,7 +262,7 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function hasExitableUnstakes() external view override returns (bool) {
-        return withdrawableUnstakeAmount != 0;
+        return hasExitableUnstakesValue;
     }
 
     function core() external pure virtual override returns (address) {

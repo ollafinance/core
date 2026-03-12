@@ -8,6 +8,9 @@ import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProvide
 // solhint-disable max-states-count
 /// @title MockStakingManager
 /// @notice Minimal staking manager mock for message routing tests.
+/// @dev Uses `_cachedState.stakedAmount` as the single source of truth for staked totals.
+///      `stake()` and `unstake()` both update `_cachedState.stakedAmount` so that
+///      `totalStaked()` and `getStakingState()` return consistent values.
 /// @author Olla Core contributors
 contract MockStakingManager is IStakingManager {
     /// @notice The core contract address.
@@ -28,9 +31,6 @@ contract MockStakingManager is IStakingManager {
     /// @notice Number of unstake calls received.
     uint256 public unstakeCalls;
 
-    /// @notice Simulated staked amount for getStakingState.
-    uint256 private _stakedAmount;
-
     /// @notice Simulated active attester count.
     uint256 public activatedAttesterCount;
 
@@ -40,8 +40,17 @@ contract MockStakingManager is IStakingManager {
     /// @notice Mock provider config.
     ProviderConfig private _providerConfig;
 
-    /// @notice Cached attester state.
+    /// @notice Aggregated staking state (single source of truth for staked totals).
     StakingState private _cachedState;
+
+    /// @notice Configurable canStake return value. Default true.
+    bool private _canStakeEnabled = true;
+
+    /// @notice Configurable claimable rewards return value. Default 0.
+    uint256 private _claimableRewards;
+
+    /// @notice Configurable hasExitableUnstakes return value. Default false.
+    bool private _hasExitableUnstakes;
 
     /*//////////////////////////////////////////////////////////////
                             EXTERNAL FUNCTIONS
@@ -71,26 +80,26 @@ contract MockStakingManager is IStakingManager {
         return;
     }
 
-    /// @notice Records a stake request.
+    /// @notice Records a stake request and updates _cachedState.stakedAmount.
     /// @param amount The amount to stake.
     /// @return stakedAmount The amount staked.
     function stake(uint256 amount) external override returns (uint256 stakedAmount) {
         lastStakeAmount = amount;
-        _stakedAmount += amount;
+        _cachedState.stakedAmount += amount;
         ++stakeCalls;
         return amount;
     }
 
-    /// @notice Records an unstake request.
+    /// @notice Records an unstake request and updates _cachedState.stakedAmount.
     /// @param amount The amount to unstake.
     /// @return unstakedAmount The amount unstaked.
     function unstake(uint256 amount) external override returns (uint256 unstakedAmount) {
         lastUnstakeAmount = amount;
         unstakedAmount = amount;
-        if (unstakedAmount > _stakedAmount) {
-            unstakedAmount = _stakedAmount;
+        if (unstakedAmount > _cachedState.stakedAmount) {
+            unstakedAmount = _cachedState.stakedAmount;
         }
-        _stakedAmount -= unstakedAmount;
+        _cachedState.stakedAmount -= unstakedAmount;
         if (activatedAttesterCount > 0) {
             --activatedAttesterCount;
             ++pendingUnstakeCount;
@@ -98,6 +107,48 @@ contract MockStakingManager is IStakingManager {
         ++unstakeCalls;
         return unstakedAmount;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                         MOCK CONFIGURATION
+    //////////////////////////////////////////////////////////////*/
+
+    // solhint-disable comprehensive-interface
+
+    /// @notice Sets all fields of the cached staking state.
+    /// @param slashingDelta The cumulative slashing delta.
+    /// @param stakedAmount The total staked amount.
+    /// @param pendingUnstakeAmount The total pending unstake amount.
+    function mockSetCachedState(uint256 slashingDelta, uint256 stakedAmount, uint256 pendingUnstakeAmount) external {
+        _cachedState.slashingDelta = slashingDelta;
+        _cachedState.stakedAmount = stakedAmount;
+        _cachedState.pendingUnstakeAmount = pendingUnstakeAmount;
+    }
+
+    /// @notice Sets the staked amount in the cached state.
+    /// @param amount The staked amount.
+    function mockSetStakedAmount(uint256 amount) external {
+        _cachedState.stakedAmount = amount;
+    }
+
+    /// @notice Sets the canStake return value.
+    /// @param enabled Whether canStake returns true.
+    function mockSetCanStake(bool enabled) external {
+        _canStakeEnabled = enabled;
+    }
+
+    /// @notice Sets the claimable rewards return value.
+    /// @param amount The claimable rewards amount.
+    function mockSetClaimableRewards(uint256 amount) external {
+        _claimableRewards = amount;
+    }
+
+    /// @notice Sets the hasExitableUnstakes return value.
+    /// @param value Whether hasExitableUnstakes returns true.
+    function mockSetHasExitableUnstakes(bool value) external {
+        _hasExitableUnstakes = value;
+    }
+
+    // solhint-enable comprehensive-interface
 
     /*//////////////////////////////////////////////////////////////
                           EXTERNAL VIEW FUNCTIONS
@@ -145,22 +196,22 @@ contract MockStakingManager is IStakingManager {
 
     /// @inheritdoc IStakingManager
     function hasExitableUnstakes() external view override returns (bool) {
-        return _cachedState.withdrawableAmount != 0;
+        return _hasExitableUnstakes;
     }
 
     /// @inheritdoc IStakingManager
-    function canStake(uint256) external pure override returns (bool) {
-        return true;
+    function canStake(uint256) external view override returns (bool) {
+        return _canStakeEnabled;
+    }
+
+    /// @inheritdoc IStakingManager
+    function getClaimableRewards() external view override returns (uint256 claimableRewards) {
+        return _claimableRewards;
     }
 
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IStakingManager
-    function getClaimableRewards() external pure override returns (uint256 claimableRewards) {
-        return 0;
-    }
 
     /// @inheritdoc IStakingManager
     function getUnstakedFunds()

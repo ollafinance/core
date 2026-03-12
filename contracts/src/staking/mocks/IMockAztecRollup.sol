@@ -109,6 +109,12 @@ interface IMockAztecRollup {
     /// @return amount The amount of rewards claimed.
     function claimSequencerRewards(address coinbase) external returns (uint256 amount);
 
+    /// @notice Enables transfer mode for claimSequencerRewards.
+    /// @dev When enabled, rewards are transferred from the rollup balance instead of minted.
+    ///      Default is false (mint mode) for backward compatibility.
+    /// @param enabled Whether to use transfer mode.
+    function setUseTransferMode(bool enabled) external;
+
     /// @notice Sets pending rewards for a sequencer (test helper).
     /// @param sequencer The sequencer address.
     /// @param amount The rewards amount.
@@ -170,14 +176,18 @@ interface IMockAztecRollup {
     /// @param coinbase The coinbase/recipient used for withdraw reward bumps.
     function setRewardsCoinbase(address coinbase) external;
 
-    /// @notice Returns whether claim should fail for a coinbase/attester.
-    /// @param coinbase The coinbase/attester address.
-    /// @return Whether claim should fail.
-    function claimShouldFail(address coinbase) external view returns (bool);
+    /// @notice Sets the activated attester count (test helper).
+    /// @param count The new activated attester count.
+    function setActivatedAttesterCount(uint256 count) external;
 
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns whether claim should fail for a coinbase/attester.
+    /// @param coinbase The coinbase/attester address.
+    /// @return Whether claim should fail.
+    function claimShouldFail(address coinbase) external view returns (bool);
 
     /// @notice Returns the staking asset address.
     /// @return The IERC20 staking asset.
@@ -226,11 +236,7 @@ interface IMockAztecRollup {
     /// @return The attester view containing status, effectiveBalance, exit, and config.
     function getAttesterView(address attester) external view returns (AttesterView memory);
 
-    /*//////////////////////////////////////////////////////////////
-                        EXTERNAL PURE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
     /// @notice Returns the activated attester count.
     /// @return The count of activated attesters.
-    function getActivatedAttesterCount() external pure returns (uint256);
+    function getActivatedAttesterCount() external view returns (uint256);
 }

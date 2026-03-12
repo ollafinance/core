@@ -54,6 +54,12 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @notice Recipient used for tick() reward accrual.
     address public rewardsCoinbase;
 
+    /// @notice When true, claimSequencerRewards transfers from balance instead of minting.
+    bool public useTransferMode;
+
+    /// @notice Tracked count of activated attesters.
+    uint256 private _activatedAttesterCount;
+
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -87,6 +93,9 @@ contract MockAztecRollup is IMockAztecRollup {
         }
         withdrawers[_attester] = _withdrawer;
         _publicKeys[_attester] = _publicKeyInG1;
+        if (previousStake == 0) {
+            _activatedAttesterCount++;
+        }
         emit Deposit(_attester, _withdrawer, _publicKeyInG1, _publicKeyInG2, _proofOfPossession, _activationThreshold);
     }
 
@@ -153,7 +162,11 @@ contract MockAztecRollup is IMockAztecRollup {
         uint256 amount = pendingRewards[_coinbase];
         if (amount > 0) {
             pendingRewards[_coinbase] = 0;
-            IERC20Mintable(address(STAKING_ASSET)).mint(_coinbase, amount);
+            if (useTransferMode) {
+                STAKING_ASSET.safeTransfer(_coinbase, amount);
+            } else {
+                IERC20Mintable(address(STAKING_ASSET)).mint(_coinbase, amount);
+            }
             emit RewardsClaimed(_coinbase, _coinbase, amount);
         }
         return amount;
@@ -193,6 +206,16 @@ contract MockAztecRollup is IMockAztecRollup {
     /*//////////////////////////////////////////////////////////////
                              TEST HELPERS
     //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IMockAztecRollup
+    function setUseTransferMode(bool _enabled) external override {
+        useTransferMode = _enabled;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setActivatedAttesterCount(uint256 _count) external override {
+        _activatedAttesterCount = _count;
+    }
 
     /// @inheritdoc IMockAztecRollup
     function setRewards(address _sequencer, uint256 _amount) external override {
@@ -260,6 +283,12 @@ contract MockAztecRollup is IMockAztecRollup {
         if (currentStake > 0) {
             totalStaked -= currentStake;
         }
+        // Decrement activated count if the attester was previously deposited
+        if (currentStake > 0 || _exits[_attester].exists || withdrawers[_attester] != address(0)) {
+            if (_activatedAttesterCount > 0) {
+                _activatedAttesterCount--;
+            }
+        }
         stakes[_attester] = 0;
         withdrawers[_attester] = address(0);
         delete _exits[_attester];
@@ -319,7 +348,7 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
-    function getActivatedAttesterCount() external pure override returns (uint256) {
-        return 0;
+    function getActivatedAttesterCount() external view override returns (uint256) {
+        return _activatedAttesterCount;
     }
 }
