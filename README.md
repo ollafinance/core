@@ -1,5 +1,7 @@
 # Olla Core
 
+REMOVEME
+
 Olla Core is the Ethereum smart contract layer for the Olla liquid staking protocol on Aztec.
 This repository pairs a research vault with a Foundry-based contract workspace, and is structured
 to grow into an open-source, auditable codebase.
