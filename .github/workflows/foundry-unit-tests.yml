@@ -1,4 +1,4 @@
-name: Foundry Unit Tests
+name: Forge Unit Tests
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Foundry CI
+      - name: Setup Forge CI
         uses: ./.github/actions/setup-foundry-ci
         with:
           workdir: contracts
@@ -26,7 +26,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: forge-out-unit-base
-          path: contracts/out
+          path: |
+            contracts/out
+            contracts/cache
           if-no-files-found: error
 
   unit:
@@ -44,7 +46,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Foundry CI
+      - name: Setup Forge CI
         uses: ./.github/actions/setup-foundry-ci
         with:
           workdir: contracts
@@ -54,7 +56,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: forge-out-unit-base
-          path: contracts/out
+          path: contracts
       - name: Forge unit tests
         run: forge test --match-path "test/${{ matrix.package }}/**/*.t.sol" --no-match-path "test/${{ matrix.package }}/**/*.{integration,invariant,e2e}.t.sol"
         env:

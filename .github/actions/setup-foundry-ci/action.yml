@@ -1,11 +1,11 @@
-name: Setup Foundry CI
-description: Setup Foundry, dependencies, cache, and compile contracts
+name: Setup Forge CI
+description: Setup Forge, dependencies, cache, and compile contracts
 inputs:
   workdir:
-    description: Working directory for Foundry
+    description: Working directory for Forge
     default: contracts
   cache-prefix:
-    description: Prefix for Foundry output cache key
+    description: Prefix for Forge output cache key
     default: forge-out
   compile-contracts:
     description: Compile contracts with dev profile
@@ -13,7 +13,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup Foundry
+    - name: Setup Forge
       uses: foundry-rs/foundry-toolchain@v1
       with:
         version: stable
@@ -23,16 +23,18 @@ runs:
       with:
         workdir: ${{ inputs.workdir }}
 
-    - name: Cache Foundry build artifacts
+    - name: Cache Forge build artifacts
       uses: actions/cache@v4
       with:
-        path: ${{ inputs.workdir }}/out
+        path: |
+          ${{ inputs.workdir }}/out
+          ${{ inputs.workdir }}/cache
         key: ${{ runner.os }}-${{ inputs.cache-prefix }}-${{ hashFiles(format('{0}/src/**/*.sol', inputs.workdir), format('{0}/foundry.toml', inputs.workdir), format('{0}/soldeer.lock', inputs.workdir)) }}
         restore-keys: |
           ${{ runner.os }}-${{ inputs.cache-prefix }}-
 
     - name: Compile contracts (exclude tests)
       if: ${{ inputs.compile-contracts == 'true' }}
-      run: FOUNDRY_PROFILE=dev forge build
+      run: FOUNDRY_PROFILE=ci forge build src
       shell: bash
       working-directory: ${{ inputs.workdir }}
