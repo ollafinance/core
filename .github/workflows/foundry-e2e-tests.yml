@@ -1,4 +1,4 @@
-name: Forge Integration
+name: Forge E2E
 
 on:
   pull_request:
@@ -7,9 +7,9 @@ on:
       - main
 
 jobs:
-  integration:
+  e2e:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: test integration
+    name: test e2e
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -21,8 +21,8 @@ jobs:
         uses: ./.github/actions/setup-foundry-ci
         with:
           workdir: contracts
-          cache-prefix: forge-out-integration
-      - name: Forge integration tests
-        run: forge test --match-path "test/integration/**/*.t.sol"
+          cache-prefix: forge-out-e2e
+      - name: Forge e2e tests
+        run: forge test --match-path "test/e2e/**/*.e2e.t.sol"
         env:
           FOUNDRY_PROFILE: ci

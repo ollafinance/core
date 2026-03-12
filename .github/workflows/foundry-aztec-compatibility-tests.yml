@@ -1,4 +1,4 @@
-name: Foundry Aztec Compatibility Tests
+name: Forge Aztec Compatibility
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ on:
 jobs:
   compatibility:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge Aztec compatibility tests
+    name: test aztec-compat
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -17,19 +17,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+      - name: Setup Forge CI
+        uses: ./.github/actions/setup-foundry-ci
         with:
-          version: stable
-      - name: Setup Soldeer dependencies
-        uses: ./.github/actions/setup-soldeer
-      - name: Cache Foundry build artifacts
-        uses: actions/cache@v4
-        with:
-          path: contracts/out
-          key: ${{ runner.os }}-forge-out-${{ hashFiles('contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/foundry.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-forge-out-
+          workdir: contracts
+          cache-prefix: forge-out-aztec-compat
       - name: Forge Aztec compatibility tests
         run: forge test --match-path "test/integration/AztecInterfaceCompatibility.integration.t.sol"
         env:

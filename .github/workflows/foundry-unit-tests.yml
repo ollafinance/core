@@ -1,4 +1,4 @@
-name: Foundry Unit Tests
+name: Forge Unit
 
 on:
   pull_request:
@@ -7,9 +7,9 @@ on:
       - main
 
 jobs:
-  unit:
+  prepare:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge unit tests
+    name: prepare
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -17,20 +17,47 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+      - name: Setup Forge CI
+        uses: ./.github/actions/setup-foundry-ci
         with:
-          version: stable
-      - name: Setup Soldeer dependencies
-        uses: ./.github/actions/setup-soldeer
-      - name: Cache Foundry build artifacts
-        uses: actions/cache@v4
+          workdir: contracts
+          cache-prefix: forge-out-unit-base
+      - name: Upload compiled contracts
+        uses: actions/upload-artifact@v4
         with:
-          path: contracts/out
-          key: ${{ runner.os }}-forge-out-${{ hashFiles('contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/foundry.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-forge-out-
+          name: forge-out-unit-base
+          path: |
+            contracts/out
+            contracts/cache
+          if-no-files-found: error
+
+  unit:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    name: test ${{ matrix.package }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [bridge, core, governance, safetymodule, staking, vault]
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Forge CI
+        uses: ./.github/actions/setup-foundry-ci
+        with:
+          workdir: contracts
+          cache-prefix: forge-out-unit-base
+          compile-contracts: "false"
+      - name: Download compiled contracts
+        uses: actions/download-artifact@v4
+        with:
+          name: forge-out-unit-base
+          path: contracts
       - name: Forge unit tests
-        run: forge test --match-path "test/**/*.t.sol" --no-match-path "test/**/*.{integration,invariant,e2e}.t.sol"
+        run: forge test --match-path "test/${{ matrix.package }}/**/*.t.sol" --no-match-path "test/${{ matrix.package }}/**/*.{integration,invariant,e2e}.t.sol"
         env:
           FOUNDRY_PROFILE: ci
