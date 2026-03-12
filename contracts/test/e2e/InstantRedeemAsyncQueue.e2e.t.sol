@@ -471,10 +471,9 @@ contract InstantRedeemAsyncQueueE2ETest is Test {
     ///
     /// @dev    The fee is absorbed into the buffer, shifting the exchange rate above
     ///         1:1 between the instant and async operations. The async request
-    ///         therefore converts at the new (higher) rate. During the subsequent
-    ///         rebalance the accounting treats the absorbed fee as gross rewards and
-    ///         mints protocol fee shares (PROTOCOL_FEE_BP), which slightly dilutes
-    ///         alice's remaining position.
+    ///         therefore converts at the new (higher) rate. Exit fee revenue is
+    ///         excluded from grossRewards so no protocol fee shares are minted on
+    ///         the absorbed fee — it is a pure redistribution to remaining holders.
     function test_InstantAndAsyncRedeem_SameUser_SameBlock() external {
         // --- Setup: alice deposits 200e18, baseline rebalance ---
         _performDeposit(alice, 200 * DECIMALS);
