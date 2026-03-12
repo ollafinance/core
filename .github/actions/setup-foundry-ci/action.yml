@@ -33,6 +33,6 @@ runs:
 
     - name: Compile contracts (exclude tests)
       if: ${{ inputs.compile-contracts == 'true' }}
-      run: forge build --profile dev
+      run: FOUNDRY_PROFILE=dev forge build
       shell: bash
       working-directory: ${{ inputs.workdir }}

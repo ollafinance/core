@@ -31,7 +31,7 @@ jobs:
 
   invariant:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge invariant tests (${{ matrix.package }})
+    name: Forge invariant tests
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
