@@ -13,7 +13,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup Forge
+    - name: Setup Foundry
       uses: foundry-rs/foundry-toolchain@v1
       with:
         version: stable
