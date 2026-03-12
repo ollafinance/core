@@ -21,6 +21,221 @@ abstract contract BaseDeployer is Script {
         vm.writeFile(path, finalJson);
     }
 
+    /// @notice Ensure deployment artifact exists and matches the current target config.
+    /// @return path Deployment artifact path.
+    function _ensureDeploymentArtifact(
+        string memory env,
+        uint256 chainId,
+        address deployer,
+        bool mockAztec,
+        address asset,
+        address rollupRegistry,
+        address lzEndpoint
+    ) internal returns (string memory path) {
+        path = _getDeploymentPath(env);
+        vm.createDir(_DEPLOYMENTS_PATH, true);
+
+        if (!vm.isFile(path)) {
+            string memory json = string.concat(
+                "{\n",
+                "  \"network\": ",
+                _jsonString(env),
+                ",\n",
+                "  \"chainId\": ",
+                _uint256ToString(chainId),
+                ",\n",
+                "  \"deployer\": ",
+                _jsonString(_addressToString(deployer)),
+                ",\n",
+                "  \"mode\": {\n",
+                "    \"mockAztec\": ",
+                mockAztec ? "true" : "false",
+                "\n",
+                "  },\n",
+                "  \"inputs\": {\n",
+                "    \"asset\": ",
+                _jsonString(_addressToString(asset)),
+                ",\n",
+                "    \"rollupRegistry\": ",
+                _jsonString(_addressToString(rollupRegistry)),
+                ",\n",
+                "    \"lzEndpoint\": ",
+                _jsonString(_addressToString(lzEndpoint)),
+                "\n",
+                "  },\n",
+                "  \"addresses\": {},\n",
+                "  \"status\": {\n",
+                "    \"phase\": \"A\",\n",
+                "    \"completed\": false,\n",
+                "    \"updatedAtBlock\": ",
+                _uint256ToString(block.number),
+                ",\n",
+                "    \"flags\": {}\n",
+                "\n",
+                "  }\n",
+                "}\n"
+            );
+            vm.writeFile(path, json);
+            return path;
+        }
+
+        string memory existing = vm.readFile(path);
+        require(
+            vm.parseJsonUint(existing, ".chainId") == chainId,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.chainId"
+        );
+        require(
+            keccak256(bytes(vm.parseJsonString(existing, ".network"))) == keccak256(bytes(env)),
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.network"
+        );
+        require(
+            vm.parseJsonAddress(existing, ".deployer") == deployer,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.deployer"
+        );
+
+        _ensureConfigCompatibility(path, existing, mockAztec, asset, rollupRegistry, lzEndpoint);
+
+        _ensureStatusScaffold(env);
+        _touchDeploymentStatus(env);
+    }
+
+    function _ensureConfigCompatibility(
+        string memory path,
+        string memory existing,
+        bool mockAztec,
+        address asset,
+        address rollupRegistry,
+        address lzEndpoint
+    ) internal {
+        bool existingMockAztec;
+        bool hasMode;
+        try vm.parseJsonBool(existing, ".mode.mockAztec") returns (bool parsedMockAztec) {
+            existingMockAztec = parsedMockAztec;
+            hasMode = true;
+        } catch {
+            hasMode = false;
+        }
+
+        if (hasMode) {
+            require(existingMockAztec == mockAztec, "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.mode.mockAztec");
+        } else {
+            (bool inferredMockAztec, bool inferred) = _inferMockAztec(existing);
+            if (inferred) {
+                require(
+                    inferredMockAztec == mockAztec, "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.mode.mockAztec"
+                );
+            }
+            vm.writeJson(mockAztec ? "true" : "false", path, ".mode.mockAztec");
+        }
+
+        _ensureInputAddressCompatibility(path, existing, "asset", asset);
+        _ensureInputAddressCompatibility(path, existing, "rollupRegistry", rollupRegistry);
+        _ensureInputAddressCompatibility(path, existing, "lzEndpoint", lzEndpoint);
+
+        if (!mockAztec) {
+            require(asset != address(0), "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.asset");
+            require(
+                rollupRegistry != address(0), "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.rollupRegistry"
+            );
+        }
+    }
+
+    function _ensureInputAddressCompatibility(
+        string memory path,
+        string memory existing,
+        string memory key,
+        address value
+    ) internal {
+        string memory jsonPath = string.concat(".inputs.", key);
+        try vm.parseJsonAddress(existing, jsonPath) returns (address parsed) {
+            require(parsed == value, string.concat("Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.", key));
+        } catch {
+            vm.writeJson(_jsonString(_addressToString(value)), path, jsonPath);
+        }
+    }
+
+    function _ensureStatusScaffold(string memory env) internal {
+        string memory path = _getDeploymentPath(env);
+
+        bool hasStatus;
+        try vm.parseJsonString(vm.readFile(path), ".status.phase") returns (string memory) {
+            hasStatus = true;
+        } catch {
+            hasStatus = false;
+        }
+
+        if (!hasStatus) {
+            vm.writeJson(
+                string.concat(
+                    "{\"phase\":\"A\",\"completed\":false,\"updatedAtBlock\":",
+                    _uint256ToString(block.number),
+                    ",\"flags\":{}}"
+                ),
+                path,
+                ".status"
+            );
+            return;
+        }
+
+        bool hasFlags;
+        try vm.parseJson(vm.readFile(path), ".status.flags") returns (bytes memory) {
+            hasFlags = true;
+        } catch {
+            hasFlags = false;
+        }
+
+        if (!hasFlags) {
+            vm.writeJson("{}", path, ".status.flags");
+        }
+    }
+
+    function _setDeploymentAddress(string memory env, string memory key, address addr) internal {
+        string memory path = _getDeploymentPath(env);
+        vm.writeJson(_jsonString(_addressToString(addr)), path, string.concat(".addresses.", key));
+        _touchDeploymentStatus(env);
+    }
+
+    function _setDeploymentMetadataString(string memory env, string memory key, string memory value) internal {
+        string memory path = _getDeploymentPath(env);
+        vm.writeJson(_jsonString(value), path, string.concat(".", key));
+        _touchDeploymentStatus(env);
+    }
+
+    function _setDeploymentPhase(string memory env, string memory phase, bool completed) internal {
+        string memory path = _getDeploymentPath(env);
+        vm.writeJson(_jsonString(phase), path, ".status.phase");
+        vm.writeJson(completed ? "true" : "false", path, ".status.completed");
+        vm.writeJson(_uint256ToString(block.number), path, ".status.updatedAtBlock");
+    }
+
+    function _touchDeploymentStatus(string memory env) internal {
+        string memory path = _getDeploymentPath(env);
+        vm.writeJson(_uint256ToString(block.number), path, ".status.updatedAtBlock");
+    }
+
+    function _setDeploymentFlag(string memory env, string memory key, bool value) internal {
+        string memory path = _getDeploymentPath(env);
+        vm.writeJson(value ? "true" : "false", path, string.concat(".status.flags.", key));
+        _touchDeploymentStatus(env);
+    }
+
+    function _tryReadDeploymentFlag(string memory env, string memory key)
+        internal
+        view
+        returns (bool value, bool found)
+    {
+        string memory path = _getDeploymentPath(env);
+        if (!vm.isFile(path)) {
+            return (false, false);
+        }
+
+        try vm.parseJsonBool(vm.readFile(path), string.concat(".status.flags.", key)) returns (bool parsed) {
+            return (parsed, true);
+        } catch {
+            return (false, false);
+        }
+    }
+
     /// @notice Check if a deployment file exists for the given environment
     function _deploymentExists(string memory env) internal view returns (bool) {
         string memory path = _getDeploymentPath(env);
@@ -48,6 +263,29 @@ abstract contract BaseDeployer is Script {
         } catch {
             return address(0);
         }
+    }
+
+    function _inferMockAztec(string memory existing) internal pure returns (bool mockAztec, bool inferred) {
+        address mockRollup = address(0);
+        address mockRollupRegistry = address(0);
+
+        try vm.parseJsonAddress(existing, ".addresses.MockAztecRollup") returns (address parsedMockRollup) {
+            mockRollup = parsedMockRollup;
+        } catch { }
+
+        try vm.parseJsonAddress(existing, ".addresses.MockAztecRollupRegistry") returns (address parsedMockRegistry) {
+            mockRollupRegistry = parsedMockRegistry;
+        } catch { }
+
+        if (mockRollup != address(0) || mockRollupRegistry != address(0)) {
+            return (true, true);
+        }
+
+        return (false, false);
+    }
+
+    function _jsonString(string memory value) internal pure returns (string memory) {
+        return string.concat("\"", value, "\"");
     }
 
     /// @notice Get the deployment file path for a given environment
@@ -136,5 +374,10 @@ abstract contract BaseDeployer is Script {
     /// @notice Log deployment of a contract
     function _logDeployment(string memory name, address addr) internal pure {
         console2.log("Deployed %s at %s", name, addr);
+    }
+
+    /// @notice Log deployment info message
+    function _logInfo(string memory message) internal pure {
+        console2.log("%s", message);
     }
 }

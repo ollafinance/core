@@ -30,9 +30,14 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
             abi.encode(sprMock)
         );
 
-        // Mock grantRole / revokeRole on all 4 satellite addresses
-        address[4] memory sats =
-            [address(withdrawalQueue), address(rewardsAccumulator), address(stakingManager), sprMock];
+        // Mock grantRole / revokeRole on all 5 satellite addresses
+        address[5] memory sats = [
+            address(withdrawalQueue),
+            address(rewardsAccumulator),
+            address(stakingManager),
+            sprMock,
+            address(safetyModule)
+        ];
         for (uint256 i; i < sats.length; i++) {
             vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
             vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
@@ -241,12 +246,14 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
             address(stakingManager), abi.encodeWithSelector(IAccessControl.grantRole.selector), "mock revert"
         );
         vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
 
         // Mock revokeRole to succeed on all
         vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
         vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
         vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
         vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
 
         // Expect the failure event for stakingManager grant
         vm.expectEmit(true, true, false, true);
@@ -291,8 +298,13 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         );
 
         // Mock grantRole to succeed on ALL satellites
-        address[4] memory sats =
-            [address(withdrawalQueue), address(rewardsAccumulator), address(stakingManager), sprMock];
+        address[5] memory sats = [
+            address(withdrawalQueue),
+            address(rewardsAccumulator),
+            address(stakingManager),
+            sprMock,
+            address(safetyModule)
+        ];
         for (uint256 i; i < sats.length; i++) {
             vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
         }
@@ -304,6 +316,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
             address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "mock revert"
         );
         vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
 
         // Expect the failure event for stakingManager revoke (isGrant = false)
         vm.expectEmit(true, true, true, true);

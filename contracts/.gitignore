@@ -2,10 +2,15 @@
 cache/
 out/
 
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
+# Broadcast/run artifacts
+broadcast/
+
+# Keep local deployment ephemeral; track live deployments
+deployments/local.json
 
 # Dotenv file
 .env
+!.example-local.env
+!.example-sepolia.env
+!.example-sepolia-mocked-aztec.env
+!.example-mainnet.env

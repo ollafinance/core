@@ -11,10 +11,12 @@ Scripts need an RPC endpoint. For local Anvil, either:
 
 The examples below assume `FOUNDRY_PROFILE=local` is set.
 
+⚠️ `forge script` will read from your `.env` file if it exists. For the yarn-commands this is overridden, but running forge-scripts directly it's not. Make sure to have it up to date, or remove it to avoid confusion when running scripts directly.
+
 ## Address + signer defaults
 
-- `DEPLOY_ENV` defaults to `local`.
-- Addresses default to `deployments/<DEPLOY_ENV>.json` when possible.
+- Set `ETHEREUM_CHAIN_ID=31337` for deployment scripts.
+- Addresses default to `deployments/local.json` when possible.
 - Scripts default to Anvil account-0 for signing when `chainid == 31337`.
 - The Anvil account-1 private key shown below is a default test account and only for local development.
 

@@ -8,7 +8,7 @@ inputs:
     description: Prefix for Forge output cache key
     default: forge-out
   compile-contracts:
-    description: Compile contracts with dev profile
+    description: Compile contracts
     default: "true"
 runs:
   using: composite
@@ -33,7 +33,7 @@ runs:
         restore-keys: |
           ${{ runner.os }}-${{ inputs.cache-prefix }}-
 
-    - name: Compile contracts (exclude tests)
+    - name: Compile contracts (ci profile, exclude tests)
       if: ${{ inputs.compile-contracts == 'true' }}
       run: FOUNDRY_PROFILE=ci forge build src
       shell: bash
