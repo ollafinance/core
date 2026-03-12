@@ -7,9 +7,32 @@ on:
       - main
 
 jobs:
+  prepare:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    name: Forge invariant prepare
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Foundry CI
+        uses: ./.github/actions/setup-foundry-ci
+        with:
+          workdir: contracts
+          cache-prefix: forge-out-invariant-base
+      - name: Upload compiled contracts
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-out-invariant-base
+          path: contracts/out
+          if-no-files-found: error
+
   invariant:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Forge invariant tests (${{ matrix.package }})
+    needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -25,7 +48,13 @@ jobs:
         uses: ./.github/actions/setup-foundry-ci
         with:
           workdir: contracts
-          cache-prefix: forge-out-invariant-${{ matrix.package }}
+          cache-prefix: forge-out-invariant-base
+          compile-contracts: "false"
+      - name: Download compiled contracts
+        uses: actions/download-artifact@v4
+        with:
+          name: forge-out-invariant-base
+          path: contracts/out
       - name: Forge invariant tests
         run: forge test --match-path "test/${{ matrix.package }}/**/*.invariant.t.sol"
         env:
