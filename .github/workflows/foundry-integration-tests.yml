@@ -1,4 +1,4 @@
-name: Foundry Required Tests
+name: Foundry Integration Tests
 
 on:
   pull_request:
@@ -7,9 +7,9 @@ on:
       - main
 
 jobs:
-  required:
+  integration:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Forge required tests
+    name: Forge integration tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -17,20 +17,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Foundry
-        uses: foundry-rs/foundry-toolchain@v1
+      - name: Setup Foundry CI
+        uses: ./.github/actions/setup-foundry-ci
         with:
-          version: stable
-      - name: Setup Soldeer dependencies
-        uses: ./.github/actions/setup-soldeer
-      - name: Cache Foundry build artifacts
-        uses: actions/cache@v4
-        with:
-          path: contracts/out
-          key: ${{ runner.os }}-forge-out-${{ hashFiles('contracts/src/**/*.sol', 'contracts/test/**/*.sol', 'contracts/foundry.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-forge-out-
-      - name: Forge required tests
-        run: forge test --match-path "test/**/*.integration.t.sol"
+          workdir: contracts
+          cache-prefix: forge-out-integration
+      - name: Forge integration tests
+        run: forge test --match-path "test/integration/**/*.t.sol"
         env:
           FOUNDRY_PROFILE: ci
