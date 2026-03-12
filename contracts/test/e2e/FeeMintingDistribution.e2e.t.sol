@@ -19,7 +19,7 @@ import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.so
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 
 /// @title FeeMintingDistributionE2ETest
-/// @notice Phase 2 E2E: validates protocol fee minting, share dilution, and treasury/provider split.
+/// @notice E2E: validates protocol fee minting, share dilution, and treasury/provider split.
 ///         Wires real OllaGovernance (timelock), OllaCore, OllaVault, WithdrawalQueue, SafetyModule
 ///         with MockAccountingStakingManager and MockRewardsAccumulator.
 contract FeeMintingDistributionE2ETest is Test {
@@ -460,10 +460,8 @@ contract FeeMintingDistributionE2ETest is Test {
         assertEq(core.totalAssets(), 100 * DECIMALS, "pre: totalAssets = 100e18");
 
         // --- Action: slashing 15e18, small reward 5e18 ---
-        // totalStaked = 105 (original 100 + 5 newly staked from harvested rewards).
-        // slashingDelta = 15 → effective = 105 - 15 = 90.
-        // MockAccountingStakingManager applies slashing by reducing totalStakedAmount
-        // when slashingDelta increases. Set pre-slash total first, then apply slashing.
+        // totalStaked = 105 (original 100 + 5 newly staked from harvested rewards) pre-slash.
+        // slashingDelta = 15 → totalStaked reduced to 90 (net-of-slashing).
         stakingManager.setTotalStaked(105 * DECIMALS);
         stakingManager.setSlashingDelta(15 * DECIMALS);
         stakingManager.setHarvestedRewards(5 * DECIMALS);
