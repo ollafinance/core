@@ -15,6 +15,7 @@ import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
@@ -203,12 +204,12 @@ contract OllaCoreRebalanceFuzzTest is Test {
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
         vault = OllaVault(address(vaultProxy));
 
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         withdrawalQueue = new MockWithdrawalQueue();
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
-        safetyModule = new MockSafetyModule(address(implementation), address(vault));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
 
         address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
@@ -219,7 +220,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
             asset,
             stAztec,
             stakingManager,
-            0,
+            500,
             5_000,
             governance,
             IRewardsAccumulator(address(rewardsAccumulator)),

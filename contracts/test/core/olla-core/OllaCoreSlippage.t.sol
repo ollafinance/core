@@ -68,13 +68,15 @@ contract OllaCoreSlippageTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
-        safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
+        );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
         vm.prank(governance);

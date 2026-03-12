@@ -405,8 +405,6 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 1, "stakedAmount reflects only active attesters");
         // pendingUnstakeAmount tracks the 2 exiting attesters
         assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD * 2, "2 attesters pending unstake");
-        // withdrawableAmount is never set by unstake -- only updated via refreshAttesterState
-        assertEq(state.withdrawableAmount, 0, "withdrawableAmount is zero before refreshAttesterState");
     }
 
     function test_ProviderConfig_DelegatesToRegistry() external view {

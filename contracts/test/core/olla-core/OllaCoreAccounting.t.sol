@@ -17,6 +17,7 @@ import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
@@ -46,6 +47,9 @@ contract OllaCoreAccountingTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     uint256 internal constant DECIMALS = 1e18;
+    uint256 internal constant PROTOCOL_FEE_BP = 500;
+    uint256 internal constant TREASURY_FEE_SPLIT_BP = 5_000;
+    uint256 internal constant BP_DIVISOR = 10_000;
 
     /*//////////////////////////////////////////////////////////////
                            TEST FIXTURES
@@ -82,7 +86,7 @@ contract OllaCoreAccountingTest is Test {
         vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
@@ -94,7 +98,16 @@ contract OllaCoreAccountingTest is Test {
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        core.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            PROTOCOL_FEE_BP,
+            TREASURY_FEE_SPLIT_BP,
+            governance,
+            rewardsAccumulator,
+            address(safetyModule)
+        );
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
@@ -361,10 +374,27 @@ contract OllaCoreAccountingTest is Test {
         (uint256 expectedGrossRewards,) =
             core.exposedComputeGrossRewards(reportBefore.totalAssets, expectedTotalAssets, expectedNetFlows);
 
+        // Compute expected protocol fees and post-fee exchange rate
+        uint256 expectedFeeAssets = expectedGrossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 preFeeSupply = stAztec.totalSupply();
+        uint256 preFeeRate = (expectedTotalAssets + 1e3).mulDiv(DECIMALS, preFeeSupply + 1e3, Math.Rounding.Floor);
+        uint256 feeSharesTotal = expectedFeeAssets.mulDiv(DECIMALS, preFeeRate, Math.Rounding.Floor);
+        uint256 expectedTreasuryShares = feeSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
+        uint256 expectedProviderShares = feeSharesTotal - expectedTreasuryShares;
+        uint256 postFeeRate =
+            (expectedTotalAssets + 1e3).mulDiv(DECIMALS, preFeeSupply + feeSharesTotal + 1e3, Math.Rounding.Floor);
+
         uint256 expectedTimestamp = block.timestamp;
         vm.expectEmit(true, true, true, true, address(core));
         emit AccountingUpdated(
-            expectedTotalAssets, expectedRate, expectedGrossRewards, expectedNetFlows, 0, 0, 0, expectedTimestamp
+            expectedTotalAssets,
+            postFeeRate,
+            expectedGrossRewards,
+            expectedNetFlows,
+            expectedFeeAssets,
+            expectedTreasuryShares,
+            expectedProviderShares,
+            expectedTimestamp
         );
         vm.prank(operator);
         core.updateAccounting();
@@ -372,7 +402,7 @@ contract OllaCoreAccountingTest is Test {
         IOllaCore.LatestReport memory reportAfter = core.latestReport();
         IOllaCore.FlowCounters memory flowsAfter = core.flowCounters();
         assertEq(reportAfter.totalAssets, expectedTotalAssets, "lastTotalAssets updated");
-        assertEq(reportAfter.exchangeRate, expectedRate, "stored exchange rate updated");
+        assertEq(reportAfter.exchangeRate, postFeeRate, "stored exchange rate updated");
         assertEq(reportAfter.rewardsSnapshot, currentRewards, "rewards snapshot updated");
         assertEq(flowsAfter.latestReportCumulativeDeposits, depositAmount, "latestReportCumulativeDeposits updated");
         assertEq(flowsAfter.latestReportCumulativeWithdrawals, 0, "latestReportCumulativeWithdrawals updated");

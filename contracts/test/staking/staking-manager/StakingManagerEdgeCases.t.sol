@@ -9,6 +9,21 @@ import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 /// @notice Tests covering untested branches and functions in StakingManager.sol.
 contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
     /*//////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Storage slot for MockAztecRollup.stakes mapping (slot 1, after _activationThreshold at slot 0).
+    ///      The actual mapping key is keccak256(abi.encode(attester, ROLLUP_STAKES_MAPPING_SLOT)).
+    uint256 internal constant ROLLUP_STAKES_MAPPING_SLOT = 1;
+
+    /// @dev Storage slot for StakingManager._aggregateState.stakedAmount (proxy slot 9).
+    ///      Layout: slot 8 = slashingDelta, slot 9 = stakedAmount, slot 10 = pendingUnstakeAmount.
+    uint256 internal constant STAKING_MANAGER_STAKED_AMOUNT_SLOT = 9;
+
+    /// @dev Storage slot for StakingManager._aggregateState.pendingUnstakeAmount (proxy slot 10).
+    uint256 internal constant STAKING_MANAGER_PENDING_UNSTAKE_SLOT = 10;
+
+    /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
@@ -116,14 +131,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
 
         // Increase the attester's balance on rollup (simulating rewards)
         uint256 rewardAmount = 5 ether;
-        // The mock rollup stores stakes in a mapping. We need to increase it.
-        // Use vm.store to directly modify the rollup's stakes mapping
-        // Actually, let's use the mock rollup's addRewards if available, or use vm.mockCall
-        // The MockAztecRollup getAttesterView reads from stakes[attester]
-        // We can increase it by minting to rollup and updating the stake
-        // Simplest: use vm.store to modify the stake value in the mock rollup
-        // MockAztecRollup stores stakes in slot 1 (after _activationThreshold at slot 0)
-        bytes32 slot = keccak256(abi.encode(attester, uint256(1)));
+        bytes32 slot = keccak256(abi.encode(attester, ROLLUP_STAKES_MAPPING_SLOT));
         vm.store(address(rollup), slot, bytes32(ACTIVATION_THRESHOLD + rewardAmount));
 
         // Refresh should detect the balance increase
@@ -147,7 +155,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         address attester1 = address(uint160(1));
 
         // Slash attester1 to 0 on rollup (large decrease > aggregate stakedAmount per attester)
-        bytes32 slot = keccak256(abi.encode(attester1, uint256(1)));
+        bytes32 slot = keccak256(abi.encode(attester1, ROLLUP_STAKES_MAPPING_SLOT));
         vm.store(address(rollup), slot, bytes32(uint256(0)));
 
         // Refresh — the decrease is ACTIVATION_THRESHOLD but should be handled gracefully
@@ -276,10 +284,8 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         // Setup: stake one attester at ACTIVATION_THRESHOLD
         _setupStakedAttester();
 
-        // _aggregateState.stakedAmount is at storage slot 9 in the proxy
-        // (slot 8 = slashingDelta, slot 9 = stakedAmount)
-        // Corrupt it to 1 wei — much less than ACTIVATION_THRESHOLD
-        vm.store(address(stakingManager), bytes32(uint256(9)), bytes32(uint256(1)));
+        // Corrupt stakedAmount to 1 wei — much less than ACTIVATION_THRESHOLD
+        vm.store(address(stakingManager), bytes32(STAKING_MANAGER_STAKED_AMOUNT_SLOT), bytes32(uint256(1)));
 
         // Verify corruption
         IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
@@ -287,7 +293,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
 
         // Slash attester to 0 on rollup -> decrease = ACTIVATION_THRESHOLD > 1
         address attester = address(uint160(1));
-        bytes32 rollupSlot = keccak256(abi.encode(attester, uint256(1)));
+        bytes32 rollupSlot = keccak256(abi.encode(attester, ROLLUP_STAKES_MAPPING_SLOT));
         vm.store(address(rollup), rollupSlot, bytes32(uint256(0)));
 
         // Refresh should saturate to 0 rather than underflow
@@ -311,8 +317,8 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         stakingManager.unstake(ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "should have 1 exiting attester");
 
-        // Corrupt _aggregateState.pendingUnstakeAmount (slot 10) to 1 wei
-        vm.store(address(stakingManager), bytes32(uint256(10)), bytes32(uint256(1)));
+        // Corrupt pendingUnstakeAmount to 1 wei
+        vm.store(address(stakingManager), bytes32(STAKING_MANAGER_PENDING_UNSTAKE_SLOT), bytes32(uint256(1)));
 
         IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
         assertEq(corrupted.pendingUnstakeAmount, 1, "corrupted pendingUnstakeAmount should be 1");
@@ -339,8 +345,8 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         stakingManager.unstake(ACTIVATION_THRESHOLD);
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "should have 1 exiting attester");
 
-        // Corrupt _aggregateState.pendingUnstakeAmount (slot 10) to 1 wei
-        vm.store(address(stakingManager), bytes32(uint256(10)), bytes32(uint256(1)));
+        // Corrupt pendingUnstakeAmount to 1 wei
+        vm.store(address(stakingManager), bytes32(STAKING_MANAGER_PENDING_UNSTAKE_SLOT), bytes32(uint256(1)));
 
         IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
         assertEq(corrupted.pendingUnstakeAmount, 1, "corrupted pendingUnstakeAmount should be 1");

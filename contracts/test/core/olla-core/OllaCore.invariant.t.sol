@@ -559,6 +559,7 @@ contract OllaCoreLifecycleHandler is Test {
 
     uint256 public ghost_totalDeposited;
     uint256 public ghost_totalWithdrawn;
+    uint256 public ghost_totalInstantRedeemed;
     bool public ghost_rebalanceMonotonic;
     uint256 public ghost_rateBeforeAccounting;
     uint256 public ghost_rateAfterAccounting;
@@ -698,11 +699,39 @@ contract OllaCoreLifecycleHandler is Test {
         ghost_totalWithdrawn += assetsExpected;
     }
 
+    function instantRedeem(uint256 actorSeed) external {
+        address actor = address(0);
+        uint256 actorShares = 0;
+        uint256 base = actorSeed % actors.length;
+        for (uint256 i = 0; i < actors.length; i++) {
+            uint256 idx = (base + i) % actors.length;
+            uint256 bal = stAztec.balanceOf(actors[idx]);
+            if (bal > 0) {
+                actor = actors[idx];
+                actorShares = bal;
+                break;
+            }
+        }
+        if (actor == address(0)) return;
+
+        uint256 sharesToRedeem = actorShares / 2;
+        if (sharesToRedeem == 0) sharesToRedeem = actorShares;
+
+        vm.startPrank(actor);
+        stAztec.approve(address(vault), sharesToRedeem);
+        try vault.instantRedeem(sharesToRedeem, actor, 0) returns (uint256 netAssets) {
+            ghost_totalInstantRedeemed += netAssets;
+        } catch {
+            // May revert if insufficient buffer or instant redemption disabled
+        }
+        vm.stopPrank();
+    }
+
     function updateAccounting() external {
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         if (progress.step != IOllaCore.RebalanceStep.Done) return;
 
-        ghost_rateBeforeAccounting = core.exchangeRate();
+        uint256 rateBefore = core.exchangeRate();
 
         vm.prank(operator);
         try core.updateAccounting() { }
@@ -710,6 +739,7 @@ contract OllaCoreLifecycleHandler is Test {
             return;
         }
 
+        ghost_rateBeforeAccounting = rateBefore;
         ghost_rateAfterAccounting = core.exchangeRate();
     }
 
@@ -795,7 +825,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
             asset,
             stAztec,
             stakingManager,
-            0,
+            500,
             5_000,
             governance,
             IRewardsAccumulator(address(rewardsAccumulator)),
@@ -808,6 +838,10 @@ contract OllaCoreLifecycleInvariantTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
+
+        // Enable instant redemption fee (1% = 100 BP)
+        vm.prank(governance);
+        vault.setInstantRedemptionFeeBP(100);
 
         handler = new OllaCoreLifecycleHandler(
             asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator

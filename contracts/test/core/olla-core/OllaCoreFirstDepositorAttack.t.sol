@@ -61,7 +61,7 @@ contract OllaCoreFirstDepositorAttackTest is Test {
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
-        safetyModule = new MockSafetyModule(address(coreImplementation), address(vault));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);

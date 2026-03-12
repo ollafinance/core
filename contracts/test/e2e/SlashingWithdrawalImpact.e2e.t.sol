@@ -195,22 +195,21 @@ contract SlashingWithdrawalImpactE2E is E2EBaseWithRealStaking {
         _warpPastCooldown();
         _rebalanceToCompletion(20);
 
-        // 7. Check if withdrawal was finalized
+        // 7. Withdrawal must be finalized after rebalance cycles
         IWithdrawalQueue.WithdrawalRequest memory reqAfter = withdrawalQueue.getRequest(requestId);
+        assertTrue(reqAfter.finalized, "Withdrawal request must be finalized after rebalance");
 
-        if (reqAfter.finalized) {
-            // 8. Claim the withdrawal
-            vm.prank(alice);
-            uint256 claimed = vault.claimRequestById(requestId);
+        // 8. Claim the withdrawal
+        vm.prank(alice);
+        uint256 claimed = vault.claimRequestById(requestId);
 
-            // 9. User receives less than deposited due to slashing
-            assertLt(claimed, depositAmount, "Claimed amount should be less than deposit due to slashing");
-            assertGt(claimed, 0, "Claimed amount should be non-zero");
+        // 9. User receives less than deposited due to slashing
+        assertLt(claimed, depositAmount, "Claimed amount should be less than deposit due to slashing");
+        assertGt(claimed, 0, "Claimed amount should be non-zero");
 
-            // 10. Verify no tokens stuck in contracts
-            uint256 coreBalance = asset.balanceOf(address(core));
-            assertEq(coreBalance, 0, "No tokens should be stuck in core");
-        }
+        // 10. Verify no tokens stuck in contracts
+        uint256 coreBalance = asset.balanceOf(address(core));
+        assertEq(coreBalance, 0, "No tokens should be stuck in core");
     }
 
     /// @notice Multi-user withdrawal queue: both users get proportionally reduced payouts after slashing.
@@ -232,8 +231,6 @@ contract SlashingWithdrawalImpactE2E is E2EBaseWithRealStaking {
 
         // Verify FIFO ordering
         assertLt(requestIdA, requestIdB, "Alice's request should have lower ID (FIFO)");
-
-        uint256 rateAtRequest = withdrawalQueue.getRequest(requestIdA).rate;
 
         // 4. Slash attester1
         address attester1 = address(uint160(1));
@@ -261,30 +258,25 @@ contract SlashingWithdrawalImpactE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 7. Check withdrawal adjustments
-        uint256 rateAfterSlash = core.exchangeRate();
-
         IWithdrawalQueue.WithdrawalRequest memory reqA = withdrawalQueue.getRequest(requestIdA);
         IWithdrawalQueue.WithdrawalRequest memory reqB = withdrawalQueue.getRequest(requestIdB);
 
-        // Both should have been adjusted if rate dropped
-        if (rateAfterSlash < rateAtRequest) {
-            // Payouts should be proportionally equal (both had same shares, same rate)
-            if (reqA.finalized && reqB.finalized) {
-                assertEq(
-                    reqA.assetsExpected,
-                    reqB.assetsExpected,
-                    "Both users should get same adjusted payout (equal deposits)"
-                );
-            }
-        }
+        // Both requests must be finalized
+        assertTrue(reqA.finalized, "Alice's withdrawal request must be finalized after rebalance");
+        assertTrue(reqB.finalized, "Bob's withdrawal request must be finalized after rebalance");
+
+        // Slashing must have reduced the payout below the original deposit
+        assertLt(reqA.assetsExpected, depositPerUser, "Alice's payout must be reduced due to slashing adjustment");
+
+        // Payouts should be proportionally equal (both had same shares, same rate)
+        assertEq(
+            reqA.assetsExpected, reqB.assetsExpected, "Both users should get same adjusted payout (equal deposits)"
+        );
 
         // Verify queue accounting is consistent
         uint256 pendingAssets = withdrawalQueue.totalPendingAssets();
-        // If all requests were finalized, pending should be zero
-        // If some remain, the buffer should have been exhausted
-        if (pendingAssets > 0) {
-            assertEq(vault.bufferedAssets(), 0, "Buffer should be exhausted if requests still pending");
-        }
+        // All requests should be finalized, pending should be zero
+        assertEq(pendingAssets, 0, "All pending assets should be cleared after finalization");
     }
 
     /// @notice Slashing during a pending unstake: only the slashed attester affects slashingDelta.

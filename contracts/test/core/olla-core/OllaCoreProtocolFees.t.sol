@@ -423,4 +423,75 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 totalShares = core.convertToShares(expectedFeeAssets);
         assertEq(treasuryShares + providerShares, totalShares, "treasury + provider == total shares");
     }
+
+    /*//////////////////////////////////////////////////////////////
+        FEE-ON-FEE INTERACTION: PROTOCOL FEES + INSTANT REDEMPTION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice When both protocol fees and instant redemption fees are active,
+    ///         the instant redemption fee is applied to the gross assets (before protocol
+    ///         fees dilute the exchange rate), and the protocol fee applies to rewards.
+    ///         This test verifies both fees compound correctly without double-charging.
+    function test_FeeOnFee_ProtocolFeeAndInstantRedemptionFee() external {
+        // Setup: deposit 100 AZTEC
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 aliceShares = _performDeposit(alice, depositAmount);
+
+        // Enable instant redemption fee (1%)
+        vm.prank(governance);
+        vault.setInstantRedemptionFeeBP(100);
+
+        // Simulate 10 AZTEC rewards via claimableRewards + updateAccounting
+        uint256 rewards = 10 * DECIMALS;
+        stakingManager.setClaimableRewards(rewards);
+
+        vm.prank(operator);
+        core.updateAccounting();
+
+        // After updateAccounting: totalAssets = 100 + 10 = 110e18, protocol fee shares minted
+        uint256 totalAssetsAfterFees = core.totalAssets();
+        assertEq(totalAssetsAfterFees, depositAmount + rewards, "totalAssets = deposit + rewards");
+
+        // Protocol fee shares were minted to treasury and provider
+        uint256 treasuryShares = stAztec.balanceOf(governance);
+        uint256 providerShares = stAztec.balanceOf(providerRewardsRecipient);
+        assertGt(treasuryShares + providerShares, 0, "fee shares should have been minted");
+
+        // The exchange rate has increased but is diluted by fee shares
+        uint256 rateAfterFees = core.exchangeRate();
+        assertGt(rateAfterFees, 1e18, "rate should be > 1 after rewards");
+
+        // Alice redeems half her shares via instant redeem.
+        // (The vault buffer only holds the original 100 AZTEC deposit, not the reward tokens,
+        //  since rewards are tracked via accounting but tokens remain with the staking manager.)
+        uint256 redeemShares = aliceShares / 2;
+
+        // Calculate expected gross and net assets for alice's partial redemption
+        uint256 grossAssets =
+            redeemShares.mulDiv(totalAssetsAfterFees + 1e3, stAztec.totalSupply() + 1e3, Math.Rounding.Floor);
+        uint256 instantRedemptionFee = grossAssets * 100 / BP_DIVISOR; // 1% fee
+        uint256 expectedNet = grossAssets - instantRedemptionFee;
+
+        // Perform instant redeem
+        vm.prank(alice);
+        stAztec.approve(address(vault), redeemShares);
+        vm.prank(alice);
+        uint256 netReceived = vault.instantRedeem(redeemShares, alice, 0);
+
+        // Verify the instant redeem fee was applied on top of (not in place of) the protocol fee
+        assertEq(netReceived, expectedNet, "net received should be gross - 1% instant redemption fee");
+
+        // Alice's partial redeem value should be affected by BOTH fees:
+        // 1. Protocol fee diluted her shares (exchange rate < 1.1:1)
+        // 2. Instant redemption fee deducted from gross assets
+        // Without either fee, half of 110e18 = 55e18. With both fees, she gets less.
+        assertLt(netReceived, 55 * DECIMALS, "alice gets less than half totalAssets due to both fees");
+        // But she should still get more than half her original deposit
+        assertGt(netReceived, 50 * DECIMALS, "alice still profits from rewards");
+
+        // Verify: gross assets per share < 1.1 (protocol fee dilutes rate from 1.1 downward)
+        assertLt(grossAssets, 55 * DECIMALS, "gross per half-share < 55 due to protocol fee dilution");
+        // And net < gross (instant redemption fee takes a further cut)
+        assertLt(netReceived, grossAssets, "net < gross due to instant redemption fee");
+    }
 }

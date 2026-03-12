@@ -186,7 +186,7 @@ contract OllaCoreInitTest is Test {
         OllaVault newVault = OllaVault(address(newVaultProxy));
         StAztec newStAztec = new StAztec(address(newVault));
 
-        MockRewardsAccumulator newRewardsAccumulator = new MockRewardsAccumulator(asset, address(coreImplementation));
+        MockRewardsAccumulator newRewardsAccumulator = new MockRewardsAccumulator(asset, address(newCore));
         address newSafetyModule = makeAddr("safetyModule");
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "asset_"));

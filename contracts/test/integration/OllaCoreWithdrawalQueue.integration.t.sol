@@ -347,7 +347,7 @@ contract RealisticStakingManager is IStakingManager {
     IERC20 public stakingAsset;
     uint256 public totalStakedAmount;
     uint256 public pendingUnstakeAmount;
-    uint256 public withdrawableAmount;
+    bool public _hasExitableUnstakes;
 
     function initialize(IERC20 stakingAsset_, address, address, address, address, address) external override {
         stakingAsset = stakingAsset_;
@@ -383,7 +383,7 @@ contract RealisticStakingManager is IStakingManager {
         received = pendingUnstakeAmount;
         if (received > 0) {
             pendingUnstakeAmount = 0;
-            withdrawableAmount = 0;
+            _hasExitableUnstakes = false;
             stakingAsset.safeTransfer(msg.sender, received);
         }
         return (received, 0, false);
@@ -398,16 +398,14 @@ contract RealisticStakingManager is IStakingManager {
     }
 
     function hasExitableUnstakes() external view override returns (bool) {
-        return withdrawableAmount != 0;
+        return _hasExitableUnstakes;
     }
 
     function getStakingState() external view override returns (StakingState memory) {
-        return StakingState({
-            slashingDelta: 0,
-            stakedAmount: totalStakedAmount,
-            pendingUnstakeAmount: pendingUnstakeAmount,
-            withdrawableAmount: withdrawableAmount
-        });
+        return
+            StakingState({
+                slashingDelta: 0, stakedAmount: totalStakedAmount, pendingUnstakeAmount: pendingUnstakeAmount
+            });
     }
 
     function getSlashingDelta() external pure override returns (uint256) {

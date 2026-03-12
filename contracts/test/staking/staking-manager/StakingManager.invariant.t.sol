@@ -257,6 +257,37 @@ contract StakingManagerHandler is Test {
         }
     }
 
+    /// @notice Ghost variable tracking total slashing losses.
+    uint256 public ghost_totalSlashed;
+
+    /// @notice Simulate a partial slash on a random active attester via a zombie exit.
+    function simulateSlash(uint256 attesterSeed, uint256 slashBpSeed) external {
+        if (ghost_attesters.length == 0) return;
+
+        uint256 idx = bound(attesterSeed, 0, ghost_attesters.length - 1);
+        address attester = ghost_attesters[idx];
+
+        // Only slash currently Active attesters (VALIDATING on rollup, no exit)
+        AttesterView memory view_ = rollup.getAttesterView(attester);
+        if (view_.status != Status.VALIDATING) return;
+        if (view_.effectiveBalance == 0) return;
+
+        // Slash between 1% and 100% of the stake
+        uint256 slashBp = bound(slashBpSeed, 100, 10_000);
+        uint256 slashAmount = view_.effectiveBalance * slashBp / 10_000;
+        uint256 reducedAmount = view_.effectiveBalance - slashAmount;
+
+        // Create zombie exit with reduced amount (simulates slash)
+        rollup.setExternalExit(attester, reducedAmount, block.timestamp);
+
+        ghost_totalSlashed += slashAmount;
+
+        // Refresh so StakingManager picks up the change
+        address[] memory attesters = new address[](1);
+        attesters[0] = attester;
+        stakingManager.refreshAttesterState(attesters);
+    }
+
     function ghostAttestersLength() external view returns (uint256) {
         return ghost_attesters.length;
     }
@@ -351,21 +382,21 @@ contract StakingManagerInvariantTest is Test {
                            CORE INVARIANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Staking state amounts are never negative
-    function invariant_StakingStateNonNegative() external view {
+    /// @notice Staking state amounts are bounded by the number of activated keys times the activation threshold.
+    function invariant_StakingStateBounded() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        uint256 activationThreshold = rollup.getActivationThreshold();
+        uint256 maxStakeable = handler.ghost_keysActivated() * activationThreshold;
 
-        assertGe(state.stakedAmount, 0, "stakedAmount should never be negative");
-        assertGe(state.pendingUnstakeAmount, 0, "pendingUnstakeAmount should never be negative");
-        assertGe(state.withdrawableAmount, 0, "withdrawableAmount should never be negative");
+        assertLe(state.stakedAmount, maxStakeable, "stakedAmount should not exceed keysActivated * threshold");
+        assertLe(
+            state.pendingUnstakeAmount, maxStakeable, "pendingUnstakeAmount should not exceed keysActivated * threshold"
+        );
     }
 
     /// @notice Queue length consistency checks
     function invariant_QueueLengthConsistency() external view {
         uint256 queueLength = stakingProviderRegistry.getQueueLength();
-
-        // Queue length should never be negative (uint256 is always >= 0)
-        assertGe(queueLength, 0, "queue length should never be negative");
 
         // Queue length should not exceed total keys added
         uint256 added = handler.ghost_keysAdded();
@@ -382,9 +413,6 @@ contract StakingManagerInvariantTest is Test {
     function invariant_ActivatedAttesterConsistency() external view {
         uint256 currentActivatedCount = stakingManager.getActivatedAttesterCount();
 
-        // Activated attester count should never be negative
-        assertGe(currentActivatedCount, 0, "activated attester count should never be negative");
-
         // Should be bounded by reasonable limits based on total keys processed
         assertLe(
             currentActivatedCount, handler.ghost_keysAdded(), "activated attesters should not exceed total keys added"
@@ -394,9 +422,6 @@ contract StakingManagerInvariantTest is Test {
     /// @notice Pending unstake count consistency
     function invariant_PendingUnstakeCountConsistency() external view {
         uint256 pendingCount = stakingManager.getPendingUnstakeCount();
-
-        // Pending unstake count should never be negative
-        assertGe(pendingCount, 0, "pending unstake count should never be negative");
 
         // Should be bounded by total keys activated (can't have more pending than were activated)
         assertLe(
@@ -416,12 +441,13 @@ contract StakingManagerInvariantTest is Test {
     /// @notice Total assets consistency across all states
     function invariant_TotalAssetsConsistency() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        uint256 activationThreshold = rollup.getActivationThreshold();
 
-        // The sum of all states should be reasonable (can't exceed total minted tokens)
-        uint256 totalInStates = state.stakedAmount + state.pendingUnstakeAmount + state.withdrawableAmount;
+        // The sum of all states should not exceed the total amount ever activated
+        uint256 totalInStates = state.stakedAmount + state.pendingUnstakeAmount;
+        uint256 maxActivated = handler.ghost_keysActivated() * activationThreshold;
 
-        // This is a loose bound since we don't track exact token flows, but should be reasonable
-        assertLe(totalInStates, 1_000_000e18, "total assets in all states should be reasonable");
+        assertLe(totalInStates, maxActivated, "total assets in all states should not exceed keysActivated * threshold");
     }
 
     /// @notice Queue operations maintain FIFO property
@@ -518,6 +544,16 @@ contract StakingManagerInvariantTest is Test {
             state.pendingUnstakeAmount,
             rollupExitTotal + handler.ghost_externallyFinalized() * rollup.getActivationThreshold(),
             "pendingUnstakeAmount should not exceed rollup exits + reconciled externals"
+        );
+    }
+
+    /// @notice Slashing delta must be accounted for in the staking state.
+    function invariant_SlashingAccountedFor() external view {
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+
+        // slashingDelta should be <= total ghost slashed (may be less due to getSlashingDelta resetting)
+        assertLe(
+            state.slashingDelta, handler.ghost_totalSlashed(), "slashingDelta should not exceed total slashed amount"
         );
     }
 
