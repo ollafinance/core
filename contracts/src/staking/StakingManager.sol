@@ -472,13 +472,24 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         }
 
         _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
+        uint256 cachedStake = info.stakedAmount;
         info.stakedAmount = 0;
         info.exitRollup = address(rollup);
         info.pendingExitAmount = SafeCast.toUint96(exitAmount);
 
-        // Update running state
-        _aggregateState.stakedAmount -= exitAmount;
+        // Update running state: subtract the full cached balance (not just the exit amount)
+        // to avoid leaving a phantom when the attester was slashed before unstaking.
+        if (_aggregateState.stakedAmount >= cachedStake) {
+            _aggregateState.stakedAmount -= cachedStake;
+        } else {
+            _aggregateState.stakedAmount = 0;
+        }
         _aggregateState.pendingUnstakeAmount += exitAmount;
+
+        // Record the slashing gap so OllaCore's accounting sees it.
+        if (cachedStake > exitAmount) {
+            _aggregateState.slashingDelta += (cachedStake - exitAmount);
+        }
 
         emit UnstakeInitiated(attester, exitAmount);
         return exitAmount;
