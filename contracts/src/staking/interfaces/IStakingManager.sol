@@ -58,12 +58,10 @@ interface IStakingManager {
     /// @param slashingDelta Cumulative slashing delta across rollup snapshots.
     /// @param stakedAmount Total amount in VALIDATING status with effectiveBalance > 0.
     /// @param pendingUnstakeAmount Total amount in exit state, not yet exitable.
-    /// @param withdrawableAmount Total amount in exit state, now exitable.
     struct StakingState {
         uint256 slashingDelta;
         uint256 stakedAmount;
         uint256 pendingUnstakeAmount;
-        uint256 withdrawableAmount;
     }
 
     /*//////////////////////////////////////////////////////////////

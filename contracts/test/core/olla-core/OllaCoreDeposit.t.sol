@@ -17,6 +17,7 @@ import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
+import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
@@ -74,16 +75,19 @@ contract OllaCoreDepositTest is Test {
         vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
-        governance = makeAddr("governance");
+        governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
+        stakingManager.setProviderRewardsRecipient(makeAddr("providerRewardsRecipient"));
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
+        );
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 

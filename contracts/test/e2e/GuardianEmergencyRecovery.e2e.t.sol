@@ -175,11 +175,10 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
 
         // 8. Claim the finalized withdrawal
         IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
-        uint256 claimed = 0;
-        if (req.finalized) {
-            vm.prank(alice);
-            claimed = vault.claimRequestById(requestId);
-        }
+        assertTrue(req.finalized, "Withdrawal request must be finalized after recovery");
+
+        vm.prank(alice);
+        uint256 claimed = vault.claimRequestById(requestId);
 
         // 9. Conservation of value: claimed + totalAssets = depositAmount (no slashing, no loss)
         uint256 totalAssets = core.totalAssets();

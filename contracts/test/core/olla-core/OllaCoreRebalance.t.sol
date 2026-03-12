@@ -226,10 +226,14 @@ contract OllaCoreRebalanceTest is Test {
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         // Configure staking manager to mint rewards directly to rewards vault
+        address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
+        stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
+        );
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
@@ -1517,10 +1521,13 @@ contract OllaCoreRebalanceInconsistentQueueTest is Test {
         withdrawalQueue = new InconsistentWithdrawalQueue();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
+        stakingManager.setProviderRewardsRecipient(makeAddr("providerRewardsRecipient"));
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
+        );
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
@@ -1588,10 +1595,13 @@ contract OllaCoreRebalanceMismatchQueueTest is Test {
         withdrawalQueue = new MismatchWithdrawalQueue();
         withdrawalQueue.initialize(address(vault), governance, 180_000);
 
+        stakingManager.setProviderRewardsRecipient(makeAddr("providerRewardsRecipient"));
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
+        );
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
@@ -1669,10 +1679,13 @@ contract OllaCoreRebalanceReentrancyTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
+        stakingManager.setProviderRewardsRecipient(makeAddr("providerRewardsRecipient"));
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
+        );
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
@@ -1802,10 +1815,13 @@ contract OllaCoreRebalanceAccountingLivenessTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new RevertingSafetyModule(address(core), address(vault));
 
+        stakingManager.setProviderRewardsRecipient(makeAddr("providerRewardsRecipient"));
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
+        );
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 
@@ -1846,9 +1862,9 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     uint256 public staked;
     uint256 public pending;
-    uint256 public withdrawable;
     uint256 public claimable;
     uint256 public slashing;
+    bool public _exitableUnstakes;
     address public rewardsRecipient;
     ProviderConfig internal _providerConfig;
 
@@ -1869,7 +1885,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function setWithdrawableUnstakes(uint256 value) external {
-        withdrawable = value;
+        _exitableUnstakes = value != 0;
     }
 
     function setRewardsRecipient(address recipient) external {
@@ -1931,12 +1947,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function getStakingState() external view override returns (StakingState memory state) {
-        return StakingState({
-            slashingDelta: slashing,
-            stakedAmount: staked,
-            pendingUnstakeAmount: pending,
-            withdrawableAmount: withdrawable
-        });
+        return StakingState({ slashingDelta: slashing, stakedAmount: staked, pendingUnstakeAmount: pending });
     }
 
     function pendingUnstakes() external view override returns (uint256 pendingUnstakeAmount) {
@@ -1944,7 +1955,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function hasExitableUnstakes() external view override returns (bool) {
-        return withdrawable != 0;
+        return _exitableUnstakes;
     }
 
     function getProviderConfig() external view override returns (ProviderConfig memory) {
@@ -2013,7 +2024,11 @@ contract OllaCoreRebalanceRewardsLiquidityTest is Test {
         safetyModule = new MockSafetyModule(address(core), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
-        core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
+        stakingManager.setProviderConfig(makeAddr("providerAdmin"), makeAddr("providerRewardsRecipient"));
+
+        core.initialize(
+            asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
+        );
 
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
 

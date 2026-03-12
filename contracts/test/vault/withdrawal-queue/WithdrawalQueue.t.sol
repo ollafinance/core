@@ -430,6 +430,297 @@ contract WithdrawalQueueTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                    SLASHING ADJUSTMENT -- NON-ZERO PAYOUT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice When currentRate < request.rate by > 1 wei, payout is recalculated and reduced.
+    function test_FinalizeWithdrawals_SlashingAdjustment_ReducesPayout() public {
+        address alice = makeAddr("alice");
+        uint256 shares = 100;
+        uint256 lockedRate = 1e18; // 1:1
+        uint256 assetsExpected = 100;
+
+        _request(alice, shares, assetsExpected, lockedRate);
+
+        // Rate drops to 0.8e18 (20% slash)
+        uint256 currentRate = 0.8e18;
+
+        vm.expectEmit(true, false, false, true, address(queue));
+        emit WithdrawalAdjusted(1, assetsExpected, 80);
+
+        vm.expectEmit(true, false, false, true, address(queue));
+        emit WithdrawalFinalized(1, 80);
+
+        vm.prank(vault);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(assetsExpected, currentRate);
+
+        assertEq(used, 80, "used should reflect adjusted payout");
+        assertEq(finalizedCount, 1, "one request should be finalized");
+        assertEq(totalAdjusted, 20, "adjustment should be original - adjusted payout");
+
+        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(1);
+        assertTrue(req.finalized, "request should be finalized");
+        assertEq(req.assetsExpected, 80, "assetsExpected should be adjusted to 80");
+
+        assertEq(queue.totalPendingAssets(), 0, "pending assets should be zero");
+        assertEq(queue.totalPendingShares(), 0, "pending shares should be zero");
+    }
+
+    /// @notice 1-wei rate difference should NOT trigger adjustment (tolerance check).
+    function test_FinalizeWithdrawals_OneWeiTolerance_NoAdjustment() public {
+        address alice = makeAddr("alice");
+        uint256 shares = 100;
+        uint256 lockedRate = 1e18;
+        uint256 assetsExpected = 100;
+
+        _request(alice, shares, assetsExpected, lockedRate);
+
+        // Rate is exactly 1 wei below locked rate -- within tolerance
+        uint256 currentRate = lockedRate - 1;
+
+        vm.prank(vault);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(assetsExpected, currentRate);
+
+        // No adjustment should happen (tolerance: rate difference must be > 1)
+        assertEq(totalAdjusted, 0, "no adjustment should occur for 1-wei difference");
+        assertEq(used, assetsExpected, "full payout should be used");
+        assertEq(finalizedCount, 1, "one request should be finalized");
+
+        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(1);
+        assertEq(req.assetsExpected, assetsExpected, "assetsExpected should be unchanged");
+    }
+
+    /// @notice 2-wei rate difference SHOULD trigger adjustment.
+    function test_FinalizeWithdrawals_TwoWeiDifference_TriggersAdjustment() public {
+        address alice = makeAddr("alice");
+        uint256 shares = 1e18; // 1 share at 1e18 scale
+        uint256 lockedRate = 1e18;
+        uint256 assetsExpected = 1e18;
+
+        _request(alice, shares, assetsExpected, lockedRate);
+
+        // Rate is 2 wei below locked rate -- exceeds 1-wei tolerance
+        uint256 currentRate = lockedRate - 2;
+
+        vm.prank(vault);
+        (,, uint256 totalAdjusted) = queue.finalizeWithdrawals(assetsExpected, currentRate);
+
+        // payout = shares * currentRate / 1e18 = 1e18 * (1e18 - 2) / 1e18 = 1e18 - 2
+        uint256 expectedPayout = (shares * currentRate) / 1e18;
+        uint256 expectedAdjustment = assetsExpected - expectedPayout;
+
+        assertEq(totalAdjusted, expectedAdjustment, "adjustment should match the 2-wei rate difference");
+        assertGt(totalAdjusted, 0, "adjustment should be non-zero");
+
+        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(1);
+        assertEq(req.assetsExpected, expectedPayout, "assetsExpected should reflect new payout");
+    }
+
+    /// @notice Multiple requests all get adjusted when currentRate < all locked rates.
+    function test_FinalizeWithdrawals_MultipleRequestsAdjusted() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+        address carol = makeAddr("carol");
+
+        // All locked at rate = 1e18, various share amounts
+        _request(alice, 100, 100, 1e18);
+        _request(bob, 200, 200, 1e18);
+        _request(carol, 300, 300, 1e18);
+
+        // 50% slash
+        uint256 currentRate = 0.5e18;
+
+        vm.prank(vault);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(600, currentRate);
+
+        // Each request adjusted: shares * 0.5e18 / 1e18 = shares / 2
+        // alice: 50, bob: 100, carol: 150 => total used = 300, totalAdjusted = 300
+        assertEq(used, 300, "used should be sum of adjusted payouts");
+        assertEq(finalizedCount, 3, "all three should be finalized");
+        assertEq(totalAdjusted, 300, "total adjustment should be 300");
+
+        assertEq(queue.getRequest(1).assetsExpected, 50, "alice adjusted to 50");
+        assertEq(queue.getRequest(2).assetsExpected, 100, "bob adjusted to 100");
+        assertEq(queue.getRequest(3).assetsExpected, 150, "carol adjusted to 150");
+
+        assertEq(queue.totalPendingAssets(), 0, "pending assets should be zero");
+        assertEq(queue.totalPendingShares(), 0, "pending shares should be zero");
+    }
+
+    /// @notice Slashing to zero: payout becomes 0, request finalized via zero-payout path.
+    function test_FinalizeWithdrawals_SlashingToZero() public {
+        address alice = makeAddr("alice");
+        uint256 shares = 100;
+        uint256 assetsExpected = 100;
+        uint256 lockedRate = 1e18;
+
+        _request(alice, shares, assetsExpected, lockedRate);
+
+        // Rate drops to 0 (100% slashing)
+        uint256 currentRate = 0;
+
+        vm.prank(vault);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(assetsExpected, currentRate);
+
+        // Zero-payout path: no liquidity consumed, not counted in finalizedCount
+        assertEq(used, 0, "zero-payout should not consume liquidity");
+        assertEq(finalizedCount, 0, "zero-payout should not count as finalized");
+        assertEq(totalAdjusted, assetsExpected, "full amount should be adjusted");
+
+        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(1);
+        assertTrue(req.finalized, "request should be marked finalized in storage");
+        assertEq(req.assetsExpected, 0, "assetsExpected should be zero");
+    }
+
+    /// @notice No adjustment when currentRate >= request.rate.
+    function test_FinalizeWithdrawals_NoAdjustment_WhenRateHigherOrEqual() public {
+        address alice = makeAddr("alice");
+        uint256 shares = 100;
+        uint256 lockedRate = 1e18;
+        uint256 assetsExpected = 100;
+
+        _request(alice, shares, assetsExpected, lockedRate);
+
+        // Rate is higher than locked rate (rewards accrued since request)
+        uint256 currentRate = 1.2e18;
+
+        vm.prank(vault);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(assetsExpected, currentRate);
+
+        assertEq(totalAdjusted, 0, "no adjustment when rate is higher");
+        assertEq(used, assetsExpected, "full payout should be used");
+        assertEq(finalizedCount, 1, "request should be finalized");
+
+        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(1);
+        assertEq(req.assetsExpected, assetsExpected, "assetsExpected should be unchanged");
+
+        // Also test with equal rate
+        address bob = makeAddr("bob");
+        _request(bob, 50, 50, 1e18);
+
+        vm.prank(vault);
+        (,, uint256 adjusted2) = queue.finalizeWithdrawals(50, lockedRate);
+        assertEq(adjusted2, 0, "no adjustment when rate equals locked rate");
+    }
+
+    /// @notice WithdrawalAdjusted event is emitted with correct original and adjusted amounts.
+    function test_FinalizeWithdrawals_EmitsWithdrawalAdjusted() public {
+        address alice = makeAddr("alice");
+        uint256 shares = 1000;
+        uint256 lockedRate = 1e18;
+        uint256 assetsExpected = 1000;
+
+        _request(alice, shares, assetsExpected, lockedRate);
+
+        // 30% slash
+        uint256 currentRate = 0.7e18;
+        uint256 expectedPayout = (shares * currentRate) / 1e18; // 700
+
+        // The event emits (id, originalAmount, adjustedAmount)
+        // In the code: emit WithdrawalAdjusted(currentId, assetsExpected + adjustment, assetsExpected)
+        // After adjustment: assetsExpected is updated to payout, so:
+        // originalAmount = payout + adjustment = 1000
+        // adjustedAmount = payout = 700
+        vm.expectEmit(true, false, false, true, address(queue));
+        emit WithdrawalAdjusted(1, assetsExpected, expectedPayout);
+
+        vm.prank(vault);
+        queue.finalizeWithdrawals(assetsExpected, currentRate);
+
+        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(1);
+        assertEq(req.assetsExpected, expectedPayout, "assetsExpected should be adjusted to 700");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                 HEAD-OF-LINE BLOCKING SCENARIOS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice A large request at the head of the queue blocks smaller requests behind it.
+    ///         If available liquidity is less than the head request, no requests finalize
+    ///         even though there are smaller requests behind it that could be served.
+    function test_HeadOfLineBlocking_LargeRequestBlocksSmaller() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+        address carol = makeAddr("carol");
+
+        // Large request at the head
+        _request(alice, 1_000, 1_000, 1e18);
+        // Smaller requests behind
+        _request(bob, 50, 50, 1e18);
+        _request(carol, 30, 30, 1e18);
+
+        assertEq(queue.totalPendingAssets(), 1_080, "pending should be sum of all requests");
+
+        // Only 100 available -- not enough for alice's 1_000
+        vm.prank(vault);
+        (uint256 used, uint256 finalizedCount,) = queue.finalizeWithdrawals(100, NO_SLASH_RATE);
+
+        // FIFO means alice blocks everything
+        assertEq(used, 0, "no assets should be used when head is too large");
+        assertEq(finalizedCount, 0, "no requests should finalize when head blocks");
+        assertEq(queue.nextPendingId(), 1, "pending pointer should not advance");
+
+        // bob and carol still cannot be finalized despite having enough liquidity for them
+        assertEq(queue.totalPendingAssets(), 1_080, "pending assets unchanged");
+    }
+
+    /// @notice When available liquidity exactly matches the head request, it finalizes
+    ///         and subsequent smaller requests can be processed.
+    function test_ExactMatchUnblocksQueue() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+
+        _request(alice, 500, 500, 1e18);
+        _request(bob, 100, 100, 1e18);
+
+        // Provide exactly enough for alice
+        vm.prank(vault);
+        (uint256 used1, uint256 count1,) = queue.finalizeWithdrawals(500, NO_SLASH_RATE);
+
+        assertEq(used1, 500, "alice's request should consume exactly 500");
+        assertEq(count1, 1, "one request finalized");
+        assertEq(queue.nextPendingId(), 2, "pending pointer advanced past alice");
+
+        // Now bob can be finalized
+        vm.prank(vault);
+        (uint256 used2, uint256 count2,) = queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+
+        assertEq(used2, 100, "bob's request should consume exactly 100");
+        assertEq(count2, 1, "one more request finalized");
+        assertEq(queue.nextPendingId(), 3, "pending pointer advanced past bob");
+        assertEq(queue.totalPendingAssets(), 0, "all requests finalized");
+    }
+
+    /// @notice When a batch of requests each fit within the available liquidity,
+    ///         they all finalize in a single call.
+    function test_PartialBatch_MultipleFinalizeInOneBatch() public {
+        address alice = makeAddr("alice");
+        address bob = makeAddr("bob");
+        address carol = makeAddr("carol");
+
+        _request(alice, 100, 100, 1e18);
+        _request(bob, 200, 200, 1e18);
+        _request(carol, 150, 150, 1e18);
+
+        // 350 available: enough for alice (100) + bob (200), but not carol (150)
+        vm.prank(vault);
+        (uint256 used, uint256 count,) = queue.finalizeWithdrawals(350, NO_SLASH_RATE);
+
+        assertEq(used, 300, "alice + bob = 300 used");
+        assertEq(count, 2, "two requests finalized");
+        assertEq(queue.nextPendingId(), 3, "pending pointer advanced past alice and bob");
+        assertEq(queue.totalPendingAssets(), 150, "only carol remains pending");
+
+        // Carol's request is at the head now, 150 remaining
+        IWithdrawalQueue.WithdrawalRequest memory reqCarol = queue.getRequest(3);
+        assertFalse(reqCarol.finalized, "carol should not yet be finalized");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                                HELPERS
     //////////////////////////////////////////////////////////////*/
 

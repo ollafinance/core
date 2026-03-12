@@ -576,7 +576,23 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         // Handle Exiting attesters
         if (info.status == InternalAttesterStatus.Exiting) {
             if (!view_.exit.exists) {
-                // Externally finalized -- reconcile accounting and remove
+                // Externally finalized -- reconcile accounting and remove.
+                //
+                // NOTE: pendingExitAmount is the amount snapshotted at exit initiation. If the
+                // Aztec rollup slashed this attester during the exit delay, exit.amount would have
+                // been reduced on-chain, but the exit record is now deleted so the post-slash value
+                // is unrecoverable. In that case pendingExit overstates the actual finalized amount.
+                //
+                // This is acceptable because:
+                //  1. Net totalAssets remains correct: the over-reduction of stakedPrincipal via
+                //     exitAmount is offset by fewer tokens arriving in the vault.
+                //  2. Aztec's slashing pipeline (consensus + veto window, see StakingLib.sol and
+                //     Slasher.sol in AztecProtocol/l1-contracts) ensures slashes finalize well
+                //     before the exit delay expires, giving keepers ample time to call
+                //     refreshAttesterState and route through the normal exitable path (which reads
+                //     the correct view_.exit.amount).
+                //  3. slashingDelta will not record this loss; safety-module monitoring should not
+                //     rely solely on slashingDelta for exiting-attester slashes.
                 uint256 pendingExit = info.pendingExitAmount;
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
                     _aggregateState.pendingUnstakeAmount -= pendingExit;

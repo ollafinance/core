@@ -91,7 +91,7 @@ contract MockHarvestStakingManager is IStakingManager {
     }
 
     function getStakingState() external pure override returns (StakingState memory) {
-        return StakingState({ slashingDelta: 0, stakedAmount: 0, pendingUnstakeAmount: 0, withdrawableAmount: 0 });
+        return StakingState({ slashingDelta: 0, stakedAmount: 0, pendingUnstakeAmount: 0 });
     }
 
     function pendingUnstakes() external pure override returns (uint256) {

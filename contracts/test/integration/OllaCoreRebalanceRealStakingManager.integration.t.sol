@@ -303,7 +303,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
 
             // Check hasExitableUnstakes via cached state
             IStakingManager.StakingState memory stakingState = stakingManager.getStakingState();
-            emit log_named_uint("Staking state withdrawableAmount", stakingState.withdrawableAmount);
+            emit log_named_uint("Staking state pendingUnstakeAmount (from state)", stakingState.pendingUnstakeAmount);
             emit log_named_uint("Staking state pendingUnstakeAmount", stakingState.pendingUnstakeAmount);
 
             // Advance time by 1 second to ensure exitableAt < block.timestamp

@@ -14,7 +14,6 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, 0);
         assertEq(state.pendingUnstakeAmount, 0);
-        assertEq(state.withdrawableAmount, 0);
     }
 
     function test_GetQueueLength_InitiallyZero() external view {
@@ -114,7 +113,6 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3);
         assertEq(state.pendingUnstakeAmount, 0);
-        assertEq(state.withdrawableAmount, 0);
     }
 
     function test_GetStakingState_ReturnsCorrectValuesAfterUnstake() external {
@@ -126,7 +124,6 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 1);
         assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD * 2);
-        assertEq(state.withdrawableAmount, 0);
     }
 
     function test_GetStakingState_ReturnsCorrectValuesWithDelayedExit() external {
@@ -143,6 +140,5 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 1);
         assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD);
-        assertEq(state.withdrawableAmount, 0);
     }
 }

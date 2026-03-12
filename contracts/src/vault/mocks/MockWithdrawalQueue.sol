@@ -5,6 +5,9 @@ import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 /// @title MockWithdrawalQueue
 /// @notice Minimal withdrawal queue mock for unit tests.
+/// @dev Provides simple permit-all FIFO finalization without slashing adjustment.
+///      Tests requiring production-faithful slashing, gas threshold, or FIFO blocking
+///      behavior should use the real WithdrawalQueue deployed behind a proxy.
 /// @author Olla Core contributors
 contract MockWithdrawalQueue is IWithdrawalQueue {
     /// @notice Last finalize available value observed.
@@ -113,11 +116,17 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         return (used, finalizedCount, 0);
     }
 
-    /// @notice Marks a request as claimed.
+    /// @notice Claims a finalized request. Reverts if not finalized or already claimed.
     /// @param id The request id.
     /// @return assetsExpected The assets expected for the request.
     function claimWithdrawal(uint256 id) external override returns (uint256 assetsExpected) {
         WithdrawalRequest storage request = _requests[id];
+        if (!request.finalized) {
+            revert WithdrawalQueue__NotFinalized(id);
+        }
+        if (request.claimed) {
+            revert WithdrawalQueue__AlreadyClaimed(id);
+        }
         request.claimed = true;
         assetsExpected = request.assetsExpected;
         return assetsExpected;

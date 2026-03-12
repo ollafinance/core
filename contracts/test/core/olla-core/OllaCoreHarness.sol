@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract OllaCoreHarness is OllaCore {
     /*//////////////////////////////////////////////////////////////
@@ -51,5 +52,9 @@ contract OllaCoreHarness is OllaCore {
         returns (uint256 ollaProtocolFeeAssets, uint256 treasuryShares, uint256 providerShares)
     {
         return _calculateProtocolFees(grossAssetRewards);
+    }
+
+    function exposedWithdrawalRate() external view returns (uint256) {
+        return _withdrawalRate(IOllaVault(this.vault()));
     }
 }
