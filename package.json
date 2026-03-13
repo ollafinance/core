@@ -14,7 +14,7 @@
   "packageManager": "yarn@4.12.0",
   "scripts": {
     "forge:build": "cd contracts && forge build",
-    "forge:build:tiny-memory": "cd contracts && bash -lc 'shopt -s globstar nullglob; for f in src/**/*.sol script/**/*.sol; do echo \"Building: $f\"; forge build \"$f\"; done'",
+    "forge:build:tiny-memory": "cd contracts && bash build-tiny-mem-footprint.sh",
     "forge:build-all": "cd contracts && forge build --force --threads 0",
     "forge:fmt": "cd contracts && forge fmt && forge fmt script/",
     "postinstall": "husky install",

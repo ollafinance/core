@@ -167,9 +167,8 @@ contract WithdrawalQueueTest is Test {
         for (uint256 i = 0; i < gasOptions.length; i++) {
             vm.revertToState(snapshotId);
             vm.prank(vault);
-            (bool success, bytes memory data) = address(queue).call{ gas: gasOptions[i] }(
-                abi.encodeCall(queue.finalizeWithdrawals, (available, NO_SLASH_RATE))
-            );
+            (bool success, bytes memory data) = address(queue)
+            .call{ gas: gasOptions[i] }(abi.encodeCall(queue.finalizeWithdrawals, (available, NO_SLASH_RATE)));
 
             if (!success) {
                 continue;
