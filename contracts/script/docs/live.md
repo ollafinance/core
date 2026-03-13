@@ -18,6 +18,7 @@ This guide documents deployment and operations for live networks.
 - `MOCK_AZTEC` (must be explicitly set to `true` or `false`)
 - `LZ_ENDPOINT` (must be defined; may be `0x0000000000000000000000000000000000000000`)
 - If `MOCK_AZTEC=false`: `ASSET`, `ROLLUP_REGISTRY`, `GOVERNANCE`, `TREASURY`, `PROVIDER_ADMIN`, `GUARDIAN` (all required; deployer must differ from each, and `GOVERNANCE` must differ from `PROVIDER_ADMIN`)
+- If `MOCK_AZTEC=true`: `GOVERNANCE` is optional. If omitted, it defaults to deployer.
 
 ### Mainnet (`ETHEREUM_CHAIN_ID=1`)
 
@@ -74,6 +75,11 @@ Notes:
 - Deployer must differ from each of: `GOVERNANCE`, `TREASURY`, `PROVIDER_ADMIN`, `GUARDIAN`
 - `GOVERNANCE` and `PROVIDER_ADMIN` must differ
 
+Notes:
+
+- These separation rules are enforced for strict **non-mock** deployments.
+- Mock strict deployments may intentionally run with `GOVERNANCE == deployer`.
+
 ## Timelock defaults
 
 - Sepolia default: `TIMELOCK_DURATION=3600`
@@ -84,8 +90,12 @@ Notes:
 
 - On strict chains (Sepolia/Mainnet), deployment does not auto-activate protocol state.
   Activation always runs via governance ops scripts (setVault + unpause), including `TIMELOCK_DURATION=0`.
-- Deployer temporary governance roles are renounced
+- Deployer temporary governance roles are renounced when `GOVERNANCE != deployer`.
+- If `GOVERNANCE == deployer` (mock strict flows), deployer roles are intentionally retained.
 - On strict chains, deployer must not retain SafetyModule guardian privilege
+- Deploy script enforces that governance operational control is not orphaned:
+  - pre-renounce checks require configured governance to hold proposer/executor/canceller
+  - post-deploy checks require at least one holder for proposer/executor/canceller
 
 ## Post-deploy activation (strict chains)
 

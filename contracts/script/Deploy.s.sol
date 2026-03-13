@@ -118,7 +118,10 @@ contract DeployScript is BaseDeployer {
                 config.lzEndpoint
             );
         }
-        bool shouldRenounceDeployerRoles = _isStrictChain(config.chainId) || config.deployer != config.governance;
+        address configuredGovernance = config.governance;
+        // Keep deployer roles when explicitly using mock flows with governance == deployer.
+        // This avoids orphaning timelock operational roles on strict mock deployments.
+        bool shouldRenounceDeployerRoles = config.deployer != configuredGovernance;
         _setPhase("A", false);
 
         // 1. Deploy OllaGovernance (implementation + proxy + initialize)
@@ -292,6 +295,7 @@ contract DeployScript is BaseDeployer {
         //    Revokes PROPOSER_ROLE, EXECUTOR_ROLE, CANCELLER_ROLE and DEFAULT_ADMIN_ROLE.
         //    After this, only config.governance holds operational roles.
         if (shouldRenounceDeployerRoles) {
+            _requireSafeGovernanceRoleHandover(ollaGovProxy, config.deployer, configuredGovernance);
             if (
                 AccessControlUpgradeable(ollaGovProxy)
                         .hasRole(OllaGovernance(payable(ollaGovProxy)).PROPOSER_ROLE(), config.deployer)
@@ -305,6 +309,8 @@ contract DeployScript is BaseDeployer {
                 _ollaGovernanceDeployer.renounceDeployerRoles(config, ollaGovProxy);
             }
         }
+
+        _assertGovernanceOperationalRoles(ollaGovProxy, config.deployer, configuredGovernance);
 
         _validateDeploymentState(
             config,
@@ -1014,6 +1020,58 @@ contract DeployScript is BaseDeployer {
             require(OllaCore(ollaCoreProxy).paused(), "Deploy: core should remain paused");
             require(OllaVault(ollaVaultProxy).paused(), "Deploy: vault should remain paused");
         }
+    }
+
+    function _requireSafeGovernanceRoleHandover(address governance, address deployer, address configuredGovernance)
+        internal
+        view
+    {
+        OllaGovernance gov = OllaGovernance(payable(governance));
+
+        // If deployer does not currently hold operational roles, there is nothing to hand over.
+        bool deployerHasOperationalRole =
+            AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), deployer)
+            || AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), deployer)
+            || AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), deployer);
+        if (!deployerHasOperationalRole) return;
+
+        require(
+            AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), configuredGovernance),
+            "Deploy: configured governance missing PROPOSER_ROLE"
+        );
+        require(
+            AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), configuredGovernance)
+                || AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), address(0)),
+            "Deploy: configured governance missing EXECUTOR_ROLE"
+        );
+        require(
+            AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), configuredGovernance),
+            "Deploy: configured governance missing CANCELLER_ROLE"
+        );
+    }
+
+    function _assertGovernanceOperationalRoles(address governance, address deployer, address configuredGovernance)
+        internal
+        view
+    {
+        OllaGovernance gov = OllaGovernance(payable(governance));
+
+        bool proposerExists =
+            AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), configuredGovernance)
+            || AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), deployer)
+            || AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), address(0));
+        bool executorExists =
+            AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), configuredGovernance)
+            || AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), deployer)
+            || AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), address(0));
+        bool cancellerExists =
+            AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), configuredGovernance)
+            || AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), deployer)
+            || AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), address(0));
+
+        require(proposerExists, "Deploy: no proposer role holder after deployment");
+        require(executorExists, "Deploy: no executor role holder after deployment");
+        require(cancellerExists, "Deploy: no canceller role holder after deployment");
     }
 
     function _isStrictChain(uint256 chainId) internal pure returns (bool) {
