@@ -9,6 +9,7 @@ contract SendEthTo is BaseScript {
     function run() external {
         uint256 pk = _privateKey();
         address to = vm.envAddress("TO");
+        require(to != address(0), "TO must be nonzero");
 
         // Prefer explicit wei amount for precision.
         uint256 amountWei = vm.envOr("AMOUNT_WEI", uint256(0));
