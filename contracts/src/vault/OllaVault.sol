@@ -82,11 +82,14 @@ contract OllaVault is
     /// @notice Cumulative withdrawals tracked for Core accounting.
     uint256 public cumulativeWithdrawals;
 
+    /// @notice Cumulative instant redemption fees collected, tracked for Core accounting.
+    uint256 public cumulativeExitFees;
+
     /// @notice Cached claimable shares per controller for O(1) maxRedeem.
     mapping(address controller => uint256 shares) private _claimableShares;
 
     /// @notice Storage gap for upgradability.
-    /// @dev State variables occupy 14 slots. When adding new state variables, append them above
+    /// @dev State variables occupy 15 slots. When adding new state variables, append them above
     ///      this gap and reduce its length by the number of slots consumed.
     // Reserved storage gap for future upgrades; intentionally unused.
     // slither-disable-next-line unused-state
@@ -873,7 +876,6 @@ contract OllaVault is
             revert OllaVault__UnexpectedRequestId(expectedRequestId, requestId);
         }
 
-        emit WithdrawalRequested(requestId, shareOwner, recipient, shares, assetsExpected, rate);
         return (requestId, assetsExpected);
     }
 
@@ -924,6 +926,7 @@ contract OllaVault is
         modules.asset.safeTransfer(recipient, netAssets);
 
         cumulativeWithdrawals += grossAssets;
+        cumulativeExitFees += fee;
 
         emit InstantRedemption(owner, recipient, shares, grossAssets, fee, netAssets, rate);
         return netAssets;

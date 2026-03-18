@@ -425,6 +425,117 @@ contract OllaCoreProtocolFeesTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+        EXIT FEES EXCLUDED FROM GROSS REWARDS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice After an instant redemption with exit fees and no staking rewards,
+    ///         the subsequent accounting cycle should report grossRewards = 0 and
+    ///         mint no protocol fee shares. Exit fees are a redistribution to holders,
+    ///         not yield.
+    function test_ExitFeeOnly_ExcludedFromGrossRewards_NoProtocolFees() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Establish baseline accounting
+        vm.prank(operator);
+        core.updateAccounting();
+
+        // Enable 5% instant redemption fee
+        vm.prank(governance);
+        vault.setInstantRedemptionFeeBP(500);
+
+        // Alice instant redeems 20 shares: grossAssets=20e18, fee=1e18, net=19e18
+        uint256 redeemShares = 20 * DECIMALS;
+        vm.prank(alice);
+        stAztec.approve(address(vault), redeemShares);
+        vm.prank(alice);
+        vault.instantRedeem(redeemShares, alice, 0);
+
+        // Snapshot balances before second accounting
+        uint256 supplyBefore = stAztec.totalSupply();
+        uint256 govSharesBefore = stAztec.balanceOf(governance);
+        uint256 providerSharesBefore = stAztec.balanceOf(providerRewardsRecipient);
+
+        // Run accounting — exit fee should NOT appear as grossRewards
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory report = core.latestReport();
+        assertEq(report.grossRewards, 0, "exit fee excluded from grossRewards");
+        assertEq(stAztec.totalSupply(), supplyBefore, "no protocol fee shares minted on exit fee");
+        assertEq(stAztec.balanceOf(governance), govSharesBefore, "treasury unchanged");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), providerSharesBefore, "provider unchanged");
+    }
+
+    /// @notice When staking rewards AND exit fees both occur in the same period,
+    ///         protocol fees are computed only on the staking rewards portion.
+    function test_ExitFeePlusStakingRewards_ProtocolFeeOnlyOnStakingRewards() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Establish baseline
+        vm.prank(operator);
+        core.updateAccounting();
+
+        // Enable 5% instant redemption fee
+        vm.prank(governance);
+        vault.setInstantRedemptionFeeBP(500);
+
+        // Alice instant redeems 20 shares: fee = 1e18
+        uint256 redeemShares = 20 * DECIMALS;
+        vm.prank(alice);
+        stAztec.approve(address(vault), redeemShares);
+        vm.prank(alice);
+        vault.instantRedeem(redeemShares, alice, 0);
+
+        // Also simulate 10 AZTEC staking rewards
+        uint256 stakingRewards = 10 * DECIMALS;
+        stakingManager.setClaimableRewards(stakingRewards);
+
+        // Protocol fees should be computed on staking rewards only (not exit fee)
+        uint256 expectedProtocolFeeAssets = stakingRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+
+        vm.expectEmit(true, true, true, false, address(core));
+        emit OllaProtocolFeesPaid(expectedProtocolFeeAssets, 0, 0); // only check first arg (fee assets)
+
+        // Run accounting
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory report = core.latestReport();
+        // grossRewards should be staking rewards only (exit fee excluded)
+        assertEq(report.grossRewards, stakingRewards, "grossRewards = staking rewards only");
+    }
+
+    /// @notice Verifies cumulativeExitFees counter increments correctly on instant redeem.
+    function test_CumulativeExitFees_TracksInstantRedemptionFees() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(governance);
+        vault.setInstantRedemptionFeeBP(500); // 5%
+
+        assertEq(vault.cumulativeExitFees(), 0, "starts at zero");
+
+        // First redeem: 20 shares at 1:1 rate → grossAssets=20e18, fee=1e18
+        vm.prank(alice);
+        stAztec.approve(address(vault), 40 * DECIMALS);
+        vm.prank(alice);
+        vault.instantRedeem(20 * DECIMALS, alice, 0);
+
+        uint256 feesAfterFirst = vault.cumulativeExitFees();
+        assertEq(feesAfterFirst, 1 * DECIMALS, "tracks first exit fee");
+
+        // Second redeem: rate has shifted (exit fee stayed in buffer), so fee > 1e18
+        uint256 grossAssets2 = core.convertToAssets(20 * DECIMALS);
+        uint256 expectedFee2 = grossAssets2 * 500 / BP_DIVISOR;
+        vm.prank(alice);
+        vault.instantRedeem(20 * DECIMALS, alice, 0);
+
+        assertEq(vault.cumulativeExitFees(), feesAfterFirst + expectedFee2, "accumulates across redeems");
+    }
+
+    /*//////////////////////////////////////////////////////////////
         FEE-ON-FEE INTERACTION: PROTOCOL FEES + INSTANT REDEMPTION
     //////////////////////////////////////////////////////////////*/
 
