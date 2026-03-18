@@ -22,7 +22,7 @@
     "lint": "cd contracts && solhint --config .solhint.json \"src/**/*.sol\" && solhint --config script/.solhint.json \"script/**/*.sol\"",
     "lint:fix": "cd contracts && solhint --config .solhint.json --fix --noPrompt \"src/**/*.sol\" && solhint --config script/.solhint.json --fix --noPrompt \"script/**/*.sol\"",
     "slither": "cd contracts && slither . --config-file slither.config.json",
-    "slither:docker": "docker build -f contracts/Dockerfile.slither -t olla-slither:local . && docker run --rm --network host -v \"$PWD/contracts:/work\" -w /work olla-slither:local slither . --config-file slither.config.json",
+    "slither:docker": "docker build -f contracts/Dockerfile.slither -t olla-slither:local . && docker run --rm -v \"$PWD/contracts:/work\" -w /work olla-slither:local slither . --config-file slither.config.json",
     "test": "yarn test:unit && yarn test:invariant && yarn test:integration && yarn test:interface-compat",
     "test:unit": "cd contracts && forge test --match-path \"test/**/*.t.sol\" --no-match-path \"test/**/*.{integration,invariant}.t.sol\"",
     "test:invariant": "cd contracts && forge test --match-path \"test/**/*.invariant.t.sol\"",
