@@ -2,8 +2,13 @@
 pragma solidity ^0.8.27;
 
 import { console2 } from "@forge-std/console2.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
-import { BaseScript } from "../base/BaseScript.s.sol";
+import { RolesLib } from "src/shared/RolesLib.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
+import { StakingManager } from "src/staking/StakingManager.sol";
+import { BaseScript } from "./../base/BaseScript.s.sol";
 
 /// @title PrintGovernanceRoles
 /// @notice Prints governance timelock role status for key addresses and optional candidates.
@@ -62,15 +67,16 @@ contract PrintGovernanceRoles is BaseScript {
         }
 
         // Known deployment addresses
-        _logCandidate(
-            "deployment.deployer",
-            _tryReadAddressFromDeployment(env, ".deployer"),
-            gov,
-            proposerRole,
-            executorRole,
-            cancellerRole,
-            defaultAdminRole
-        );
+        address deployer = _tryReadAddressFromDeployment(env, ".deployer");
+        address coreProxy = _tryReadDeployment(env, "OllaCoreProxy");
+        address vaultProxy = _tryReadDeployment(env, "OllaVaultProxy");
+        address stakingManagerProxy = _tryReadDeployment(env, "StakingManagerProxy");
+        address stakingProviderRegistryProxy = _tryReadDeployment(env, "StakingProviderRegistryProxy");
+        address rewardsAccumulatorProxy = _tryReadDeployment(env, "RewardsAccumulatorProxy");
+        address withdrawalQueueProxy = _tryReadDeployment(env, "WithdrawalQueueProxy");
+        address safetyModule = _tryReadDeployment(env, "SafetyModule");
+
+        _logCandidate("deployment.deployer", deployer, gov, proposerRole, executorRole, cancellerRole, defaultAdminRole);
         _logCandidate(
             "address.OllaGovernanceProxy",
             _tryReadDeployment(env, "OllaGovernanceProxy"),
@@ -81,44 +87,47 @@ contract PrintGovernanceRoles is BaseScript {
             defaultAdminRole
         );
         _logCandidate(
-            "address.OllaCoreProxy",
-            _tryReadDeployment(env, "OllaCoreProxy"),
-            gov,
-            proposerRole,
-            executorRole,
-            cancellerRole,
-            defaultAdminRole
+            "address.OllaCoreProxy", coreProxy, gov, proposerRole, executorRole, cancellerRole, defaultAdminRole
         );
         _logCandidate(
-            "address.OllaVaultProxy",
-            _tryReadDeployment(env, "OllaVaultProxy"),
-            gov,
-            proposerRole,
-            executorRole,
-            cancellerRole,
-            defaultAdminRole
+            "address.OllaVaultProxy", vaultProxy, gov, proposerRole, executorRole, cancellerRole, defaultAdminRole
         );
         _logCandidate(
             "address.StakingManagerProxy",
-            _tryReadDeployment(env, "StakingManagerProxy"),
+            stakingManagerProxy,
             gov,
             proposerRole,
             executorRole,
             cancellerRole,
             defaultAdminRole
         );
+        _logStakingManagerRewardsAccumulator(stakingManagerProxy, rewardsAccumulatorProxy);
         _logCandidate(
             "address.StakingProviderRegistryProxy",
-            _tryReadDeployment(env, "StakingProviderRegistryProxy"),
+            stakingProviderRegistryProxy,
             gov,
             proposerRole,
             executorRole,
             cancellerRole,
             defaultAdminRole
         );
+        address stakingProviderRegistry = _tryReadDeployment(env, "StakingProviderRegistry");
+        if (stakingProviderRegistry == address(0)) {
+            stakingProviderRegistry = stakingProviderRegistryProxy;
+        }
+        _logCandidate(
+            "address.StakingProviderRegistry",
+            stakingProviderRegistry,
+            gov,
+            proposerRole,
+            executorRole,
+            cancellerRole,
+            defaultAdminRole
+        );
+        _logStakingProviderAdmin(stakingProviderRegistry);
         _logCandidate(
             "address.RewardsAccumulatorProxy",
-            _tryReadDeployment(env, "RewardsAccumulatorProxy"),
+            rewardsAccumulatorProxy,
             gov,
             proposerRole,
             executorRole,
@@ -127,7 +136,7 @@ contract PrintGovernanceRoles is BaseScript {
         );
         _logCandidate(
             "address.WithdrawalQueueProxy",
-            _tryReadDeployment(env, "WithdrawalQueueProxy"),
+            withdrawalQueueProxy,
             gov,
             proposerRole,
             executorRole,
@@ -135,13 +144,11 @@ contract PrintGovernanceRoles is BaseScript {
             defaultAdminRole
         );
         _logCandidate(
-            "address.SafetyModule",
-            _tryReadDeployment(env, "SafetyModule"),
-            gov,
-            proposerRole,
-            executorRole,
-            cancellerRole,
-            defaultAdminRole
+            "address.SafetyModule", safetyModule, gov, proposerRole, executorRole, cancellerRole, defaultAdminRole
+        );
+
+        _logGuardianRoleAssignments(
+            coreProxy, vaultProxy, safetyModule, governance, deployer, caller, vm.envOr("GUARDIAN", address(0))
         );
 
         // Optional manual candidates
@@ -208,5 +215,78 @@ contract PrintGovernanceRoles is BaseScript {
         console2.log("  executor", executor);
         console2.log("  canceller", canceller);
         console2.log("  defaultAdmin", defaultAdmin);
+    }
+
+    function _logStakingProviderAdmin(address stakingProviderRegistry) internal view {
+        if (stakingProviderRegistry == address(0)) {
+            console2.log("stakingProviderAdminRole.registry", address(0));
+            return;
+        }
+
+        IStakingProviderRegistry registry = IStakingProviderRegistry(stakingProviderRegistry);
+        bytes32 stakingProviderAdminRole = RolesLib.STAKING_PROVIDER_ADMIN_ROLE;
+        IStakingManager.ProviderConfig memory providerConfig = registry.getStakingProviderConfig();
+        bool providerAdminHasRole =
+            IAccessControl(stakingProviderRegistry).hasRole(stakingProviderAdminRole, providerConfig.admin);
+
+        console2.log("stakingProviderAdminRole.registry", stakingProviderRegistry);
+        console2.log("stakingProviderAdminRole");
+        console2.logBytes32(stakingProviderAdminRole);
+        console2.log("stakingProviderAdmin", providerConfig.admin);
+        console2.log("stakingProviderAdmin.hasRole", providerAdminHasRole);
+    }
+
+    function _logGuardianRoleAssignments(
+        address core,
+        address vault,
+        address safetyModule,
+        address governance,
+        address deployer,
+        address caller,
+        address configuredGuardian
+    ) internal view {
+        bytes32 guardianRole = RolesLib.GUARDIAN_ROLE;
+        console2.log("guardianRole");
+        console2.logBytes32(guardianRole);
+
+        _logAccessControlRoleMembership("guardian.core.governance", core, guardianRole, governance);
+        _logAccessControlRoleMembership("guardian.vault.governance", vault, guardianRole, governance);
+        _logAccessControlRoleMembership("guardian.safetyModule.governance", safetyModule, guardianRole, governance);
+        _logAccessControlRoleMembership("guardian.safetyModule.deployer", safetyModule, guardianRole, deployer);
+        _logAccessControlRoleMembership("guardian.safetyModule.caller", safetyModule, guardianRole, caller);
+        _logAccessControlRoleMembership(
+            "guardian.safetyModule.GUARDIAN(env)", safetyModule, guardianRole, configuredGuardian
+        );
+    }
+
+    function _logStakingManagerRewardsAccumulator(address stakingManager, address deploymentRewardsAccumulator)
+        internal
+        view
+    {
+        if (stakingManager == address(0)) {
+            console2.log("stakingManager.rewardsAccumulator", address(0));
+            return;
+        }
+
+        address configuredRewardsAccumulator = StakingManager(stakingManager).rewardsAccumulator();
+        console2.log("stakingManager.rewardsAccumulator", configuredRewardsAccumulator);
+
+        if (deploymentRewardsAccumulator != address(0)) {
+            console2.log(
+                "stakingManager.rewardsAccumulator.matchesDeployment",
+                configuredRewardsAccumulator == deploymentRewardsAccumulator
+            );
+        }
+    }
+
+    function _logAccessControlRoleMembership(string memory label, address target, bytes32 role, address member)
+        internal
+        view
+    {
+        if (target == address(0) || member == address(0)) {
+            console2.log(label, false);
+            return;
+        }
+        console2.log(label, IAccessControl(target).hasRole(role, member));
     }
 }

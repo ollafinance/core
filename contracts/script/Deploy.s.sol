@@ -5,7 +5,6 @@ import { VmSafe } from "@forge-std/Vm.sol";
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { IERC5267 } from "@oz/interfaces/IERC5267.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { StAztecOFTAdapter } from "src/bridge/StAztecOFTAdapter.sol";
 import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
@@ -344,13 +343,16 @@ contract DeployScript is BaseDeployer {
         implementation = _readAddress("OllaGovernanceImplementation");
         proxy = _readAddress("OllaGovernanceProxy");
 
+        if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            implementation = address(0);
+            proxy = address(0);
+        }
+
         if (implementation != address(0) || proxy != address(0)) {
             require(
                 implementation != address(0) && proxy != address(0),
                 "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.OllaGovernance"
             );
-            _requireCode(implementation, "OllaGovernanceImplementation");
-            _requireCode(proxy, "OllaGovernanceProxy");
             return (implementation, proxy);
         }
 
@@ -366,13 +368,16 @@ contract DeployScript is BaseDeployer {
         implementation = _readAddress("OllaCoreImplementation");
         proxy = _readAddress("OllaCoreProxy");
 
+        if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            implementation = address(0);
+            proxy = address(0);
+        }
+
         if (implementation != address(0) || proxy != address(0)) {
             require(
                 implementation != address(0) && proxy != address(0),
                 "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.OllaCore"
             );
-            _requireCode(implementation, "OllaCoreImplementation");
-            _requireCode(proxy, "OllaCoreProxy");
             return (implementation, proxy);
         }
 
@@ -388,13 +393,16 @@ contract DeployScript is BaseDeployer {
         implementation = _readAddress("OllaVaultImplementation");
         proxy = _readAddress("OllaVaultProxy");
 
+        if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            implementation = address(0);
+            proxy = address(0);
+        }
+
         if (implementation != address(0) || proxy != address(0)) {
             require(
                 implementation != address(0) && proxy != address(0),
                 "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.OllaVault"
             );
-            _requireCode(implementation, "OllaVaultImplementation");
-            _requireCode(proxy, "OllaVaultProxy");
             return (implementation, proxy);
         }
 
@@ -411,14 +419,20 @@ contract DeployScript is BaseDeployer {
         rollup = _readAddress("MockAztecRollup");
         rollupRegistry = _readAddress("MockAztecRollupRegistry");
 
+        if (
+            (asset != address(0) && !_hasCode(asset)) || (rollup != address(0) && !_hasCode(rollup))
+                || (rollupRegistry != address(0) && !_hasCode(rollupRegistry))
+        ) {
+            asset = address(0);
+            rollup = address(0);
+            rollupRegistry = address(0);
+        }
+
         if (asset != address(0) || rollup != address(0) || rollupRegistry != address(0)) {
             require(
                 asset != address(0) && rollup != address(0) && rollupRegistry != address(0),
                 "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.MockAztec"
             );
-            _requireCode(asset, "Asset");
-            _requireCode(rollup, "MockAztecRollup");
-            _requireCode(rollupRegistry, "MockAztecRollupRegistry");
             return (asset, rollup, rollupRegistry);
         }
 
@@ -433,10 +447,12 @@ contract DeployScript is BaseDeployer {
         returns (address stAztec)
     {
         stAztec = _readAddress("StAztec");
-        if (stAztec != address(0)) {
-            _requireCode(stAztec, "StAztec");
-            require(StAztec(stAztec).OLLA_VAULT() == vaultProxy, "Deploy: ADDRESS_STATE_MISMATCH.StAztec.OLLA_VAULT");
-            return stAztec;
+        if (stAztec != address(0) && _hasCode(stAztec)) {
+            try StAztec(stAztec).OLLA_VAULT() returns (address configuredVault) {
+                if (configuredVault == vaultProxy) {
+                    return stAztec;
+                }
+            } catch { }
         }
 
         stAztec = _stAztecDeployer.deploy(config, vaultProxy);
@@ -445,8 +461,7 @@ contract DeployScript is BaseDeployer {
 
     function _resolveOrDeployLzEndpointMock(DeployConfig memory config) internal returns (address endpoint) {
         endpoint = _readAddress("EndpointV2Mock");
-        if (endpoint != address(0)) {
-            _requireCode(endpoint, "EndpointV2Mock");
+        if (endpoint != address(0) && _hasCode(endpoint)) {
             return endpoint;
         }
 
@@ -461,27 +476,42 @@ contract DeployScript is BaseDeployer {
         address delegate
     ) internal returns (address adapter) {
         adapter = _readAddress("StAztecOFTAdapter");
-        if (adapter != address(0)) {
-            _requireCode(adapter, "StAztecOFTAdapter");
-            require(
-                StAztecOFTAdapter(adapter).token() == stAztec, "Deploy: ADDRESS_STATE_MISMATCH.StAztecOFTAdapter.token"
-            );
-            require(
-                address(StAztecOFTAdapter(adapter).endpoint()) == lzEndpoint,
-                "Deploy: ADDRESS_STATE_MISMATCH.StAztecOFTAdapter.endpoint"
-            );
-            require(
-                StAztecOFTAdapter(adapter).owner() == delegate, "Deploy: ADDRESS_STATE_MISMATCH.StAztecOFTAdapter.owner"
-            );
-            require(
-                ILayerZeroEndpointV2Delegates(lzEndpoint).delegates(adapter) == delegate,
-                "Deploy: ADDRESS_STATE_MISMATCH.StAztecOFTAdapter.delegate"
-            );
+        if (adapter != address(0) && _hasCode(adapter) && _matchesOftAdapter(adapter, stAztec, lzEndpoint, delegate)) {
             return adapter;
         }
 
         adapter = _stAztecOFTAdapterDeployer.deploy(config, stAztec, lzEndpoint, delegate);
         _recordAddress("StAztecOFTAdapter", adapter);
+    }
+
+    function _resolveOrDeployRewardsAccumulator(DeployConfig memory config, address asset, address core, address admin)
+        internal
+        returns (address implementation, address proxy)
+    {
+        implementation = _readAddress("RewardsAccumulatorImplementation");
+        proxy = _readAddress("RewardsAccumulatorProxy");
+
+        if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            implementation = address(0);
+            proxy = address(0);
+        }
+
+        if (implementation != address(0) || proxy != address(0)) {
+            require(
+                implementation != address(0) && proxy != address(0),
+                "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.RewardsAccumulator"
+            );
+            require(IRewardsAccumulator(proxy).core() == core, "Deploy: ADDRESS_STATE_MISMATCH.RewardsAccumulator.core");
+            require(
+                AccessControlUpgradeable(proxy).hasRole(bytes32(0), admin),
+                "Deploy: ADDRESS_STATE_MISMATCH.RewardsAccumulator.admin"
+            );
+            return (implementation, proxy);
+        }
+
+        (implementation, proxy) = _rewardsAccumulatorDeployer.deploy(config, IERC20(asset), core, admin);
+        _recordAddress("RewardsAccumulatorImplementation", implementation);
+        _recordAddress("RewardsAccumulatorProxy", proxy);
     }
 
     function _resolveOrDeployWithdrawalQueue(DeployConfig memory config, address vaultProxy, address admin)
@@ -491,13 +521,16 @@ contract DeployScript is BaseDeployer {
         implementation = _readAddress("WithdrawalQueueImplementation");
         proxy = _readAddress("WithdrawalQueueProxy");
 
+        if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            implementation = address(0);
+            proxy = address(0);
+        }
+
         if (implementation != address(0) || proxy != address(0)) {
             require(
                 implementation != address(0) && proxy != address(0),
                 "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.WithdrawalQueue"
             );
-            _requireCode(implementation, "WithdrawalQueueImplementation");
-            _requireCode(proxy, "WithdrawalQueueProxy");
             require(
                 WithdrawalQueue(proxy).vault() == vaultProxy, "Deploy: ADDRESS_STATE_MISMATCH.WithdrawalQueue.vault"
             );
@@ -511,33 +544,6 @@ contract DeployScript is BaseDeployer {
         (implementation, proxy) = _withdrawalQueueDeployer.deploy(config, vaultProxy, admin, 50_000);
         _recordAddress("WithdrawalQueueImplementation", implementation);
         _recordAddress("WithdrawalQueueProxy", proxy);
-    }
-
-    function _resolveOrDeployRewardsAccumulator(DeployConfig memory config, address asset, address core, address admin)
-        internal
-        returns (address implementation, address proxy)
-    {
-        implementation = _readAddress("RewardsAccumulatorImplementation");
-        proxy = _readAddress("RewardsAccumulatorProxy");
-
-        if (implementation != address(0) || proxy != address(0)) {
-            require(
-                implementation != address(0) && proxy != address(0),
-                "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.RewardsAccumulator"
-            );
-            _requireCode(implementation, "RewardsAccumulatorImplementation");
-            _requireCode(proxy, "RewardsAccumulatorProxy");
-            require(IRewardsAccumulator(proxy).core() == core, "Deploy: ADDRESS_STATE_MISMATCH.RewardsAccumulator.core");
-            require(
-                AccessControlUpgradeable(proxy).hasRole(bytes32(0), admin),
-                "Deploy: ADDRESS_STATE_MISMATCH.RewardsAccumulator.admin"
-            );
-            return (implementation, proxy);
-        }
-
-        (implementation, proxy) = _rewardsAccumulatorDeployer.deploy(config, IERC20(asset), core, admin);
-        _recordAddress("RewardsAccumulatorImplementation", implementation);
-        _recordAddress("RewardsAccumulatorProxy", proxy);
     }
 
     function _resolveOrDeployStakingStack(
@@ -562,6 +568,18 @@ contract DeployScript is BaseDeployer {
         stakingProviderRegistryProxy = _readAddress("StakingProviderRegistryProxy");
 
         if (
+            (stakingManagerImpl != address(0) && !_hasCode(stakingManagerImpl))
+                || (stakingManagerProxy != address(0) && !_hasCode(stakingManagerProxy))
+                || (stakingProviderRegistryImpl != address(0) && !_hasCode(stakingProviderRegistryImpl))
+                || (stakingProviderRegistryProxy != address(0) && !_hasCode(stakingProviderRegistryProxy))
+        ) {
+            stakingManagerImpl = address(0);
+            stakingManagerProxy = address(0);
+            stakingProviderRegistryImpl = address(0);
+            stakingProviderRegistryProxy = address(0);
+        }
+
+        if (
             stakingManagerImpl != address(0) || stakingManagerProxy != address(0)
                 || stakingProviderRegistryImpl != address(0) || stakingProviderRegistryProxy != address(0)
         ) {
@@ -570,11 +588,6 @@ contract DeployScript is BaseDeployer {
                     && stakingProviderRegistryImpl != address(0) && stakingProviderRegistryProxy != address(0),
                 "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.StakingStack"
             );
-
-            _requireCode(stakingManagerImpl, "StakingManagerImplementation");
-            _requireCode(stakingManagerProxy, "StakingManagerProxy");
-            _requireCode(stakingProviderRegistryImpl, "StakingProviderRegistryImplementation");
-            _requireCode(stakingProviderRegistryProxy, "StakingProviderRegistryProxy");
 
             require(
                 StakingManager(stakingManagerProxy).core() == core, "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.core"
@@ -623,8 +636,7 @@ contract DeployScript is BaseDeployer {
         returns (address safetyModule)
     {
         safetyModule = _readAddress("SafetyModule");
-        if (safetyModule != address(0)) {
-            _requireCode(safetyModule, "SafetyModule");
+        if (safetyModule != address(0) && _hasCode(safetyModule)) {
             require(SafetyModule(safetyModule).CORE() == core, "Deploy: ADDRESS_STATE_MISMATCH.SafetyModule.core");
             require(SafetyModule(safetyModule).VAULT() == vault, "Deploy: ADDRESS_STATE_MISMATCH.SafetyModule.vault");
             require(
@@ -657,8 +669,12 @@ contract DeployScript is BaseDeployer {
         (coreInitialized, found) = _readFlag("coreInitialized");
 
         if (found && coreInitialized) {
-            _assertCoreInitialized(core, asset, stAztec, stakingManager, rewardsAccumulator, safetyModule, governance);
-            return;
+            if (_coreInitializedStateMatches(
+                    core, asset, stAztec, stakingManager, rewardsAccumulator, safetyModule, governance
+                )) {
+                return;
+            }
+            _recordFlag("coreInitialized", false);
         }
 
         bool shouldInit = false;
@@ -692,8 +708,10 @@ contract DeployScript is BaseDeployer {
         (vaultInitialized, found) = _readFlag("vaultInitialized");
 
         if (found && vaultInitialized) {
-            _assertVaultInitialized(vault, asset, withdrawalQueue, core, governance);
-            return;
+            if (_vaultInitializedStateMatches(vault, asset, withdrawalQueue, core, governance)) {
+                return;
+            }
+            _recordFlag("vaultInitialized", false);
         }
 
         bool shouldInit = false;
@@ -780,6 +798,36 @@ contract DeployScript is BaseDeployer {
         _setDeploymentFlag(_artifactEnv, key, value);
     }
 
+    function _matchesOftAdapter(address adapter, address stAztec, address lzEndpoint, address delegate)
+        internal
+        view
+        returns (bool)
+    {
+        (bool okToken, address token) = _staticcallAddress(adapter, abi.encodeWithSignature("token()"));
+        if (!okToken || token != stAztec) return false;
+
+        (bool okEndpoint, address endpoint) = _staticcallAddress(adapter, abi.encodeWithSignature("endpoint()"));
+        if (!okEndpoint || endpoint != lzEndpoint) return false;
+
+        (bool okOwner, address ownerAddr) = _staticcallAddress(adapter, abi.encodeWithSignature("owner()"));
+        if (!okOwner || ownerAddr != delegate) return false;
+
+        try ILayerZeroEndpointV2Delegates(lzEndpoint).delegates(adapter) returns (address endpointDelegate) {
+            return endpointDelegate == delegate;
+        } catch {
+            return false;
+        }
+    }
+
+    function _staticcallAddress(address target, bytes memory data) internal view returns (bool ok, address decoded) {
+        bytes memory returnData;
+        (ok, returnData) = target.staticcall(data);
+        if (!ok || returnData.length < 32) {
+            return (false, address(0));
+        }
+        decoded = abi.decode(returnData, (address));
+    }
+
     function _assertCoreInitialized(
         address core,
         address asset,
@@ -806,6 +854,50 @@ contract DeployScript is BaseDeployer {
         );
     }
 
+    function _coreInitializedStateMatches(
+        address core,
+        address asset,
+        address stAztec,
+        address stakingManager,
+        address rewardsAccumulator,
+        address safetyModule,
+        address governance
+    ) internal view returns (bool) {
+        try OllaCore(core).owner() returns (address ownerAddr) {
+            if (ownerAddr != governance) return false;
+        } catch {
+            return false;
+        }
+        try OllaCore(core).asset() returns (address currentAsset) {
+            if (currentAsset != asset) return false;
+        } catch {
+            return false;
+        }
+        try OllaCore(core).stAztec() returns (address currentStAztec) {
+            if (currentStAztec != stAztec) return false;
+        } catch {
+            return false;
+        }
+        try OllaCore(core).stakingManager() returns (address currentStakingManager) {
+            if (currentStakingManager != stakingManager) return false;
+        } catch {
+            return false;
+        }
+        try OllaCore(core).rewardsAccumulator() returns (address currentRewardsAccumulator) {
+            if (currentRewardsAccumulator != rewardsAccumulator) return false;
+        } catch {
+            return false;
+        }
+        try OllaCore(core).safetyModule() returns (address currentSafetyModule) {
+            if (currentSafetyModule != safetyModule) return false;
+        } catch {
+            return false;
+        }
+        if (!AccessControlUpgradeable(core).hasRole(bytes32(0), governance)) return false;
+
+        return true;
+    }
+
     function _assertVaultInitialized(
         address vault,
         address asset,
@@ -826,8 +918,47 @@ contract DeployScript is BaseDeployer {
         );
     }
 
+    function _vaultInitializedStateMatches(
+        address vault,
+        address asset,
+        address withdrawalQueue,
+        address core,
+        address governance
+    ) internal view returns (bool) {
+        try OllaVault(vault).owner() returns (address ownerAddr) {
+            if (ownerAddr != governance) return false;
+        } catch {
+            return false;
+        }
+        try OllaVault(vault).asset() returns (address currentAsset) {
+            if (currentAsset != asset) return false;
+        } catch {
+            return false;
+        }
+        try OllaVault(vault).core() returns (address currentCore) {
+            if (currentCore != core) return false;
+        } catch {
+            return false;
+        }
+        try OllaVault(vault).withdrawalQueue() returns (address currentWithdrawalQueue) {
+            if (currentWithdrawalQueue != withdrawalQueue) return false;
+        } catch {
+            return false;
+        }
+        if (!AccessControlUpgradeable(vault).hasRole(bytes32(0), governance)) return false;
+
+        return true;
+    }
+
     function _requireCode(address addr, string memory label) internal view {
-        require(addr.code.length > 0, string.concat("Deploy: ADDRESS_REUSED_BUT_NO_CODE.", label));
+        require(
+            addr.code.length > 0,
+            string.concat("Deploy: ADDRESS_REUSED_BUT_NO_CODE.", label, ".", _addressToString(addr))
+        );
+    }
+
+    function _hasCode(address addr) internal view returns (bool) {
+        return addr.code.length > 0;
     }
 
     function _shouldEnableResume(DeployConfig memory config) internal view returns (bool) {
