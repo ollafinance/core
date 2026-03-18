@@ -28,14 +28,6 @@ contract OllaCoreWithdrawalTest is Test {
                                EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event WithdrawalRequested(
-        uint256 indexed requestId,
-        address indexed owner,
-        address indexed recipient,
-        uint256 shares,
-        uint256 assetsExpected,
-        uint256 exchangeRate
-    );
     event RedeemRequest(
         address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 assets
     );
@@ -196,8 +188,6 @@ contract OllaCoreWithdrawalTest is Test {
         uint256 shares = 6 * DECIMALS;
         uint256 expectedAssets = shares * rate / 1e18;
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit WithdrawalRequested(1, alice, bob, shares, expectedAssets, rate);
         vm.expectEmit(true, true, true, true, address(vault));
         emit RedeemRequest(bob, alice, 1, alice, expectedAssets);
 
@@ -366,8 +356,6 @@ contract OllaCoreWithdrawalTest is Test {
         (uint8 v, bytes32 r, bytes32 s) =
             _signPermit(IERC20Permit(address(stAztec)), permitOwner, permitOwnerKey, address(vault), shares, deadline);
 
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit WithdrawalRequested(1, permitOwner, bob, shares, assetsExpected, rate);
         vm.expectEmit(true, true, true, true, address(vault));
         emit RedeemRequest(bob, permitOwner, 1, permitOwner, assetsExpected);
 

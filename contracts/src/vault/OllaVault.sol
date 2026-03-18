@@ -876,7 +876,6 @@ contract OllaVault is
             revert OllaVault__UnexpectedRequestId(expectedRequestId, requestId);
         }
 
-        emit WithdrawalRequested(requestId, shareOwner, recipient, shares, assetsExpected, rate);
         return (requestId, assetsExpected);
     }
 
