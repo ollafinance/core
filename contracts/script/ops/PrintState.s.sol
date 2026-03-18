@@ -39,7 +39,16 @@ contract PrintState is BaseScript {
         address stakingManager = c.stakingManager();
         address stakingProviderRegistry = address(0);
         if (stakingManager != address(0)) {
-            stakingProviderRegistry = address(IStakingManager(stakingManager).stakingProviderRegistry());
+            if (stakingManager.code.length > 0) {
+                // Guard against reverts so the script remains usable for debugging.
+                try IStakingManager(stakingManager).stakingProviderRegistry() returns (address registry) {
+                    stakingProviderRegistry = registry;
+                } catch {
+                    console2.log("stakingManager is set but stakingProviderRegistry() call failed");
+                }
+            } else {
+                console2.log("stakingManager is set but no code is deployed at that address");
+            }
         }
         address vaultAddr = c.vault();
         address owner = OwnableUpgradeable(core).owner();
