@@ -268,7 +268,26 @@ contract PrintGovernanceRoles is BaseScript {
             return;
         }
 
-        address configuredRewardsAccumulator = StakingManager(stakingManager).rewardsAccumulator();
+        // If the address has no code, treat as unset and avoid reverting.
+        if (stakingManager.code.length == 0) {
+            console2.log("stakingManager.rewardsAccumulator", address(0));
+            if (deploymentRewardsAccumulator != address(0)) {
+                console2.log(
+                    "stakingManager.rewardsAccumulator.matchesDeployment",
+                    false
+                );
+            }
+            return;
+        }
+
+        address configuredRewardsAccumulator;
+        // Wrap in try/catch to gracefully handle unexpected implementations.
+        try StakingManager(stakingManager).rewardsAccumulator() returns (address _configuredRewardsAccumulator) {
+            configuredRewardsAccumulator = _configuredRewardsAccumulator;
+        } catch {
+            configuredRewardsAccumulator = address(0);
+        }
+
         console2.log("stakingManager.rewardsAccumulator", configuredRewardsAccumulator);
 
         if (deploymentRewardsAccumulator != address(0)) {
@@ -287,6 +306,21 @@ contract PrintGovernanceRoles is BaseScript {
             console2.log(label, false);
             return;
         }
-        console2.log(label, IAccessControl(target).hasRole(role, member));
+
+        // If the target has no code, it cannot implement IAccessControl; report false.
+        if (target.code.length == 0) {
+            console2.log(label, false);
+            return;
+        }
+
+        bool hasRoleResult;
+        // Use try/catch so that unexpected reverts degrade to "false" instead of halting the script.
+        try IAccessControl(target).hasRole(role, member) returns (bool _hasRole) {
+            hasRoleResult = _hasRole;
+        } catch {
+            hasRoleResult = false;
+        }
+
+        console2.log(label, hasRoleResult);
     }
 }
