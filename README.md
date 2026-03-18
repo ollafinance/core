@@ -29,6 +29,7 @@ Key research index:
 ## Tooling
 
 - Solidity + Foundry for development and testing
+  - `forge fmt` is done with v1.4.1
 - Solhint for Solidity linting (includes a custom rule plugin)
 - Slither + Slytherin for static analysis
 
