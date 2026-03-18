@@ -46,15 +46,9 @@ contract OllaCoreWithdrawalQueueTest is Test {
                               EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event WithdrawalRequested(
-        uint256 indexed requestId,
-        address indexed owner,
-        address indexed recipient,
-        uint256 shares,
-        uint256 assetsExpected,
-        uint256 exchangeRate
+    event RedeemRequest(
+        address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 assets
     );
-
     event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
 
     /*//////////////////////////////////////////////////////////////
@@ -165,7 +159,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
         uint256 expectedAssets = shares * rate / 1e18;
 
         vm.expectEmit(true, true, true, true, address(vault));
-        emit WithdrawalRequested(1, alice, bob, shares, expectedAssets, rate);
+        emit RedeemRequest(bob, alice, 1, alice, expectedAssets);
 
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, bob, alice);
@@ -455,15 +449,6 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
     /*//////////////////////////////////////////////////////////////
                               EVENTS
     //////////////////////////////////////////////////////////////*/
-
-    event WithdrawalRequested(
-        uint256 indexed requestId,
-        address indexed owner,
-        address indexed recipient,
-        uint256 shares,
-        uint256 assetsExpected,
-        uint256 exchangeRate
-    );
 
     /*//////////////////////////////////////////////////////////////
                           TEST FIXTURES

@@ -34,22 +34,6 @@ interface IOllaVault {
     /// @param shares The shares minted.
     event Deposit(address indexed caller, address indexed recipient, uint256 assets, uint256 shares);
 
-    /// @notice Emitted when a withdrawal request is created.
-    /// @param requestId The withdrawal request id.
-    /// @param owner The share owner that initiated the request.
-    /// @param recipient The address receiving the assets.
-    /// @param shares The shares burned.
-    /// @param assetsExpected The assets expected at request time.
-    /// @param exchangeRate The exchange rate locked at request time.
-    event WithdrawalRequested(
-        uint256 indexed requestId,
-        address indexed owner,
-        address indexed recipient,
-        uint256 shares,
-        uint256 assetsExpected,
-        uint256 exchangeRate
-    );
-
     /// @notice Emitted when a withdrawal is claimed via queue.
     /// @param requestId Withdrawal request id.
     /// @param recipient Recipient address.
