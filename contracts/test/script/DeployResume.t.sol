@@ -16,9 +16,11 @@ contract DeployResumeTest is Test {
         }
 
         vm.setEnv("ETHEREUM_CHAIN_ID", "31337");
+        vm.setEnv("MOCK_AZTEC", "true");
         vm.setEnv("DEPLOY_STEP", "broadcast");
         vm.setEnv("DEPLOY_DRY_RUN_DONE", "true");
         vm.setEnv("DEPLOY_WITH_VERIFY", "true");
+        vm.setEnv("DEPLOY_ALLOW_ARTIFACT_WRITE", "true");
         vm.setEnv("PRIVATE_KEY", _ANVIL_PK);
         vm.setEnv("LZ_ENDPOINT", "0x0000000000000000000000000000000000000000");
     }

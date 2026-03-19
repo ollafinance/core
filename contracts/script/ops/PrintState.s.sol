@@ -6,6 +6,7 @@ import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.so
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { BaseScript } from "../base/BaseScript.s.sol";
@@ -41,8 +42,9 @@ contract PrintState is BaseScript {
         if (stakingManager != address(0)) {
             if (stakingManager.code.length > 0) {
                 // Guard against reverts so the script remains usable for debugging.
-                try IStakingManager(stakingManager).stakingProviderRegistry() returns (address registry) {
-                    stakingProviderRegistry = registry;
+                try IStakingManager(stakingManager)
+                    .stakingProviderRegistry() returns (IStakingProviderRegistry registry) {
+                    stakingProviderRegistry = address(registry);
                 } catch {
                     console2.log("stakingManager is set but stakingProviderRegistry() call failed");
                 }

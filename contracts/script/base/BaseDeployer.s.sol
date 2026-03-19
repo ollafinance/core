@@ -270,7 +270,8 @@ abstract contract BaseDeployer is Script {
     }
 
     function _artifactWriteEnabled() internal view returns (bool) {
-        return vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) || vm.isContext(VmSafe.ForgeContext.ScriptResume);
+        return vm.envOr("DEPLOY_ALLOW_ARTIFACT_WRITE", false) || vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+            || vm.isContext(VmSafe.ForgeContext.ScriptResume);
     }
 
     function _tryReadDeploymentFlag(string memory env, string memory key)

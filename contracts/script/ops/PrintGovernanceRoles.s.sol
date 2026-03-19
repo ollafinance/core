@@ -272,10 +272,7 @@ contract PrintGovernanceRoles is BaseScript {
         if (stakingManager.code.length == 0) {
             console2.log("stakingManager.rewardsAccumulator", address(0));
             if (deploymentRewardsAccumulator != address(0)) {
-                console2.log(
-                    "stakingManager.rewardsAccumulator.matchesDeployment",
-                    false
-                );
+                console2.log("stakingManager.rewardsAccumulator.matchesDeployment", false);
             }
             return;
         }
