@@ -34,13 +34,13 @@
   "status": {
     "phase": "D",
     "completed": true,
-    "updatedAtBlock": 10457986,
+    "updatedAtBlock": 10457987,
     "flags": {
       "coreInitialized": true,
       "vaultInitialized": true
     }
   },
-  "genesisBlock": 10457987,
+  "genesisBlock": 10457986,
   "stAztecName": "stAztec",
   "stAztecVersion": "1"
 }
