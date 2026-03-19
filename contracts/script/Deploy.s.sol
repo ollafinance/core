@@ -464,12 +464,27 @@ contract DeployScript is BaseDeployer {
         returns (address stAztec)
     {
         stAztec = _readAddress("StAztec");
-        if (stAztec != address(0) && _hasCode(stAztec)) {
-            try StAztec(stAztec).OLLA_VAULT() returns (address configuredVault) {
-                if (configuredVault == vaultProxy) {
+        if (stAztec != address(0)) {
+            if (!_hasCode(stAztec)) {
+                if (_shouldFailFastOnMissingResumeCode(config)) {
+                    _requireCode(stAztec, "StAztec");
+                }
+            } else {
+                bool matchesVault;
+                try StAztec(stAztec).OLLA_VAULT() returns (address configuredVault) {
+                    matchesVault = configuredVault == vaultProxy;
+                } catch {
+                    matchesVault = false;
+                }
+
+                if (matchesVault) {
                     return stAztec;
                 }
-            } catch { }
+
+                if (_shouldFailFastOnMissingResumeCode(config)) {
+                    revert("Deploy: ADDRESS_STATE_MISMATCH.StAztec.OLLA_VAULT");
+                }
+            }
         }
 
         stAztec = _stAztecDeployer.deploy(config, vaultProxy);
@@ -493,8 +508,20 @@ contract DeployScript is BaseDeployer {
         address delegate
     ) internal returns (address adapter) {
         adapter = _readAddress("StAztecOFTAdapter");
-        if (adapter != address(0) && _hasCode(adapter) && _matchesOftAdapter(adapter, stAztec, lzEndpoint, delegate)) {
-            return adapter;
+        if (adapter != address(0)) {
+            if (!_hasCode(adapter)) {
+                if (_shouldFailFastOnMissingResumeCode(config)) {
+                    _requireCode(adapter, "StAztecOFTAdapter");
+                }
+            } else {
+                if (_matchesOftAdapter(adapter, stAztec, lzEndpoint, delegate)) {
+                    return adapter;
+                }
+
+                if (_shouldFailFastOnMissingResumeCode(config)) {
+                    revert("Deploy: ADDRESS_STATE_MISMATCH.StAztecOFTAdapter");
+                }
+            }
         }
 
         adapter = _stAztecOFTAdapterDeployer.deploy(config, stAztec, lzEndpoint, delegate);

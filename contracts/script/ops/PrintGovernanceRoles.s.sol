@@ -223,16 +223,38 @@ contract PrintGovernanceRoles is BaseScript {
             return;
         }
 
-        IStakingProviderRegistry registry = IStakingProviderRegistry(stakingProviderRegistry);
+        if (stakingProviderRegistry.code.length == 0) {
+            console2.log("stakingProviderAdminRole.registry", stakingProviderRegistry);
+            console2.log("stakingProviderAdminRole.error", "no code at registry");
+            return;
+        }
+
         bytes32 stakingProviderAdminRole = RolesLib.STAKING_PROVIDER_ADMIN_ROLE;
-        IStakingManager.ProviderConfig memory providerConfig = registry.getStakingProviderConfig();
-        bool providerAdminHasRole =
-            IAccessControl(stakingProviderRegistry).hasRole(stakingProviderAdminRole, providerConfig.admin);
+        address providerAdmin = address(0);
+        bool providerAdminHasRole;
+
+        try IStakingProviderRegistry(stakingProviderRegistry)
+            .getStakingProviderConfig() returns (IStakingManager.ProviderConfig memory providerConfig) {
+            providerAdmin = providerConfig.admin;
+        } catch {
+            console2.log("stakingProviderAdminRole.registry", stakingProviderRegistry);
+            console2.log("stakingProviderAdminRole");
+            console2.logBytes32(stakingProviderAdminRole);
+            console2.log("stakingProviderAdminRole.error", "getStakingProviderConfig() failed");
+            return;
+        }
+
+        try IAccessControl(stakingProviderRegistry)
+            .hasRole(stakingProviderAdminRole, providerAdmin) returns (bool hasRole) {
+            providerAdminHasRole = hasRole;
+        } catch {
+            providerAdminHasRole = false;
+        }
 
         console2.log("stakingProviderAdminRole.registry", stakingProviderRegistry);
         console2.log("stakingProviderAdminRole");
         console2.logBytes32(stakingProviderAdminRole);
-        console2.log("stakingProviderAdmin", providerConfig.admin);
+        console2.log("stakingProviderAdmin", providerAdmin);
         console2.log("stakingProviderAdmin.hasRole", providerAdminHasRole);
     }
 

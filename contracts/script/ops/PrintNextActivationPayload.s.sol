@@ -39,11 +39,14 @@ contract PrintNextActivationPayload is BaseScript {
         bytes memory unpauseVaultData = abi.encodeCall(OllaVault.unpause, ());
 
         bytes32 setVaultOpId = gov.hashOperation(core, 0, setVaultData, predecessor, salt);
-        bytes32 unpauseCoreOpId = gov.hashOperation(core, 0, unpauseCoreData, setVaultOpId, salt);
-        bytes32 unpauseVaultOpId = gov.hashOperation(vault, 0, unpauseVaultData, unpauseCoreOpId, salt);
-
         OperationState memory setVaultOp = _operationState(gov, setVaultOpId);
+
+        bytes32 unpauseCorePredecessor = _selectUnpauseCorePredecessor(core, vault, setVaultOpId, setVaultOp);
+        bytes32 unpauseCoreOpId = gov.hashOperation(core, 0, unpauseCoreData, unpauseCorePredecessor, salt);
         OperationState memory unpauseCoreOp = _operationState(gov, unpauseCoreOpId);
+
+        bytes32 unpauseVaultPredecessor = _selectUnpauseVaultPredecessor(core, unpauseCoreOpId, unpauseCoreOp);
+        bytes32 unpauseVaultOpId = gov.hashOperation(vault, 0, unpauseVaultData, unpauseVaultPredecessor, salt);
         OperationState memory unpauseVaultOp = _operationState(gov, unpauseVaultOpId);
 
         console2.log("env", env);
@@ -84,7 +87,7 @@ contract PrintNextActivationPayload is BaseScript {
                 governance,
                 core,
                 unpauseCoreData,
-                setVaultOpId,
+                unpauseCorePredecessor,
                 salt,
                 delay,
                 unpauseCoreOp,
@@ -103,7 +106,7 @@ contract PrintNextActivationPayload is BaseScript {
                 governance,
                 vault,
                 unpauseVaultData,
-                unpauseCoreOpId,
+                unpauseVaultPredecessor,
                 salt,
                 delay,
                 unpauseVaultOp,
@@ -260,6 +263,43 @@ contract PrintNextActivationPayload is BaseScript {
         op.done = gov.isOperationDone(operationId);
         op.timestamp = gov.getTimestamp(operationId);
         return op;
+    }
+
+    function _selectUnpauseCorePredecessor(
+        address core,
+        address vault,
+        bytes32 setVaultOpId,
+        OperationState memory setVaultOp
+    ) internal view returns (bytes32) {
+        if (OllaCore(core).vault() != vault) {
+            return setVaultOpId;
+        }
+
+        // If vault is already wired but the canonical setVault op was never done
+        // (e.g. different salt path or direct owner call), do not force an unreachable predecessor.
+        if (!setVaultOp.done) {
+            return bytes32(0);
+        }
+
+        return setVaultOpId;
+    }
+
+    function _selectUnpauseVaultPredecessor(address core, bytes32 unpauseCoreOpId, OperationState memory unpauseCoreOp)
+        internal
+        view
+        returns (bytes32)
+    {
+        if (OllaCore(core).paused()) {
+            return unpauseCoreOpId;
+        }
+
+        // If core is already unpaused but the canonical unpauseCore op was never done
+        // (e.g. direct guardian unpause), avoid locking unpauseVault behind an unreachable predecessor.
+        if (!unpauseCoreOp.done) {
+            return bytes32(0);
+        }
+
+        return unpauseCoreOpId;
     }
 
     function _toString(uint256 value) internal pure returns (string memory) {
