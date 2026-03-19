@@ -344,6 +344,10 @@ contract DeployScript is BaseDeployer {
         proxy = _readAddress("OllaGovernanceProxy");
 
         if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            if (_shouldFailFastOnMissingResumeCode(config)) {
+                _requireCode(implementation, "OllaGovernanceImplementation");
+                _requireCode(proxy, "OllaGovernanceProxy");
+            }
             implementation = address(0);
             proxy = address(0);
         }
@@ -369,6 +373,10 @@ contract DeployScript is BaseDeployer {
         proxy = _readAddress("OllaCoreProxy");
 
         if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            if (_shouldFailFastOnMissingResumeCode(config)) {
+                _requireCode(implementation, "OllaCoreImplementation");
+                _requireCode(proxy, "OllaCoreProxy");
+            }
             implementation = address(0);
             proxy = address(0);
         }
@@ -394,6 +402,10 @@ contract DeployScript is BaseDeployer {
         proxy = _readAddress("OllaVaultProxy");
 
         if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            if (_shouldFailFastOnMissingResumeCode(config)) {
+                _requireCode(implementation, "OllaVaultImplementation");
+                _requireCode(proxy, "OllaVaultProxy");
+            }
             implementation = address(0);
             proxy = address(0);
         }
@@ -423,6 +435,11 @@ contract DeployScript is BaseDeployer {
             (asset != address(0) && !_hasCode(asset)) || (rollup != address(0) && !_hasCode(rollup))
                 || (rollupRegistry != address(0) && !_hasCode(rollupRegistry))
         ) {
+            if (_shouldFailFastOnMissingResumeCode(config)) {
+                _requireCode(asset, "Asset");
+                _requireCode(rollup, "MockAztecRollup");
+                _requireCode(rollupRegistry, "MockAztecRollupRegistry");
+            }
             asset = address(0);
             rollup = address(0);
             rollupRegistry = address(0);
@@ -492,6 +509,10 @@ contract DeployScript is BaseDeployer {
         proxy = _readAddress("RewardsAccumulatorProxy");
 
         if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            if (_shouldFailFastOnMissingResumeCode(config)) {
+                _requireCode(implementation, "RewardsAccumulatorImplementation");
+                _requireCode(proxy, "RewardsAccumulatorProxy");
+            }
             implementation = address(0);
             proxy = address(0);
         }
@@ -522,6 +543,10 @@ contract DeployScript is BaseDeployer {
         proxy = _readAddress("WithdrawalQueueProxy");
 
         if ((implementation != address(0) && !_hasCode(implementation)) || (proxy != address(0) && !_hasCode(proxy))) {
+            if (_shouldFailFastOnMissingResumeCode(config)) {
+                _requireCode(implementation, "WithdrawalQueueImplementation");
+                _requireCode(proxy, "WithdrawalQueueProxy");
+            }
             implementation = address(0);
             proxy = address(0);
         }
@@ -573,6 +598,12 @@ contract DeployScript is BaseDeployer {
                 || (stakingProviderRegistryImpl != address(0) && !_hasCode(stakingProviderRegistryImpl))
                 || (stakingProviderRegistryProxy != address(0) && !_hasCode(stakingProviderRegistryProxy))
         ) {
+            if (_shouldFailFastOnMissingResumeCode(config)) {
+                _requireCode(stakingManagerImpl, "StakingManagerImplementation");
+                _requireCode(stakingManagerProxy, "StakingManagerProxy");
+                _requireCode(stakingProviderRegistryImpl, "StakingProviderRegistryImplementation");
+                _requireCode(stakingProviderRegistryProxy, "StakingProviderRegistryProxy");
+            }
             stakingManagerImpl = address(0);
             stakingManagerProxy = address(0);
             stakingProviderRegistryImpl = address(0);
@@ -951,6 +982,9 @@ contract DeployScript is BaseDeployer {
     }
 
     function _requireCode(address addr, string memory label) internal view {
+        if (addr == address(0)) {
+            return;
+        }
         require(
             addr.code.length > 0,
             string.concat("Deploy: ADDRESS_REUSED_BUT_NO_CODE.", label, ".", _addressToString(addr))
@@ -1189,16 +1223,14 @@ contract DeployScript is BaseDeployer {
 
         bool proposerExists =
             AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), configuredGovernance)
-            || AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), deployer)
-            || AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), address(0));
+            || AccessControlUpgradeable(governance).hasRole(gov.PROPOSER_ROLE(), deployer);
         bool executorExists =
             AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), configuredGovernance)
             || AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), deployer)
             || AccessControlUpgradeable(governance).hasRole(gov.EXECUTOR_ROLE(), address(0));
         bool cancellerExists =
             AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), configuredGovernance)
-            || AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), deployer)
-            || AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), address(0));
+            || AccessControlUpgradeable(governance).hasRole(gov.CANCELLER_ROLE(), deployer);
 
         require(proposerExists, "Deploy: no proposer role holder after deployment");
         require(executorExists, "Deploy: no executor role holder after deployment");
@@ -1207,6 +1239,14 @@ contract DeployScript is BaseDeployer {
 
     function _isStrictChain(uint256 chainId) internal pure returns (bool) {
         return chainId == _CHAIN_SEPOLIA || chainId == _CHAIN_MAINNET;
+    }
+
+    function _shouldFailFastOnMissingResumeCode(DeployConfig memory config) internal pure returns (bool) {
+        // Local/dev resume flows can carry stale no-code addresses from partial runs or simulated dry-runs.
+        // We clear and redeploy in those environments to keep iteration smooth.
+        // On strict chains (Sepolia/Mainnet), no-code addresses indicate a dangerous artifact/RPC mismatch,
+        // so we fail fast instead of silently redeploying.
+        return _isStrictChain(config.chainId);
     }
 
     function _validateAddressSeparation(DeployConfig memory config) internal pure {
