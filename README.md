@@ -60,6 +60,8 @@ yarn deploy:local
 
 The `OllaGovernance` contract embeds a `TimelockController` and is deployed as part of the standard deploy flow (`yarn deploy:local`). It is automatically set as the owner of `OllaCore` and holds `DEFAULT_ADMIN_ROLE` on all satellite contracts. All governance actions (parameter changes, upgrades, governance transfers) must be scheduled, wait for the timelock delay, and then executed through `OllaGovernance`.
 
+For strict-chain activation after deployment (Sepolia/Mainnet), see `contracts/script/docs/live.md` and use `contracts/script/ops/PrintNextActivationPayload.s.sol` to generate the next Safe payload from live on-chain state.
+
 For automated protocol testing with the TypeScript mock loop, see [`mock-loop/README.md`](mock-loop/README.md).
 
 Invariant-only suite:
