@@ -91,6 +91,10 @@ interface IStakingManager {
     /// @param amount The amount harvested.
     event RewardsHarvested(uint256 indexed amount);
 
+    /// @notice Emitted when reward harvesting from the rollup fails (e.g. no claimable rewards).
+    /// @param reason The low-level revert reason.
+    event RewardsHarvestFailed(bytes reason);
+
     /// @notice Emitted when an attester is removed from the registry.
     /// @param attester The removed attester address.
     event AttesterRemoved(address indexed attester);

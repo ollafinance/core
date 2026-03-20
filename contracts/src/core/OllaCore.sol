@@ -99,7 +99,7 @@ contract OllaCore is
     uint32 public rebalanceCooldown;
 
     /// @notice Timestamp of the last completed rebalance cycle.
-    uint48 private _lastRebalanceTimestamp;
+    uint48 public lastRebalanceTimestamp;
 
     /// @notice Snapshot of cumulative exit fees at the last accounting report.
     uint256 private _latestReportCumulativeExitFees;
@@ -188,7 +188,7 @@ contract OllaCore is
         rebalanceCooldown = SafeCast.toUint32(1 hours);
         // Initial rebalance timestamp set at deployment; miner manipulation is negligible.
         // slither-disable-next-line timestamp
-        _lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
+        lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governanceContract_);
         _grantRole(GUARDIAN_ROLE, governanceContract_);
@@ -313,7 +313,7 @@ contract OllaCore is
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             {
                 uint256 cooldown_ = rebalanceCooldown;
-                uint256 elapsed = block.timestamp - _lastRebalanceTimestamp;
+                uint256 elapsed = block.timestamp - lastRebalanceTimestamp;
                 // Standard cooldown check; miner manipulation (~15s) is negligible for this use case.
                 // slither-disable-next-line timestamp
                 if (elapsed < cooldown_) revert OllaCore__RebalanceCooldownActive(elapsed, cooldown_);
@@ -470,7 +470,7 @@ contract OllaCore is
 
         if (_rebalanceCompletionSatisfied(progress)) {
             // slither-disable-next-line timestamp
-            _lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
+            lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
             _updateAccountingInternal();
         }
 

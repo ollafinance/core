@@ -398,6 +398,10 @@ interface IOllaCore {
     /// @return The rebalance cooldown in seconds.
     function rebalanceCooldown() external view returns (uint32);
 
+    /// @notice Returns the timestamp of the last completed rebalance cycle.
+    /// @return The last rebalance timestamp.
+    function lastRebalanceTimestamp() external view returns (uint48);
+
     /// @notice Returns the protocol fee in basis points.
     /// @return The protocol fee in basis points.
     function protocolFeeBP() external view returns (uint16);
