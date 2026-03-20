@@ -139,6 +139,9 @@ interface IStakingManager {
     /// @notice Thrown when attempting to remove an attester that is still active.
     error StakingManager__RemoveAttesterFailed(address attester);
 
+    /// @notice Thrown when attempting to activate an attester that is already registered.
+    error StakingManager__AttesterAlreadyActive(address attester);
+
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
     //////////////////////////////////////////////////////////////*/
