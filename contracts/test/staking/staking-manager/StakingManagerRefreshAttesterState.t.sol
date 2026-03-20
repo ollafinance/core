@@ -154,9 +154,11 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         _setupStakedAttester();
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "should have 1 active attester");
 
-        // Simulate external full exit: rollup clears all state for this attester
+        // Simulate external full exit: zero balance but config still present on the GSE
+        // (withdrawer persists after exit on the real rollup).
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         rollup.clearAttester(keys[0].attester);
+        rollup.setStake(keys[0].attester, 0, address(stakingManager));
 
         // Refresh should detect zero balance + no exit and remove the attester
         stakingManager.refreshAttesterState(_attesterAddresses(1));
@@ -171,9 +173,10 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         _setupMultipleStakedAttesters(2);
         assertEq(stakingManager.getActivatedAttesterCount(), 2, "should have 2 active attesters");
 
-        // Externally finalize only the first attester
+        // Externally finalize only the first attester (config persists on real rollup)
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         rollup.clearAttester(keys[0].attester);
+        rollup.setStake(keys[0].attester, 0, address(stakingManager));
 
         stakingManager.refreshAttesterState(_attesterAddresses(2));
 
@@ -348,6 +351,92 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         assertTrue(
             stakingManager.hasExitableUnstakes(), "should be true after refresh reconciles external finalization"
         );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            QUEUED ATTESTER PROTECTION TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice refreshAttesterState() must not remove an attester that is still in
+    ///         the rollup's entry queue (not yet activated in the GSE).
+    function test_RefreshAttesterState_SkipsQueuedAttester() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+
+        // Simulate the real rollup queue state: attester deposited but not yet
+        // flushed into the GSE. The rollup returns Status.NONE with zero balance
+        // and empty config for queued attesters.
+        rollup.clearAttester(keys[0].attester);
+        rollup.setStake(keys[0].attester, 0, address(0));
+
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+        uint256 activeCountBefore = stakingManager.getActivatedAttesterCount();
+
+        // Refresh should skip -- no state changes
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertEq(stakingManager.getActivatedAttesterCount(), activeCountBefore, "active count must not change");
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "stakedAmount must not change");
+        assertEq(stateAfter.slashingDelta, stateBefore.slashingDelta, "slashingDelta must not change");
+    }
+
+    /// @notice After the queue is flushed (attester becomes VALIDATING), refreshAttesterState
+    ///         should work normally again.
+    function test_RefreshAttesterState_WorksAfterQueueFlush() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+
+        // Simulate queue state
+        rollup.clearAttester(keys[0].attester);
+        rollup.setStake(keys[0].attester, 0, address(0));
+
+        // Refresh while queued -- should be a no-op
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should still be active");
+
+        // Simulate queue flush: attester now has a balance and withdrawer on the rollup
+        rollup.setStake(keys[0].attester, ACTIVATION_THRESHOLD, address(stakingManager));
+
+        // Refresh after flush -- should work normally
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should remain active after flush");
+    }
+
+    /// @notice Multiple refreshes while queued should all be no-ops.
+    function test_RefreshAttesterState_MultipleRefreshesWhileQueued() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+
+        rollup.clearAttester(keys[0].attester);
+        rollup.setStake(keys[0].attester, 0, address(0));
+
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+
+        // Multiple refreshes
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "active count must not change");
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "stakedAmount must not change");
+        assertEq(stateAfter.slashingDelta, stateBefore.slashingDelta, "slashingDelta must not change");
+    }
+
+    /// @notice An externally fully exited attester (has withdrawer set on rollup but zero balance)
+    ///         should still be removed -- the queued protection only applies when config is empty.
+    function test_RefreshAttesterState_StillRemovesExternallyExitedWithConfig() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+
+        // Simulate external full exit: zero balance but config still present
+        // (withdrawer is non-zero because the GSE set it during activation).
+        rollup.setStake(keys[0].attester, 0, address(stakingManager));
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "externally exited attester should be removed");
     }
 
     /*//////////////////////////////////////////////////////////////

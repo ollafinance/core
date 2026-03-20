@@ -290,7 +290,9 @@ contract MockAztecRollup is IMockAztecRollup {
             }
         }
         stakes[_attester] = 0;
-        withdrawers[_attester] = address(0);
+        // Keep withdrawer set -- on the real rollup, GSE.configOf retains the
+        // withdrawer after removal.  Clearing it would make a removed attester
+        // indistinguishable from a queued (never-activated) one.
         delete _exits[_attester];
         delete _publicKeys[_attester];
     }

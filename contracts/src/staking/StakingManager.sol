@@ -14,7 +14,7 @@ import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
-import { AttesterView, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 
 // solhint-disable max-states-count
 /// @title StakingManager
@@ -533,6 +533,17 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
+
+        // Attester is still in the rollup's entry queue (not yet activated in the GSE).
+        // The rollup returns Status.NONE with zero balance and empty config for queued attesters.
+        // Skip refresh -- there is no on-chain state to reconcile yet.
+        if (
+            info.status == InternalAttesterStatus.Active && view_.status == Status.NONE
+                && view_.config.withdrawer == address(0) && !view_.exit.exists
+        ) {
+            return;
+        }
+
         uint256 oldBalance = info.stakedAmount;
         uint256 newBalance = view_.effectiveBalance;
 
