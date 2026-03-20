@@ -122,11 +122,12 @@ contract PrintStakingManagerUpgradePayload is BaseScript {
                 "next.status", alreadySameAddress ? "already_up_to_date_address" : "already_up_to_date_bytecode"
             );
             console2.log("next.step", "No upgrade payload required.");
-            _setDeploymentAddress(env, "StakingManagerImplementation", candidateImplementation);
+            address implementationToRecord = alreadySameAddress ? candidateImplementation : currentImplementation;
+            _setDeploymentAddress(env, "StakingManagerImplementation", implementationToRecord);
             return;
         }
 
-        _printNextAction(gov, governance, operationData, predecessor, salt, delay, op, candidateImplementation);
+        _printNextAction(governance, operationData, predecessor, salt, delay, op);
 
         if (op.done) {
             address postImplementation = _proxyImplementation(stakingManagerProxy);
@@ -137,18 +138,13 @@ contract PrintStakingManagerUpgradePayload is BaseScript {
     }
 
     function _printNextAction(
-        OllaGovernance gov,
         address governance,
         bytes memory operationData,
         bytes32 predecessor,
         bytes32 salt,
         uint256 delay,
-        OperationState memory op,
-        address candidateImplementation
+        OperationState memory op
     ) internal view {
-        gov;
-        candidateImplementation;
-
         bool known = op.pending || op.ready || op.done;
 
         if (!known) {

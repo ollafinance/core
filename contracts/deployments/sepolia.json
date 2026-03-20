@@ -24,7 +24,7 @@
     "WithdrawalQueueProxy": "0x12a9d18085ca2725b4060ea1ffb98a6b36902888",
     "RewardsAccumulatorImplementation": "0x8982998113806aba90cbe70e4c0d8e2121fe048e",
     "RewardsAccumulatorProxy": "0xc9d7235cb57e62e36c4c814fd80226d1ce6907fb",
-    "StakingManagerImplementation": "0x572FCed312fa5d427E6BE8a8B2E38586ea011c6c",
+    "StakingManagerImplementation": "0x572fced312fa5d427e6be8a8b2e38586ea011c6c",
     "StakingManagerProxy": "0xde847897cb4d964fba3022df3cd9ed7f520ba3be",
     "StakingProviderRegistryImplementation": "0x402c29f730f1f37db202fba6cf8c5e59cc716b07",
     "StakingProviderRegistryProxy": "0x62eb3a17629c8b600d494b88232874866272ae65",
