@@ -48,6 +48,10 @@ cd contracts
 COUNT=5 forge script script/provider/AddKeys.s.sol --broadcast  # REGISTRY defaults to StakingProviderRegistryProxy; COUNT defaults to 5
 ```
 
+> **Note:** The registry rejects duplicate attester addresses. Running `AddKeys` twice with the
+> same `COUNT` will revert because the script generates deterministic addresses. To add more keys,
+> either drip existing keys first or increase `COUNT` beyond the previous value.
+
 ## Grant operator
 
 ```bash

@@ -442,6 +442,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @param stakedAmount The amount staked for this attester.
     function _setActive(address attester, uint256 stakedAmount) internal {
         AttesterInfo storage info = _attesterMap[attester];
+        if (info.attester != address(0)) {
+            revert StakingManager__AttesterAlreadyActive(attester);
+        }
         info.attester = attester;
         info.stakedAmount = stakedAmount;
         ++_attesterCount;

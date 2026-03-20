@@ -10,6 +10,8 @@ import { BaseScript } from "../base/BaseScript.s.sol";
 /// @title AddKeys
 /// @notice Adds N dummy keystores to the staking provider registry.
 /// @dev Keys are not used by the mock rollup, but must be present for StakingManager.stake().
+///      Attester addresses are deterministic — running twice with the same COUNT will revert
+///      because the registry rejects duplicate attester addresses.
 contract AddKeys is BaseScript {
     function run() external {
         address stakingProviderRegistry = _addrOrDeployment(

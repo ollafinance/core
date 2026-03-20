@@ -63,16 +63,20 @@ contract StakingProviderRegistryUpgradeTest is Test {
         registry.initialize(stakingManager, providerAdmin, providerRewardsRecipient, defaultAdmin);
     }
 
-    function _createMockKeys(uint256 count) internal pure returns (IStakingManager.KeyStore[] memory) {
+    uint256 internal _nextAttesterOffset;
+
+    function _createMockKeys(uint256 count) internal returns (IStakingManager.KeyStore[] memory) {
         IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](count);
         for (uint256 i; i < count; ++i) {
+            uint256 idx = _nextAttesterOffset + i;
             keys[i] = IStakingManager.KeyStore({
-                attester: address(uint160(i + 1)),
-                publicKeyG1: G1Point({ x: i, y: i + 1 }),
-                publicKeyG2: G2Point({ x0: i, x1: i + 1, y0: i + 2, y1: i + 3 }),
-                proofOfPossession: G1Point({ x: i + 10, y: i + 11 })
+                attester: address(uint160(idx + 1)),
+                publicKeyG1: G1Point({ x: idx, y: idx + 1 }),
+                publicKeyG2: G2Point({ x0: idx, x1: idx + 1, y0: idx + 2, y1: idx + 3 }),
+                proofOfPossession: G1Point({ x: idx + 10, y: idx + 11 })
             });
         }
+        _nextAttesterOffset += count;
         return keys;
     }
 
