@@ -85,15 +85,18 @@ contract OllaVault is
     /// @notice Cumulative instant redemption fees collected, tracked for Core accounting.
     uint256 public cumulativeExitFees;
 
+    /// @notice Cumulative slashing adjustments tracked for Core accounting.
+    uint256 public cumulativeSlashingAdjustments;
+
     /// @notice Cached claimable shares per controller for O(1) maxRedeem.
     mapping(address controller => uint256 shares) private _claimableShares;
 
     /// @notice Storage gap for upgradability.
-    /// @dev State variables occupy 15 slots. When adding new state variables, append them above
+    /// @dev State variables occupy 16 slots. When adding new state variables, append them above
     ///      this gap and reduce its length by the number of slots consumed.
     // Reserved storage gap for future upgrades; intentionally unused.
     // slither-disable-next-line unused-state
-    uint256[49] private __gap;
+    uint256[48] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -448,9 +451,9 @@ contract OllaVault is
             _finalizedUnclaimedAssets += finalizedAmount;
         }
 
-        // Correct flow accounting: slashing adjustments reduce the withdrawal liability.
+        // Track slashing adjustments separately to preserve cumulativeWithdrawals monotonicity.
         if (totalAdjusted > 0) {
-            cumulativeWithdrawals -= totalAdjusted;
+            cumulativeSlashingAdjustments += totalAdjusted;
         }
 
         // Update per-controller claimable shares for O(1) maxRedeem.

@@ -480,6 +480,10 @@ interface IOllaVault {
     /// @return The cumulative withdrawals.
     function cumulativeWithdrawals() external view returns (uint256);
 
+    /// @notice Returns cumulative slashing adjustments tracked by the vault.
+    /// @return The cumulative slashing adjustments.
+    function cumulativeSlashingAdjustments() external view returns (uint256);
+
     /// @notice Returns cumulative instant redemption fees collected by the vault.
     /// @return The cumulative exit fees.
     function cumulativeExitFees() external view returns (uint256);
