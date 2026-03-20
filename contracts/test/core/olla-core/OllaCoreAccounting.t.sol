@@ -182,8 +182,10 @@ contract OllaCoreAccountingTest is Test {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: 12 * DECIMALS,
             cumulativeWithdrawals: 4 * DECIMALS,
+            cumulativeSlashingAdjustments: 0,
             latestReportCumulativeDeposits: 5 * DECIMALS,
-            latestReportCumulativeWithdrawals: 1 * DECIMALS
+            latestReportCumulativeWithdrawals: 1 * DECIMALS,
+            latestReportCumulativeSlashingAdjustments: 0
         });
 
         (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
@@ -191,6 +193,48 @@ contract OllaCoreAccountingTest is Test {
         assertEq(netDeposits, 7 * DECIMALS, "net deposits");
         assertEq(netWithdrawals, 3 * DECIMALS, "net withdrawals");
         assertEq(netFlows, int256(4 * DECIMALS), "net flows");
+    }
+
+    /// @notice _computeNetFlows subtracts slashing adjustment delta from netWithdrawals.
+    function test_ComputeNetFlows_WithSlashingAdjustments() external view {
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
+            cumulativeDeposits: 12 * DECIMALS,
+            cumulativeWithdrawals: 10 * DECIMALS,
+            cumulativeSlashingAdjustments: 3 * DECIMALS,
+            latestReportCumulativeDeposits: 5 * DECIMALS,
+            latestReportCumulativeWithdrawals: 2 * DECIMALS,
+            latestReportCumulativeSlashingAdjustments: 1 * DECIMALS
+        });
+
+        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+
+        // netDeposits = 12 - 5 = 7
+        assertEq(netDeposits, 7 * DECIMALS, "net deposits with adjustments");
+        // rawNetWithdrawals = 10 - 2 = 8, adjustmentDelta = 3 - 1 = 2, netWithdrawals = 8 - 2 = 6
+        assertEq(netWithdrawals, 6 * DECIMALS, "net withdrawals reduced by slashing adjustment delta");
+        // netFlows = 7 - 6 = 1
+        assertEq(netFlows, int256(1 * DECIMALS), "net flows with slashing adjustments");
+    }
+
+    /// @notice When slashing adjustment delta exceeds raw netWithdrawals, netWithdrawals floors at zero.
+    function test_ComputeNetFlows_SlashingAdjustmentExceedsWithdrawals() external view {
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
+            cumulativeDeposits: 10 * DECIMALS,
+            cumulativeWithdrawals: 5 * DECIMALS,
+            cumulativeSlashingAdjustments: 4 * DECIMALS,
+            latestReportCumulativeDeposits: 5 * DECIMALS,
+            latestReportCumulativeWithdrawals: 2 * DECIMALS,
+            latestReportCumulativeSlashingAdjustments: 0
+        });
+
+        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+
+        // netDeposits = 10 - 5 = 5
+        assertEq(netDeposits, 5 * DECIMALS, "net deposits");
+        // rawNetWithdrawals = 5 - 2 = 3, adjustmentDelta = 4 - 0 = 4, 3 < 4 → floor at 0
+        assertEq(netWithdrawals, 0, "net withdrawals floored at zero when adjustment exceeds raw");
+        // netFlows = 5 - 0 = 5
+        assertEq(netFlows, int256(5 * DECIMALS), "net flows when withdrawals floored");
     }
 
     function test_ComputeTotalAssets() external view {
@@ -623,8 +667,10 @@ contract OllaCoreAccountingTest is Test {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: cumulativeDeposits,
             cumulativeWithdrawals: cumulativeWithdrawals,
+            cumulativeSlashingAdjustments: 0,
             latestReportCumulativeDeposits: latestReportCumulativeDeposits,
-            latestReportCumulativeWithdrawals: latestReportCumulativeWithdrawals
+            latestReportCumulativeWithdrawals: latestReportCumulativeWithdrawals,
+            latestReportCumulativeSlashingAdjustments: 0
         });
 
         (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
@@ -641,6 +687,44 @@ contract OllaCoreAccountingTest is Test {
         assertEq(netDeposits, expectedNetDeposits, "net deposits fuzz");
         assertEq(netWithdrawals, expectedNetWithdrawals, "net withdrawals fuzz");
         assertEq(netFlows, expectedNetFlows, "net flows fuzz");
+    }
+
+    /// @notice Fuzz _computeNetFlows with slashing adjustments included.
+    function testFuzz_ComputeNetFlows_WithSlashingAdjustments(
+        uint96 cumulativeDeposits,
+        uint96 cumulativeWithdrawals,
+        uint96 cumulativeSlashingAdj,
+        uint96 latestReportCumulativeDeposits,
+        uint96 latestReportCumulativeWithdrawals,
+        uint96 latestReportCumulativeSlashingAdj
+    ) external view {
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
+            cumulativeDeposits: cumulativeDeposits,
+            cumulativeWithdrawals: cumulativeWithdrawals,
+            cumulativeSlashingAdjustments: cumulativeSlashingAdj,
+            latestReportCumulativeDeposits: latestReportCumulativeDeposits,
+            latestReportCumulativeWithdrawals: latestReportCumulativeWithdrawals,
+            latestReportCumulativeSlashingAdjustments: latestReportCumulativeSlashingAdj
+        });
+
+        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+
+        uint256 expectedNetDeposits =
+            cumulativeDeposits > latestReportCumulativeDeposits
+            ? cumulativeDeposits - latestReportCumulativeDeposits
+            : 0;
+        uint256 rawNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals
+            ? cumulativeWithdrawals - latestReportCumulativeWithdrawals
+            : 0;
+        uint256 adjustmentDelta = cumulativeSlashingAdj > latestReportCumulativeSlashingAdj
+            ? cumulativeSlashingAdj - latestReportCumulativeSlashingAdj
+            : 0;
+        uint256 expectedNetWithdrawals = rawNetWithdrawals > adjustmentDelta ? rawNetWithdrawals - adjustmentDelta : 0;
+        int256 expectedNetFlows = int256(expectedNetDeposits) - int256(expectedNetWithdrawals);
+
+        assertEq(netDeposits, expectedNetDeposits, "net deposits fuzz with adj");
+        assertEq(netWithdrawals, expectedNetWithdrawals, "net withdrawals fuzz with adj");
+        assertEq(netFlows, expectedNetFlows, "net flows fuzz with adj");
     }
 
     function testFuzz_ComputeGrossRewards(uint96 oldTotalAssets, uint96 newTotalAssets, int96 netFlows) external view {

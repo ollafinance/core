@@ -35,8 +35,9 @@ contract OllaCoreHarnessForCumulativeTest is OllaCore {
 }
 
 /// @title CumulativeWithdrawalsUnderflowTest
-/// @notice Tests that `cumulativeWithdrawals -= totalAdjusted` in OllaVault.finalizeWithdrawals
-///         does not underflow under normal slashing, severe slashing, or multiple finalization rounds.
+/// @notice Verifies that the fix for issue #335 works correctly: cumulativeWithdrawals
+///         remains monotonic (never decreases) and slashing adjustments are tracked via
+///         a separate cumulativeSlashingAdjustments counter.
 /// @dev Uses exposedApplyAccountingUpdates to inject stakedPrincipal into the accounting state so
 ///      that slashingDelta properly reduces the exchange rate used for withdrawal finalization.
 ///      The MockStakingManager cachedState must be kept in sync with the accounting state to pass
@@ -140,15 +141,12 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
                                 TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Normal slashing: cumulativeWithdrawals does not underflow after adjustment.
-    /// @dev Deposits 100 ether, injects 50 ether as stakedPrincipal to set a meaningful exchange
-    ///      rate, then introduces 20 ether slashingDelta to reduce the rate before finalization.
-    function test_CumulativeWithdrawals_NoUnderflow_NormalSlashing() external {
+    /// @notice Normal slashing: cumulativeWithdrawals stays monotonic, adjustment tracked separately.
+    function test_CumulativeWithdrawals_MonotonicAfterSlashing() external {
         uint256 depositAmount = 100 ether;
         uint256 shares = _deposit(alice, depositAmount);
 
         // Set stakedPrincipal to 50 ether so totalAssets = 100 (buffered) + 50 (staked) = 150
-        // Exchange rate will be > 1:1, giving users more assets per share
         _injectSlashing(50 ether, 0);
 
         // Request partial redeem at the elevated rate
@@ -161,25 +159,31 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         uint256 cumulativeBefore = vault.cumulativeWithdrawals();
         assertEq(cumulativeBefore, assetsExpected, "cumulativeWithdrawals should equal assetsExpected");
 
+        uint256 slashingAdjBefore = vault.cumulativeSlashingAdjustments();
+        assertEq(slashingAdjBefore, 0, "cumulativeSlashingAdjustments should be zero before any slashing");
+
         // Inject slashing: reduce stakedPrincipal from 50 to 30 (20 ether slashed)
-        // New totalAssets = 100 (buffered) + 30 (staked) = 130, down from 150
-        // This drops the exchange rate, triggering slashing adjustment on finalization
         _injectSlashing(30 ether, 20 ether);
 
         // Rebalance triggers finalization with the slashed rate
         core.rebalance();
 
-        // cumulativeWithdrawals should still be valid (no underflow)
+        // cumulativeWithdrawals should NOT decrease (monotonicity preserved)
         uint256 cumulativeAfter = vault.cumulativeWithdrawals();
-        assertLe(
-            cumulativeAfter, cumulativeBefore, "cumulativeWithdrawals should decrease or stay same after adjustment"
-        );
+        assertGe(cumulativeAfter, cumulativeBefore, "cumulativeWithdrawals must not decrease after slashing");
+
+        // cumulativeSlashingAdjustments should have increased
+        uint256 slashingAdjAfter = vault.cumulativeSlashingAdjustments();
+        assertGt(slashingAdjAfter, slashingAdjBefore, "cumulativeSlashingAdjustments should increase");
+
+        // The request should be finalized with adjusted amount
+        IWithdrawalQueue.WithdrawalRequest memory reqAfter = queue.getRequest(requestId);
+        assertTrue(reqAfter.finalized, "request should be finalized");
+        assertLe(reqAfter.assetsExpected, assetsExpected, "payout should be reduced or equal due to slashing");
     }
 
-    /// @notice Severe slashing (90% loss): cumulativeWithdrawals does not underflow.
-    /// @dev Deposits 200 ether (both users), injects stakedPrincipal, then slashes 90%.
-    ///      Uses a partial redeem so the adjusted payout fits within the buffered assets.
-    function test_CumulativeWithdrawals_NoUnderflow_SevereSlashing() external {
+    /// @notice Severe slashing (90% loss): monotonicity holds, adjustment tracked.
+    function test_CumulativeWithdrawals_MonotonicAfterSevereSlashing() external {
         // Both alice and bob deposit to create sufficient buffered assets
         uint256 depositAmount = 100 ether;
         uint256 sharesAlice = _deposit(alice, depositAmount);
@@ -196,21 +200,21 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         assertGt(assetsExpected, 0, "assetsExpected should be positive");
 
         uint256 cumulativeBefore = vault.cumulativeWithdrawals();
-        assertEq(cumulativeBefore, assetsExpected, "cumulativeWithdrawals should track request");
+        uint256 slashingAdjBefore = vault.cumulativeSlashingAdjustments();
 
         // Severe slashing: stakedPrincipal drops from 100 to 10 (90 ether slashed)
-        // New totalAssets = 200 (buffered) + 10 (staked) = 210, down from 300
-        // The withdrawal rate drops significantly, so the adjustment will be large
         _injectSlashing(10 ether, 90 ether);
 
         // Rebalance should finalize with heavily reduced payout
         core.rebalance();
 
-        // No underflow -- the key invariant
-        // The fact that rebalance completed without revert proves cumulativeWithdrawals -= totalAdjusted
-        // did not underflow (Solidity 0.8+ would revert on underflow)
+        // Monotonicity preserved
         uint256 cumulativeAfter = vault.cumulativeWithdrawals();
-        assertLe(cumulativeAfter, cumulativeBefore, "cumulativeWithdrawals should not increase");
+        assertGe(cumulativeAfter, cumulativeBefore, "cumulativeWithdrawals must not decrease even under severe slash");
+
+        // Slashing adjustment tracked
+        uint256 slashingAdjAfter = vault.cumulativeSlashingAdjustments();
+        assertGt(slashingAdjAfter, slashingAdjBefore, "cumulativeSlashingAdjustments should increase");
 
         // The request should be finalized with adjusted amount
         IWithdrawalQueue.WithdrawalRequest memory reqAfter = queue.getRequest(requestId);
@@ -218,8 +222,8 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         assertLt(reqAfter.assetsExpected, assetsExpected, "payout should be reduced due to severe slashing");
     }
 
-    /// @notice Multiple finalization rounds: cumulativeWithdrawals invariant holds across cycles.
-    function test_CumulativeWithdrawals_NoUnderflow_MultipleFinalizationRounds() external {
+    /// @notice Multiple finalization rounds: monotonicity and adjustment tracking hold across cycles.
+    function test_CumulativeWithdrawals_MonotonicAcrossMultipleRounds() external {
         uint256 depositAmount = 100 ether;
         uint256 shares = _deposit(alice, depositAmount);
 
@@ -235,14 +239,19 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
 
         uint256 cumulativeAfterFirst = vault.cumulativeWithdrawals();
         assertGt(cumulativeAfterFirst, 0, "cumulativeWithdrawals should be positive after first request");
+        uint256 slashingAdjAfterFirst = vault.cumulativeSlashingAdjustments();
 
         // Second batch: request another partial redeem
         _warpPastCooldown();
         uint256 secondShares = shares / 4;
         _requestRedeem(alice, secondShares);
 
+        uint256 cumulativeAfterSecondRequest = vault.cumulativeWithdrawals();
+        assertGe(
+            cumulativeAfterSecondRequest, cumulativeAfterFirst, "cumulativeWithdrawals should grow after second request"
+        );
+
         // Apply slashing before finalizing second batch
-        // Reduce stakedPrincipal from 50 to 40 (10 ether slashed)
         _injectSlashing(40 ether, 10 ether);
 
         // Finalize second batch with slashing adjustment
@@ -250,28 +259,41 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         core.rebalance();
 
         uint256 cumulativeAfterSecond = vault.cumulativeWithdrawals();
-        // The fact that we got here without revert proves no underflow occurred
-        assertGt(cumulativeAfterSecond, 0, "cumulativeWithdrawals should remain positive");
+        assertGe(
+            cumulativeAfterSecond,
+            cumulativeAfterSecondRequest,
+            "cumulativeWithdrawals must not decrease after slashing finalization"
+        );
+        uint256 slashingAdjAfterSecond = vault.cumulativeSlashingAdjustments();
+        assertGe(
+            slashingAdjAfterSecond,
+            slashingAdjAfterFirst,
+            "cumulativeSlashingAdjustments must not decrease between rounds"
+        );
 
         // Third batch: request more shares
         _warpPastCooldown();
         uint256 thirdShares = shares / 4;
         _requestRedeem(alice, thirdShares);
 
-        // Apply more slashing: reduce stakedPrincipal from 40 to 15 (25 ether cumulative slash)
+        // Apply more slashing
         _injectSlashing(15 ether, 25 ether);
 
         _warpPastCooldown();
         core.rebalance();
 
-        // The fact that rebalance completed without revert confirms no underflow
         uint256 cumulativeAfterThird = vault.cumulativeWithdrawals();
-        assertGt(cumulativeAfterThird, 0, "cumulativeWithdrawals should remain positive after multiple rounds");
+        assertGe(
+            cumulativeAfterThird,
+            cumulativeAfterSecond,
+            "cumulativeWithdrawals must not decrease after third round slashing"
+        );
+        uint256 slashingAdjAfterThird = vault.cumulativeSlashingAdjustments();
+        assertGe(slashingAdjAfterThird, slashingAdjAfterSecond, "cumulativeSlashingAdjustments monotonic across rounds");
     }
 
-    /// @notice Invariant: after any slashing adjustment, cumulativeWithdrawals is correct.
-    /// @dev Multi-user scenario with deposits, withdrawals, and slashing.
-    function test_CumulativeWithdrawals_InvariantHoldsAfterAdjustment() external {
+    /// @notice Multi-user: monotonicity and adjustment tracking across users.
+    function test_CumulativeWithdrawals_MonotonicMultiUser() external {
         uint256 depositAmount = 200 ether;
         uint256 sharesAlice = _deposit(alice, depositAmount);
         _deposit(bob, depositAmount);
@@ -288,7 +310,7 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         uint256 cumulativeBefore = vault.cumulativeWithdrawals();
         assertEq(cumulativeBefore, assetsExpectedAlice, "cumulative should track alice's request");
 
-        // Apply moderate slashing: reduce stakedPrincipal from 100 to 60 (40 ether slashed)
+        // Apply moderate slashing
         _injectSlashing(60 ether, 40 ether);
 
         // Finalize alice's withdrawal with slashing
@@ -296,9 +318,12 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
 
         uint256 cumulativeAfterAlice = vault.cumulativeWithdrawals();
 
-        // Key invariant: cumulativeWithdrawals = original - totalAdjusted
-        // It should be <= cumulativeBefore
-        assertLe(cumulativeAfterAlice, cumulativeBefore, "cumulative should decrease or stay same");
+        // Monotonicity: cumulativeWithdrawals must NOT decrease
+        assertGe(cumulativeAfterAlice, cumulativeBefore, "cumulativeWithdrawals must not decrease after alice slash");
+
+        // Slashing adjustment should be tracked
+        uint256 slashingAdjAfterAlice = vault.cumulativeSlashingAdjustments();
+        assertGt(slashingAdjAfterAlice, 0, "cumulativeSlashingAdjustments should be positive after slashed finalize");
 
         // Bob requests partial redeem
         _warpPastCooldown();
@@ -314,8 +339,7 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         _warpPastCooldown();
         core.rebalance();
 
-        // The fact that rebalance completed without revert confirms the invariant held
         uint256 cumulativeFinal = vault.cumulativeWithdrawals();
-        assertGt(cumulativeFinal, 0, "cumulativeWithdrawals should be positive in the end");
+        assertGe(cumulativeFinal, cumulativeAfterBob, "cumulativeWithdrawals must not decrease after Bob's finalize");
     }
 }
