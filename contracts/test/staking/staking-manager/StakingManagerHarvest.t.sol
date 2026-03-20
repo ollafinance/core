@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
+import { Vm } from "@forge-std/Test.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
 /// @title StakingManagerHarvestTest
@@ -184,6 +186,89 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         uint256 harvested = stakingManager.harvestRewards();
 
         assertEq(harvested, 50 ether, "Should return total rewards (no individual attester iteration)");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    CLAIM FAILURE GRACEFUL HANDLING
+    //////////////////////////////////////////////////////////////*/
+
+    function test_HarvestRewards_ReturnsZeroWhenClaimReverts() external {
+        uint256 rewardAmount = 10 ether;
+        _setupAttestersWithRewards(1, rewardAmount);
+
+        // Make rollup claim revert
+        rollup.setClaimShouldFail(address(rewardsAccumulator), true);
+
+        vm.prank(core);
+        uint256 harvested = stakingManager.harvestRewards();
+
+        assertEq(harvested, 0, "Should return 0 when claim reverts");
+    }
+
+    function test_HarvestRewards_EmitsRewardsHarvestFailedWhenClaimReverts() external {
+        _setupStakedAttesters(1);
+
+        rollup.setClaimShouldFail(address(rewardsAccumulator), true);
+
+        vm.expectEmit(address(stakingManager));
+        emit RewardsHarvestFailed(abi.encodeWithSelector(IMockAztecRollup.MockAztecRollup__ClaimFailed.selector));
+
+        vm.prank(core);
+        stakingManager.harvestRewards();
+    }
+
+    function test_HarvestRewards_DoesNotEmitRewardsHarvestedWhenClaimReverts() external {
+        uint256 rewardAmount = 10 ether;
+        _setupAttestersWithRewards(1, rewardAmount);
+
+        rollup.setClaimShouldFail(address(rewardsAccumulator), true);
+
+        vm.recordLogs();
+        vm.prank(core);
+        stakingManager.harvestRewards();
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+
+        bytes32 harvestedTopic = RewardsHarvested.selector;
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].topics[0] == harvestedTopic) {
+                fail("RewardsHarvested should not be emitted when claim fails");
+            }
+        }
+    }
+
+    function test_HarvestRewards_DoesNotTransferTokensWhenClaimReverts() external {
+        uint256 rewardAmount = 10 ether;
+        _setupAttestersWithRewards(1, rewardAmount);
+
+        rollup.setClaimShouldFail(address(rewardsAccumulator), true);
+
+        uint256 accumulatorBalanceBefore = aztec.balanceOf(address(rewardsAccumulator));
+
+        vm.prank(core);
+        stakingManager.harvestRewards();
+
+        assertEq(
+            aztec.balanceOf(address(rewardsAccumulator)),
+            accumulatorBalanceBefore,
+            "Accumulator balance should not change when claim fails"
+        );
+    }
+
+    function test_HarvestRewards_RecoverAfterClaimFailure() external {
+        uint256 rewardAmount = 10 ether;
+        _setupAttestersWithRewards(1, rewardAmount);
+
+        // First call: claim fails
+        rollup.setClaimShouldFail(address(rewardsAccumulator), true);
+        vm.prank(core);
+        uint256 harvestedFail = stakingManager.harvestRewards();
+        assertEq(harvestedFail, 0, "Should return 0 on failure");
+
+        // Second call: claim succeeds
+        rollup.setClaimShouldFail(address(rewardsAccumulator), false);
+        vm.prank(core);
+        uint256 harvestedSuccess = stakingManager.harvestRewards();
+        assertEq(harvestedSuccess, rewardAmount, "Should harvest rewards after recovery");
     }
 
     /*//////////////////////////////////////////////////////////////

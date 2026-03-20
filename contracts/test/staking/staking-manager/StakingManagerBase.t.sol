@@ -52,6 +52,7 @@ abstract contract StakingManagerBaseTest is Test {
     event UnstakeFinalized(address indexed attester, uint256 indexed amount);
     event UnstakedFundsClaimed(uint256 indexed amount);
     event RewardsHarvested(uint256 indexed amount);
+    event RewardsHarvestFailed(bytes reason);
     event QueueDripped(address indexed attester);
     event AttesterRemoved(address indexed attester);
 
