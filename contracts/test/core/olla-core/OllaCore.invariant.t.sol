@@ -380,6 +380,11 @@ contract OllaCoreInvariantTest is Test {
             flows.cumulativeWithdrawals,
             "last report withdrawals equals cumulative withdrawals"
         );
+        assertEq(
+            flows.latestReportCumulativeSlashingAdjustments,
+            flows.cumulativeSlashingAdjustments,
+            "last report slashing adjustments equals cumulative slashing adjustments"
+        );
     }
 
     function invariant_LatestReportTimestampMonotonic() external {
@@ -953,6 +958,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
     /// @notice Cumulative counter monotonicity
     uint256 public ghost_previousCumulativeDeposits;
     uint256 public ghost_previousCumulativeWithdrawals;
+    uint256 public ghost_previousCumulativeSlashingAdjustments;
 
     /// @notice Slashing delta monotonicity (tracks accounting state, not mock)
     uint256 public ghost_previousSlashingDelta;
@@ -1267,6 +1273,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         IOllaCore.FlowCounters memory flows = core.flowCounters();
         ghost_previousCumulativeDeposits = flows.cumulativeDeposits;
         ghost_previousCumulativeWithdrawals = flows.cumulativeWithdrawals;
+        ghost_previousCumulativeSlashingAdjustments = flows.cumulativeSlashingAdjustments;
     }
 
     function _snapshotSlashingDelta() internal {
@@ -1417,7 +1424,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             CUMULATIVE COUNTERS NEVER DECREASE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice cumulativeDeposits and cumulativeWithdrawals never decrease.
+    /// @notice cumulativeDeposits, cumulativeWithdrawals, and cumulativeSlashingAdjustments never decrease.
     function invariant_CumulativeCountersNeverDecrease() external view {
         IOllaCore.FlowCounters memory flows = core.flowCounters();
 
@@ -1430,6 +1437,11 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             flows.cumulativeWithdrawals,
             handler.ghost_previousCumulativeWithdrawals(),
             "cumulativeWithdrawals must never decrease"
+        );
+        assertGe(
+            flows.cumulativeSlashingAdjustments,
+            handler.ghost_previousCumulativeSlashingAdjustments(),
+            "cumulativeSlashingAdjustments must never decrease"
         );
     }
 

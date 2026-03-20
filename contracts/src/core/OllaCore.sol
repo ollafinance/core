@@ -547,6 +547,7 @@ contract OllaCore is
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         flows.cumulativeDeposits = vaultRef.cumulativeDeposits();
         flows.cumulativeWithdrawals = vaultRef.cumulativeWithdrawals();
+        flows.cumulativeSlashingAdjustments = vaultRef.cumulativeSlashingAdjustments();
         return flows;
     }
 
@@ -854,6 +855,7 @@ contract OllaCore is
         int256 netFlows,
         uint256 updatedCumulativeDeposits,
         uint256 updatedCumulativeWithdrawals,
+        uint256 updatedCumulativeSlashingAdjustments,
         uint256 rewardsSnapshot
     ) internal {
         IOllaCore.LatestReport storage report = _latestReport;
@@ -869,6 +871,7 @@ contract OllaCore is
         IOllaCore.FlowCounters storage flows = _flowCounters;
         flows.latestReportCumulativeDeposits = updatedCumulativeDeposits;
         flows.latestReportCumulativeWithdrawals = updatedCumulativeWithdrawals;
+        flows.latestReportCumulativeSlashingAdjustments = updatedCumulativeSlashingAdjustments;
     }
 
     // Writes all accounting bucket fields atomically.
@@ -928,6 +931,7 @@ contract OllaCore is
             netFlows,
             flowsSnapshot.cumulativeDeposits,
             flowsSnapshot.cumulativeWithdrawals,
+            flowsSnapshot.cumulativeSlashingAdjustments,
             currentRewards
         );
         _latestReportCumulativeExitFees = vaultRef.cumulativeExitFees();
@@ -1152,8 +1156,10 @@ contract OllaCore is
         flowsSnapshot = IOllaCore.FlowCounters({
             cumulativeDeposits: vaultRef.cumulativeDeposits(),
             cumulativeWithdrawals: vaultRef.cumulativeWithdrawals(),
+            cumulativeSlashingAdjustments: vaultRef.cumulativeSlashingAdjustments(),
             latestReportCumulativeDeposits: _flowCounters.latestReportCumulativeDeposits,
-            latestReportCumulativeWithdrawals: _flowCounters.latestReportCumulativeWithdrawals
+            latestReportCumulativeWithdrawals: _flowCounters.latestReportCumulativeWithdrawals,
+            latestReportCumulativeSlashingAdjustments: _flowCounters.latestReportCumulativeSlashingAdjustments
         });
         (netFlows,,) = _computeNetFlows(flowsSnapshot);
         uint256 currentCumulativeExitFees = vaultRef.cumulativeExitFees();
@@ -1321,6 +1327,13 @@ contract OllaCore is
         netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
             ? flows.cumulativeWithdrawals - flows.latestReportCumulativeWithdrawals
             : 0;
+        // Subtract slashing adjustments that occurred since last report.
+        // slither-disable-next-line timestamp
+        uint256 adjustmentsSinceReport = flows.cumulativeSlashingAdjustments
+                > flows.latestReportCumulativeSlashingAdjustments
+            ? flows.cumulativeSlashingAdjustments - flows.latestReportCumulativeSlashingAdjustments
+            : 0;
+        netWithdrawals = netWithdrawals > adjustmentsSinceReport ? netWithdrawals - adjustmentsSinceReport : 0;
         netFlows = SafeCast.toInt256(netDeposits) - SafeCast.toInt256(netWithdrawals);
         return (netFlows, netDeposits, netWithdrawals);
     }
