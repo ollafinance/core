@@ -43,6 +43,9 @@ interface IStakingProviderRegistry {
     /// @notice Thrown when a caller is not authorized governance.
     error StakingProviderRegistry__UnauthorizedGovernance(address caller);
 
+    /// @notice Thrown when an attester key is already in the queue.
+    error StakingProviderRegistry__DuplicateAttester(address attester);
+
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
     //////////////////////////////////////////////////////////////*/

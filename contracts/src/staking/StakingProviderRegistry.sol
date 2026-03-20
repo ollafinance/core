@@ -51,11 +51,14 @@ contract StakingProviderRegistry is
     /// @dev FIFO queue of attester keys.
     Queue private _providerQueue;
 
+    /// @dev Tracks attester addresses currently in the queue to prevent duplicate enqueuing.
+    mapping(address attester => bool inQueue) private _registeredAttesters;
+
     /// @notice Storage gap for future upgrades.
-    /// @dev State variables occupy 4 slots (including struct members). When adding new state
+    /// @dev State variables occupy 5 slots (including struct members). When adding new state
     ///      variables, append them above this gap and reduce its length by the number of slots consumed.
     // slither-disable-next-line unused-state
-    uint256[49] private __gap;
+    uint256[48] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   MODIFIERS
@@ -129,10 +132,15 @@ contract StakingProviderRegistry is
 
         address[] memory attesters = new address[](length);
         for (uint256 i; i < length; ++i) {
+            address attester = keyStores[i].attester;
+            if (_registeredAttesters[attester]) {
+                revert StakingProviderRegistry__DuplicateAttester(attester);
+            }
+            _registeredAttesters[attester] = true;
             // Return value intentionally ignored - enqueue always succeeds for valid inputs
             // slither-disable-next-line unused-return
             _providerQueue.enqueue(keyStores[i]);
-            attesters[i] = keyStores[i].attester;
+            attesters[i] = attester;
         }
 
         emit KeysAddedToProvider(attesters);
@@ -147,6 +155,7 @@ contract StakingProviderRegistry is
         uint256 toDrip = count > queueLength ? queueLength : count;
         for (uint256 i; i < toDrip; ++i) {
             IStakingManager.KeyStore memory keyStore = _providerQueue.dequeue();
+            _registeredAttesters[keyStore.attester] = false;
             emit QueueDripped(keyStore.attester);
         }
     }
@@ -178,6 +187,7 @@ contract StakingProviderRegistry is
     {
         if (_providerQueue.length() == 0) revert StakingProviderRegistry__QueueEmpty();
         keyStore = _providerQueue.dequeue();
+        _registeredAttesters[keyStore.attester] = false;
         return keyStore;
     }
 

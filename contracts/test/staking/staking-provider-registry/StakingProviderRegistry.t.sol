@@ -64,21 +64,33 @@ contract StakingProviderRegistryTest is Test {
                                HELPERS
     //////////////////////////////////////////////////////////////*/
 
+    uint256 internal _nextAttesterOffset;
+
     function _createMockKeys(uint256 count) internal pure returns (IStakingManager.KeyStore[] memory) {
+        return _createMockKeysFrom(count, 0);
+    }
+
+    function _createMockKeysFrom(uint256 count, uint256 offset)
+        internal
+        pure
+        returns (IStakingManager.KeyStore[] memory)
+    {
         IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](count);
         for (uint256 i; i < count; ++i) {
+            uint256 idx = offset + i;
             keys[i] = IStakingManager.KeyStore({
-                attester: address(uint160(i + 1)),
-                publicKeyG1: G1Point({ x: i, y: i + 1 }),
-                publicKeyG2: G2Point({ x0: i, x1: i + 1, y0: i + 2, y1: i + 3 }),
-                proofOfPossession: G1Point({ x: i + 10, y: i + 11 })
+                attester: address(uint160(idx + 1)),
+                publicKeyG1: G1Point({ x: idx, y: idx + 1 }),
+                publicKeyG2: G2Point({ x0: idx, x1: idx + 1, y0: idx + 2, y1: idx + 3 }),
+                proofOfPossession: G1Point({ x: idx + 10, y: idx + 11 })
             });
         }
         return keys;
     }
 
     function _addKeys(uint256 count) internal {
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
+        IStakingManager.KeyStore[] memory keys = _createMockKeysFrom(count, _nextAttesterOffset);
+        _nextAttesterOffset += count;
         vm.prank(providerAdmin);
         registry.addKeysToProvider(keys);
     }
@@ -220,6 +232,90 @@ contract StakingProviderRegistryTest is Test {
         vm.expectRevert(IStakingProviderRegistry.StakingProviderRegistry__ZeroAmount.selector);
         vm.prank(providerAdmin);
         registry.addKeysToProvider(keys);
+    }
+
+    function test_RevertWhen_AddKeysToProvider_DuplicateInSameBatch() external {
+        IStakingManager.KeyStore[] memory keys = new IStakingManager.KeyStore[](2);
+        keys[0] = IStakingManager.KeyStore({
+            attester: address(uint160(999)),
+            publicKeyG1: G1Point({ x: 0, y: 1 }),
+            publicKeyG2: G2Point({ x0: 0, x1: 1, y0: 2, y1: 3 }),
+            proofOfPossession: G1Point({ x: 10, y: 11 })
+        });
+        keys[1] = keys[0]; // duplicate
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStakingProviderRegistry.StakingProviderRegistry__DuplicateAttester.selector, address(uint160(999))
+            )
+        );
+        vm.prank(providerAdmin);
+        registry.addKeysToProvider(keys);
+    }
+
+    function test_RevertWhen_AddKeysToProvider_DuplicateAcrossBatches() external {
+        _addKeys(3);
+
+        // Try to add a key with the same attester address as the first batch
+        IStakingManager.KeyStore[] memory keys = _createMockKeysFrom(1, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStakingProviderRegistry.StakingProviderRegistry__DuplicateAttester.selector, keys[0].attester
+            )
+        );
+        vm.prank(providerAdmin);
+        registry.addKeysToProvider(keys);
+    }
+
+    function test_AddKeysToProvider_AllowsReAddAfterDequeue() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeysFrom(1, 0);
+        vm.prank(providerAdmin);
+        registry.addKeysToProvider(keys);
+
+        // Dequeue via staking manager
+        vm.prank(stakingManager);
+        registry.getAttesterKeystore();
+
+        // Same attester can be re-added after dequeue
+        vm.prank(providerAdmin);
+        registry.addKeysToProvider(keys);
+        assertEq(registry.getQueueLength(), 1);
+    }
+
+    function test_RevertWhen_AddKeysToProvider_DuplicateAgainstPartiallyConsumedQueue() external {
+        // Add 3 keys (attesters at offsets 0, 1, 2)
+        _addKeys(3);
+
+        // Dequeue the first key (offset 0), leaving offsets 1 and 2 in queue
+        vm.prank(stakingManager);
+        registry.getAttesterKeystore();
+
+        assertEq(registry.getQueueLength(), 2);
+
+        // Try to add a key matching offset 1 (still in queue) — should revert
+        IStakingManager.KeyStore[] memory duplicate = _createMockKeysFrom(1, 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStakingProviderRegistry.StakingProviderRegistry__DuplicateAttester.selector, duplicate[0].attester
+            )
+        );
+        vm.prank(providerAdmin);
+        registry.addKeysToProvider(duplicate);
+    }
+
+    function test_AddKeysToProvider_AllowsReAddAfterDrip() external {
+        IStakingManager.KeyStore[] memory keys = _createMockKeysFrom(1, 0);
+        vm.prank(providerAdmin);
+        registry.addKeysToProvider(keys);
+
+        // Drip the key
+        vm.prank(providerAdmin);
+        registry.dripQueue(1);
+
+        // Same attester can be re-added after drip
+        vm.prank(providerAdmin);
+        registry.addKeysToProvider(keys);
+        assertEq(registry.getQueueLength(), 1);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -438,11 +534,15 @@ contract StakingProviderRegistryTest is Test {
         cycleCount = uint8(bound(cycleCount, 1, 10));
 
         uint256 totalKeys;
+        uint256 offset;
         for (uint256 i; i < cycleCount; ++i) {
             uint8 addCount = uint8(bound(uint256(keccak256(abi.encode(i, "add"))), 1, 10));
             uint8 dripCount = uint8(bound(uint256(keccak256(abi.encode(i, "drip"))), 0, addCount));
 
-            _addKeys(addCount);
+            IStakingManager.KeyStore[] memory keys = _createMockKeysFrom(addCount, offset);
+            offset += addCount;
+            vm.prank(providerAdmin);
+            registry.addKeysToProvider(keys);
             totalKeys += addCount;
 
             if (dripCount > 0 && dripCount <= totalKeys) {
