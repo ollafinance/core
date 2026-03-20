@@ -252,37 +252,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /*//////////////////////////////////////////////////////////////
-                          MIGRATION FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice One-time migration to repair attesters incorrectly removed by refreshAttesterState
-    ///         while they were still in the rollup's entry queue (not yet activated in the GSE).
-    /// @param attesters The attester addresses that were incorrectly removed.
-    /// @param stakedAmounts The original staked amount per attester (activation threshold at time of stake).
-    function migrateQueuedAttesters(address[] calldata attesters, uint256[] calldata stakedAmounts)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        if (attesters.length != stakedAmounts.length) revert StakingManager__InvalidParameter();
-
-        for (uint256 i = 0; i < attesters.length; ++i) {
-            address attester = attesters[i];
-            uint256 amount = stakedAmounts[i];
-
-            if (attester == address(0) || amount == 0) revert StakingManager__InvalidParameter();
-            if (_attesterMap[attester].attester != address(0)) revert StakingManager__InvalidParameter();
-
-            _setActive(attester, amount);
-
-            if (_aggregateState.slashingDelta >= amount) {
-                _aggregateState.slashingDelta -= amount;
-            } else {
-                _aggregateState.slashingDelta = 0;
-            }
-        }
-    }
-
-    /*//////////////////////////////////////////////////////////////
                         PERMISSIONLESS FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
