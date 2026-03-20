@@ -13,6 +13,15 @@ abstract contract GovActionBase is BaseScript {
         bytes32 predecessor = _predecessor(gov, target, data);
         bytes32 salt = _salt();
         bytes32 operationId = gov.hashOperation(target, 0, data, predecessor, salt);
+        uint256 pk = _privateKey();
+        address caller = vm.addr(pk);
+
+        bool canPropose = gov.hasRole(gov.PROPOSER_ROLE(), caller);
+        bool canExecute = gov.hasRole(gov.EXECUTOR_ROLE(), caller) || gov.hasRole(gov.EXECUTOR_ROLE(), address(0));
+
+        console2.log("caller", caller);
+        console2.log("caller.canPropose", canPropose);
+        console2.log("caller.canExecute", canExecute);
 
         _logOperation("before", gov, operationId);
 
@@ -23,11 +32,15 @@ abstract contract GovActionBase is BaseScript {
         }
 
         uint256 delay = gov.getMinDelay();
-        uint256 pk = _privateKey();
+
+        bool isKnown = _isKnownOperation(gov, operationId);
+        if (!isKnown && !canPropose) {
+            revert("GovActionBase: caller lacks PROPOSER_ROLE");
+        }
 
         vm.startBroadcast(pk);
 
-        if (!_isKnownOperation(gov, operationId)) {
+        if (!isKnown) {
             if (delay == 0 && block.chainid == 31337 && block.timestamp == 1) {
                 vm.warp(block.timestamp + 1);
             }
@@ -36,6 +49,10 @@ abstract contract GovActionBase is BaseScript {
         }
 
         if (gov.isOperationReady(operationId)) {
+            if (!canExecute) {
+                vm.stopBroadcast();
+                revert("GovActionBase: caller lacks EXECUTOR_ROLE");
+            }
             gov.execute(target, 0, data, predecessor, salt);
             console2.log("executed operation");
         } else {

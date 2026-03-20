@@ -34,6 +34,29 @@ script/
 
 OllaCore starts **paused** after `initialize()`. Local dev deploys (`deployMocks`) auto-unpause during the deploy script. Production deploys remain paused — governance must call `unpause()` (requires `GUARDIAN_ROLE`) when ready to accept deposits.
 
+On strict chains (Sepolia/Mainnet), activation is a timelock flow:
+
+1. schedule `OllaCore.setVault(vault)`
+2. execute `OllaCore.setVault(vault)`
+3. schedule `OllaCore.unpause()`
+4. execute `OllaCore.unpause()`
+5. schedule `OllaVault.unpause()`
+6. execute `OllaVault.unpause()`
+
+Use `script/ops/PrintNextActivationPayload.s.sol` to print exactly one next payload based on current on-chain state:
+
+```bash
+ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/PrintNextActivationPayload.s.sol --rpc-url <sepolia-or-mainnet>
+```
+
+The script prints:
+
+- current step (`Step x/6`)
+- multisig address (`governanceAdmin`)
+- contract to call (`OllaGovernance`)
+- one payload for the next action when actionable
+- wait information (`timelock.readyAt`) when execution is not yet possible
+
 ## Docs
 
 - [Local chain](./docs/local.md)

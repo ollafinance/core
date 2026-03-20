@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 // solhint-disable no-console
 import { Script, console2 } from "@forge-std/Script.sol";
+import { VmSafe } from "@forge-std/Vm.sol";
 
 /// @title BaseDeployer
 /// @notice Base contract for all deployers with shared utilities
@@ -12,6 +13,9 @@ abstract contract BaseDeployer is Script {
 
     /// @notice Write deployment JSON to file
     function _writeDeploymentJson(string memory env, string memory json) internal {
+        if (!_artifactWriteEnabled()) {
+            return;
+        }
         string memory path = _getDeploymentPath(env);
         string memory finalJson = string.concat(json, "\n}");
 
@@ -33,9 +37,15 @@ abstract contract BaseDeployer is Script {
         address lzEndpoint
     ) internal returns (string memory path) {
         path = _getDeploymentPath(env);
-        vm.createDir(_DEPLOYMENTS_PATH, true);
+        bool canWriteArtifact = _artifactWriteEnabled();
+        if (canWriteArtifact) {
+            vm.createDir(_DEPLOYMENTS_PATH, true);
+        }
 
         if (!vm.isFile(path)) {
+            if (!canWriteArtifact) {
+                return path;
+            }
             string memory json = string.concat(
                 "{\n",
                 "  \"network\": ",
@@ -72,7 +82,10 @@ abstract contract BaseDeployer is Script {
                 ",\n",
                 "    \"flags\": {}\n",
                 "\n",
-                "  }\n",
+                "  },\n",
+                "  \"genesisBlock\": ",
+                _uint256ToString(block.number),
+                "\n",
                 "}\n"
             );
             vm.writeFile(path, json);
@@ -94,9 +107,22 @@ abstract contract BaseDeployer is Script {
         );
 
         _ensureConfigCompatibility(path, existing, mockAztec, asset, rollupRegistry, lzEndpoint);
+        _ensureGenesisBlock(path, existing);
 
         _ensureStatusScaffold(env);
         _touchDeploymentStatus(env);
+    }
+
+    function _ensureGenesisBlock(string memory path, string memory existing) internal {
+        if (!_artifactWriteEnabled()) {
+            return;
+        }
+
+        try vm.parseJsonUint(existing, ".genesisBlock") returns (uint256) {
+            return;
+        } catch {
+            vm.writeJson(_uint256ToString(block.number), path, ".genesisBlock");
+        }
     }
 
     function _ensureConfigCompatibility(
@@ -107,6 +133,7 @@ abstract contract BaseDeployer is Script {
         address rollupRegistry,
         address lzEndpoint
     ) internal {
+        bool canWriteArtifact = _artifactWriteEnabled();
         bool existingMockAztec;
         bool hasMode;
         try vm.parseJsonBool(existing, ".mode.mockAztec") returns (bool parsedMockAztec) {
@@ -125,7 +152,9 @@ abstract contract BaseDeployer is Script {
                     inferredMockAztec == mockAztec, "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.mode.mockAztec"
                 );
             }
-            vm.writeJson(mockAztec ? "true" : "false", path, ".mode.mockAztec");
+            if (canWriteArtifact) {
+                vm.writeJson(mockAztec ? "true" : "false", path, ".mode.mockAztec");
+            }
         }
 
         _ensureInputAddressCompatibility(path, existing, "asset", asset);
@@ -146,15 +175,21 @@ abstract contract BaseDeployer is Script {
         string memory key,
         address value
     ) internal {
+        bool canWriteArtifact = _artifactWriteEnabled();
         string memory jsonPath = string.concat(".inputs.", key);
         try vm.parseJsonAddress(existing, jsonPath) returns (address parsed) {
             require(parsed == value, string.concat("Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.", key));
         } catch {
-            vm.writeJson(_jsonString(_addressToString(value)), path, jsonPath);
+            if (canWriteArtifact) {
+                vm.writeJson(_jsonString(_addressToString(value)), path, jsonPath);
+            }
         }
     }
 
     function _ensureStatusScaffold(string memory env) internal {
+        if (!_artifactWriteEnabled()) {
+            return;
+        }
         string memory path = _getDeploymentPath(env);
 
         bool hasStatus;
@@ -190,18 +225,27 @@ abstract contract BaseDeployer is Script {
     }
 
     function _setDeploymentAddress(string memory env, string memory key, address addr) internal {
+        if (!_artifactWriteEnabled()) {
+            return;
+        }
         string memory path = _getDeploymentPath(env);
         vm.writeJson(_jsonString(_addressToString(addr)), path, string.concat(".addresses.", key));
         _touchDeploymentStatus(env);
     }
 
     function _setDeploymentMetadataString(string memory env, string memory key, string memory value) internal {
+        if (!_artifactWriteEnabled()) {
+            return;
+        }
         string memory path = _getDeploymentPath(env);
         vm.writeJson(_jsonString(value), path, string.concat(".", key));
         _touchDeploymentStatus(env);
     }
 
     function _setDeploymentPhase(string memory env, string memory phase, bool completed) internal {
+        if (!_artifactWriteEnabled()) {
+            return;
+        }
         string memory path = _getDeploymentPath(env);
         vm.writeJson(_jsonString(phase), path, ".status.phase");
         vm.writeJson(completed ? "true" : "false", path, ".status.completed");
@@ -209,14 +253,25 @@ abstract contract BaseDeployer is Script {
     }
 
     function _touchDeploymentStatus(string memory env) internal {
+        if (!_artifactWriteEnabled()) {
+            return;
+        }
         string memory path = _getDeploymentPath(env);
         vm.writeJson(_uint256ToString(block.number), path, ".status.updatedAtBlock");
     }
 
     function _setDeploymentFlag(string memory env, string memory key, bool value) internal {
+        if (!_artifactWriteEnabled()) {
+            return;
+        }
         string memory path = _getDeploymentPath(env);
         vm.writeJson(value ? "true" : "false", path, string.concat(".status.flags.", key));
         _touchDeploymentStatus(env);
+    }
+
+    function _artifactWriteEnabled() internal view returns (bool) {
+        return vm.envOr("DEPLOY_ALLOW_ARTIFACT_WRITE", false) || vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+            || vm.isContext(VmSafe.ForgeContext.ScriptResume);
     }
 
     function _tryReadDeploymentFlag(string memory env, string memory key)
