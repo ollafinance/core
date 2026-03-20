@@ -494,22 +494,22 @@ contract OllaCorePermissionlessRebalance is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-           _lastRebalanceTimestamp ISOLATION FROM updateAccounting
+           lastRebalanceTimestamp ISOLATION FROM updateAccounting
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Calling updateAccounting() standalone does NOT reset the rebalance cooldown.
-    ///         The cooldown is driven by `_lastRebalanceTimestamp` which only updates on
+    ///         The cooldown is driven by `lastRebalanceTimestamp` which only updates on
     ///         rebalance completion, not on standalone accounting updates.
     function test_UpdateAccounting_DoesNotResetCooldown() external {
         _performDeposit(alice, 10 * DECIMALS);
 
-        // Step 1: Complete a rebalance cycle (sets _lastRebalanceTimestamp to block.timestamp)
+        // Step 1: Complete a rebalance cycle (sets lastRebalanceTimestamp to block.timestamp)
         core.rebalance();
 
         // Step 2: Warp forward 30 minutes (not past the 1-hour cooldown)
         vm.warp(block.timestamp + 30 minutes);
 
-        // Step 3: Call updateAccounting() (updates _latestReport.timestamp but NOT _lastRebalanceTimestamp)
+        // Step 3: Call updateAccounting() (updates _latestReport.timestamp but NOT lastRebalanceTimestamp)
         core.updateAccounting();
 
         // Verify the report timestamp was updated
@@ -517,7 +517,7 @@ contract OllaCorePermissionlessRebalance is Test {
         assertEq(report.timestamp, block.timestamp, "report timestamp should reflect updateAccounting call");
 
         // Step 4: Immediately try to start a new rebalance -- should still revert because
-        // _lastRebalanceTimestamp was NOT affected by the updateAccounting() call.
+        // lastRebalanceTimestamp was NOT affected by the updateAccounting() call.
         // elapsed = 30 minutes since rebalance completion, cooldown = 1 hour
         _performDeposit(alice, 5 * DECIMALS); // deposit more so next cycle has work
         vm.expectRevert(
@@ -530,7 +530,7 @@ contract OllaCorePermissionlessRebalance is Test {
         // Step 5: Warp past the original cooldown from step 1 (30 more minutes + 1 second)
         vm.warp(block.timestamp + 30 minutes + 1);
 
-        // Step 6: Rebalance now succeeds (cooldown measured from _lastRebalanceTimestamp, not _latestReport)
+        // Step 6: Rebalance now succeeds (cooldown measured from lastRebalanceTimestamp, not _latestReport)
         core.rebalance();
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(
@@ -545,7 +545,7 @@ contract OllaCorePermissionlessRebalance is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice After forceRebalanceReset(), the next rebalance cycle still respects the
-    ///         original _lastRebalanceTimestamp. Force reset does NOT update the cooldown
+    ///         original lastRebalanceTimestamp. Force reset does NOT update the cooldown
     ///         timestamp, so if the cooldown from the previous completion has already elapsed,
     ///         a new rebalance can start immediately after the reset.
     function test_ForceRebalanceReset_DoesNotUpdateCooldownTimestamp() external {
@@ -582,7 +582,7 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Step 5: Immediately try rebalance -- it should succeed because the cooldown
         // was from the step-1 completion, and we already warped past it in step 2.
-        // forceRebalanceReset does NOT set _lastRebalanceTimestamp.
+        // forceRebalanceReset does NOT set lastRebalanceTimestamp.
         stakingManager.clearStakeReturnAmount();
         core.rebalance();
         IOllaCore.RebalanceProgress memory progress3 = core.rebalanceProgress();

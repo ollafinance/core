@@ -2,7 +2,7 @@
 
 This document summarizes rebalance and accounting flows in Olla Core.
 
-> **Note:** `rebalance()`, `updateAccounting()`, and `refreshAttesterState(address[])` are **permissionless** — anyone can call them. The diagrams below use "Caller" to represent any address. New rebalance cycles are rate-limited by a cooldown (`_lastRebalanceTimestamp + rebalanceCooldown`); continuing in-progress cycles has no cooldown.
+> **Note:** `rebalance()`, `updateAccounting()`, and `refreshAttesterState(address[])` are **permissionless** — anyone can call them. The diagrams below use "Caller" to represent any address. New rebalance cycles are rate-limited by a cooldown (`lastRebalanceTimestamp + rebalanceCooldown`); continuing in-progress cycles has no cooldown.
 
 ## Rebalance
 
@@ -153,7 +153,7 @@ sequenceDiagram
     Note right of SM: delta-updates aggregate state + finalizes exits
 
     A->>C: rebalance()
-    Note over C: Cooldown gate: block.timestamp - _lastRebalanceTimestamp >= rebalanceCooldown
+    Note over C: Cooldown gate: block.timestamp - lastRebalanceTimestamp >= rebalanceCooldown
 
     Note over C: Step 1: Harvest rewards
     C->>SM: harvestRewards()
@@ -197,7 +197,7 @@ sequenceDiagram
     end
 
     Note over C: On completion:
-    C->>C: _lastRebalanceTimestamp = block.timestamp
+    C->>C: lastRebalanceTimestamp = block.timestamp
     C->>C: _updateAccountingInternal()
 ```
 
@@ -211,7 +211,7 @@ sequenceDiagram
 
     A->>C: rebalance()
     Note right of C: Cooldown check: elapsed >= rebalanceCooldown
-    Note right of C: (uses _lastRebalanceTimestamp, not _latestReport.timestamp)
+    Note right of C: (uses lastRebalanceTimestamp, not _latestReport.timestamp)
     Note right of C: executes step machine (Harvest->...->Done)
     C-->>A: returns partial progress when gas low
 
@@ -219,13 +219,13 @@ sequenceDiagram
     A->>C: rebalance()
     Note right of C: step != Done, skips cooldown gate
 
-    Note over C: On completion: _lastRebalanceTimestamp = block.timestamp
+    Note over C: On completion: lastRebalanceTimestamp = block.timestamp
     Note over C: updateAccounting() does NOT reset cooldown
 
     opt guardian override
         G->>C: forceRebalanceReset()
         Note right of C: resets state machine to Done
-        Note right of C: does NOT reset _lastRebalanceTimestamp
+        Note right of C: does NOT reset lastRebalanceTimestamp
     end
 ```
 
@@ -254,6 +254,6 @@ sequenceDiagram
     C->>SAF: checkRateDrop(oldRate, nextRate)
     C->>SAF: setLatestAccountingTimestamp(block.timestamp)
     Note right of C: updates _latestReport.timestamp (reporting only)
-    Note right of C: does NOT update _lastRebalanceTimestamp (cooldown unaffected)
+    Note right of C: does NOT update lastRebalanceTimestamp (cooldown unaffected)
     Note right of C: emits AccountingUpdated + AttestersStateRead
 ```

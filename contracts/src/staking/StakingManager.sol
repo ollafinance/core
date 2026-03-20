@@ -241,7 +241,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyCore nonReentrant returns (uint256 harvested) {
         (, IAztecRollup rollup) = _getRollup();
-        harvested = rollup.claimSequencerRewards(rewardsAccumulator);
+        try rollup.claimSequencerRewards(rewardsAccumulator) returns (uint256 claimed) {
+            harvested = claimed;
+        } catch (bytes memory reason) {
+            emit RewardsHarvestFailed(reason);
+            return 0;
+        }
         emit RewardsHarvested(harvested);
         return harvested;
     }

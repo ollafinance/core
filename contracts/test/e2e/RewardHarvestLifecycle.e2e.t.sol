@@ -19,6 +19,7 @@ contract RewardHarvestLifecycleE2E is E2EBaseWithRealStaking {
     event RewardsRecorded(uint256 balanceDelta);
     event RewardsWithdrawn(uint256 amount);
     event RewardsAccumulatorFundsPulled(uint256 amount);
+    event RewardsHarvestFailed(bytes reason);
     event OllaProtocolFeesPaid(uint256 protocolFeeAssets, uint256 treasuryShares, uint256 providerShares);
     event Rebalanced(uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer);
 
@@ -259,7 +260,7 @@ contract RewardHarvestLifecycleE2E is E2EBaseWithRealStaking {
         assertApproxEqAbs(emittedTreasuryShares, expectedTreasuryShares, 1, "Treasury ~50% of fee shares");
     }
 
-    /// @notice Verify that the claim revert path on MockAztecRollup is handled
+    /// @notice Verify that the claim revert path on MockAztecRollup is handled gracefully
     function test_RewardHarvest_ClaimSequencerRewards_Reverts() external {
         uint256 activationThreshold = mockRollup.getActivationThreshold();
         uint256 depositAmount = activationThreshold * 2;
@@ -278,19 +279,33 @@ contract RewardHarvestLifecycleE2E is E2EBaseWithRealStaking {
 
         _warpPastCooldown();
 
-        // Rebalance should revert since claimSequencerRewards reverts
-        vm.prank(operator);
-        vm.expectRevert();
-        core.rebalance();
+        // Rebalance should succeed despite claimSequencerRewards reverting
+        vm.recordLogs();
+        (uint256 rewardsDelta,,,) = _rebalance();
+        _completeRebalance();
+
+        // Verify RewardsHarvestFailed event was emitted by StakingManager
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 harvestFailedTopic = RewardsHarvestFailed.selector;
+        bool foundHarvestFailed;
+        for (uint256 i; i < entries.length; ++i) {
+            if (entries[i].emitter == address(stakingManager) && entries[i].topics[0] == harvestFailedTopic) {
+                foundHarvestFailed = true;
+            }
+        }
+        assertTrue(foundHarvestFailed, "RewardsHarvestFailed event should be emitted");
+
+        // No rewards harvested when claim fails
+        assertEq(rewardsDelta, 0, "rewardsDelta should be 0 when claim fails");
 
         // Clear the failure flag and verify system recovers
         mockRollup.setClaimShouldFail(address(rewardsAccumulator), false);
 
         _warpPastCooldown();
-        (uint256 rewardsDelta,,,) = _rebalance();
+        (uint256 rewardsDeltaAfterRecovery,,,) = _rebalance();
         _completeRebalance();
 
-        assertGt(rewardsDelta, 0, "Should harvest rewards after recovery");
+        assertGt(rewardsDeltaAfterRecovery, 0, "Should harvest rewards after recovery");
     }
 
     /// @notice Verify RewardsAccumulator recordBalance delta tracking with external donation
