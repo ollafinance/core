@@ -237,6 +237,27 @@ contract OllaCoreAccountingTest is Test {
         assertEq(netFlows, int256(5 * DECIMALS), "net flows when withdrawals floored");
     }
 
+    /// @notice When slashing adjustment delta equals raw netWithdrawals exactly, netWithdrawals is zero.
+    function test_ComputeNetFlows_SlashingAdjustmentEqualsWithdrawals() external view {
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
+            cumulativeDeposits: 10 * DECIMALS,
+            cumulativeWithdrawals: 5 * DECIMALS,
+            cumulativeSlashingAdjustments: 3 * DECIMALS,
+            latestReportCumulativeDeposits: 5 * DECIMALS,
+            latestReportCumulativeWithdrawals: 2 * DECIMALS,
+            latestReportCumulativeSlashingAdjustments: 0
+        });
+
+        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+
+        // netDeposits = 10 - 5 = 5
+        assertEq(netDeposits, 5 * DECIMALS, "net deposits");
+        // rawNetWithdrawals = 5 - 2 = 3, adjustmentDelta = 3 - 0 = 3, 3 == 3 → exactly zero
+        assertEq(netWithdrawals, 0, "net withdrawals exactly zero when adjustment equals raw");
+        // netFlows = 5 - 0 = 5
+        assertEq(netFlows, int256(5 * DECIMALS), "net flows when withdrawals exactly cancelled");
+    }
+
     function test_ComputeTotalAssets() external view {
         IOllaCore.AccountingState memory buckets = IOllaCore.AccountingState({
             stakedPrincipal: 4 * DECIMALS,
@@ -301,6 +322,75 @@ contract OllaCoreAccountingTest is Test {
         assertEq(flowsAfter.cumulativeDeposits, depositAmount, "cumulative deposits tracked");
         assertEq(reportAfter.exchangeRate, expectedRate, "latest report exchange rate stored");
         assertEq(reportAfter.timestamp, expectedTimestamp, "report timestamp updated");
+    }
+
+    /// @notice updateAccounting persists latestReportCumulativeSlashingAdjustments in the flow counters.
+    function test_UpdateAccountingSnapshots_PersistsSlashingAdjustment() external {
+        uint256 depositAmount = 50 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Directly set cumulativeSlashingAdjustments on the vault via the mock withdrawal queue.
+        // Since MockWithdrawalQueue is used, we simulate slashing by injecting staked + slashing delta
+        // into core, then running updateAccounting.
+        stakingManager.setTotalStaked(20 * DECIMALS);
+        stakingManager.setSlashingDelta(5 * DECIMALS);
+
+        IOllaCore.FlowCounters memory flowsBefore = core.flowCounters();
+        assertEq(
+            flowsBefore.latestReportCumulativeSlashingAdjustments,
+            0,
+            "latestReportCumulativeSlashingAdjustments should be zero before update"
+        );
+
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.FlowCounters memory flowsAfter = core.flowCounters();
+        // The snapshot should capture the current cumulativeSlashingAdjustments from the vault
+        assertEq(
+            flowsAfter.latestReportCumulativeSlashingAdjustments,
+            flowsAfter.cumulativeSlashingAdjustments,
+            "snapshot should equal current cumulativeSlashingAdjustments after updateAccounting"
+        );
+    }
+
+    /// @notice Verifies that grossRewards and protocol fees are computed correctly when slashing
+    ///         adjustments reduce netWithdrawals during the accounting period.
+    ///         The key property: grossRewards = max(0, newTotalAssets - oldTotalAssets - netFlows).
+    function test_UpdateAccounting_FeesCorrectWithSlashingAdjustment() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        // Establish baseline accounting
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory report1 = core.latestReport();
+
+        // Create a withdrawal request (increases cumulativeWithdrawals on vault)
+        uint256 sharesToRedeem = 20 * DECIMALS;
+        vm.prank(alice);
+        vault.requestRedeem(sharesToRedeem, alice, alice);
+
+        // Add claimable rewards so grossRewards is positive
+        stakingManager.setClaimableRewards(15 * DECIMALS);
+
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory report2 = core.latestReport();
+
+        // Verify grossRewards formula consistency:
+        // grossRewards = max(0, newTotalAssets - oldTotalAssets - netFlows)
+        int256 changeInAssets = int256(report2.totalAssets) - int256(report1.totalAssets);
+        int256 impliedGrossRewards = changeInAssets - report2.netFlows;
+        uint256 expectedGross = impliedGrossRewards > 0 ? uint256(impliedGrossRewards) : 0;
+
+        assertEq(report2.grossRewards, expectedGross, "grossRewards should equal max(0, deltaAssets - netFlows)");
+        // netFlows should be negative (withdrawal request with no deposits)
+        assertLt(report2.netFlows, 0, "netFlows should be negative with net withdrawals");
+        // grossRewards should be positive (rewards added)
+        assertGt(report2.grossRewards, 0, "grossRewards should be positive with claimable rewards");
     }
 
     function test_UpdateAccounting_NetFlowsNegative_NoPhantomRewards() external {

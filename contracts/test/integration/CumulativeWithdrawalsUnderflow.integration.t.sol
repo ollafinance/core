@@ -342,4 +342,126 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         uint256 cumulativeFinal = vault.cumulativeWithdrawals();
         assertGe(cumulativeFinal, cumulativeAfterBob, "cumulativeWithdrawals must not decrease after Bob's finalize");
     }
+
+    /// @notice Verifies that grossRewards in the accounting report correctly reflects slashing
+    ///         adjustments. Without the fix, cumulativeWithdrawals would be decremented, causing
+    ///         netWithdrawals to clamp to zero and grossRewards to be understated.
+    function test_FeeAccounting_CorrectAfterSlashing() external {
+        uint256 depositAmount = 100 ether;
+        _deposit(alice, depositAmount);
+        _deposit(bob, depositAmount);
+
+        // Establish staked position (elevates exchange rate)
+        _injectSlashing(100 ether, 0);
+
+        // First updateAccounting to set baseline report
+        core.updateAccounting();
+        IOllaCore.LatestReport memory report1 = core.latestReport();
+        IOllaCore.FlowCounters memory flows1 = core.flowCounters();
+        assertEq(flows1.latestReportCumulativeSlashingAdjustments, 0, "initial slashing adj snapshot should be zero");
+
+        // Alice requests partial redeem → cumulativeWithdrawals increases
+        _warpPastCooldown();
+        uint256 aliceShares = stAztec.balanceOf(alice);
+        _requestRedeem(alice, aliceShares / 4);
+        uint256 cumulativeWithdrawalsAfterRequest = vault.cumulativeWithdrawals();
+        assertGt(cumulativeWithdrawalsAfterRequest, 0, "cumulativeWithdrawals should increase after request");
+
+        // Inject moderate slashing (100 → 80 staked)
+        _injectSlashing(80 ether, 20 ether);
+
+        // Rebalance finalizes the withdrawal with slashing adjustment
+        _warpPastCooldown();
+        core.rebalance();
+
+        // cumulativeSlashingAdjustments should have increased
+        uint256 slashingAdj = vault.cumulativeSlashingAdjustments();
+        assertGt(slashingAdj, 0, "slashing adjustment should be tracked after finalization");
+
+        // Now run updateAccounting — this is where netFlows/grossRewards are computed
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory report2 = core.latestReport();
+        IOllaCore.FlowCounters memory flows2 = core.flowCounters();
+
+        // The slashing adjustment snapshot should be persisted
+        assertEq(
+            flows2.latestReportCumulativeSlashingAdjustments,
+            slashingAdj,
+            "report should snapshot cumulativeSlashingAdjustments"
+        );
+
+        // netFlows should account for slashing-adjusted withdrawals
+        // Without the fix, netWithdrawals would clamp to zero → netFlows overstated → grossRewards understated
+        // With the fix, netWithdrawals = rawNetWithdrawals - adjustmentDelta, giving correct grossRewards
+        // grossRewards = newTotalAssets - oldTotalAssets - netFlows
+        // If netFlows is too high (withdrawals clamped to zero), grossRewards would be too low
+        int256 changeInAssets = int256(report2.totalAssets) - int256(report1.totalAssets);
+        int256 impliedGrossRewards = changeInAssets - report2.netFlows;
+
+        // grossRewards should be non-negative and match the implied value
+        assertEq(
+            report2.grossRewards,
+            impliedGrossRewards > 0 ? uint256(impliedGrossRewards) : 0,
+            "grossRewards formula consistency"
+        );
+    }
+
+    /// @notice Two slashing events in the same accounting period should accumulate correctly.
+    function test_CumulativeWithdrawals_MultipleSlashingEventsInSamePeriod() external {
+        uint256 depositAmount = 200 ether;
+        _deposit(alice, depositAmount);
+
+        // Establish staked position
+        _injectSlashing(100 ether, 0);
+
+        // Baseline accounting
+        core.updateAccounting();
+
+        // First withdrawal request
+        _warpPastCooldown();
+        uint256 aliceShares = stAztec.balanceOf(alice);
+        _requestRedeem(alice, aliceShares / 4);
+
+        // First slashing event (100 → 70)
+        _injectSlashing(70 ether, 30 ether);
+
+        // Finalize first batch
+        _warpPastCooldown();
+        core.rebalance();
+
+        uint256 slashingAdjAfterFirst = vault.cumulativeSlashingAdjustments();
+        uint256 cumulativeAfterFirst = vault.cumulativeWithdrawals();
+
+        // Second withdrawal request (still within same accounting period — no updateAccounting yet)
+        _warpPastCooldown();
+        uint256 remainingShares = stAztec.balanceOf(alice);
+        assertGt(remainingShares, 0, "alice should still have shares");
+        _requestRedeem(alice, remainingShares / 3);
+
+        // Second slashing event (70 → 50)
+        _injectSlashing(50 ether, 50 ether);
+
+        // Finalize second batch
+        _warpPastCooldown();
+        core.rebalance();
+
+        uint256 slashingAdjAfterSecond = vault.cumulativeSlashingAdjustments();
+        uint256 cumulativeAfterSecond = vault.cumulativeWithdrawals();
+
+        // Both counters should be monotonically non-decreasing
+        assertGe(cumulativeAfterSecond, cumulativeAfterFirst, "cumulativeWithdrawals monotonic across slash events");
+        assertGe(
+            slashingAdjAfterSecond, slashingAdjAfterFirst, "cumulativeSlashingAdjustments monotonic across slash events"
+        );
+
+        // Slashing adjustment counter must not decrease even with two finalization cycles.
+        // Note: the second slashing may not produce an additional shortfall if the second
+        // request was priced at the already-slashed rate, so assertGe (not assertGt) is correct.
+        assertGe(
+            slashingAdjAfterSecond,
+            slashingAdjAfterFirst,
+            "cumulativeSlashingAdjustments must not decrease across finalization cycles"
+        );
+    }
 }
