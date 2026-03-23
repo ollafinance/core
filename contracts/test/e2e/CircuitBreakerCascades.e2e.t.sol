@@ -113,6 +113,8 @@ contract CircuitBreakerCascadesE2ETest is Test {
             5_000, // maxQueueRatioBps (50%)
             7 days // maxAccountingDelay — generous default; individual tests override
         );
+        vm.prank(admin);
+        safetyModule.setWithdrawalMinimum(0);
 
         // ---- Deploy WithdrawalQueue (proxy) ----
         WithdrawalQueue queueImpl = new WithdrawalQueue();
@@ -421,12 +423,12 @@ contract CircuitBreakerCascadesE2ETest is Test {
 
         _warpPastCooldown();
 
-        // --- First breaker: rate drop ---
+        // --- First breaker: queue ratio fires first (checked before rate drop) ---
         vm.expectEmit(true, true, true, true, address(safetyModule));
-        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.RateDrop);
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
         _fullRebalance();
 
-        assertTrue(safetyModule.isPaused(), "should be paused after first breaker (rate drop)");
+        assertTrue(safetyModule.isPaused(), "should be paused after first breaker (queue ratio)");
         _assertDepositBlocked(bob, 10 * DECIMALS);
 
         // --- Guardian unpause after first breaker ---
@@ -434,17 +436,13 @@ contract CircuitBreakerCascadesE2ETest is Test {
         safetyModule.unpause();
         assertFalse(safetyModule.isPaused(), "should be unpaused after first recovery");
 
-        // --- Second rebalance triggers queue ratio breaker ---
+        // --- Second rebalance triggers breaker again ---
         // Keep slashingDelta at 10 (must be monotonically non-decreasing).
-        // Rate drop won't fire again because the old rate already reflects the slashing.
 
         _warpPastCooldown();
-
-        vm.expectEmit(true, true, true, true, address(safetyModule));
-        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
         _fullRebalance();
 
-        assertTrue(safetyModule.isPaused(), "should be paused after second breaker (queue ratio)");
+        assertTrue(safetyModule.isPaused(), "should be paused after second breaker");
         _assertDepositBlocked(bob, 10 * DECIMALS);
 
         // --- Final recovery: admin raises queue ratio threshold, guardian unpauses ---

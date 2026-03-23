@@ -363,6 +363,10 @@ interface IOllaVault {
     /// @return delta The amount added to buffered assets.
     function reconcileBufferedAssets() external returns (uint256 delta);
 
+    /// @notice Updates the gas threshold used by the withdrawal queue's finalization loop.
+    /// @param threshold New gas threshold (must be > 0 and <= MAX_GAS_THRESHOLD).
+    function setQueueGasThreshold(uint256 threshold) external;
+
     /// @notice Recovers stAztec sent directly to the vault.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
     /// @param amount The amount of stAztec to recover.

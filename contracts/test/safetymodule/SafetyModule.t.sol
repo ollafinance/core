@@ -285,6 +285,24 @@ contract SafetyModuleTest is Test {
                         WITHDRAWAL MINIMUM CHECK
     //////////////////////////////////////////////////////////////*/
 
+    function test_Initialize_SetsDefaultWithdrawalMinimum() public view {
+        assertEq(safetyModule.withdrawalMinimum(), 100e18, "default withdrawalMinimum should be 100e18");
+    }
+
+    function test_RevertWhen_CheckWithdrawalMinimum_BelowDefault() public {
+        // withdrawalMinimum is 100e18 by default from initialize()
+        vm.expectRevert(
+            abi.encodeWithSelector(ISafetyModule.SafetyModule__BelowWithdrawalMinimum.selector, 50 ether, 100 ether)
+        );
+        vm.prank(core);
+        safetyModule.checkWithdrawalMinimum(50 ether);
+    }
+
+    function test_CheckWithdrawalMinimum_AtDefault_Passes() public {
+        vm.prank(core);
+        safetyModule.checkWithdrawalMinimum(100 ether);
+    }
+
     function test_RevertWhen_CheckWithdrawalMinimumBelowThreshold() public {
         vm.prank(admin);
         safetyModule.setWithdrawalMinimum(10 ether);
