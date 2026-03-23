@@ -440,6 +440,143 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
+            PARTIAL SLASH (NON-ZERO BALANCE, NO EXIT) TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice An active attester whose rollup balance decreases (partial slash) but remains
+    ///         non-zero should stay Active with updated cached balance. stakedAmount decreases
+    ///         and slashingDelta increases by the slashed amount.
+    function test_RefreshAttesterState_PartialSlash_AttesterStaysActive() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+        assertEq(stateBefore.stakedAmount, ACTIVATION_THRESHOLD, "pre: stakedAmount = threshold");
+        assertEq(stateBefore.slashingDelta, 0, "pre: slashingDelta = 0");
+
+        // Reduce the attester's balance on rollup to 60% (partial slash, no exit)
+        uint256 slashedBalance = ACTIVATION_THRESHOLD * 60 / 100;
+        uint256 slashLoss = ACTIVATION_THRESHOLD - slashedBalance;
+        rollup.setStake(attester, slashedBalance, address(stakingManager));
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        // Attester should remain Active
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should remain active");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "no pending unstakes");
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.stakedAmount, slashedBalance, "stakedAmount should decrease to slashed balance");
+        assertEq(stateAfter.slashingDelta, slashLoss, "slashingDelta should track the slash loss");
+    }
+
+    /// @notice After a partial slash, a second refresh with no further rollup changes should be
+    ///         a no-op (cached balance matches rollup, delta is zero).
+    function test_RefreshAttesterState_PartialSlash_SecondRefreshIsNoOp() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // Partial slash
+        uint256 slashedBalance = 70 ether;
+        rollup.setStake(attester, slashedBalance, address(stakingManager));
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        IStakingManager.StakingState memory stateAfterFirst = stakingManager.getStakingState();
+
+        // Second refresh — no rollup changes
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        IStakingManager.StakingState memory stateAfterSecond = stakingManager.getStakingState();
+        assertEq(stateAfterSecond.stakedAmount, stateAfterFirst.stakedAmount, "stakedAmount unchanged");
+        assertEq(stateAfterSecond.slashingDelta, stateAfterFirst.slashingDelta, "slashingDelta unchanged");
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester still active");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            ALREADY-CLAIMED EXTERNAL EXIT (isRecipient=true) TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice When an external exit already has isRecipient=true (claimed by another party),
+    ///         refreshAttesterState should skip the initiateWithdraw call and still transition
+    ///         the attester to Exiting correctly.
+    function test_RefreshAttesterState_AlreadyClaimedExternalExit() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // Create an external exit that is already claimed (isRecipient=true)
+        rollup.setExternalExit(attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+        rollup.setExitRecipient(attester, address(stakingManager));
+
+        // Refresh should detect the exit and transition to Exiting without calling initiateWithdraw
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "active count should be 0");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "should have 1 pending unstake");
+        assertTrue(stakingManager.isUnstakePending(attester), "attester should be Exiting");
+
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD, "pendingUnstake should match exit amount");
+        assertEq(state.slashingDelta, 0, "no slashing delta for full recovery");
+    }
+
+    /// @notice An already-claimed external exit that is immediately exitable should be
+    ///         finalized in a single refresh call (same as zombie, but without initiateWithdraw).
+    function test_RefreshAttesterState_AlreadyClaimedExternalExit_ImmediateFinalization() external {
+        _setupStakedAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // Create an external exit that is already claimed and immediately exitable
+        rollup.setExternalExit(attester, ACTIVATION_THRESHOLD, block.timestamp);
+        rollup.setExitRecipient(attester, address(stakingManager));
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        // Should be fully finalized
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "no active attesters");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "no pending unstakes (finalized)");
+
+        // Funds claimable
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        assertEq(received, ACTIVATION_THRESHOLD, "funds should be received");
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exit amount should be claimable");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    IDEMPOTENT REFRESH TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Calling refreshAttesterState twice for an Active+VALIDATING attester with
+    ///         no rollup state changes should leave all aggregate state exactly unchanged.
+    function test_RefreshAttesterState_IdempotentForActiveValidating() external {
+        _setupMultipleStakedAttesters(2);
+
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+        uint256 activeCountBefore = stakingManager.getActivatedAttesterCount();
+
+        // First refresh — should be no-op
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
+
+        IStakingManager.StakingState memory stateAfterFirst = stakingManager.getStakingState();
+        assertEq(stateAfterFirst.stakedAmount, stateBefore.stakedAmount, "stakedAmount unchanged after 1st");
+        assertEq(stateAfterFirst.slashingDelta, stateBefore.slashingDelta, "slashingDelta unchanged after 1st");
+        assertEq(stateAfterFirst.pendingUnstakeAmount, stateBefore.pendingUnstakeAmount, "pending unchanged after 1st");
+
+        // Second refresh — should also be no-op
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
+
+        IStakingManager.StakingState memory stateAfterSecond = stakingManager.getStakingState();
+        assertEq(stateAfterSecond.stakedAmount, stateBefore.stakedAmount, "stakedAmount unchanged after 2nd");
+        assertEq(stateAfterSecond.slashingDelta, stateBefore.slashingDelta, "slashingDelta unchanged after 2nd");
+        assertEq(stateAfterSecond.pendingUnstakeAmount, stateBefore.pendingUnstakeAmount, "pending unchanged after 2nd");
+        assertEq(stakingManager.getActivatedAttesterCount(), activeCountBefore, "active count unchanged after 2nd");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                 REFRESH ATTESTER STATE REENTRANCY TESTS
     //////////////////////////////////////////////////////////////*/
 
