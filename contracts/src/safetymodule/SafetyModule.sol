@@ -214,6 +214,10 @@ contract SafetyModule is AccessControl, ISafetyModule {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ISafetyModule
+    /// @dev Lowering `depositCap` below current `totalAssets()` will cause `maxDeposit()` to
+    ///      return 0, silently blocking all new deposits. This is a valid operational state for
+    ///      controlled wind-down (deposits blocked, withdrawals open). The governance timelock
+    ///      provides advance notice to users. Zero cap is rejected by the existing guard.
     function setDepositCap(uint256 cap) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (cap == 0) {
             revert SafetyModule__InvalidParameter();
@@ -223,6 +227,12 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
+    /// @dev This minimum prevents zero-payout rounding during withdrawal finalization under slashing.
+    ///      With withdrawalMinimum = 100e18, zero payout requires >99.999999% exchange rate collapse,
+    ///      far beyond realistic slashing scenarios. Must be set to a non-zero value before launch.
+    ///      Increasing `withdrawalMinimum` can retroactively prevent users with fewer shares
+    ///      from withdrawing. This is mitigated by the governance timelock (advance notice) and
+    ///      the expectation that minimum is set conservatively at launch. Bounded by MAX_WITHDRAWAL_MINIMUM.
     function setWithdrawalMinimum(uint256 minimumShares) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (minimumShares > MAX_WITHDRAWAL_MINIMUM) {
             revert SafetyModule__InvalidParameter();

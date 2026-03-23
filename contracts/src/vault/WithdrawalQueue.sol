@@ -16,6 +16,8 @@ import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 ///      liquidity exists for those smaller requests (head-of-line blocking). This is an intentional design
 ///      trade-off for simplicity, fairness (earlier requests are always served first), and gas efficiency
 ///      (no scanning past unfinalizable requests).
+///      This contract does not hold or transfer tokens. Tokens sent directly to this address cannot be
+///      recovered. All asset transfers are handled by OllaVault.
 /// @author Olla Core contributors
 contract WithdrawalQueue is
     Initializable,

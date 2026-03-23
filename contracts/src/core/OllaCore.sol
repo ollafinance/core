@@ -24,6 +24,9 @@ import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 /// @title OllaCore
 /// @notice Orchestration + accounting layer. Manages rebalance, computes totalAssets/exchangeRate,
 ///         interacts with StakingManager/RewardsAccumulator/SafetyModule, and instructs Vault via CORE_ROLE.
+/// @dev This contract holds AZTEC tokens only transiently during rebalance operations.
+///      Tokens sent directly to this address cannot be recovered. Users should interact
+///      with OllaVault, which has `reconcileBufferedAssets()` for recovery.
 /// @author Olla Core contributors
 contract OllaCore is
     Initializable,
@@ -204,6 +207,11 @@ contract OllaCore is
     }
 
     /// @inheritdoc IOllaCore
+    /// @dev No cooldown between pause/unpause is intentional. A cooldown would slow recovery
+    ///      after false alarms and does not meaningfully mitigate a compromised guardian key
+    ///      (a single pause() is already a full DoS). Mitigation: guardian MUST be a multisig.
+    ///      Recovery from compromised guardian: revoke GUARDIAN_ROLE via governance, grant to
+    ///      new address, new guardian unpauses.
     function unpause() external override onlyRole(GUARDIAN_ROLE) {
         _unpause();
     }
@@ -320,6 +328,10 @@ contract OllaCore is
             }
 
             uint256 currentBuffer = vaultRef.bufferedAssets();
+            // No-op early exit: intentionally does NOT update `_lastRebalanceTimestamp` or call
+            // `_updateAccountingInternal()`. Updating the timestamp here would allow a griefing
+            // attack where a caller triggers a no-op during an idle period, consuming the cooldown
+            // window and blocking real rebalance work from being processed.
             if (_rebalanceIdleBuffer != 0 && currentBuffer == _rebalanceIdleBuffer && !_hasRebalanceWorkAvailable()) {
                 return (0, 0, 0, currentBuffer);
             }
@@ -577,6 +589,8 @@ contract OllaCore is
     }
 
     /// @inheritdoc IOllaCore
+    /// @dev Includes exit fee revenue held in `_bufferedAssets`. For staking yield only
+    ///      (excluding exit fee redistribution), use `_latestReport.grossRewards`.
     function totalAssets() public view override returns (uint256) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         return _computeTotalAssets(_accountingState, vaultRef.bufferedAssets(), vaultRef.pendingWithdrawalAssets());
@@ -940,6 +954,10 @@ contract OllaCore is
     }
 
     /// @notice Derives totalAssets, gross rewards, protocol fees, and the new exchange rate.
+    /// @dev `grossRewards` excludes exit fees - they are redistribution to remaining holders,
+    ///      not new staking yield. Use `grossRewards` for yield/APR calculations.
+    ///      `totalAssets()` includes exit fee revenue implicitly via `_bufferedAssets`.
+    ///      Use `totalAssets()` for total protocol value / solvency checks.
     /// @param oldTotalAssets The previous totalAssets from the last report.
     /// @param netFlows The signed net deposit/withdrawal flows since the last report.
     /// @param pendingWithdrawals The current pending withdrawal asset amount.
@@ -1079,6 +1097,11 @@ contract OllaCore is
 
     // Reads multiple module state to determine if rebalance work exists; zero-checks are intentional.
     /// @notice Checks whether any actionable work exists across rewards, unstakes, or withdrawal queue.
+    /// @dev This function checks only protocol-internal state (e.g. `_pendingClaimAmount`) and does NOT
+    ///      query the rollup for unclaimed exits directly. Rollup state must be synced beforehand via
+    ///      the permissionless `refreshAttesterState()` call. This is intentional: on-demand rollup
+    ///      queries would require iterating all attesters with cross-contract calls, creating unbounded
+    ///      gas costs. Staleness between `refreshAttesterState()` calls is an accepted design trade-off.
     // slither-disable-next-line timestamp,pess-multiple-storage-read
     function _hasRebalanceWorkAvailable() internal view returns (bool) {
         uint256 rewardsAccumulatorBalance = _getRewardsAccumulatorBalance();
@@ -1214,6 +1237,10 @@ contract OllaCore is
 
     /// @dev Core is the pricing authority because it owns totalAssets() (computed from _accountingState).
     ///      The Vault delegates pricing to Core via cross-contract calls to avoid circular dependencies.
+    ///      Rate reflects state as of the last `updateAccounting()` or `rebalance()` call.
+    ///      Accrued rewards and pending slashing between updates are not reflected.
+    ///      Keeper infrastructure should call `updateAccounting()` at a cadence that
+    ///      bounds the staleness window to an acceptable level for depositors.
     function _exchangeRate() internal view returns (uint256) {
         return (totalAssets() + _VIRTUAL_OFFSET)
         .mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, Math.Rounding.Floor);
