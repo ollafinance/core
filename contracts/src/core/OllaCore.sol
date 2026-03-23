@@ -213,6 +213,7 @@ contract OllaCore is
         _rebalanceProgress =
             IOllaCore.RebalanceProgress({ step: IOllaCore.RebalanceStep.Done, stakeRemaining: 0, unstakeRemaining: 0 });
         _rebalanceIdleBuffer = 0;
+        lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
         emit RebalanceReset();
     }
 
