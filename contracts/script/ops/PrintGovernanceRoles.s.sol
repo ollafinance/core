@@ -5,8 +5,6 @@ import { console2 } from "@forge-std/console2.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { BaseScript } from "./../base/BaseScript.s.sol";
 
@@ -230,32 +228,11 @@ contract PrintGovernanceRoles is BaseScript {
         }
 
         bytes32 stakingProviderAdminRole = RolesLib.STAKING_PROVIDER_ADMIN_ROLE;
-        address providerAdmin = address(0);
-        bool providerAdminHasRole;
-
-        try IStakingProviderRegistry(stakingProviderRegistry)
-            .getStakingProviderConfig() returns (IStakingManager.ProviderConfig memory providerConfig) {
-            providerAdmin = providerConfig.admin;
-        } catch {
-            console2.log("stakingProviderAdminRole.registry", stakingProviderRegistry);
-            console2.log("stakingProviderAdminRole");
-            console2.logBytes32(stakingProviderAdminRole);
-            console2.log("stakingProviderAdminRole.error", "getStakingProviderConfig() failed");
-            return;
-        }
-
-        try IAccessControl(stakingProviderRegistry)
-            .hasRole(stakingProviderAdminRole, providerAdmin) returns (bool hasRole) {
-            providerAdminHasRole = hasRole;
-        } catch {
-            providerAdminHasRole = false;
-        }
 
         console2.log("stakingProviderAdminRole.registry", stakingProviderRegistry);
         console2.log("stakingProviderAdminRole");
         console2.logBytes32(stakingProviderAdminRole);
-        console2.log("stakingProviderAdmin", providerAdmin);
-        console2.log("stakingProviderAdmin.hasRole", providerAdminHasRole);
+        console2.log("stakingProviderAdminRole.note", "admin is managed via AccessControl role, not ProviderConfig");
     }
 
     function _logGuardianRoleAssignments(

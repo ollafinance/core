@@ -113,6 +113,8 @@ contract PermitFlowsE2ETest is Test {
             6_000, // maxQueueRatioBps (60%)
             7 days // maxAccountingDelay
         );
+        vm.prank(admin);
+        safetyModule.setWithdrawalMinimum(0);
 
         // ---- Deploy WithdrawalQueue (proxy) ----
         WithdrawalQueue queueImpl = new WithdrawalQueue();

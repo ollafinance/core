@@ -1892,8 +1892,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
         rewardsRecipient = recipient;
     }
 
-    function setProviderConfig(address admin, address rewardsRecipient_) external {
-        _providerConfig = ProviderConfig({ admin: admin, rewardsRecipient: rewardsRecipient_ });
+    function setProviderConfig(address, address rewardsRecipient_) external {
+        _providerConfig = ProviderConfig({ rewardsRecipient: rewardsRecipient_ });
     }
 
     function initialize(IERC20, address, address, address, address, address) external pure override { }

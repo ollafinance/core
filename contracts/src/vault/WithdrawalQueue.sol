@@ -31,6 +31,11 @@ contract WithdrawalQueue is
     /// @notice Maximum allowed gas threshold (30 million).
     uint256 private constant _MAX_GAS_THRESHOLD = 30_000_000;
 
+    /// @notice Tolerance for rate comparison in slashing adjustment (1 wei).
+    /// @dev Accounts for floor-rounding differences between the gross rate
+    ///      (computed on aggregate state) and per-request rates (computed on per-request state).
+    uint256 private constant _SLASHING_RATE_TOLERANCE = 1;
+
     /// @notice Scale factor for exchange rate calculations.
     uint256 private constant _RATE_SCALE = 1e18;
 
@@ -197,7 +202,7 @@ contract WithdrawalQueue is
                 // Adjust payout when slashing has reduced the exchange rate below the locked rate.
                 // The > 1 tolerance accounts for floor-rounding differences between the gross rate
                 // (computed on aggregate state) and per-request rates (computed on per-request state).
-                if (currentRate < request.rate && request.rate - currentRate > 1) {
+                if (currentRate < request.rate && request.rate - currentRate > _SLASHING_RATE_TOLERANCE) {
                     uint256 payout = (request.shares * currentRate) / _RATE_SCALE;
                     if (payout < assetsExpected) {
                         uint256 adjustment = assetsExpected - payout;
