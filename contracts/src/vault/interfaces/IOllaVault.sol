@@ -68,6 +68,11 @@ interface IOllaVault {
     /// @param newFeeBP The new fee in basis points.
     event InstantRedemptionFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
 
+    /// @notice Emitted when the withdrawal queue gas threshold is updated.
+    /// @param oldThreshold The previous gas threshold.
+    /// @param newThreshold The new gas threshold.
+    event QueueGasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
+
     /// @notice Emitted when an operator is set or removed for a controller (ERC-7540).
     /// @param controller The address of the controller.
     /// @param operator The address of the operator.
