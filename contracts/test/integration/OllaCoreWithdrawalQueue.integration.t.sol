@@ -92,6 +92,8 @@ contract OllaCoreWithdrawalQueueTest is Test {
         guardian = makeAddr("guardian");
         safetyModule =
             new SafetyModule(admin, guardian, address(core), address(vault), 1_000_000 ether, 500, 6_000, 1 days);
+        vm.prank(admin);
+        safetyModule.setWithdrawalMinimum(0);
 
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
@@ -439,7 +441,7 @@ contract RealisticStakingManager is IStakingManager {
     }
 
     function getProviderConfig() external pure override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+        return ProviderConfig({ rewardsRecipient: address(0) });
     }
 }
 
@@ -490,6 +492,8 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         guardian = makeAddr("guardian");
         safetyModule =
             new SafetyModule(admin, guardian, address(core), address(vault), 1_000_000 ether, 500, 6_000, 1 days);
+        vm.prank(admin);
+        safetyModule.setWithdrawalMinimum(0);
 
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
