@@ -446,6 +446,9 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice An active attester whose rollup balance decreases (partial slash) but remains
     ///         non-zero should stay Active with updated cached balance. stakedAmount decreases
     ///         and slashingDelta increases by the slashed amount.
+    /// @dev    Reachable on Aztec: StakingLib.slash() when effectiveBalance - slashAmount >=
+    ///         localEjectionThreshold. The attester stays VALIDATING in the GSE with reduced
+    ///         effectiveBalance and no exit record is created.
     function test_RefreshAttesterState_PartialSlash_AttesterStaysActive() external {
         _setupStakedAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
@@ -485,7 +488,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
         IStakingManager.StakingState memory stateAfterFirst = stakingManager.getStakingState();
 
-        // Second refresh — no rollup changes
+        // Second refresh -- no rollup changes
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         IStakingManager.StakingState memory stateAfterSecond = stakingManager.getStakingState();
@@ -501,6 +504,11 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice When an external exit already has isRecipient=true (claimed by another party),
     ///         refreshAttesterState should skip the initiateWithdraw call and still transition
     ///         the attester to Exiting correctly.
+    /// @dev    DEFENSIVE TEST -- not reachable on the current Aztec rollup. On Aztec,
+    ///         initiateWithdraw() requires msg.sender == withdrawer (= StakingManager), so no
+    ///         third party can create an isRecipient=true exit without the StakingManager's
+    ///         involvement. This test guards against future Aztec rollup changes where a
+    ///         different actor could set isRecipient=true (e.g. governance-driven forced exits).
     function test_RefreshAttesterState_AlreadyClaimedExternalExit() external {
         _setupStakedAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
@@ -524,6 +532,8 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
     /// @notice An already-claimed external exit that is immediately exitable should be
     ///         finalized in a single refresh call (same as zombie, but without initiateWithdraw).
+    /// @dev    DEFENSIVE TEST -- see test_RefreshAttesterState_AlreadyClaimedExternalExit for
+    ///         reachability notes.
     function test_RefreshAttesterState_AlreadyClaimedExternalExit_ImmediateFinalization() external {
         _setupStakedAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
@@ -558,7 +568,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
         uint256 activeCountBefore = stakingManager.getActivatedAttesterCount();
 
-        // First refresh — should be no-op
+        // First refresh -- should be no-op
         stakingManager.refreshAttesterState(_attesterAddresses(2));
 
         IStakingManager.StakingState memory stateAfterFirst = stakingManager.getStakingState();
@@ -566,7 +576,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         assertEq(stateAfterFirst.slashingDelta, stateBefore.slashingDelta, "slashingDelta unchanged after 1st");
         assertEq(stateAfterFirst.pendingUnstakeAmount, stateBefore.pendingUnstakeAmount, "pending unchanged after 1st");
 
-        // Second refresh — should also be no-op
+        // Second refresh -- should also be no-op
         stakingManager.refreshAttesterState(_attesterAddresses(2));
 
         IStakingManager.StakingState memory stateAfterSecond = stakingManager.getStakingState();

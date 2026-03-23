@@ -122,6 +122,10 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
           BALANCE INCREASE IN _refreshSingleAttester
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev    DEFENSIVE TEST -- not reachable on the current Aztec rollup. Aztec's
+    ///         effectiveBalance never increases; sequencer rewards are tracked separately via
+    ///         getSequencerRewards() and do not affect GSE effectiveBalance. This test guards
+    ///         against future GSE changes where balance could increase (e.g. re-staking rewards).
     function test_RefreshAttesterState_BalanceIncrease() external {
         // Setup: stake one attester at ACTIVATION_THRESHOLD
         _setupStakedAttester();
@@ -158,7 +162,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         bytes32 slot = keccak256(abi.encode(attester1, ROLLUP_STAKES_MAPPING_SLOT));
         vm.store(address(rollup), slot, bytes32(uint256(0)));
 
-        // Refresh — the decrease is ACTIVATION_THRESHOLD but should be handled gracefully
+        // Refresh -- the decrease is ACTIVATION_THRESHOLD but should be handled gracefully
         address[] memory attesters = _attesterAddresses(2);
         stakingManager.refreshAttesterState(attesters);
 
@@ -266,7 +270,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         // Set exit to be far in the future (not yet exitable)
         rollup.setExitReady(attester, block.timestamp + 365 days);
 
-        // Refresh — exit exists but not exitable, so attester remains Exiting
+        // Refresh -- exit exists but not exitable, so attester remains Exiting
         address[] memory attesters = _attesterAddresses(1);
         stakingManager.refreshAttesterState(attesters);
 
@@ -284,7 +288,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         // Setup: stake one attester at ACTIVATION_THRESHOLD
         _setupStakedAttester();
 
-        // Corrupt stakedAmount to 1 wei — much less than ACTIVATION_THRESHOLD
+        // Corrupt stakedAmount to 1 wei -- much less than ACTIVATION_THRESHOLD
         vm.store(address(stakingManager), bytes32(STAKING_MANAGER_STAKED_AMOUNT_SLOT), bytes32(uint256(1)));
 
         // Verify corruption
