@@ -528,6 +528,8 @@ contract OllaVault is
     /// @dev Only callable by governance (owner). The gas threshold controls how many withdrawal
     ///      requests can be processed per `finalizeWithdrawals()` call before the loop exits.
     function setQueueGasThreshold(uint256 threshold) external override onlyOwner {
+        uint256 oldThreshold = _modules.withdrawalQueue.gasThreshold();
+        emit QueueGasThresholdUpdated(oldThreshold, threshold);
         _modules.withdrawalQueue.setGasThreshold(threshold);
     }
 

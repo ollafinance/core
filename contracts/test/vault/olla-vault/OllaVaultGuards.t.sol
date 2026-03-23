@@ -302,6 +302,21 @@ contract OllaVaultGuardsTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                  SET QUEUE GAS THRESHOLD (EVENT)
+    //////////////////////////////////////////////////////////////*/
+
+    function test_SetQueueGasThreshold_EmitsEvent() external {
+        uint256 oldThreshold = withdrawalQueue.gasThreshold();
+        uint256 newThreshold = 500_000;
+
+        vm.expectEmit(true, true, true, true);
+        emit IOllaVault.QueueGasThresholdUpdated(oldThreshold, newThreshold);
+
+        vm.prank(address(governance));
+        vault.setQueueGasThreshold(newThreshold);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                       GUARDIAN PAUSE / UNPAUSE
     //////////////////////////////////////////////////////////////*/
 
