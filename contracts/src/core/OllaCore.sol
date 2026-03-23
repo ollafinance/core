@@ -363,8 +363,6 @@ contract OllaCore is
             uint256 pending = vaultRef.pendingWithdrawalAssets();
             // slither-disable-next-line incorrect-equality,timestamp
             if (pending == 0 || vaultRef.bufferedAssets() == 0 || finalizedAmount == 0) {
-                (uint256 requiredBuffer,) = _computeRequiredBuffer();
-                progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
                 progress.step = IOllaCore.RebalanceStep.InitiateUnstake;
             } else {
                 _rebalanceProgress = progress;
