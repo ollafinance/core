@@ -225,7 +225,7 @@ sequenceDiagram
     opt guardian override
         G->>C: forceRebalanceReset()
         Note right of C: resets state machine to Done
-        Note right of C: does NOT reset lastRebalanceTimestamp
+        Note right of C: resets lastRebalanceTimestamp (enforces cooldown from reset)
     end
 ```
 
