@@ -32,10 +32,9 @@ contract MockStakingProviderRegistry is IStakingProviderRegistry {
                                 CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(address stakingManager_, address providerAdmin_, address providerRewardsRecipient_) {
+    constructor(address stakingManager_, address providerRewardsRecipient_) {
         stakingManager = stakingManager_;
-        _provider =
-            IStakingManager.ProviderConfig({ admin: providerAdmin_, rewardsRecipient: providerRewardsRecipient_ });
+        _provider = IStakingManager.ProviderConfig({ rewardsRecipient: providerRewardsRecipient_ });
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -68,7 +67,7 @@ contract MockStakingProviderRegistry is IStakingProviderRegistry {
     /// @param rewardsRecipient The new rewards recipient.
     function setProviderRewardsRecipient(address rewardsRecipient) external override {
         _provider.rewardsRecipient = rewardsRecipient;
-        emit ProviderSet(_provider.admin, rewardsRecipient);
+        emit ProviderSet(rewardsRecipient);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -107,10 +106,6 @@ contract MockStakingProviderRegistry is IStakingProviderRegistry {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice No-op initializer for mock compatibility.
-    /// @param stakingManager_ Unused.
-    /// @param providerAdmin_ Unused.
-    /// @param providerRewardsRecipient_ Unused.
-    /// @param defaultAdmin_ Unused.
     function initialize(
         address stakingManager_,
         address providerAdmin_,
@@ -121,7 +116,6 @@ contract MockStakingProviderRegistry is IStakingProviderRegistry {
         providerAdmin_;
         providerRewardsRecipient_;
         defaultAdmin_;
-        return;
     }
 
     /*//////////////////////////////////////////////////////////////

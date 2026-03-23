@@ -432,7 +432,6 @@ contract StakingManagerInvariantTest is Test {
         IStakingManager.ProviderConfig memory config = stakingProviderRegistry.getStakingProviderConfig();
 
         // Config addresses should never be zero
-        assertNotEq(config.admin, address(0), "provider admin should never be zero address");
         assertNotEq(config.rewardsRecipient, address(0), "rewards recipient should never be zero address");
     }
 

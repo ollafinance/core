@@ -168,7 +168,6 @@ contract StakingProviderRegistryUpgradeTest is Test {
         assertEq(mockCore.owner(), ownerBefore, "owner preserved");
 
         IStakingManager.ProviderConfig memory providerAfter = v2.getStakingProviderConfig();
-        assertEq(providerAfter.admin, providerBefore.admin, "provider admin preserved");
         assertEq(providerAfter.rewardsRecipient, providerBefore.rewardsRecipient, "rewards recipient preserved");
 
         // Verify roles preserved

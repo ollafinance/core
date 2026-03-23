@@ -180,7 +180,6 @@ contract StakingManagerUpgradeTest is Test {
         assertEq(v2.getActivatedAttesterCount(), activatedBefore, "activated preserved");
         assertEq(v2.getPendingUnstakeCount(), pendingBefore, "pending preserved");
         IStakingManager.ProviderConfig memory providerAfter = v2.getProviderConfig();
-        assertEq(providerAfter.admin, providerBefore.admin, "provider admin preserved");
         assertEq(providerAfter.rewardsRecipient, providerBefore.rewardsRecipient, "rewards recipient preserved");
         assertEq(address(v2.stakingAsset()), assetBefore, "asset preserved");
         assertEq(address(v2.rollupRegistry()), rollupRegistryBefore, "rollup registry preserved");

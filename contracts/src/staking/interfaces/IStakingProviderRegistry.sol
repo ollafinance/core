@@ -11,10 +11,9 @@ interface IStakingProviderRegistry {
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Emitted when a provider is configured.
-    /// @param admin The provider admin address.
+    /// @notice Emitted when the provider rewards recipient is updated.
     /// @param rewardsRecipient The rewards recipient address.
-    event ProviderSet(address indexed admin, address indexed rewardsRecipient);
+    event ProviderSet(address indexed rewardsRecipient);
 
     /// @notice Emitted when attester keys are added to the queue.
     /// @param attesters The attester addresses of the added keys.

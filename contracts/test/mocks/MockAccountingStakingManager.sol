@@ -279,7 +279,7 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function getProviderConfig() external view override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: providerAdmin, rewardsRecipient: providerRewardsRecipient });
+        return ProviderConfig({ rewardsRecipient: providerRewardsRecipient });
     }
 
     function getActivatedAttesterCount() external view override returns (uint256) {
