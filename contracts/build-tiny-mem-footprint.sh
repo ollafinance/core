@@ -3,6 +3,15 @@
 set -euo pipefail
 shopt -s globstar nullglob
 
+include_tests=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-tests)
+      include_tests=0
+      ;;
+  esac
+done
+
 heavy=(
   "src/core/OllaCore.sol"
   "src/vault/OllaVault.sol"
@@ -18,7 +27,12 @@ for f in "${heavy[@]}"; do
   files+=("$f")
 done
 
-for f in src/**/*.sol script/**/*.sol test/**/*.sol; do
+patterns=(src/**/*.sol script/**/*.sol)
+if (( include_tests )); then
+  patterns+=(test/**/*.sol)
+fi
+
+for f in "${patterns[@]}"; do
   skip=0
   for h in "${heavy[@]}"; do
     if [[ "$f" == "$h" ]]; then
