@@ -24,6 +24,7 @@ import { DeployConfig } from "./config/Config.s.sol";
 import { LocalConfig } from "./config/Local.s.sol";
 import { MainnetConfig } from "./config/Mainnet.s.sol";
 import { TestnetConfig } from "./config/Testnet.s.sol";
+import { AtomicProxyFactory } from "./deployers/AtomicProxyFactory.sol";
 import { MocksDeployer } from "./deployers/Mocks.s.sol";
 import { OllaCoreDeployer } from "./deployers/OllaCore.s.sol";
 import { OllaGovernanceDeployer } from "./deployers/OllaGovernance.s.sol";
@@ -45,6 +46,9 @@ contract DeployScript is BaseDeployer {
     uint256 internal constant _CHAIN_SEPOLIA = 11155111;
     uint256 internal constant _CHAIN_MAINNET = 1;
 
+    bytes32 internal constant _CORE_PROXY_SALT = keccak256("olla.core.proxy.v1");
+    bytes32 internal constant _VAULT_PROXY_SALT = keccak256("olla.vault.proxy.v1");
+
     // Deployers
     MocksDeployer internal _mocksDeployer;
     OllaCoreDeployer internal _ollaCoreDeployer;
@@ -57,13 +61,20 @@ contract DeployScript is BaseDeployer {
     StakingStackDeployer internal _stakingStackDeployer;
     bool internal _resumeEnabled;
     string internal _artifactEnv;
+    AtomicProxyFactory internal _atomicProxyFactory;
+
+    function predictCoreProxy(address implementation) external view returns (address) {
+        return _predictProxyAddress(implementation, _CORE_PROXY_SALT);
+    }
+
+    function predictVaultProxy(address implementation) external view returns (address) {
+        return _predictProxyAddress(implementation, _VAULT_PROXY_SALT);
+    }
 
     function setUp() public {
         // Initialize deployers
         _mocksDeployer = new MocksDeployer();
-        _ollaCoreDeployer = new OllaCoreDeployer();
         _ollaGovernanceDeployer = new OllaGovernanceDeployer();
-        _ollaVaultDeployer = new OllaVaultDeployer();
         _stAztecDeployer = new StAztecDeployer();
         _stAztecOFTAdapterDeployer = new StAztecOFTAdapterDeployer();
         _withdrawalQueueDeployer = new WithdrawalQueueDeployer();
@@ -117,6 +128,10 @@ contract DeployScript is BaseDeployer {
                 config.lzEndpoint
             );
         }
+        _atomicProxyFactory = _resolveOrDeployAtomicProxyFactory(config);
+        _ollaCoreDeployer = new OllaCoreDeployer(_atomicProxyFactory);
+        _ollaVaultDeployer = new OllaVaultDeployer(_atomicProxyFactory);
+
         address configuredGovernance = config.governance;
         // Keep deployer roles when explicitly using mock flows with governance == deployer.
         // This avoids orphaning timelock operational roles on strict mock deployments.
@@ -128,14 +143,10 @@ contract DeployScript is BaseDeployer {
 
         (ollaGovImpl, ollaGovProxy) = _resolveOrDeployOllaGovernance(config);
 
-        // 2. Deploy OllaCore (implementation + proxy)
-
-        (ollaCoreImpl, ollaCoreProxy) = _resolveOrDeployOllaCore(config);
-
-        // 3. Deploy OllaVault (implementation + proxy, uninitialized)
-        //    Deployed early so the proxy address is available for StAztec and WithdrawalQueue.
-
-        (ollaVaultImpl, ollaVaultProxy) = _resolveOrDeployOllaVault(config);
+        // 2. Deploy OllaCore and OllaVault implementations.
+        //    Proxies are deployed after all dependencies are ready.
+        (ollaCoreImpl, ollaCoreProxy) = _resolveOrDeployOllaCoreImplementation(config);
+        (ollaVaultImpl, ollaVaultProxy) = _resolveOrDeployOllaVaultImplementation(config);
 
         // 4. Deploy or use existing external contracts (asset + rollup)
         if (config.deployMocks) {
@@ -155,9 +166,11 @@ contract DeployScript is BaseDeployer {
             }
         }
 
-        // 5. Deploy StAztec (linked to OllaVault proxy -- vault mints/burns shares)
+        address predictedCoreProxy = _predictProxyAddress(ollaCoreImpl, _CORE_PROXY_SALT);
+        address predictedVaultProxy = _predictProxyAddress(ollaVaultImpl, _VAULT_PROXY_SALT);
 
-        stAztec = _resolveOrDeployStAztec(config, ollaVaultProxy);
+        // 5. Deploy StAztec (linked to predicted OllaVault proxy -- vault mints/burns shares)
+        stAztec = _resolveOrDeployStAztec(config, predictedVaultProxy);
 
         // 4a. Deploy LayerZero OFTAdapter for stAztec bridging.
         //     Local: deploy a mock LZ endpoint first. Non-local: use LZ_ENDPOINT env var.
@@ -177,16 +190,17 @@ contract DeployScript is BaseDeployer {
         // 5.1 Deploy WithdrawalQueue (linked to OllaVault proxy -- vault manages requests)
         //     OllaGovernance is the admin so it can manage roles and upgrades.
 
-        (withdrawalQueueImpl, withdrawalQueue) = _resolveOrDeployWithdrawalQueue(config, ollaVaultProxy, ollaGovProxy);
+        (withdrawalQueueImpl, withdrawalQueue) =
+            _resolveOrDeployWithdrawalQueue(config, predictedVaultProxy, ollaGovProxy);
 
         // 5.2 Deploy RewardsAccumulator (linked to OllaCore proxy)
 
         (rewardsAccumulatorImpl, rewardsAccumulator) =
-            _resolveOrDeployRewardsAccumulator(config, asset, ollaCoreProxy, ollaGovProxy);
+            _resolveOrDeployRewardsAccumulator(config, asset, predictedCoreProxy, ollaGovProxy);
 
         // 6. Deploy staking stack (always — StakingManager + StakingProviderRegistry behind proxies)
         (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) = _resolveOrDeployStakingStack(
-            config, ollaCoreProxy, rewardsAccumulator, asset, rollupRegistry, ollaGovProxy
+            config, predictedCoreProxy, rewardsAccumulator, asset, rollupRegistry, ollaGovProxy
         );
 
         // 6a. Mock-only: seed provider keys and configure rollup mock
@@ -220,27 +234,27 @@ contract DeployScript is BaseDeployer {
         }
 
         // 7. Deploy SafetyModule (always — deployer EOA as guardian for fast emergency pause)
-        safetyModule = _resolveOrDeploySafetyModule(config, ollaGovProxy, ollaCoreProxy, ollaVaultProxy);
+        safetyModule = _resolveOrDeploySafetyModule(config, ollaGovProxy, predictedCoreProxy, predictedVaultProxy);
 
         _recordAddress("StakingManager", stakingManager);
         _recordAddress("SafetyModule", safetyModule);
 
-        _setPhase("B", false);
-
-        // 6. Initialize OllaCore with OllaGovernance as owner
-        //    OllaGovernance holds: owner(), DEFAULT_ADMIN_ROLE, GUARDIAN_ROLE
-
+        // 7.5 Deploy core/vault proxies with initialize calldata atomically in constructor tx.
         config.withdrawalQueue = withdrawalQueue;
         config.rewardsAccumulator = rewardsAccumulator;
         config.safetyModule = safetyModule;
-        // Override governance to OllaGovernance proxy (OllaCore's owner)
         config.governance = ollaGovProxy;
-        _initializeCoreIfNeeded(
-            config, ollaCoreProxy, asset, stAztec, stakingManager, rewardsAccumulator, safetyModule, ollaGovProxy
+        ollaCoreProxy = _resolveOrDeployOllaCoreProxy(
+            config, ollaCoreImpl, asset, stAztec, stakingManager, safetyModule, _CORE_PROXY_SALT
+        );
+        ollaVaultProxy = _resolveOrDeployOllaVaultProxy(
+            config, ollaVaultImpl, asset, stAztec, withdrawalQueue, ollaCoreProxy, ollaGovProxy, _VAULT_PROXY_SALT
         );
 
-        // 8.1 Initialize OllaVault with all dependencies
-        _initializeVaultIfNeeded(config, ollaVaultProxy, asset, stAztec, withdrawalQueue, ollaCoreProxy, ollaGovProxy);
+        require(ollaCoreProxy == predictedCoreProxy, "Deploy: ADDRESS_STATE_MISMATCH.OllaCoreProxy.predicted");
+        require(ollaVaultProxy == predictedVaultProxy, "Deploy: ADDRESS_STATE_MISMATCH.OllaVaultProxy.predicted");
+
+        _setPhase("B", false);
 
         // 6.2 Wire OllaGovernance -> OllaCore
         _setGovernanceCoreIfNeeded(config, ollaGovProxy, ollaCoreProxy);
@@ -365,7 +379,23 @@ contract DeployScript is BaseDeployer {
         _recordAddress("OllaGovernanceProxy", proxy);
     }
 
-    function _resolveOrDeployOllaCore(DeployConfig memory config)
+    function _resolveOrDeployAtomicProxyFactory(DeployConfig memory config)
+        internal
+        returns (AtomicProxyFactory factory)
+    {
+        address existing = _readAddress("AtomicProxyFactory");
+        if (existing != address(0)) {
+            _requireCode(existing, "AtomicProxyFactory");
+            return AtomicProxyFactory(existing);
+        }
+
+        vm.startBroadcast(config.deployerPrivateKey);
+        factory = new AtomicProxyFactory();
+        vm.stopBroadcast();
+        _recordAddress("AtomicProxyFactory", address(factory));
+    }
+
+    function _resolveOrDeployOllaCoreImplementation(DeployConfig memory config)
         internal
         returns (address implementation, address proxy)
     {
@@ -381,20 +411,23 @@ contract DeployScript is BaseDeployer {
             proxy = address(0);
         }
 
-        if (implementation != address(0) || proxy != address(0)) {
-            require(
-                implementation != address(0) && proxy != address(0),
-                "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.OllaCore"
-            );
+        if (implementation != address(0)) {
             return (implementation, proxy);
         }
 
-        (implementation, proxy) = _ollaCoreDeployer.deploy(config);
+        if (proxy != address(0)) {
+            revert("Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.OllaCoreImplementation");
+        }
+
+        vm.startBroadcast(config.deployerPrivateKey);
+        OllaCore coreImpl = new OllaCore();
+        vm.stopBroadcast();
+        implementation = address(coreImpl);
+
         _recordAddress("OllaCoreImplementation", implementation);
-        _recordAddress("OllaCoreProxy", proxy);
     }
 
-    function _resolveOrDeployOllaVault(DeployConfig memory config)
+    function _resolveOrDeployOllaVaultImplementation(DeployConfig memory config)
         internal
         returns (address implementation, address proxy)
     {
@@ -410,17 +443,78 @@ contract DeployScript is BaseDeployer {
             proxy = address(0);
         }
 
-        if (implementation != address(0) || proxy != address(0)) {
-            require(
-                implementation != address(0) && proxy != address(0),
-                "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.OllaVault"
-            );
+        if (implementation != address(0)) {
             return (implementation, proxy);
         }
 
-        (implementation, proxy) = _ollaVaultDeployer.deploy(config);
+        if (proxy != address(0)) {
+            revert("Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.OllaVaultImplementation");
+        }
+
+        vm.startBroadcast(config.deployerPrivateKey);
+        OllaVault vaultImpl = new OllaVault();
+        vm.stopBroadcast();
+        implementation = address(vaultImpl);
+
         _recordAddress("OllaVaultImplementation", implementation);
+    }
+
+    function _resolveOrDeployOllaCoreProxy(
+        DeployConfig memory config,
+        address implementation,
+        address asset,
+        address stAztec,
+        address stakingManager,
+        address safetyModule,
+        bytes32 salt
+    ) internal returns (address proxy) {
+        proxy = _readAddress("OllaCoreProxy");
+
+        if (proxy != address(0)) {
+            _requireCode(proxy, "OllaCoreProxy");
+            require(proxy == _predictProxyAddress(implementation, salt), "Deploy: ADDRESS_STATE_MISMATCH.OllaCoreProxy");
+            _assertCoreInitialized(
+                proxy, asset, stAztec, stakingManager, config.rewardsAccumulator, safetyModule, config.governance
+            );
+            _recordFlag("coreInitialized", true);
+            return proxy;
+        }
+
+        (/*implementation*/, proxy) =
+            _ollaCoreDeployer.deploy(config, implementation, asset, stAztec, stakingManager, safetyModule, salt);
+        require(proxy == _predictProxyAddress(implementation, salt), "Deploy: ADDRESS_STATE_MISMATCH.OllaCoreProxy");
+        _recordAddress("OllaCoreProxy", proxy);
+        _recordFlag("coreInitialized", true);
+    }
+
+    function _resolveOrDeployOllaVaultProxy(
+        DeployConfig memory config,
+        address implementation,
+        address asset,
+        address stAztec,
+        address withdrawalQueue,
+        address core,
+        address governance,
+        bytes32 salt
+    ) internal returns (address proxy) {
+        proxy = _readAddress("OllaVaultProxy");
+
+        if (proxy != address(0)) {
+            _requireCode(proxy, "OllaVaultProxy");
+            require(
+                proxy == _predictProxyAddress(implementation, salt), "Deploy: ADDRESS_STATE_MISMATCH.OllaVaultProxy"
+            );
+            _assertVaultInitialized(proxy, asset, withdrawalQueue, core, governance);
+            _recordFlag("vaultInitialized", true);
+            return proxy;
+        }
+
+        (/*implementation*/, proxy) = _ollaVaultDeployer.deploy(
+            config, implementation, asset, stAztec, withdrawalQueue, core, governance, salt
+        );
+        require(proxy == _predictProxyAddress(implementation, salt), "Deploy: ADDRESS_STATE_MISMATCH.OllaVaultProxy");
         _recordAddress("OllaVaultProxy", proxy);
+        _recordFlag("vaultInitialized", true);
     }
 
     function _resolveOrDeployMocks(DeployConfig memory config)
@@ -712,81 +806,6 @@ contract DeployScript is BaseDeployer {
         _recordAddress("SafetyModule", safetyModule);
     }
 
-    function _initializeCoreIfNeeded(
-        DeployConfig memory config,
-        address core,
-        address asset,
-        address stAztec,
-        address stakingManager,
-        address rewardsAccumulator,
-        address safetyModule,
-        address governance
-    ) internal {
-        bool coreInitialized;
-        bool found;
-        (coreInitialized, found) = _readFlag("coreInitialized");
-
-        if (found && coreInitialized) {
-            if (_coreInitializedStateMatches(
-                    core, asset, stAztec, stakingManager, rewardsAccumulator, safetyModule, governance
-                )) {
-                return;
-            }
-            _recordFlag("coreInitialized", false);
-        }
-
-        bool shouldInit = false;
-        try OllaCore(core).asset() returns (address currentAsset) {
-            shouldInit = currentAsset == address(0);
-        } catch {
-            shouldInit = true;
-        }
-
-        if (shouldInit) {
-            config.rewardsAccumulator = rewardsAccumulator;
-            config.governance = governance;
-            _ollaCoreDeployer.initialize(config, core, asset, stAztec, stakingManager, safetyModule);
-        }
-
-        _assertCoreInitialized(core, asset, stAztec, stakingManager, rewardsAccumulator, safetyModule, governance);
-        _recordFlag("coreInitialized", true);
-    }
-
-    function _initializeVaultIfNeeded(
-        DeployConfig memory config,
-        address vault,
-        address asset,
-        address stAztec,
-        address withdrawalQueue,
-        address core,
-        address governance
-    ) internal {
-        bool vaultInitialized;
-        bool found;
-        (vaultInitialized, found) = _readFlag("vaultInitialized");
-
-        if (found && vaultInitialized) {
-            if (_vaultInitializedStateMatches(vault, asset, withdrawalQueue, core, governance)) {
-                return;
-            }
-            _recordFlag("vaultInitialized", false);
-        }
-
-        bool shouldInit = false;
-        try OllaVault(vault).asset() returns (address currentAsset) {
-            shouldInit = currentAsset == address(0);
-        } catch {
-            shouldInit = true;
-        }
-
-        if (shouldInit) {
-            _ollaVaultDeployer.initialize(config, vault, asset, stAztec, withdrawalQueue, core, governance);
-        }
-
-        _assertVaultInitialized(vault, asset, withdrawalQueue, core, governance);
-        _recordFlag("vaultInitialized", true);
-    }
-
     function _setGovernanceCoreIfNeeded(DeployConfig memory config, address governance, address core) internal {
         if (OllaGovernance(payable(governance)).core() == core) {
             return;
@@ -912,50 +931,6 @@ contract DeployScript is BaseDeployer {
         );
     }
 
-    function _coreInitializedStateMatches(
-        address core,
-        address asset,
-        address stAztec,
-        address stakingManager,
-        address rewardsAccumulator,
-        address safetyModule,
-        address governance
-    ) internal view returns (bool) {
-        try OllaCore(core).owner() returns (address ownerAddr) {
-            if (ownerAddr != governance) return false;
-        } catch {
-            return false;
-        }
-        try OllaCore(core).asset() returns (address currentAsset) {
-            if (currentAsset != asset) return false;
-        } catch {
-            return false;
-        }
-        try OllaCore(core).stAztec() returns (address currentStAztec) {
-            if (currentStAztec != stAztec) return false;
-        } catch {
-            return false;
-        }
-        try OllaCore(core).stakingManager() returns (address currentStakingManager) {
-            if (currentStakingManager != stakingManager) return false;
-        } catch {
-            return false;
-        }
-        try OllaCore(core).rewardsAccumulator() returns (address currentRewardsAccumulator) {
-            if (currentRewardsAccumulator != rewardsAccumulator) return false;
-        } catch {
-            return false;
-        }
-        try OllaCore(core).safetyModule() returns (address currentSafetyModule) {
-            if (currentSafetyModule != safetyModule) return false;
-        } catch {
-            return false;
-        }
-        if (!AccessControlUpgradeable(core).hasRole(bytes32(0), governance)) return false;
-
-        return true;
-    }
-
     function _assertVaultInitialized(
         address vault,
         address asset,
@@ -974,38 +949,6 @@ contract DeployScript is BaseDeployer {
             AccessControlUpgradeable(vault).hasRole(bytes32(0), governance),
             "Deploy: ADDRESS_STATE_MISMATCH.OllaVault.admin"
         );
-    }
-
-    function _vaultInitializedStateMatches(
-        address vault,
-        address asset,
-        address withdrawalQueue,
-        address core,
-        address governance
-    ) internal view returns (bool) {
-        try OllaVault(vault).owner() returns (address ownerAddr) {
-            if (ownerAddr != governance) return false;
-        } catch {
-            return false;
-        }
-        try OllaVault(vault).asset() returns (address currentAsset) {
-            if (currentAsset != asset) return false;
-        } catch {
-            return false;
-        }
-        try OllaVault(vault).core() returns (address currentCore) {
-            if (currentCore != core) return false;
-        } catch {
-            return false;
-        }
-        try OllaVault(vault).withdrawalQueue() returns (address currentWithdrawalQueue) {
-            if (currentWithdrawalQueue != withdrawalQueue) return false;
-        } catch {
-            return false;
-        }
-        if (!AccessControlUpgradeable(vault).hasRole(bytes32(0), governance)) return false;
-
-        return true;
     }
 
     function _requireCode(address addr, string memory label) internal view {
@@ -1124,6 +1067,10 @@ contract DeployScript is BaseDeployer {
         require(activationThreshold > 0, "Deploy: invalid canonical rollup");
 
         IAztecRollup(canonicalRollup).isRewardsClaimable();
+    }
+
+    function _predictProxyAddress(address implementation, bytes32 salt) internal view returns (address) {
+        return _atomicProxyFactory.computeAddress(implementation, salt);
     }
 
     function _validateDeploymentState(
