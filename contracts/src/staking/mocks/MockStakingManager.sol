@@ -49,8 +49,8 @@ contract MockStakingManager is IStakingManager {
     /// @notice Configurable claimable rewards return value. Default 0.
     uint256 private _claimableRewards;
 
-    /// @notice Configurable hasExitableUnstakes return value. Default false.
-    bool private _hasExitableUnstakes;
+    /// @notice Configurable hasFinalizedUnstakes return value. Default false.
+    bool private _hasFinalizedUnstakes;
 
     /*//////////////////////////////////////////////////////////////
                             EXTERNAL FUNCTIONS
@@ -142,10 +142,10 @@ contract MockStakingManager is IStakingManager {
         _claimableRewards = amount;
     }
 
-    /// @notice Sets the hasExitableUnstakes return value.
-    /// @param value Whether hasExitableUnstakes returns true.
-    function mockSetHasExitableUnstakes(bool value) external {
-        _hasExitableUnstakes = value;
+    /// @notice Sets the hasFinalizedUnstakes return value.
+    /// @param value Whether hasFinalizedUnstakes returns true.
+    function mockSetHasFinalizedUnstakes(bool value) external {
+        _hasFinalizedUnstakes = value;
     }
 
     // solhint-enable comprehensive-interface
@@ -195,8 +195,8 @@ contract MockStakingManager is IStakingManager {
     }
 
     /// @inheritdoc IStakingManager
-    function hasExitableUnstakes() external view override returns (bool) {
-        return _hasExitableUnstakes;
+    function hasFinalizedUnstakes() external view override returns (bool) {
+        return _hasFinalizedUnstakes;
     }
 
     /// @inheritdoc IStakingManager
@@ -214,13 +214,8 @@ contract MockStakingManager is IStakingManager {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IStakingManager
-    function getUnstakedFunds()
-        external
-        pure
-        override
-        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
-    {
-        return (0, 0, false);
+    function getUnstakedFunds() external pure override returns (uint256 received, uint256 exitAmount) {
+        return (0, 0);
     }
 
     /// @inheritdoc IStakingManager

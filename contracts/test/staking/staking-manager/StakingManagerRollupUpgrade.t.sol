@@ -53,7 +53,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
 
         // No phantom funds should be credited
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(exitAmount, 0, "exitAmount should be 0 -- no phantom credit");
         assertEq(received, 0, "received should be 0 -- no funds transferred");
     }
@@ -97,7 +97,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         // Core can claim the funds
         uint256 coreBalanceBefore = aztec.balanceOf(core);
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match finalized amount");
         assertEq(received, ACTIVATION_THRESHOLD, "received should match transferred tokens");
@@ -146,7 +146,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         // Claim funds
         uint256 coreBalanceBefore = aztec.balanceOf(core);
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match finalized exit");
         assertEq(received, ACTIVATION_THRESHOLD, "received should match tokens from old rollup");
@@ -177,7 +177,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
             stakingManager.refreshAttesterState(_attesterAddresses(1));
 
             vm.prank(core);
-            (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+            (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
             assertEq(exitAmount, 0, "exitAmount must be 0 on each refresh -- no phantom credit");
             assertEq(received, 0, "received must be 0 -- no funds have been transferred");
@@ -219,7 +219,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         // Claim
         uint256 coreBalanceBefore = aztec.balanceOf(core);
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
         uint256 expectedTotal = ACTIVATION_THRESHOLD * count;
         assertEq(exitAmount, expectedTotal, "exitAmount should match all finalized exits");
@@ -250,7 +250,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
 
         // No phantom credits
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(exitAmount, 0, "no phantom credit");
         assertEq(received, 0, "no funds transferred");
 
@@ -262,7 +262,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
         vm.prank(core);
-        (received, exitAmount,) = stakingManager.getUnstakedFunds();
+        (received, exitAmount) = stakingManager.getUnstakedFunds();
 
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match finalized amount");
         assertEq(received, ACTIVATION_THRESHOLD, "received should match transferred tokens");
