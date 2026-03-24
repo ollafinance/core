@@ -74,8 +74,8 @@ contract MockHarvestStakingManager is IStakingManager {
 
     function refreshAttesterState(address[] calldata) external override { }
 
-    function getUnstakedFunds() external pure override returns (uint256, uint256, bool) {
-        return (0, 0, false);
+    function getUnstakedFunds() external pure override returns (uint256, uint256) {
+        return (0, 0);
     }
 
     function getClaimableRewards() external pure override returns (uint256) {
@@ -98,7 +98,7 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
-    function hasExitableUnstakes() external pure override returns (bool) {
+    function hasFinalizedUnstakes() external pure override returns (bool) {
         return false;
     }
 

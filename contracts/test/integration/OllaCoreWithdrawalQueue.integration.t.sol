@@ -343,7 +343,7 @@ contract RealisticStakingManager is IStakingManager {
     IERC20 public stakingAsset;
     uint256 public totalStakedAmount;
     uint256 public pendingUnstakeAmount;
-    bool public _hasExitableUnstakes;
+    bool public _hasFinalizedUnstakes;
 
     function initialize(IERC20 stakingAsset_, address, address, address, address, address) external override {
         stakingAsset = stakingAsset_;
@@ -370,19 +370,15 @@ contract RealisticStakingManager is IStakingManager {
 
     function refreshAttesterState(address[] calldata) external override { }
 
-    function getUnstakedFunds()
-        external
-        override
-        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
-    {
+    function getUnstakedFunds() external override returns (uint256 received, uint256 exitAmount) {
         // Transfer pending unstaked funds back to caller (OllaCore)
         received = pendingUnstakeAmount;
         if (received > 0) {
             pendingUnstakeAmount = 0;
-            _hasExitableUnstakes = false;
+            _hasFinalizedUnstakes = false;
             stakingAsset.safeTransfer(msg.sender, received);
         }
-        return (received, 0, false);
+        return (received, 0);
     }
 
     function totalStaked() external view override returns (uint256) {
@@ -393,8 +389,8 @@ contract RealisticStakingManager is IStakingManager {
         return pendingUnstakeAmount;
     }
 
-    function hasExitableUnstakes() external view override returns (bool) {
-        return _hasExitableUnstakes;
+    function hasFinalizedUnstakes() external view override returns (bool) {
+        return _hasFinalizedUnstakes;
     }
 
     function getStakingState() external view override returns (StakingState memory) {

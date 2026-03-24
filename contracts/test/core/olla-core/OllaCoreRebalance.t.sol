@@ -556,7 +556,7 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(vault.bufferedAssets(), targetBuffered, "buffer unchanged");
     }
 
-    function test_Rebalance_PullUnstaked_WaitsForExitableUnstakes() external {
+    function test_Rebalance_PullUnstaked_WaitsForFinalizedUnstakes() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 withdrawalShares = 4 * DECIMALS;
 
@@ -1916,13 +1916,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function refreshAttesterState(address[] calldata) external override { }
 
-    function getUnstakedFunds()
-        external
-        pure
-        override
-        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
-    {
-        return (0, 0, false);
+    function getUnstakedFunds() external pure override returns (uint256 received, uint256 exitAmount) {
+        return (0, 0);
     }
 
     function harvestRewards() external override returns (uint256 harvested) {
@@ -1954,7 +1949,7 @@ contract UnstakeRevertingStakingManager is IStakingManager {
         return pending;
     }
 
-    function hasExitableUnstakes() external view override returns (bool) {
+    function hasFinalizedUnstakes() external view override returns (bool) {
         return _exitableUnstakes;
     }
 
