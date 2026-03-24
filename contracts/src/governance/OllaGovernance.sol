@@ -338,13 +338,11 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         address coreAddr = core;
         if (coreAddr == address(0)) return; // Core not yet set; propagation deferred to setCore()
         address vaultAddr = IOllaCore(coreAddr).vault();
-        address wq;
-        if (vaultAddr != address(0)) {
-            // Best-effort read of the queue address; failures must not block governance transfer.
-            try IOllaVault(vaultAddr).withdrawalQueue() returns (address queueAddr) {
-                wq = queueAddr;
-            } catch { }
-        }
+        address wq = address(0);
+        // Best-effort read of the queue address; failures must not block governance transfer.
+        try IOllaVault(vaultAddr).withdrawalQueue() returns (address queueAddr) {
+            wq = queueAddr;
+        } catch { }
         address rv = IOllaCore(coreAddr).rewardsAccumulator();
         address sm = IOllaCore(coreAddr).stakingManager();
         address spr = address(IStakingManager(sm).stakingProviderRegistry());
@@ -352,24 +350,27 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
 
         address[6] memory satellites = [vaultAddr, wq, rv, sm, spr, sfm];
 
-        // Grant DEFAULT_ADMIN_ROLE to new governance on all satellites
+        _propagateSatelliteAdminRole(satellites, newGovernance, true);
+
+        if (oldGovernance != address(0) && oldGovernance != newGovernance) {
+            _propagateSatelliteAdminRole(satellites, oldGovernance, false);
+        }
+    }
+
+    function _propagateSatelliteAdminRole(address[6] memory satellites, address account, bool isGrant) internal {
         for (uint256 i; i < satellites.length; ++i) {
             address satellite = satellites[i];
             if (satellite == address(0)) continue;
-            try AccessControlUpgradeable(satellite).grantRole(DEFAULT_ADMIN_ROLE, newGovernance) { }
-            catch {
-                emit AdminRolePropagationFailed(satellite, newGovernance, true);
-            }
-        }
 
-        // Revoke from old governance
-        if (oldGovernance != address(0) && oldGovernance != newGovernance) {
-            for (uint256 i; i < satellites.length; ++i) {
-                address satellite = satellites[i];
-                if (satellite == address(0)) continue;
-                try AccessControlUpgradeable(satellite).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance) { }
+            if (isGrant) {
+                try AccessControlUpgradeable(satellite).grantRole(DEFAULT_ADMIN_ROLE, account) { }
                 catch {
-                    emit AdminRolePropagationFailed(satellite, oldGovernance, false);
+                    emit AdminRolePropagationFailed(satellite, account, true);
+                }
+            } else {
+                try AccessControlUpgradeable(satellite).revokeRole(DEFAULT_ADMIN_ROLE, account) { }
+                catch {
+                    emit AdminRolePropagationFailed(satellite, account, false);
                 }
             }
         }
