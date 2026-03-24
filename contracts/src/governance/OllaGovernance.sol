@@ -338,7 +338,13 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         address coreAddr = core;
         if (coreAddr == address(0)) return; // Core not yet set; propagation deferred to setCore()
         address vaultAddr = IOllaCore(coreAddr).vault();
-        address wq = IOllaVault(vaultAddr).withdrawalQueue();
+        address wq;
+        if (vaultAddr != address(0)) {
+            // Best-effort read of the queue address; failures must not block governance transfer.
+            try IOllaVault(vaultAddr).withdrawalQueue() returns (address queueAddr) {
+                wq = queueAddr;
+            } catch { }
+        }
         address rv = IOllaCore(coreAddr).rewardsAccumulator();
         address sm = IOllaCore(coreAddr).stakingManager();
         address spr = address(IStakingManager(sm).stakingProviderRegistry());
@@ -348,18 +354,22 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
 
         // Grant DEFAULT_ADMIN_ROLE to new governance on all satellites
         for (uint256 i; i < satellites.length; ++i) {
-            try AccessControlUpgradeable(satellites[i]).grantRole(DEFAULT_ADMIN_ROLE, newGovernance) { }
+            address satellite = satellites[i];
+            if (satellite == address(0)) continue;
+            try AccessControlUpgradeable(satellite).grantRole(DEFAULT_ADMIN_ROLE, newGovernance) { }
             catch {
-                emit AdminRolePropagationFailed(satellites[i], newGovernance, true);
+                emit AdminRolePropagationFailed(satellite, newGovernance, true);
             }
         }
 
         // Revoke from old governance
         if (oldGovernance != address(0) && oldGovernance != newGovernance) {
             for (uint256 i; i < satellites.length; ++i) {
-                try AccessControlUpgradeable(satellites[i]).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance) { }
+                address satellite = satellites[i];
+                if (satellite == address(0)) continue;
+                try AccessControlUpgradeable(satellite).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance) { }
                 catch {
-                    emit AdminRolePropagationFailed(satellites[i], oldGovernance, false);
+                    emit AdminRolePropagationFailed(satellite, oldGovernance, false);
                 }
             }
         }

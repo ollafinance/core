@@ -8,6 +8,12 @@ import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { OllaGovernanceSetup } from "./OllaGovernanceSetup.t.sol";
 
+contract RevertingVaultReader {
+    function withdrawalQueue() external pure returns (address) {
+        revert("mock revert");
+    }
+}
+
 /// @title OllaGovernanceTransferTest
 /// @notice Tests for two-step governance transfer on OllaGovernance.
 contract OllaGovernanceTransferTest is OllaGovernanceSetup {
@@ -141,6 +147,24 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
 
         vm.prank(newGov);
         gov.acceptGovernance();
+    }
+
+    function test_AcceptGovernance_AllowsTransferWhenWithdrawalQueueReadFails() external {
+        // Propose
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+
+        // Simulate a vault module whose withdrawalQueue() call reverts.
+        RevertingVaultReader revertingVault = new RevertingVaultReader();
+        vm.mockCall(address(core), abi.encodeWithSignature("vault()"), abi.encode(address(revertingVault)));
+
+        // Mock the non-vault satellites to keep propagation deterministic.
+        _mockSatelliteACL();
+
+        vm.prank(newGov);
+        gov.acceptGovernance();
+
+        assertEq(gov.pendingGovernance(), address(0), "pending cleared");
+        assertEq(gov.governanceAdmin(), newGov, "admin updated");
     }
 
     function test_RevertWhen_AcceptGovernance_NotPending() external {
@@ -316,7 +340,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
 
         // Expect the failure event for withdrawalQueue grant
-        vm.expectEmit(true, true, false, true);
+        vm.expectEmit(true, true, true, true);
         emit IOllaGovernance.AdminRolePropagationFailed(address(withdrawalQueue), newGov, true);
 
         // Accept should NOT revert despite withdrawalQueue failure
