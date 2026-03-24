@@ -729,6 +729,9 @@ contract OllaCoreRebalancePauseTest is Test {
 
         assertEq(uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "step reset to Done");
 
+        // Warp past cooldown (reset now sets lastRebalanceTimestamp)
+        vm.warp(block.timestamp + 1 hours + 1);
+
         // A new rebalance cycle can start
         stakingManager.setStakeReturnAmount(0);
         stakingManager.setActivatedAttesterCount(0);
@@ -789,6 +792,9 @@ contract OllaCoreRebalancePauseTest is Test {
         // Force reset mid-cycle -- should reset _rebalanceIdleBuffer
         vm.prank(guardian);
         core.forceRebalanceReset();
+
+        // Warp past cooldown (reset now sets lastRebalanceTimestamp)
+        vm.warp(block.timestamp + 1 hours + 1);
 
         // After force reset, a new rebalance should NOT be skipped (idle buffer was reset)
         vm.prank(operator);

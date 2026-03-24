@@ -544,16 +544,16 @@ contract OllaCorePermissionlessRebalance is Test {
            forceRebalanceReset COOLDOWN ELIGIBILITY TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice After forceRebalanceReset(), the next rebalance cycle still respects the
-    ///         original lastRebalanceTimestamp. Force reset does NOT update the cooldown
-    ///         timestamp, so if the cooldown from the previous completion has already elapsed,
-    ///         a new rebalance can start immediately after the reset.
-    function test_ForceRebalanceReset_DoesNotUpdateCooldownTimestamp() external {
+    /// @notice forceRebalanceReset() updates lastRebalanceTimestamp, enforcing a full
+    ///         cooldown period from the moment of the reset before a new rebalance can start.
+    function test_ForceRebalanceReset_ResetsCooldownTimestamp() external {
         // Step 1: Complete a rebalance cycle
         _performDeposit(alice, 10 * DECIMALS);
         core.rebalance();
         IOllaCore.RebalanceProgress memory progress1 = core.rebalanceProgress();
         assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.Done), "first cycle should complete");
+
+        uint256 firstRebalanceTs = core.lastRebalanceTimestamp();
 
         // Step 2: Deposit more and warp past cooldown
         _performDeposit(alice, 10 * DECIMALS);
@@ -573,6 +573,9 @@ contract OllaCorePermissionlessRebalance is Test {
             "should be in StakeSurplus (in-progress)"
         );
 
+        // In-progress rebalance should not update timestamp
+        assertEq(core.lastRebalanceTimestamp(), firstRebalanceTs, "in-progress should not update timestamp");
+
         // Step 4: Guardian calls forceRebalanceReset()
         vm.prank(guardian);
         core.forceRebalanceReset();
@@ -580,17 +583,48 @@ contract OllaCorePermissionlessRebalance is Test {
         IOllaCore.RebalanceProgress memory progressAfterReset = core.rebalanceProgress();
         assertEq(uint256(progressAfterReset.step), uint256(IOllaCore.RebalanceStep.Done), "should be reset to Done");
 
-        // Step 5: Immediately try rebalance -- it should succeed because the cooldown
-        // was from the step-1 completion, and we already warped past it in step 2.
-        // forceRebalanceReset does NOT set lastRebalanceTimestamp.
+        // Step 5: Verify forceRebalanceReset updated lastRebalanceTimestamp
+        assertGt(core.lastRebalanceTimestamp(), firstRebalanceTs, "reset should update lastRebalanceTimestamp");
+
+        // Step 6: Warp past cooldown from reset and rebalance -- should succeed
         stakingManager.clearStakeReturnAmount();
+        vm.warp(core.lastRebalanceTimestamp() + 1 hours + 1);
         core.rebalance();
         IOllaCore.RebalanceProgress memory progress3 = core.rebalanceProgress();
         assertEq(
             uint256(progress3.step),
             uint256(IOllaCore.RebalanceStep.Done),
-            "rebalance should succeed immediately after force reset since original cooldown already elapsed"
+            "rebalance should succeed after cooldown elapses from reset"
         );
+    }
+
+    /// @notice Rebalance reverts immediately after forceRebalanceReset because the
+    ///         cooldown is enforced from the reset timestamp.
+    function test_RevertWhen_Rebalance_CooldownNotElapsedAfterForceReset() external {
+        _performDeposit(alice, 10 * DECIMALS);
+
+        // Complete a rebalance cycle
+        core.rebalance();
+
+        // Warp past cooldown and start an in-progress cycle
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+        _performDeposit(alice, 10 * DECIMALS);
+        stakingManager.setStakeReturnAmount(3 * DECIMALS);
+        stakingManager.setAllowStakeReturnExceeds(true);
+        core.rebalance();
+
+        // Guardian resets
+        vm.prank(guardian);
+        core.forceRebalanceReset();
+
+        // Immediately try rebalance -- should revert with cooldown error
+        stakingManager.clearStakeReturnAmount();
+        vm.expectRevert(
+            abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceCooldownActive.selector, uint256(0), uint256(1 hours))
+        );
+        core.rebalance();
     }
 
     /*//////////////////////////////////////////////////////////////
