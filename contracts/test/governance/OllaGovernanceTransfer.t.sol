@@ -30,7 +30,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
             abi.encode(sprMock)
         );
 
-        // Mock grantRole / revokeRole on all 5 satellite addresses
+        // Mock grantRole / revokeRole on all non-vault satellite addresses
         address[5] memory sats = [
             address(withdrawalQueue),
             address(rewardsAccumulator),
@@ -121,6 +121,26 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         assertFalse(gov.hasRole(gov.EXECUTOR_ROLE(), admin), "old lost EXECUTOR_ROLE");
         assertFalse(gov.hasRole(gov.CANCELLER_ROLE(), admin), "old lost CANCELLER_ROLE");
         assertFalse(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), admin), "old lost DEFAULT_ADMIN_ROLE");
+    }
+
+    function test_AcceptGovernance_PropagatesWithdrawalQueueAdminRole() external {
+        // Propose
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+        _mockSatelliteACL();
+
+        bytes32 defaultAdminRole = gov.DEFAULT_ADMIN_ROLE();
+
+        vm.expectCall(
+            address(withdrawalQueue),
+            abi.encodeWithSelector(IAccessControl.grantRole.selector, defaultAdminRole, newGov)
+        );
+        vm.expectCall(
+            address(withdrawalQueue),
+            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin)
+        );
+
+        vm.prank(newGov);
+        gov.acceptGovernance();
     }
 
     function test_RevertWhen_AcceptGovernance_NotPending() external {
@@ -239,7 +259,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
             abi.encode(sprMock)
         );
 
-        // Mock grantRole to succeed on vault and rewardsAccumulator, but revert on stakingManager
+        // Mock grantRole to succeed on non-vault satellites except stakingManager.
         vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
         vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
         vm.mockCallRevert(
@@ -265,6 +285,46 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
 
         // Core governance transfer still completed
         assertEq(gov.governanceAdmin(), newGov, "admin updated despite satellite failure");
+        assertTrue(gov.hasRole(gov.PROPOSER_ROLE(), newGov), "newGov has PROPOSER_ROLE");
+    }
+
+    function test_AcceptGovernance_EmitsEventOnWithdrawalQueueGrantRoleFailure() external {
+        // Propose
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+
+        // Mock stakingProviderRegistry() to return a valid address
+        vm.mockCall(
+            address(stakingManager),
+            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
+            abi.encode(sprMock)
+        );
+
+        // Mock grantRole: withdrawalQueue fails, all other non-vault satellites succeed
+        vm.mockCallRevert(
+            address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.grantRole.selector), "mock revert"
+        );
+        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+
+        // Mock revokeRole to succeed on all non-vault satellites
+        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+
+        // Expect the failure event for withdrawalQueue grant
+        vm.expectEmit(true, true, false, true);
+        emit IOllaGovernance.AdminRolePropagationFailed(address(withdrawalQueue), newGov, true);
+
+        // Accept should NOT revert despite withdrawalQueue failure
+        vm.prank(newGov);
+        gov.acceptGovernance();
+
+        // Core governance transfer still completed
+        assertEq(gov.governanceAdmin(), newGov, "admin updated despite withdrawalQueue failure");
         assertTrue(gov.hasRole(gov.PROPOSER_ROLE(), newGov), "newGov has PROPOSER_ROLE");
     }
 
@@ -297,7 +357,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
             abi.encode(sprMock)
         );
 
-        // Mock grantRole to succeed on ALL satellites
+        // Mock grantRole to succeed on all non-vault satellites
         address[5] memory sats = [
             address(withdrawalQueue),
             address(rewardsAccumulator),

@@ -338,12 +338,13 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         address coreAddr = core;
         if (coreAddr == address(0)) return; // Core not yet set; propagation deferred to setCore()
         address vaultAddr = IOllaCore(coreAddr).vault();
+        address wq = IOllaVault(vaultAddr).withdrawalQueue();
         address rv = IOllaCore(coreAddr).rewardsAccumulator();
         address sm = IOllaCore(coreAddr).stakingManager();
         address spr = address(IStakingManager(sm).stakingProviderRegistry());
         address sfm = IOllaCore(coreAddr).safetyModule();
 
-        address[5] memory satellites = [vaultAddr, rv, sm, spr, sfm];
+        address[6] memory satellites = [vaultAddr, wq, rv, sm, spr, sfm];
 
         // Grant DEFAULT_ADMIN_ROLE to new governance on all satellites
         for (uint256 i; i < satellites.length; ++i) {
