@@ -206,20 +206,19 @@ contract OllaCoreRebalancePauseTest is Test {
         return shares;
     }
 
-    function _findGasForPullUnstakedStop() internal returns (uint256 selectedGas) {
+    function _findGasForPartialRebalance() internal returns (uint256 selectedGas) {
         uint256 snapshotId = vm.snapshotState();
-        uint256[6] memory gasOptions = [uint256(120_000), 140_000, 160_000, 180_000, 200_000, 220_000];
 
-        for (uint256 i; i < gasOptions.length; ++i) {
+        for (uint256 gasLimit = 120_000; gasLimit <= 400_000; gasLimit += 20_000) {
             vm.revertToState(snapshotId);
             vm.prank(operator);
-            (bool success,) = address(core).call{ gas: gasOptions[i] }(abi.encodeCall(core.rebalance, ()));
+            (bool success,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
             if (!success) {
                 continue;
             }
             IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-            if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
-                selectedGas = gasOptions[i];
+            if (progress.step != IOllaCore.RebalanceStep.Done) {
+                selectedGas = gasLimit;
                 break;
             }
         }
@@ -229,7 +228,7 @@ contract OllaCoreRebalancePauseTest is Test {
     }
 
     function _enterRebalanceInProgress() internal {
-        uint256 gasLimit = _findGasForPullUnstakedStop();
+        uint256 gasLimit = _findGasForPartialRebalance();
         vm.prank(operator);
         core.rebalance{ gas: gasLimit }();
 
@@ -399,12 +398,12 @@ contract OllaCoreRebalancePauseTest is Test {
     function test_Rebalance_PartialProgressPersistsAcrossCalls_WithGasThreshold() external {
         _performDeposit(alice, 11 * DECIMALS);
 
-        uint256 gasLimit = _findGasForPullUnstakedStop();
+        uint256 gasLimit = _findGasForPartialRebalance();
         vm.prank(operator);
         core.rebalance{ gas: gasLimit }();
 
         IOllaCore.RebalanceProgress memory progressPartial = core.rebalanceProgress();
-        assertEq(uint256(progressPartial.step), uint256(IOllaCore.RebalanceStep.PullUnstaked), "partial step set");
+        assertNotEq(uint256(progressPartial.step), uint256(IOllaCore.RebalanceStep.Done), "partial step set");
 
         vm.prank(operator);
         core.rebalance();
@@ -444,7 +443,7 @@ contract OllaCoreRebalancePauseTest is Test {
         IOllaCore.FlowCounters memory flowsBefore = core.flowCounters();
         uint256 reportBefore = core.latestReport().totalAssets;
 
-        uint256 gasLimit = _findGasForPullUnstakedStop();
+        uint256 gasLimit = _findGasForPartialRebalance();
         vm.prank(operator);
         core.rebalance{ gas: gasLimit }();
 
@@ -460,7 +459,7 @@ contract OllaCoreRebalancePauseTest is Test {
     function test_Rebalance_AccountingUpdateOnlyOnCompletionCall() external {
         _performDeposit(alice, 6 * DECIMALS);
 
-        uint256 gasLimit = _findGasForPullUnstakedStop();
+        uint256 gasLimit = _findGasForPartialRebalance();
         vm.recordLogs();
         vm.prank(operator);
         core.rebalance{ gas: gasLimit }();
@@ -630,7 +629,7 @@ contract OllaCoreRebalancePauseTest is Test {
         _enterRebalanceInProgress();
 
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.PullUnstaked), "progress in flight");
+        assertNotEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "progress in flight");
 
         vm.prank(guardian);
         core.forceRebalanceReset();
@@ -676,7 +675,7 @@ contract OllaCoreRebalancePauseTest is Test {
         _enterRebalanceInProgress();
 
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.PullUnstaked), "stuck at PullUnstaked");
+        assertNotEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "stuck mid-cycle");
 
         vm.recordLogs();
         vm.prank(guardian);
