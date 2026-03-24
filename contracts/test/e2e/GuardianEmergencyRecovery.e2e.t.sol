@@ -76,9 +76,7 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         // Verify we're in progress at StakeSurplus
         IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
         assertEq(
-            uint256(p.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "Rebalance should be stuck at StakeSurplus"
+            uint256(p.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Rebalance should be stuck at StakeSurplus"
         );
     }
 
@@ -469,11 +467,7 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         _rebalance();
 
         IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
-        assertEq(
-            uint256(p.step),
-            uint256(IOllaCore.RebalanceStep.StakeSurplus),
-            "Should be stuck at StakeSurplus"
-        );
+        assertEq(uint256(p.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be stuck at StakeSurplus");
 
         // 6. Force reset
         vm.prank(address(gov));

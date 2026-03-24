@@ -588,7 +588,9 @@ contract OllaCoreRebalanceTest is Test {
 
         // Pending exits had no unstaked funds to pull (unstakedAmount=0), so buffer is
         // only reduced by the withdrawal finalization against the existing buffer.
-        assertEq(vault.bufferedAssets(), bufferBefore - request.assetsExpected, "buffer reduced by finalized withdrawal");
+        assertEq(
+            vault.bufferedAssets(), bufferBefore - request.assetsExpected, "buffer reduced by finalized withdrawal"
+        );
         assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending assets finalized in same cycle");
     }
 

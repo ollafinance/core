@@ -3,15 +3,13 @@ pragma solidity ^0.8.27;
 
 import { console2 } from "@forge-std/console2.sol";
 import { VmSafe } from "@forge-std/Vm.sol";
-
 import { OllaCore } from "src/core/OllaCore.sol";
-import { OllaGovernance } from "src/governance/OllaGovernance.sol";
-import { OllaVault } from "src/vault/OllaVault.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { RewardsAccumulator } from "src/core/RewardsAccumulator.sol";
+import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
-
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title DeployUpgradeImplementations
@@ -28,23 +26,27 @@ contract DeployUpgradeImplementations is BaseScript {
             console2.log("env", env);
             console2.log("chainId", block.chainid);
             console2.log("next.action", "blocked_requires_broadcast");
-            console2.log(
-                "next.step",
-                "Run with --broadcast and PRIVATE_KEY to deploy implementations on-chain."
-            );
+            console2.log("next.step", "Run with --broadcast and PRIVATE_KEY to deploy implementations on-chain.");
             return;
         }
 
         uint256 pk = _privateKey();
 
         // Read current proxy implementations for comparison
-        address queueProxy = _addrOrDeployment("WITHDRAWAL_QUEUE_PROXY", "WithdrawalQueueProxy", "WITHDRAWAL_QUEUE_PROXY missing");
-        address rewardsProxy = _addrOrDeployment("REWARDS_ACCUMULATOR_PROXY", "RewardsAccumulatorProxy", "REWARDS_ACCUMULATOR_PROXY missing");
-        address sprProxy = _addrOrDeployment("STAKING_PROVIDER_REGISTRY_PROXY", "StakingProviderRegistryProxy", "STAKING_PROVIDER_REGISTRY_PROXY missing");
-        address stakingManagerProxy = _addrOrDeployment("STAKING_MANAGER_PROXY", "StakingManagerProxy", "STAKING_MANAGER_PROXY missing");
+        address queueProxy =
+            _addrOrDeployment("WITHDRAWAL_QUEUE_PROXY", "WithdrawalQueueProxy", "WITHDRAWAL_QUEUE_PROXY missing");
+        address rewardsProxy = _addrOrDeployment(
+            "REWARDS_ACCUMULATOR_PROXY", "RewardsAccumulatorProxy", "REWARDS_ACCUMULATOR_PROXY missing"
+        );
+        address sprProxy = _addrOrDeployment(
+            "STAKING_PROVIDER_REGISTRY_PROXY", "StakingProviderRegistryProxy", "STAKING_PROVIDER_REGISTRY_PROXY missing"
+        );
+        address stakingManagerProxy =
+            _addrOrDeployment("STAKING_MANAGER_PROXY", "StakingManagerProxy", "STAKING_MANAGER_PROXY missing");
         address vaultProxy = _addrOrDeployment("VAULT", "OllaVaultProxy", "VAULT missing");
         address coreProxy = _addrOrDeployment("CORE", "OllaCoreProxy", "CORE missing");
-        address governanceProxy = _addrOrDeployment("GOVERNANCE_PROXY", "OllaGovernanceProxy", "GOVERNANCE_PROXY missing");
+        address governanceProxy =
+            _addrOrDeployment("GOVERNANCE_PROXY", "OllaGovernanceProxy", "GOVERNANCE_PROXY missing");
 
         console2.log("env", env);
         console2.log("chainId", block.chainid);
@@ -91,6 +93,7 @@ contract DeployUpgradeImplementations is BaseScript {
     function _proxyImpl(address proxy) internal view returns (address impl) {
         bytes32 value = vm.load(proxy, _IMPLEMENTATION_SLOT);
         impl = address(uint160(uint256(value)));
+        return impl;
     }
 
     function _logDeployment(string memory label, address newImpl, address currentImpl) internal view {
