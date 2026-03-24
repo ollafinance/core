@@ -11,22 +11,22 @@
     "lzEndpoint": "0x6edce65403992e310a62460808c4b910d972f10f"
   },
   "addresses": {
-    "OllaGovernanceImplementation": "0x4161e7ad2e4994728a6029a7108576b945bb0e84",
+    "OllaGovernanceImplementation": "0xc3e1b2fd1537265a00a36858688b658ff66ea01f",
     "OllaGovernanceProxy": "0xe98903a48bf5a9e5da0a9a5bbecd4707186cda17",
-    "OllaCoreImplementation": "0x067a02ef1191c852989929fb60806f468187d881",
+    "OllaCoreImplementation": "0x5f7194da257858214a0f7cd7e65ccb9c2eb58acb",
     "OllaCoreProxy": "0xa26e0ca68f2aec9f21bbafad1279451a381e4237",
-    "OllaVaultImplementation": "0xb25e95a5446031aa3ee545f8bf3b1f78fe2f4c2a",
+    "OllaVaultImplementation": "0x16fe67088954430e51e47056e46c13b5878878b1",
     "OllaVaultProxy": "0xf74afa1c622af4549198361550ad4c69597d6b4a",
     "Asset": "0x5595cb9ed193cac2c0bc5393313bc6115817954b",
     "StAztec": "0xdfa8013648baf95a360b64fc2ff016f3ea1cae5c",
     "StAztecOFTAdapter": "0x9bb99e57ab305a9ef1c78aac0f0ca72c0c55fd2e",
-    "WithdrawalQueueImplementation": "0x4183a99f029508fc425894d04a55ad72e8286f47",
+    "WithdrawalQueueImplementation": "0xd483f111f4d35c542593cccac7002eaaa9c87b0b",
     "WithdrawalQueueProxy": "0x12a9d18085ca2725b4060ea1ffb98a6b36902888",
-    "RewardsAccumulatorImplementation": "0x8982998113806aba90cbe70e4c0d8e2121fe048e",
+    "RewardsAccumulatorImplementation": "0x6acc84e7bb4e559815e8de89f0464d428a92f7be",
     "RewardsAccumulatorProxy": "0xc9d7235cb57e62e36c4c814fd80226d1ce6907fb",
-    "StakingManagerImplementation": "0x9d5b2fbd947b1b98570840720f4da73a0bb79bde",
+    "StakingManagerImplementation": "0xc79a8b85f7bb0026606e5b196cae09ddcbd12e6d",
     "StakingManagerProxy": "0xde847897cb4d964fba3022df3cd9ed7f520ba3be",
-    "StakingProviderRegistryImplementation": "0x402c29f730f1f37db202fba6cf8c5e59cc716b07",
+    "StakingProviderRegistryImplementation": "0x9e3ed19fefc596b05cd7c0b0176d5f891f562cae",
     "StakingProviderRegistryProxy": "0x62eb3a17629c8b600d494b88232874866272ae65",
     "SafetyModule": "0x5a78d0a3ddae84011329cf22342336e00dc1324b",
     "StakingManager": "0xde847897cb4d964fba3022df3cd9ed7f520ba3be"
@@ -34,7 +34,7 @@
   "status": {
     "phase": "D",
     "completed": true,
-    "updatedAtBlock": 10484209,
+    "updatedAtBlock": 10512641,
     "flags": {
       "coreInitialized": true,
       "vaultInitialized": true
