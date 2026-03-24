@@ -100,6 +100,8 @@ contract OllaCoreSafetyModuleTest is Test {
 
         safetyModule =
             new SafetyModule(admin, guardian, address(core), address(vault), 1_000_000 * DECIMALS, 500, 6_000, 1 days);
+        vm.prank(admin);
+        safetyModule.setWithdrawalMinimum(0);
 
         core.initialize(
             asset,

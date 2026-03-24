@@ -68,6 +68,11 @@ interface IOllaVault {
     /// @param newFeeBP The new fee in basis points.
     event InstantRedemptionFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
 
+    /// @notice Emitted when the withdrawal queue gas threshold is updated.
+    /// @param oldThreshold The previous gas threshold.
+    /// @param newThreshold The new gas threshold.
+    event QueueGasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
+
     /// @notice Emitted when an operator is set or removed for a controller (ERC-7540).
     /// @param controller The address of the controller.
     /// @param operator The address of the operator.
@@ -362,6 +367,10 @@ interface IOllaVault {
     /// @notice Reconciles buffered assets with the actual balance.
     /// @return delta The amount added to buffered assets.
     function reconcileBufferedAssets() external returns (uint256 delta);
+
+    /// @notice Updates the gas threshold used by the withdrawal queue's finalization loop.
+    /// @param threshold New gas threshold (must be > 0 and <= MAX_GAS_THRESHOLD).
+    function setQueueGasThreshold(uint256 threshold) external;
 
     /// @notice Recovers stAztec sent directly to the vault.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).

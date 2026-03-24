@@ -55,10 +55,10 @@ contract StakingProviderRegistry is
     mapping(address attester => bool inQueue) private _registeredAttesters;
 
     /// @notice Storage gap for future upgrades.
-    /// @dev State variables occupy 5 slots (including struct members). When adding new state
-    ///      variables, append them above this gap and reduce its length by the number of slots consumed.
+    /// @dev When adding new state variables, append them above this gap and reduce its length
+    ///      by the number of slots consumed.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   MODIFIERS
@@ -106,15 +106,14 @@ contract StakingProviderRegistry is
         __AccessControl_init();
 
         stakingManager = stakingManager_;
-        _provider =
-            IStakingManager.ProviderConfig({ admin: providerAdmin_, rewardsRecipient: providerRewardsRecipient_ });
+        _provider = IStakingManager.ProviderConfig({ rewardsRecipient: providerRewardsRecipient_ });
 
         _providerQueue.init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
         _grantRole(STAKING_PROVIDER_ADMIN_ROLE, providerAdmin_);
 
-        emit ProviderSet(providerAdmin_, providerRewardsRecipient_);
+        emit ProviderSet(providerRewardsRecipient_);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -170,7 +169,7 @@ contract StakingProviderRegistry is
             revert StakingProviderRegistry__ZeroAddress("rewardsRecipient");
         }
         _provider.rewardsRecipient = rewardsRecipient;
-        emit ProviderSet(_provider.admin, rewardsRecipient);
+        emit ProviderSet(rewardsRecipient);
     }
 
     /*//////////////////////////////////////////////////////////////

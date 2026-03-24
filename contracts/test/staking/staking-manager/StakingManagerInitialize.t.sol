@@ -24,7 +24,6 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
 
     function test_Initialize_SetsProviderConfig() external view {
         IStakingManager.ProviderConfig memory config = stakingManager.getProviderConfig();
-        assertEq(config.admin, providerAdmin);
         assertEq(config.rewardsRecipient, providerAdmin);
     }
 
@@ -48,7 +47,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
         StakingProviderRegistry registry = StakingProviderRegistry(address(registryProxy));
 
         vm.expectEmit(true, true, true, true, address(registry));
-        emit ProviderSet(providerAdmin, providerAdmin);
+        emit ProviderSet(providerAdmin);
 
         registry.initialize(address(mgr), providerAdmin, providerAdmin, defaultAdmin);
 

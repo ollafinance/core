@@ -65,6 +65,8 @@ contract RebalanceInProgressIntegrationTest is Test {
         guardian = makeAddr("guardian");
         safetyModule =
             new SafetyModule(admin, guardian, address(core), address(vault), 1_000_000 * DECIMALS, 500, 6_000, 1 days);
+        vm.prank(admin);
+        safetyModule.setWithdrawalMinimum(0);
         operator = makeAddr("operator");
         user = makeAddr("user");
 

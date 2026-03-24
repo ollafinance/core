@@ -524,6 +524,16 @@ contract OllaVault is
     }
 
     /// @inheritdoc IOllaVault
+    /// @notice Updates the gas threshold used by the withdrawal queue's finalization loop.
+    /// @dev Only callable by governance (owner). The gas threshold controls how many withdrawal
+    ///      requests can be processed per `finalizeWithdrawals()` call before the loop exits.
+    function setQueueGasThreshold(uint256 threshold) external override onlyOwner {
+        uint256 oldThreshold = _modules.withdrawalQueue.gasThreshold();
+        emit QueueGasThresholdUpdated(oldThreshold, threshold);
+        _modules.withdrawalQueue.setGasThreshold(threshold);
+    }
+
+    /// @inheritdoc IOllaVault
     function recoverStAztec(address recipient, uint256 amount) external override onlyOwner whenNotPaused {
         if (amount == 0) revert OllaVault__InvalidAmount();
         address resolvedRecipient = recipient == address(0) ? _treasury() : recipient;
@@ -571,7 +581,11 @@ contract OllaVault is
     /// @notice Returns total claimable shares for controller (ERC-4626).
     /// @param controller The controller address.
     /// @return maxShares The total claimable shares.
+    /// @dev Returns 0 when the vault is paused, per ERC-7540 requirement that maxRedeem
+    ///      reflects the maximum currently redeemable amount. When paused, redeem() reverts,
+    ///      so maxRedeem must return 0 to signal non-availability to integrators.
     function maxRedeem(address controller) external view override returns (uint256 maxShares) {
+        if (paused()) return 0;
         return _claimableShares[controller];
     }
 

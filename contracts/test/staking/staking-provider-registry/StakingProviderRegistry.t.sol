@@ -37,7 +37,7 @@ contract StakingProviderRegistryTest is Test {
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event ProviderSet(address indexed admin, address indexed rewardsRecipient);
+    event ProviderSet(address indexed rewardsRecipient);
     event KeysAddedToProvider(address[] attesters);
     event QueueDripped(address indexed attester);
 
@@ -102,7 +102,7 @@ contract StakingProviderRegistryTest is Test {
     function test_Initialize_SetsConfig() external view {
         assertEq(registry.stakingManager(), stakingManager);
         IStakingManager.ProviderConfig memory config = registry.getStakingProviderConfig();
-        assertEq(config.admin, providerAdmin);
+
         assertEq(config.rewardsRecipient, providerRewardsRecipient);
     }
 
@@ -117,7 +117,7 @@ contract StakingProviderRegistryTest is Test {
         StakingProviderRegistry newRegistry = StakingProviderRegistry(address(proxy));
 
         vm.expectEmit(true, true, true, true, address(newRegistry));
-        emit ProviderSet(providerAdmin, providerRewardsRecipient);
+        emit ProviderSet(providerRewardsRecipient);
 
         newRegistry.initialize(stakingManager, providerAdmin, providerRewardsRecipient, defaultAdmin);
     }
@@ -384,7 +384,7 @@ contract StakingProviderRegistryTest is Test {
 
     function test_SetProviderRewardsRecipient() external {
         vm.expectEmit(true, true, true, true);
-        emit ProviderSet(providerAdmin, alice);
+        emit ProviderSet(alice);
 
         vm.prank(providerAdmin);
         registry.setProviderRewardsRecipient(alice);
@@ -475,7 +475,7 @@ contract StakingProviderRegistryTest is Test {
 
     function test_GetStakingProviderConfig_InitiallySet() external view {
         IStakingManager.ProviderConfig memory config = registry.getStakingProviderConfig();
-        assertEq(config.admin, providerAdmin);
+
         assertEq(config.rewardsRecipient, providerRewardsRecipient);
     }
 

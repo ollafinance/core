@@ -400,7 +400,7 @@ subgraph "Olla Staking Components"
 end
 
 ollaGov -->|"setProtocolFeeBP, setTreasuryFeeSplitBP, setTargetBufferedAssets, setRebalanceGasThreshold, setRebalanceCooldown, setSafetyModule, setVault"| core
-ollaGov -->|"setInstantRedemptionFeeBP, setSafetyModule, reconcileBufferedAssets, recoverStAztec"| vault
+ollaGov -->|"setInstantRedemptionFeeBP, setQueueGasThreshold, setSafetyModule, reconcileBufferedAssets, recoverStAztec"| vault
 ollaGov -->|"setDepositCap, setWithdrawalMinimum, setMinRateDropBps, setMaxQueueRatioBps, setMaxAccountingDelay"| safety
 ollaGov -->|"upgradeSatellite"| withdrawQ
 ollaGov -->|"upgradeSatellite"| rewards

@@ -139,7 +139,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
         }
 
         depositCap = depositCap_;
-        withdrawalMinimum = 0;
+        withdrawalMinimum = 100e18;
         minRateDropBps = SafeCast.toUint16(minRateDropBps_);
         maxQueueRatioBps = SafeCast.toUint16(maxQueueRatioBps_);
         maxAccountingDelay = SafeCast.toUint32(maxAccountingDelay_);
@@ -319,12 +319,12 @@ contract SafetyModule is AccessControl, ISafetyModule {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Emits the circuit breaker event and pauses the module if not already paused.
+    /// @notice Pauses the module and emits the circuit breaker event if not already paused.
     /// @param reason The breaker reason to emit.
     function _triggerBreaker(ISafetyModule.BreakerReason reason) internal {
-        emit CircuitBreakerTriggered(reason);
         if (!paused) {
             paused = true;
+            emit CircuitBreakerTriggered(reason);
             emit Paused();
         }
     }

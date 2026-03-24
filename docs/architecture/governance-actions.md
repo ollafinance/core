@@ -21,8 +21,8 @@ sequenceDiagram
     Note over GOV,C: Same pattern for all parameter setters:
     Note over GOV,C: setTreasuryFeeSplitBP, setInstantRedemptionFeeBP,
     Note over GOV,C: setTargetBufferedAssets, setRebalanceGasThreshold,
-    Note over GOV,C: setRebalanceCooldown, reconcileBufferedAssets,
-    Note over GOV,C: setSafetyModule, recoverStAztec
+    Note over GOV,C: setRebalanceCooldown, setQueueGasThreshold,
+    Note over GOV,C: reconcileBufferedAssets, setSafetyModule, recoverStAztec
 ```
 
 ## Safety module configuration

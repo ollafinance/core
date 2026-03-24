@@ -49,7 +49,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
                                   EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event ProviderSet(address indexed admin, address indexed rewardsRecipient);
+    event ProviderSet(address indexed rewardsRecipient);
     event KeysAddedToProvider(address[] attesters);
     event StakedWithProvider(address indexed attester, uint256 indexed amount);
     event UnstakeInitiated(address indexed attester, uint256 indexed amount);
@@ -414,7 +414,6 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         // Direct query from registry
         IStakingManager.ProviderConfig memory directConfig = stakingProviderRegistry.getStakingProviderConfig();
 
-        assertEq(config.admin, directConfig.admin);
         assertEq(config.rewardsRecipient, directConfig.rewardsRecipient);
     }
 

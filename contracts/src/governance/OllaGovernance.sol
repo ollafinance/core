@@ -233,6 +233,11 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         IOllaVault(IOllaCore(core).vault()).reconcileBufferedAssets();
     }
 
+    /// @inheritdoc IOllaGovernance
+    function setQueueGasThreshold(uint256 threshold) external override onlySelf {
+        IOllaVault(IOllaCore(core).vault()).setQueueGasThreshold(threshold);
+    }
+
     /*//////////////////////////////////////////////////////////////
                    SAFETY MODULE PARAMETER PASSTHROUGHS
     //////////////////////////////////////////////////////////////*/
@@ -326,6 +331,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     /// @param newGovernance The new governance address to grant to.
     function _propagateAdminRole(address oldGovernance, address newGovernance) internal {
         address coreAddr = core;
+        if (coreAddr == address(0)) return; // Core not yet set; propagation deferred to setCore()
         address vaultAddr = IOllaCore(coreAddr).vault();
         address rv = IOllaCore(coreAddr).rewardsAccumulator();
         address sm = IOllaCore(coreAddr).stakingManager();

@@ -161,6 +161,10 @@ interface IOllaGovernance {
     /// @notice Reconciles buffered assets on OllaVault.
     function reconcileBufferedAssets() external;
 
+    /// @notice Sets the gas threshold on OllaVault's withdrawal queue.
+    /// @param threshold The new gas threshold.
+    function setQueueGasThreshold(uint256 threshold) external;
+
     /*//////////////////////////////////////////////////////////////
                    SAFETY MODULE PARAMETER PASSTHROUGHS
     //////////////////////////////////////////////////////////////*/

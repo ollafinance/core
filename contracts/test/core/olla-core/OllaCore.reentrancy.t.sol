@@ -103,7 +103,7 @@ contract MockHarvestStakingManager is IStakingManager {
     }
 
     function getProviderConfig() external pure override returns (ProviderConfig memory) {
-        return ProviderConfig({ admin: address(0), rewardsRecipient: address(0) });
+        return ProviderConfig({ rewardsRecipient: address(0) });
     }
 
     function getActivatedAttesterCount() external pure override returns (uint256) {

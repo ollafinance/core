@@ -47,10 +47,8 @@ interface IStakingManager {
     }
 
     /// @notice Configuration for the staking provider.
-    /// @param admin The provider admin address.
     /// @param rewardsRecipient The address to receive sequencer rewards.
     struct ProviderConfig {
-        address admin;
         address rewardsRecipient;
     }
 
