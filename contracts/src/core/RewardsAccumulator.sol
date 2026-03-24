@@ -99,6 +99,10 @@ contract RewardsAccumulator is
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IRewardsAccumulator
+    /// @dev Balance-based delta intentionally includes unsolicited transfers. Fee extraction on
+    ///      donated funds is accepted as economically self-defeating for the donor - the attacker
+    ///      loses the full donation while the protocol mints fee shares worth at most half the
+    ///      donated amount. This is a known characteristic of balance-based reward accumulators.
     function recordBalance() external override onlyCore nonReentrant returns (uint256 balanceDelta) {
         uint256 previousAmount = latestRecordedRewardsAmount;
         uint256 currentTokenBalance = rewardsToken.balanceOf(address(this));

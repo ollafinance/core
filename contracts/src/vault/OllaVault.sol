@@ -834,6 +834,10 @@ contract OllaVault is
     }
 
     /// @notice Transfers assets from caller, updates buffered accounting, mints shares, and emits Deposit.
+    /// @dev Credits the nominal transfer amount directly. This assumes the AZTEC token has no
+    ///      fee-on-transfer or rebasing behavior. Verified: AZTEC token is a non-upgradeable
+    ///      OpenZeppelin ERC-20 with no transfer hooks. This assumption is immutable - the token
+    ///      contract has no proxy and cannot be upgraded.
     /// @param caller The address providing the assets.
     /// @param assets The amount of assets transferred in.
     /// @param shares The amount of shares to mint.
@@ -1031,6 +1035,9 @@ contract OllaVault is
     }
 
     /// @dev Linear scan for ERC-7540 redeem() compatibility. Prefer claimRequestById() for O(1) claims.
+    ///      Selection is non-deterministic for equal-sized requests because swap-and-pop on claim
+    ///      changes array order. The user gets a valid finalized request regardless of which one is
+    ///      selected. Integrators should use `claimRequestById()` when request identity matters.
     function _findClaimableRequest(address controller, uint256 shares) internal view returns (uint256 requestId) {
         uint256[] storage requestIds = _ownerRequestIds[controller];
         uint256 len = requestIds.length;

@@ -275,6 +275,8 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
 
     // slither-disable-start reentrancy-events
     /// @inheritdoc IOllaGovernance
+    /// @dev SafetyModule is intentionally omitted - it is only reachable through OllaCore and
+    ///      OllaVault, both of which are paused here. Independent SafetyModule pause is unnecessary.
     function emergencyPauseAll() external override {
         if (msg.sender != governanceAdmin) revert OllaGovernance__OnlyGovernanceAdmin();
         address vaultAddr = IOllaCore(core).vault();
@@ -287,6 +289,9 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
 
     // slither-disable-start reentrancy-events
     /// @inheritdoc IOllaGovernance
+    /// @dev Intentionally bypasses the governance timelock. Unpause restores normal operation and
+    ///      does not modify protocol parameters. Requiring a timelock for unpause would extend
+    ///      downtime after false alarms or resolved incidents. Access is restricted to governanceAdmin.
     function emergencyUnpauseAll() external override {
         if (msg.sender != governanceAdmin) revert OllaGovernance__OnlyGovernanceAdmin();
         address vaultAddr = IOllaCore(core).vault();
