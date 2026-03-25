@@ -86,6 +86,7 @@ contract PrintProviderQueueAttesters is BaseScript {
         bytes32 packed = vm.load(registry, bytes32(slot));
         first = uint128(uint256(packed));
         last = uint128(uint256(packed >> 128));
+        return (first, last);
     }
 
     function _readQueuedAttester(address registry, uint256 queueMappingSlot, uint256 queueIndex)
