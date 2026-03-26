@@ -135,12 +135,12 @@
       "label": "contract IRewardsAccumulator",
       "numberOfBytes": "20"
     },
-    "t_contract(IStAztec)12661": {
+    "t_contract(IStAztec)12679": {
       "encoding": "inplace",
       "label": "contract IStAztec",
       "numberOfBytes": "20"
     },
-    "t_contract(IStakingManager)11779": {
+    "t_contract(IStakingManager)11797": {
       "encoding": "inplace",
       "label": "contract IStakingManager",
       "numberOfBytes": "20"
@@ -237,7 +237,7 @@
           "label": "stAztec",
           "offset": 0,
           "slot": "2",
-          "type": "t_contract(IStAztec)12661"
+          "type": "t_contract(IStAztec)12679"
         },
         {
           "astId": 10419,
@@ -245,7 +245,7 @@
           "label": "stakingManager",
           "offset": 0,
           "slot": "3",
-          "type": "t_contract(IStakingManager)11779"
+          "type": "t_contract(IStakingManager)11797"
         },
         {
           "astId": 10422,
