@@ -5,7 +5,14 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Address } from "@oz/utils/Address.sol";
 import { IERC20Mintable } from "src/interfaces/IERC20Mintable.sol";
-import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import {
+    AttesterConfig,
+    AttesterView,
+    DepositArgs,
+    Exit,
+    Status,
+    Timestamp
+} from "src/staking/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { IMaliciousAztecRollup } from "src/staking/mocks/IMaliciousAztecRollup.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
@@ -356,6 +363,12 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         // no-op for malicious mock
     }
 
+    /// @notice No-op in malicious mock.
+    function addToEntryQueue(address) external override { }
+
+    /// @notice No-op in malicious mock.
+    function clearEntryQueue() external override { }
+
     /// @notice Get the exit record for an attester.
     /// @param _attester The attester address.
     /// @return The exit record.
@@ -417,6 +430,16 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @return The activated attester count.
     function getActivatedAttesterCount() external view override returns (uint256) {
         return _activatedAttesterCount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function getEntryQueueLength() external pure override returns (uint256) {
+        return 0;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function getEntryQueueAt(uint256) external pure override returns (DepositArgs memory) {
+        revert("MaliciousAztecRollup: no entry queue");
     }
 
     /// @inheritdoc IMockAztecRollup

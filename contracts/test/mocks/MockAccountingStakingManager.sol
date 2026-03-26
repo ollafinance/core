@@ -183,6 +183,8 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function refreshAttesterState(address[] calldata) external virtual override { }
 
+    function purgeFailedQueueEntry(address) external virtual override { }
+
     function getUnstakedFunds() public virtual override returns (uint256 received, uint256 exitAmount) {
         uint256 target = gasBurnTarget;
         if (target != 0) {

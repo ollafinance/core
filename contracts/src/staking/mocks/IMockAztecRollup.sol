@@ -2,7 +2,7 @@
 pragma solidity 0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { AttesterView, Exit, Status } from "src/staking/libraries/AztecTypes.sol";
+import { AttesterView, DepositArgs, Exit, Status } from "src/staking/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title IMockAztecRollup
@@ -192,13 +192,29 @@ interface IMockAztecRollup {
     /// @param delay The exit delay in seconds.
     function setExitDelay(uint256 delay) external;
 
-    /// @notice Returns the currently configured exit delay.
-    /// @return The exit delay in seconds.
-    function exitDelay() external view returns (uint256);
+    /// @notice Adds an attester to the mock entry queue (test helper).
+    /// @param attester The attester address to add to the queue.
+    function addToEntryQueue(address attester) external;
+
+    /// @notice Clears the mock entry queue (test helper).
+    function clearEntryQueue() external;
 
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns the currently configured exit delay.
+    /// @return The exit delay in seconds.
+    function exitDelay() external view returns (uint256);
+
+    /// @notice Returns the length of the mock entry queue.
+    /// @return The entry queue length.
+    function getEntryQueueLength() external view returns (uint256);
+
+    /// @notice Returns deposit args for a queued attester at the given index.
+    /// @param index The queue index.
+    /// @return The deposit args.
+    function getEntryQueueAt(uint256 index) external view returns (DepositArgs memory);
 
     /// @notice Returns whether claim should fail for a coinbase/attester.
     /// @param coinbase The coinbase/attester address.
