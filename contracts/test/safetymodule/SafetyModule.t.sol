@@ -231,8 +231,9 @@ contract SafetyModuleTest is Test {
         vm.expectEmit(false, false, false, true, address(safetyModule));
         emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
 
+        // queued=700, total=300 => gross=1000, ratio=7000bps (70%) >= 6000bps threshold
         vm.prank(core);
-        safetyModule.checkQueueRatio(600, 1_000);
+        safetyModule.checkQueueRatio(700, 300);
 
         assertTrue(safetyModule.isPaused(), "queue ratio breach should pause");
     }
@@ -347,9 +348,10 @@ contract SafetyModuleTest is Test {
 
     /// @notice Exactly 60% queue ratio triggers the breaker (>= threshold).
     function test_CheckQueueRatio_ExactBoundary_Pauses() public {
+        // gross = queued + total = 6000 + 4000 = 10000
         // ratioBps = 6000 * 10000 / 10000 = 6000  (== maxQueueRatioBps)
         uint256 queued = 6_000;
-        uint256 total = 10_000;
+        uint256 total = 4_000;
 
         vm.expectEmit(false, false, false, true, address(safetyModule));
         emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
@@ -362,14 +364,70 @@ contract SafetyModuleTest is Test {
 
     /// @notice 59.99% queue ratio does NOT trigger the breaker (< threshold).
     function test_CheckQueueRatio_ExactBoundary_NoPause() public {
+        // gross = queued + total = 5999 + 4001 = 10000
         // ratioBps = 5999 * 10000 / 10000 = 5999  (< maxQueueRatioBps)
         uint256 queued = 5_999;
-        uint256 total = 10_000;
+        uint256 total = 4_001;
 
         vm.prank(core);
         safetyModule.checkQueueRatio(queued, total);
 
         assertFalse(safetyModule.isPaused(), "59.99% queue ratio should not pause");
+    }
+
+    /// @notice Both queued and total are zero — no breaker trigger.
+    function test_CheckQueueRatio_BothZero_NoPause() public {
+        vm.prank(core);
+        safetyModule.checkQueueRatio(0, 0);
+
+        assertFalse(safetyModule.isPaused(), "both zero should not pause");
+    }
+
+    /// @notice Queued is zero — no breaker trigger regardless of total.
+    function test_CheckQueueRatio_ZeroQueued_NoPause() public {
+        vm.prank(core);
+        safetyModule.checkQueueRatio(0, 10_000);
+
+        assertFalse(safetyModule.isPaused(), "zero queued should not pause");
+    }
+
+    /// @notice Total is zero but queued > 0 (all assets are pending withdrawal).
+    ///         gross = queued, ratio = 100% => triggers breaker.
+    function test_CheckQueueRatio_ZeroTotal_QueuedPositive_Pauses() public {
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
+
+        vm.prank(core);
+        safetyModule.checkQueueRatio(1_000, 0);
+
+        assertTrue(safetyModule.isPaused(), "100% queued should pause");
+    }
+
+    /// @notice Nearly all assets queued (Sepolia scenario: 99.97%).
+    ///         Before the fix this would compute ratio as queued/total ≈ 380_000%
+    ///         because total already excluded queued. After the fix: ratio = queued/(queued+total) ≈ 99.97%.
+    function test_CheckQueueRatio_NearlyAllQueued_Pauses() public {
+        // Mimics Sepolia: queued ≈ 1.74M, total ≈ 457
+        uint256 queued = 1_739_581 ether;
+        uint256 total = 457 ether;
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.QueueRatio);
+
+        vm.prank(core);
+        safetyModule.checkQueueRatio(queued, total);
+
+        assertTrue(safetyModule.isPaused(), "99.97% queued should pause");
+    }
+
+    /// @notice Ratio computes against gross (queued + total), not just total.
+    ///         queued=4000, total=6000 => gross=10000, ratio=40% < 60% threshold.
+    ///         Before the fix: ratio = 4000/6000 = 66.67% => would falsely trigger.
+    function test_CheckQueueRatio_NoFalsePositive_40Percent() public {
+        vm.prank(core);
+        safetyModule.checkQueueRatio(4_000, 6_000);
+
+        assertFalse(safetyModule.isPaused(), "40% queued should not pause at 60% threshold");
     }
 
     /// @notice 1 day + 1 second elapsed triggers the breaker (> threshold).
