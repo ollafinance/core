@@ -267,6 +267,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end costly-loop
     // slither-disable-end calls-loop
 
+    // slither-disable-start pess-multiple-storage-read
     /// @inheritdoc IStakingManager
     function purgeFailedQueueEntry(address attester) external override nonReentrant {
         AttesterInfo storage info = _attesterMap[attester];
@@ -307,6 +308,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         emit FailedQueueEntryPurged(attester, cachedStake);
     }
+    // slither-disable-end pess-multiple-storage-read
 
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
