@@ -27,8 +27,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public unstakedExitAmountOverride;
     bool public useUnstakedExitAmountOverride;
     uint256 public pendingUnstakeAmount;
-    bool public hasExitableUnstakesValue;
-    bool public hasRemainingExitsValue;
+    bool public hasFinalizedUnstakesValue;
     uint256 public activatedAttesterCount;
     uint256 public pendingUnstakeCount;
     uint256 public lastUnstakeAmount;
@@ -97,13 +96,8 @@ contract MockAccountingStakingManager is IStakingManager {
         pendingUnstakeAmount = value;
     }
 
-    function setHasRemainingExits(bool value) external {
-        hasRemainingExitsValue = value;
-    }
-
     function setWithdrawableUnstakes(uint256 value) external {
-        hasRemainingExitsValue = value != 0;
-        hasExitableUnstakesValue = value != 0;
+        hasFinalizedUnstakesValue = value != 0;
     }
 
     function setActivatedAttesterCount(uint256 value) external {
@@ -189,12 +183,7 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function refreshAttesterState(address[] calldata) external virtual override { }
 
-    function getUnstakedFunds()
-        public
-        virtual
-        override
-        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
-    {
+    function getUnstakedFunds() public virtual override returns (uint256 received, uint256 exitAmount) {
         uint256 target = gasBurnTarget;
         if (target != 0) {
             uint256 safetyMargin = 25_000;
@@ -206,22 +195,20 @@ contract MockAccountingStakingManager is IStakingManager {
             }
         }
 
-        bool _hasRemainingExits = hasRemainingExitsValue;
-
         uint256 amount = unstakedAmount;
         if (amount == 0) {
-            return (0, 0, _hasRemainingExits);
+            return (0, 0);
         }
 
         IERC20 token = unstakedToken;
         if (address(token) == address(0)) {
-            return (0, 0, _hasRemainingExits);
+            return (0, 0);
         }
 
         unstakedAmount = 0;
         token.safeTransfer(msg.sender, amount);
         uint256 reportedExit = useUnstakedExitAmountOverride ? unstakedExitAmountOverride : amount;
-        return (amount, reportedExit, _hasRemainingExits);
+        return (amount, reportedExit);
     }
 
     function harvestRewards() external override returns (uint256 harvested) {
@@ -261,8 +248,8 @@ contract MockAccountingStakingManager is IStakingManager {
         return pendingUnstakeAmount;
     }
 
-    function hasExitableUnstakes() external view override returns (bool) {
-        return hasExitableUnstakesValue;
+    function hasFinalizedUnstakes() external view override returns (bool) {
+        return hasFinalizedUnstakesValue;
     }
 
     function core() external pure virtual override returns (address) {

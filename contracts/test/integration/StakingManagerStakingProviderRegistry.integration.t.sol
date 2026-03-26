@@ -265,7 +265,7 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
 
         stakingManager.refreshAttesterState(_allAttesterAddresses());
         vm.prank(core);
-        (uint256 claimed,,) = stakingManager.getUnstakedFunds();
+        (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
         assertEq(claimed, ACTIVATION_THRESHOLD * 2);
         assertEq(aztec.balanceOf(core), coreBalanceBefore + claimed);

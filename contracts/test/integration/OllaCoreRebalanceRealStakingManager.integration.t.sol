@@ -301,7 +301,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
             // There are exiting attesters. Now call refreshAttesterState and check.
             emit log_named_uint("Block timestamp before refreshAttesterState", block.timestamp);
 
-            // Check hasExitableUnstakes via cached state
+            // Check hasFinalizedUnstakes via cached state
             IStakingManager.StakingState memory stakingState = stakingManager.getStakingState();
             emit log_named_uint("Staking state pendingUnstakeAmount (from state)", stakingState.pendingUnstakeAmount);
             emit log_named_uint("Staking state pendingUnstakeAmount", stakingState.pendingUnstakeAmount);

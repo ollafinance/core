@@ -141,26 +141,25 @@ contract OllaCoreRecoverStAztecTest is Test {
         vm.prank(alice);
         stAztec.transfer(address(vault), recoverAmount);
 
-        // Trigger rebalance with limited gas so it stops mid-cycle at PullUnstaked.
+        // Trigger rebalance with limited gas so it stops mid-cycle (partial progress).
         // Advance past the 1-hour rebalance cooldown initialised in OllaCore.initialize()
         vm.warp(block.timestamp + 1 hours);
 
-        // Try a range of gas stipends to find one that stops at PullUnstaked
+        // Try a range of gas stipends to find one that stops mid-cycle (partial progress)
         uint256 selectedGas;
         uint256 snapshotId = vm.snapshotState();
-        uint256[6] memory gasOptions = [uint256(120_000), 140_000, 160_000, 180_000, 200_000, 220_000];
-        for (uint256 i; i < gasOptions.length; ++i) {
+        for (uint256 gasLimit = 120_000; gasLimit <= 400_000; gasLimit += 20_000) {
             vm.revertToState(snapshotId);
-            (bool success,) = address(core).call{ gas: gasOptions[i] }(abi.encodeCall(core.rebalance, ()));
+            (bool success,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
             if (!success) continue;
             IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-            if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
-                selectedGas = gasOptions[i];
+            if (progress.step != IOllaCore.RebalanceStep.Done) {
+                selectedGas = gasLimit;
                 break;
             }
         }
         vm.revertToState(snapshotId);
-        assertGt(selectedGas, 0, "should find gas stipend that stops at PullUnstaked");
+        assertGt(selectedGas, 0, "should find gas stipend that stops mid-cycle");
 
         (bool ok,) = address(core).call{ gas: selectedGas }(abi.encodeCall(core.rebalance, ()));
         assertTrue(ok, "rebalance call should succeed");

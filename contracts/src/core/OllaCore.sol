@@ -352,17 +352,10 @@ contract OllaCore is
 
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
-            if (!_hasGasForStep()) {
-                _rebalanceProgress = progress;
-                return (rewardsDelta, 0, 0, vaultRef.bufferedAssets());
-            }
-            // First return value (receivedAmount) is unused; only hasRemainingExits drives flow.
-            // slither-disable-next-line unused-return
-            (, bool hasRemainingExits) = _pullUnstakedFunds();
-            if (hasRemainingExits) {
-                _rebalanceProgress = progress;
-                return (rewardsDelta, 0, 0, vaultRef.bufferedAssets());
-            }
+            // Pull any finalized exit funds. This is O(1) (single balance transfer), so no
+            // gas gate needed. Exits still pending rollup finalization are non-blocking and
+            // will be picked up in the next rebalance cycle.
+            _pullUnstakedFunds();
             progress.step = IOllaCore.RebalanceStep.FinalizeWithdrawals;
         }
 
@@ -684,16 +677,15 @@ contract OllaCore is
     // Reads _modules fields and _accountingState atomically for correctness.
     /// @notice Claims exited unstaked funds from StakingManager and forwards them to the Vault.
     /// @return receivedAmount The actual token amount received.
-    /// @return hasRemainingExits True if more exits are pending in the StakingManager.
     // slither-disable-next-line pess-multiple-storage-read
-    function _pullUnstakedFunds() internal returns (uint256 receivedAmount, bool hasRemainingExits) {
+    function _pullUnstakedFunds() internal returns (uint256 receivedAmount) {
         IERC20 assetRef = _modules.asset;
         uint256 balanceBefore = assetRef.balanceOf(address(this));
 
         uint256 exitAmount;
         // Trusted StakingManager; transfers unstaked funds to this contract.
         // slither-disable-next-line reentrancy-benign
-        (receivedAmount, exitAmount, hasRemainingExits) = _modules.stakingManager.getUnstakedFunds();
+        (receivedAmount, exitAmount) = _modules.stakingManager.getUnstakedFunds();
 
         uint256 balanceAfter = assetRef.balanceOf(address(this));
         uint256 actualReceived = balanceAfter - balanceBefore;
@@ -719,7 +711,7 @@ contract OllaCore is
             _accountingState.stakedPrincipal -= exitAmount;
         }
 
-        return (actualReceived, hasRemainingExits);
+        return actualReceived;
     }
 
     /// @notice Instructs the Vault to finalize pending withdrawal requests using available buffered assets.
@@ -1110,7 +1102,7 @@ contract OllaCore is
 
         if (_modules.stakingManager.getClaimableRewards() > 0) return true;
 
-        if (_modules.stakingManager.hasExitableUnstakes()) return true;
+        if (_modules.stakingManager.hasFinalizedUnstakes()) return true;
 
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();

@@ -68,7 +68,7 @@ contract StakingManagerSlashDuringUnstakeTest is StakingManagerBaseTest {
 
         // Funds are claimable at the reduced (slashed) amount
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(received, slashedExitAmount, "received should equal slashed exit amount");
         assertEq(exitAmount, slashedExitAmount, "exitAmount should equal slashed exit amount");
     }
@@ -130,7 +130,7 @@ contract StakingManagerSlashDuringUnstakeTest is StakingManagerBaseTest {
 
         // Claim funds: should get 40 (slashed) + 100 (healthy) = 140
         vm.prank(core);
-        (uint256 received,,) = stakingManager.getUnstakedFunds();
+        (uint256 received,) = stakingManager.getUnstakedFunds();
         assertEq(received, slashedAmount + ACTIVATION_THRESHOLD, "received = slashed + healthy exit amounts");
     }
 }

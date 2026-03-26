@@ -132,7 +132,7 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
 
         // 3. Claim funds
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(received, slashedBalance, "received should equal the actual slashed balance");
         assertEq(exitAmount, slashedBalance, "exitAmount should equal the slashed balance");
 

@@ -148,8 +148,8 @@ contract MockStakingManagerConsistencyTest is Test {
         assertEq(sm.getSlashingDelta(), 10e18, "getSlashingDelta should match");
         assertEq(sm.pendingUnstakes(), 50e18, "pendingUnstakes should match");
 
-        sm.mockSetHasExitableUnstakes(true);
-        assertTrue(sm.hasExitableUnstakes(), "hasExitableUnstakes should be true when set");
+        sm.mockSetHasFinalizedUnstakes(true);
+        assertTrue(sm.hasFinalizedUnstakes(), "hasFinalizedUnstakes should be true when set");
     }
 
     /// @notice mockSetStakedAmount updates stakedAmount independently.
