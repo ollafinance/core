@@ -1,0 +1,59 @@
+{
+  "storage": [
+    {
+      "astId": 2985,
+      "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
+      "label": "rewardsToken",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_contract(IERC20)1019"
+    },
+    {
+      "astId": 2988,
+      "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
+      "label": "core",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "astId": 2991,
+      "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
+      "label": "latestRecordedRewardsAmount",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_uint256"
+    },
+    {
+      "astId": 2996,
+      "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)50_storage": {
+      "encoding": "inplace",
+      "label": "uint256[50]",
+      "numberOfBytes": "1600",
+      "base": "t_uint256"
+    },
+    "t_contract(IERC20)1019": {
+      "encoding": "inplace",
+      "label": "contract IERC20",
+      "numberOfBytes": "20"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

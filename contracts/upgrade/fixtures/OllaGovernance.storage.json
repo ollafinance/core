@@ -1,0 +1,62 @@
+{
+  "storage": [
+    {
+      "astId": 4387,
+      "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
+      "label": "core",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_address"
+    },
+    {
+      "astId": 4391,
+      "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
+      "label": "treasury",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_address"
+    },
+    {
+      "astId": 4395,
+      "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
+      "label": "pendingGovernance",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_address"
+    },
+    {
+      "astId": 4398,
+      "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
+      "label": "governanceAdmin",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "astId": 4403,
+      "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)50_storage": {
+      "encoding": "inplace",
+      "label": "uint256[50]",
+      "numberOfBytes": "1600",
+      "base": "t_uint256"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}
