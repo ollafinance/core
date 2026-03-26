@@ -113,20 +113,21 @@ yarn slither:docker
 
 ## Storage layout checks
 
-Run storage layout checks whenever upgradeable contracts change storage (new variables, reordered fields, or updated inheritance), and before preparing an upgrade or release.
+All upgradeable contracts use a standardized `uint256[50]` storage gap. CI validates that storage layouts match committed fixtures on every PR.
 
-Check the current layout against the fixture:
-
-```bash
-node contracts/script/check-storage-layout.ts --contract OllaCore --fixture contracts/upgrade/fixtures/OllaCore.storage.json
-```
-
-If the change is intentional, refresh the fixture from the Foundry output:
+Check all layouts against their fixtures:
 
 ```bash
-cd contracts
-forge inspect OllaCore storageLayout > upgrade/fixtures/OllaCore.storage.json
+yarn check:storage
 ```
+
+If the change is intentional (e.g., added a new state variable and shrunk the gap), regenerate all fixtures:
+
+```bash
+yarn check:storage:update
+```
+
+Commit the updated fixtures alongside the contract change.
 
 ## Contributing
 

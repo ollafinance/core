@@ -91,12 +91,11 @@ contract OllaVault is
     /// @notice Cached claimable shares per controller for O(1) maxRedeem.
     mapping(address controller => uint256 shares) private _claimableShares;
 
-    /// @notice Storage gap for upgradability.
-    /// @dev State variables occupy 16 slots. When adding new state variables, append them above
-    ///      this gap and reduce its length by the number of slots consumed.
-    // Reserved storage gap for future upgrades; intentionally unused.
+    /// @notice Storage gap for future upgrades.
+    /// @dev When adding new state variables, append them above this gap and reduce its length
+    ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[50] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
