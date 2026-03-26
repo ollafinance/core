@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
-const { execSync } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
+import { execSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const args = process.argv.slice(2);
 const argMap = new Map();
@@ -56,7 +60,7 @@ function stableStringify(value: unknown): string {
 }
 
 function runForgeInspect(contract: string): StorageLayout {
-    const output = execSync(`forge inspect ${contract} storageLayout`, {
+    const output = execSync(`forge inspect ${contract} storage-layout --json`, {
         cwd: contractsRoot,
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
