@@ -60,6 +60,9 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @notice Tracked count of activated attesters.
     uint256 private _activatedAttesterCount;
 
+    /// @notice Configurable exit delay for initiateWithdraw (default 0 = immediate).
+    uint256 public exitDelay;
+
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -123,7 +126,7 @@ contract MockAztecRollup is IMockAztecRollup {
         _exits[_attester] = Exit({
             withdrawalId: 0,
             amount: amount,
-            exitableAt: Timestamp.wrap(block.timestamp), // Immediate for testing
+            exitableAt: Timestamp.wrap(block.timestamp + exitDelay),
             recipientOrWithdrawer: _recipient,
             isRecipient: true,
             exists: true
@@ -295,6 +298,22 @@ contract MockAztecRollup is IMockAztecRollup {
         // indistinguishable from a queued (never-activated) one.
         delete _exits[_attester];
         delete _publicKeys[_attester];
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          EXIT DELAY HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IMockAztecRollup
+    function reduceExitAmount(address _attester, uint256 _newAmount) external override {
+        require(_exits[_attester].exists, "MockAztecRollup: no exit");
+        require(_newAmount <= _exits[_attester].amount, "MockAztecRollup: new amount exceeds current");
+        _exits[_attester].amount = _newAmount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setExitDelay(uint256 _delay) external override {
+        exitDelay = _delay;
     }
 
     /*//////////////////////////////////////////////////////////////

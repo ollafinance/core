@@ -344,6 +344,18 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         _useTransferMode = _enabled;
     }
 
+    /// @inheritdoc IMockAztecRollup
+    function reduceExitAmount(address _attester, uint256 _newAmount) external override {
+        require(_exits[_attester].exists, "MaliciousAztecRollup: no exit");
+        require(_newAmount <= _exits[_attester].amount, "MaliciousAztecRollup: new amount exceeds current");
+        _exits[_attester].amount = _newAmount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setExitDelay(uint256) external override {
+        // no-op for malicious mock
+    }
+
     /// @notice Get the exit record for an attester.
     /// @param _attester The attester address.
     /// @return The exit record.
@@ -405,5 +417,10 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @return The activated attester count.
     function getActivatedAttesterCount() external view override returns (uint256) {
         return _activatedAttesterCount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function exitDelay() external pure override returns (uint256) {
+        return 0;
     }
 }

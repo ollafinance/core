@@ -605,8 +605,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 //     before the exit delay expires, giving keepers ample time to call
                 //     refreshAttesterState and route through the normal exitable path (which reads
                 //     the correct view_.exit.amount).
-                //  3. slashingDelta will not record this loss; safety-module monitoring should not
-                //     rely solely on slashingDelta for exiting-attester slashes.
+                //  3. slashingDelta will not record this loss (the exit record is deleted, so the
+                //     actual finalized amount is unrecoverable). The normal exitable path now
+                //     captures exit-delay slashes in slashingDelta, so this externally-finalized
+                //     edge case is the only remaining gap.
                 uint256 pendingExit = info.pendingExitAmount;
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
                     _aggregateState.pendingUnstakeAmount -= pendingExit;
@@ -626,6 +628,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 rollup.finalizeWithdraw(attester);
 
                 _pendingClaimAmount += exitAmount;
+
+                // Track slashing that occurred during the exit delay: the difference between
+                // what was snapshotted at exit initiation and what the rollup actually holds.
+                if (pendingExit > exitAmount) {
+                    _aggregateState.slashingDelta += (pendingExit - exitAmount);
+                }
 
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
                     _aggregateState.pendingUnstakeAmount -= pendingExit;

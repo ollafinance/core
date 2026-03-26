@@ -180,6 +180,22 @@ interface IMockAztecRollup {
     /// @param count The new activated attester count.
     function setActivatedAttesterCount(uint256 count) external;
 
+    /// @notice Reduces an existing exit's amount in-place, simulating a slash during exit delay.
+    /// @dev Models the real Aztec StakingLib.slash() behavior on an already-exiting attester:
+    ///      the exit record stays intact but exit.amount is reduced by the slashed amount.
+    /// @param attester The attester address with an existing exit.
+    /// @param newAmount The new (reduced) exit amount.
+    function reduceExitAmount(address attester, uint256 newAmount) external;
+
+    /// @notice Sets the default exit delay applied to new exits from initiateWithdraw.
+    /// @dev When non-zero, initiateWithdraw sets exitableAt = block.timestamp + delay.
+    /// @param delay The exit delay in seconds.
+    function setExitDelay(uint256 delay) external;
+
+    /// @notice Returns the currently configured exit delay.
+    /// @return The exit delay in seconds.
+    function exitDelay() external view returns (uint256);
+
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
