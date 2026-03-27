@@ -227,6 +227,38 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(aztec.balanceOf(core), coreBalanceBefore + expectedTotal, "core should receive all funds");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                ROLLUP UPGRADE -- QUEUED ATTESTER
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice A Queued attester that was deposited on rollup A becomes effectively orphaned
+    ///         when the registry upgrades to rollup B (where the attester is NONE).
+    ///         refreshAttesterState should leave the attester as Queued (not crash or remove it).
+    ///         purgeFailedQueueEntry would be needed to clean it up.
+    function test_RefreshAttesterState_QueuedAttester_SurvivesRollupUpgrade() external {
+        // Stake 1 attester on rollup A (Queued)
+        _setupStakedAttester();
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "pre: queued");
+
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+
+        // Deploy new rollup, update registry to point to it
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        // On the new rollup, getAttesterView returns NONE (attester doesn't exist there)
+        // refreshAttesterState: attester is Queued, rollup shows NONE -> stays Queued
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        // Attester remains Queued, counts unchanged
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "still queued after rollup upgrade");
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "stakedAmount unchanged");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            ROLLUP UPGRADE -- EXTERNAL EXIT ON OLD ROLLUP
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice An externally initiated exit detected during refresh on rollup A should store
     ///         the correct exitRollup, so it survives a subsequent upgrade.
     function test_RefreshAttesterState_ExternalExitOnOldRollup_SurvivesUpgrade() external {

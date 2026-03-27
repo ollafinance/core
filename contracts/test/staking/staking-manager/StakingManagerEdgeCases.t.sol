@@ -575,6 +575,36 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         assertTrue(true, "guard exists at line 465 of StakingManager.sol");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                    DOUBLE REFRESH QUEUED→ACTIVE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Stake 1 attester (Queued). First refresh promotes to Active.
+    ///         Second refresh is a no-op (already Active, balance unchanged).
+    function test_RefreshAttesterState_DoubleRefresh_QueuedToActive_ThenNoOp() external {
+        // Setup: stake 1 attester (Queued)
+        _setupStakedAttester();
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "pre: queued, not active");
+
+        // First refresh: promotes Queued -> Active (rollup shows VALIDATING)
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "post first refresh: active");
+
+        IStakingManager.StakingState memory stateAfterFirst = stakingManager.getStakingState();
+        uint256 stakedAfterFirst = stateAfterFirst.stakedAmount;
+
+        // Second refresh: should be a no-op (already Active, balance unchanged on rollup)
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "post second refresh: still 1 active");
+
+        IStakingManager.StakingState memory stateAfterSecond = stakingManager.getStakingState();
+        assertEq(stateAfterSecond.stakedAmount, stakedAfterFirst, "stakedAmount unchanged after second refresh");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            FUZZ TESTS
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice Fuzz: stake N attesters, promote M (random subset) to Active.
     ///         Verify getActivatedAttesterCount() == M and staking state is consistent.
     function testFuzz_StakeAndRefresh_CountsConsistent(uint8 rawCount) external {
