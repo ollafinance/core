@@ -14,7 +14,7 @@
       "label": "_provider",
       "offset": 0,
       "slot": "1",
-      "type": "t_struct(ProviderConfig)2941_storage"
+      "type": "t_struct(ProviderConfig)2942_storage"
     },
     {
       "astId": 2469,
@@ -22,7 +22,7 @@
       "label": "_providerQueue",
       "offset": 0,
       "slot": "2",
-      "type": "t_struct(Queue)3345_storage"
+      "type": "t_struct(Queue)3346_storage"
     },
     {
       "astId": 2474,
@@ -65,20 +65,20 @@
       "numberOfBytes": "32",
       "value": "t_bool"
     },
-    "t_mapping(t_uint256,t_struct(KeyStore)2924_storage)": {
+    "t_mapping(t_uint256,t_struct(KeyStore)2925_storage)": {
       "encoding": "mapping",
       "key": "t_uint256",
       "label": "mapping(uint256 => struct IStakingManager.KeyStore)",
       "numberOfBytes": "32",
-      "value": "t_struct(KeyStore)2924_storage"
+      "value": "t_struct(KeyStore)2925_storage"
     },
-    "t_struct(G1Point)3320_storage": {
+    "t_struct(G1Point)3321_storage": {
       "encoding": "inplace",
       "label": "struct G1Point",
       "numberOfBytes": "64",
       "members": [
         {
-          "astId": 3317,
+          "astId": 3318,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "x",
           "offset": 0,
@@ -86,7 +86,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 3319,
+          "astId": 3320,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "y",
           "offset": 0,
@@ -95,13 +95,13 @@
         }
       ]
     },
-    "t_struct(G2Point)3330_storage": {
+    "t_struct(G2Point)3331_storage": {
       "encoding": "inplace",
       "label": "struct G2Point",
       "numberOfBytes": "128",
       "members": [
         {
-          "astId": 3323,
+          "astId": 3324,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "x0",
           "offset": 0,
@@ -109,7 +109,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 3325,
+          "astId": 3326,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "x1",
           "offset": 0,
@@ -117,7 +117,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 3327,
+          "astId": 3328,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "y0",
           "offset": 0,
@@ -125,7 +125,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 3329,
+          "astId": 3330,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "y1",
           "offset": 0,
@@ -134,13 +134,13 @@
         }
       ]
     },
-    "t_struct(KeyStore)2924_storage": {
+    "t_struct(KeyStore)2925_storage": {
       "encoding": "inplace",
       "label": "struct IStakingManager.KeyStore",
       "numberOfBytes": "288",
       "members": [
         {
-          "astId": 2914,
+          "astId": 2915,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "attester",
           "offset": 0,
@@ -148,38 +148,38 @@
           "type": "t_address"
         },
         {
-          "astId": 2917,
+          "astId": 2918,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "publicKeyG1",
           "offset": 0,
           "slot": "1",
-          "type": "t_struct(G1Point)3320_storage"
+          "type": "t_struct(G1Point)3321_storage"
         },
         {
-          "astId": 2920,
+          "astId": 2921,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "publicKeyG2",
           "offset": 0,
           "slot": "3",
-          "type": "t_struct(G2Point)3330_storage"
+          "type": "t_struct(G2Point)3331_storage"
         },
         {
-          "astId": 2923,
+          "astId": 2924,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "proofOfPossession",
           "offset": 0,
           "slot": "7",
-          "type": "t_struct(G1Point)3320_storage"
+          "type": "t_struct(G1Point)3321_storage"
         }
       ]
     },
-    "t_struct(ProviderConfig)2941_storage": {
+    "t_struct(ProviderConfig)2942_storage": {
       "encoding": "inplace",
       "label": "struct IStakingManager.ProviderConfig",
       "numberOfBytes": "32",
       "members": [
         {
-          "astId": 2940,
+          "astId": 2941,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "rewardsRecipient",
           "offset": 0,
@@ -188,21 +188,21 @@
         }
       ]
     },
-    "t_struct(Queue)3345_storage": {
+    "t_struct(Queue)3346_storage": {
       "encoding": "inplace",
       "label": "struct Queue",
       "numberOfBytes": "64",
       "members": [
         {
-          "astId": 3340,
+          "astId": 3341,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "keyStores",
           "offset": 0,
           "slot": "0",
-          "type": "t_mapping(t_uint256,t_struct(KeyStore)2924_storage)"
+          "type": "t_mapping(t_uint256,t_struct(KeyStore)2925_storage)"
         },
         {
-          "astId": 3342,
+          "astId": 3343,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "first",
           "offset": 0,
@@ -210,7 +210,7 @@
           "type": "t_uint128"
         },
         {
-          "astId": 3344,
+          "astId": 3345,
           "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
           "label": "last",
           "offset": 16,
