@@ -154,6 +154,16 @@ abstract contract StakingManagerBaseTest is Test {
         return attesters;
     }
 
+    function _setupActiveAttester() internal {
+        _setupStakedAttester();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+    }
+
+    function _setupMultipleActiveAttesters(uint256 count) internal {
+        _setupMultipleStakedAttesters(count);
+        stakingManager.refreshAttesterState(_attesterAddresses(count));
+    }
+
     function _setupStakedAttestersWithExits(uint256 total, uint256 exited) internal {
         require(exited <= total, "exited cannot be more than total");
         IStakingManager.KeyStore[] memory keys = _createMockKeys(total);
@@ -166,6 +176,9 @@ abstract contract StakingManagerBaseTest is Test {
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD * total);
         stakingManager.stake(ACTIVATION_THRESHOLD * total);
         vm.stopPrank();
+
+        // Promote all attesters from Queued to Active
+        stakingManager.refreshAttesterState(_attesterAddresses(total));
 
         // Simulate external exits for the first 'exited' attesters
         for (uint256 i; i < exited; ++i) {

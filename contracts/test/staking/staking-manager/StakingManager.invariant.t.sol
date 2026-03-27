@@ -156,6 +156,12 @@ contract StakingManagerHandler is Test {
         uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
 
         try stakingManager.stake(amount) {
+            // Promote newly staked Queued attesters to Active
+            // (mock rollup returns VALIDATING after deposit)
+            vm.stopPrank();
+            stakingManager.refreshAttesterState(_allAttesterAddresses());
+            vm.startPrank(core);
+
             uint256 activatedAfter = stakingManager.getActivatedAttesterCount();
             uint256 newlyActivated = activatedAfter - activatedBefore;
             ghost_keysActivated += newlyActivated;
@@ -288,6 +294,10 @@ contract StakingManagerHandler is Test {
 
     function ghostAttestersLength() external view returns (uint256) {
         return ghost_attesters.length;
+    }
+
+    function _allAttesterAddresses() internal view returns (address[] memory) {
+        return ghost_attesters;
     }
 
     function ghostAttesterAt(uint256 index) external view returns (address) {

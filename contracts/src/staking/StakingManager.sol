@@ -272,8 +272,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function purgeFailedQueueEntry(address attester) external override nonReentrant {
         AttesterInfo storage info = _attesterMap[attester];
 
-        // Must be an attester we know about and marked Active
-        if (info.attester == address(0) || info.status != InternalAttesterStatus.Active) {
+        // Must be an attester we know about and marked Queued (deposited but not yet activated)
+        if (info.attester == address(0) || info.status != InternalAttesterStatus.Queued) {
             revert StakingManager__NotFailedQueueEntry(attester);
         }
 
@@ -461,8 +461,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         if (status == InternalAttesterStatus.Exiting) {
             --_exitingCount;
 
-            /// @dev guard to prevent futue code regressions, this path should never be triggerable
-        } else if (status == InternalAttesterStatus.Active) {
+            /// @dev guard to prevent future code regressions, this path should never be triggerable
+        } else if (status == InternalAttesterStatus.Active || status == InternalAttesterStatus.Queued) {
             revert StakingManager__RemoveAttesterFailed(attester);
         }
 
@@ -476,10 +476,13 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end costly-loop
 
     // slither-disable-start pess-multiple-storage-read
-    /// @notice Marks an attester as active in the registry and updates running state.
+    /// @notice Marks an attester as queued in the registry and updates running state.
+    /// @dev The attester is deposited on the rollup but not yet activated in the GSE.
+    ///      Tokens ARE on the rollup so stakedAmount is tracked, but the attester is NOT
+    ///      added to _activeAttesterSet or _activeCount until promoted via refreshAttesterState.
     /// @param attester The attester address.
     /// @param stakedAmount The amount staked for this attester.
-    function _setActive(address attester, uint256 stakedAmount) internal {
+    function _setQueued(address attester, uint256 stakedAmount) internal {
         AttesterInfo storage info = _attesterMap[attester];
         if (info.attester != address(0)) {
             revert StakingManager__AttesterAlreadyActive(attester);
@@ -487,7 +490,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         info.attester = attester;
         info.stakedAmount = stakedAmount;
         ++_attesterCount;
-        _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
+        _setAttesterStatus(attester, info, InternalAttesterStatus.Queued);
         _aggregateState.stakedAmount += stakedAmount;
     }
 
@@ -507,16 +510,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     {
         AttesterView memory view_ = rollup.getAttesterView(attester);
         exitAmount = view_.effectiveBalance;
-
-        // Attester is still in the rollup's entry queue (not yet activated in the GSE).
-        // The rollup returns Status.NONE with zero balance and empty config for queued attesters.
-        // Calling initiateWithdraw would revert -- skip gracefully so rebalance can continue.
-        if (
-            view_.status == Status.NONE && view_.effectiveBalance == 0 && view_.config.withdrawer == address(0)
-                && !view_.exit.exists
-        ) {
-            return 0;
-        }
 
         // slither-disable-next-line reentrancy-no-eth
         bool isInitiated = rollup.initiateWithdraw(attester, address(this));
@@ -583,13 +576,14 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
 
-        // Attester is still in the rollup's entry queue (not yet activated in the GSE).
-        // The rollup returns Status.NONE with zero balance and empty config for queued attesters.
-        // Skip refresh -- there is no on-chain state to reconcile yet.
-        if (
-            info.status == InternalAttesterStatus.Active && view_.status == Status.NONE
-                && view_.config.withdrawer == address(0) && !view_.exit.exists
-        ) {
+        // Handle Queued attesters: check if the rollup has activated them.
+        if (info.status == InternalAttesterStatus.Queued) {
+            if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
+                // Attester has been activated on the rollup -- promote to Active.
+                _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
+                emit AttesterStateRefreshed(attester, info.stakedAmount, view_.effectiveBalance);
+            }
+            // Still queued (NONE on rollup) -- nothing to reconcile yet.
             return;
         }
 
@@ -738,7 +732,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 break;
             }
             KeyStore memory keyStore = stakingProviderRegistry.getAttesterKeystore();
-            _setActive(keyStore.attester, activationThresholdValue);
+            _setQueued(keyStore.attester, activationThresholdValue);
             emit StakedWithProvider(keyStore.attester, activationThresholdValue);
             // External call is safe:
             // - Caller has nonReentrant modifier

@@ -62,7 +62,8 @@ contract StakingManagerPurgeFailedQueueTest is StakingManagerBaseTest {
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 2, "2 healthy attesters remain");
-        assertEq(stakingManager.getActivatedAttesterCount(), 2, "2 active attesters");
+        // Remaining 2 attesters are still Queued (not promoted to Active)
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "0 active attesters (remaining are Queued)");
     }
 
     /// @notice After purging, the refunded tokens in StakingManager are swept by getUnstakedFunds().
@@ -95,9 +96,9 @@ contract StakingManagerPurgeFailedQueueTest is StakingManagerBaseTest {
         stakingManager.purgeFailedQueueEntry(unknown);
     }
 
-    /// @notice Purging an Exiting attester reverts (not Active).
+    /// @notice Purging an Exiting attester reverts (not Queued).
     function test_RevertWhen_PurgeFailedQueueEntry_ExitingAttester() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         vm.prank(core);
@@ -109,9 +110,9 @@ contract StakingManagerPurgeFailedQueueTest is StakingManagerBaseTest {
         stakingManager.purgeFailedQueueEntry(attesters[0]);
     }
 
-    /// @notice Purging a healthy VALIDATING attester reverts.
+    /// @notice Purging an Active attester reverts (purge requires Queued status).
     function test_RevertWhen_PurgeFailedQueueEntry_HealthyActiveAttester() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         vm.expectRevert(
@@ -175,7 +176,7 @@ contract StakingManagerPurgeFailedQueueTest is StakingManagerBaseTest {
         // Now purge succeeds
         stakingManager.purgeFailedQueueEntry(attester);
 
-        assertEq(stakingManager.getActivatedAttesterCount(), 0, "purged after queue cleared");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "purged after queue cleared (was Queued, not Active)");
     }
 
     /// @notice Queue scan works correctly with multiple entries — only blocks if the target is found.
@@ -194,8 +195,8 @@ contract StakingManagerPurgeFailedQueueTest is StakingManagerBaseTest {
 
         // Purge attester[0] succeeds (not in queue)
         stakingManager.purgeFailedQueueEntry(attesters[0]);
-        // attester[1] still in registry as Active (even though NONE on rollup, it's still in queue)
-        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester[0] purged, attester[1] still active");
+        // attester[1] still in registry as Queued (even though NONE on rollup, it's still in queue)
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "attester[0] purged, attester[1] still Queued");
 
         // Purge attester[1] reverts (still in queue)
         vm.expectRevert(

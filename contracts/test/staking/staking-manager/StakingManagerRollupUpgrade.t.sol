@@ -27,7 +27,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
     ///         upgrades to rollup B. refreshAttesterState must still query rollup A for the exit
     ///         and must NOT credit a phantom exit amount just because rollup B has no exit record.
     function test_RefreshAttesterState_ExitingAttester_SurvivesRollupUpgrade() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 
@@ -61,7 +61,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
     /// @notice After a rollup upgrade, once the exit on rollup A becomes exitable,
     ///         refreshAttesterState must finalize it on rollup A and recover the funds.
     function test_RefreshAttesterState_ExitingAttester_FinalizesOnOldRollupAfterUpgrade() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 
@@ -107,7 +107,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
     /// @notice Mixed scenario: one attester is active (follows upgrade), one is exiting (stays on old rollup).
     ///         After upgrade, active attester works on rollup B, exiting attester finalizes on rollup A.
     function test_RefreshAttesterState_MixedActiveAndExiting_AfterUpgrade() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         address activeAttester = keys[0].attester;
         address exitingAttester = keys[1].attester;
@@ -158,7 +158,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
     ///         interpreted as "externally finalized", crediting _pendingClaimAmount without
     ///         any actual token transfer.
     function test_RefreshAttesterState_NoPhantomCredit_AfterUpgrade() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 
@@ -192,7 +192,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
     ///         on the old rollup once their exits become exitable.
     function test_RefreshAttesterState_MultipleExitingAttesters_AllFinalizeOnOldRollup() external {
         uint256 count = 3;
-        _setupMultipleStakedAttesters(count);
+        _setupMultipleActiveAttesters(count);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(count);
 
         // Unstake all
@@ -227,10 +227,42 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(aztec.balanceOf(core), coreBalanceBefore + expectedTotal, "core should receive all funds");
     }
 
+    /*//////////////////////////////////////////////////////////////
+                ROLLUP UPGRADE -- QUEUED ATTESTER
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice A Queued attester that was deposited on rollup A becomes effectively orphaned
+    ///         when the registry upgrades to rollup B (where the attester is NONE).
+    ///         refreshAttesterState should leave the attester as Queued (not crash or remove it).
+    ///         purgeFailedQueueEntry would be needed to clean it up.
+    function test_RefreshAttesterState_QueuedAttester_SurvivesRollupUpgrade() external {
+        // Stake 1 attester on rollup A (Queued)
+        _setupStakedAttester();
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "pre: queued");
+
+        IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
+
+        // Deploy new rollup, update registry to point to it
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        // On the new rollup, getAttesterView returns NONE (attester doesn't exist there)
+        // refreshAttesterState: attester is Queued, rollup shows NONE -> stays Queued
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        // Attester remains Queued, counts unchanged
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "still queued after rollup upgrade");
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "stakedAmount unchanged");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+            ROLLUP UPGRADE -- EXTERNAL EXIT ON OLD ROLLUP
+    //////////////////////////////////////////////////////////////*/
+
     /// @notice An externally initiated exit detected during refresh on rollup A should store
     ///         the correct exitRollup, so it survives a subsequent upgrade.
     function test_RefreshAttesterState_ExternalExitOnOldRollup_SurvivesUpgrade() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 

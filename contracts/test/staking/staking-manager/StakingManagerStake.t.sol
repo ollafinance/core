@@ -26,8 +26,12 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, stakeAmount);
         assertEq(stakingProviderRegistry.getQueueLength(), 0);
-        assertEq(stakingManager.getActivatedAttesterCount(), 2);
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "queued attesters are not active yet");
         assertEq(aztec.balanceOf(address(rollup)), stakeAmount);
+
+        // After refresh, attesters become active
+        stakingManager.refreshAttesterState(_attesterAddresses(2));
+        assertEq(stakingManager.getActivatedAttesterCount(), 2);
     }
 
     function test_Stake_LimitedByAvailableKeys() external {
@@ -49,7 +53,7 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         // Only 1 attester should be staked
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD);
-        assertEq(stakingManager.getActivatedAttesterCount(), 1);
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "queued attesters are not active yet");
         // Remaining funds stay with core (weren't transferred)
         assertEq(aztec.balanceOf(core), coreBalanceBefore - ACTIVATION_THRESHOLD);
     }
@@ -194,6 +198,7 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
             uint256 stakedCandidate = abi.decode(data, (uint256));
             if (stakedCandidate == stakeAmount) {
                 assertEq(stakedCandidate, stakeAmount, "stake should complete in one call");
+                stakingManager.refreshAttesterState(_attesterAddresses(attesterCount));
                 assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
                 assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
                 return;
@@ -211,6 +216,7 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
             uint256 stakedFull = stakingManager.stake(stakeAmount);
 
             assertEq(stakedFull, stakeAmount, "stake should complete in one call");
+            stakingManager.refreshAttesterState(_attesterAddresses(attesterCount));
             assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
             assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
             return;
@@ -221,6 +227,9 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         uint256 stakedAmount = stakingManager.stake{ gas: selectedGas }(stakeAmount);
 
         assertEq(stakedAmount, stakedObserved, "staked amount should match probe");
+        // After stake, attesters are Queued; promote them to check count
+        uint256 stakedCount = stakedObserved / ACTIVATION_THRESHOLD;
+        stakingManager.refreshAttesterState(_attesterAddresses(stakedCount));
         assertGt(stakingManager.getActivatedAttesterCount(), 0, "should stake some attesters");
         assertLt(stakingManager.getActivatedAttesterCount(), attesterCount, "should leave keys in queue");
         assertEq(stakedAmount % ACTIVATION_THRESHOLD, 0, "staked amount should be full units");
@@ -267,6 +276,7 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
             uint256 stakedFull = stakingManager.stake{ gas: 2_000_000 }(stakeAmount);
 
             assertEq(stakedFull, stakeAmount, "stake should complete in one call");
+            stakingManager.refreshAttesterState(_attesterAddresses(attesterCount));
             assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
             assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
             return;
@@ -275,21 +285,24 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
         vm.revertToState(snapshotId);
         uint256 totalStaked;
         uint256 maxIterations = 30;
-        uint256 lastCount;
+        uint256 lastStaked;
         uint256 gasForLoop = selectedGas;
         for (uint256 i; i < maxIterations; ++i) {
+            // Promote any Queued attesters to Active so we can track progress
+            stakingManager.refreshAttesterState(_attesterAddresses(attesterCount));
             uint256 currentCount = stakingManager.getActivatedAttesterCount();
             if (currentCount == attesterCount) {
                 break;
             }
-            if (currentCount == lastCount) {
+            if (totalStaked == lastStaked && totalStaked > 0) {
                 gasForLoop += 100_000;
             }
-            lastCount = currentCount;
+            lastStaked = totalStaked;
             vm.prank(core);
             totalStaked += stakingManager.stake{ gas: gasForLoop }(stakeAmount);
         }
 
+        stakingManager.refreshAttesterState(_attesterAddresses(attesterCount));
         assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should be staked");
         assertEq(stakingProviderRegistry.getQueueLength(), 0, "queue should be empty");
         assertEq(totalStaked, stakeAmount, "total staked should equal requested");
@@ -317,6 +330,8 @@ contract StakingManagerStakeTest is StakingManagerBaseTest {
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, stakeAmount);
+        // After stake, attesters are Queued; promote to Active for count check
+        stakingManager.refreshAttesterState(_attesterAddresses(attesterCount));
         assertEq(stakingManager.getActivatedAttesterCount(), attesterCount);
     }
 }

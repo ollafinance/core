@@ -136,6 +136,8 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         aztec.approve(address(stakingManager), amount);
         stakingManager.stake(amount);
         vm.stopPrank();
+        // Promote Queued -> Active (mock rollup returns VALIDATING after deposit)
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
     }
 
     function _allAttesterAddresses() internal view returns (address[] memory) {
@@ -182,6 +184,8 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         stakingManager.stake(stakeAmount);
         vm.stopPrank();
 
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
         assertEq(stakingManager.getActivatedAttesterCount(), 3);
         assertEq(stakingProviderRegistry.getQueueLength(), 0);
         assertEq(aztec.balanceOf(address(rollup)), stakeAmount);
@@ -202,6 +206,8 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
         stakingManager.stake(requestedAmount);
         vm.stopPrank();
 
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
         // Only 5 attesters should be staked, remaining funds stay with core
         assertEq(stakingManager.getActivatedAttesterCount(), 5);
         assertEq(stakingProviderRegistry.getQueueLength(), 0);
@@ -444,6 +450,9 @@ contract StakingManagerStakingProviderRegistryIntegrationTest is Test {
 
         stakingManager.stake(ACTIVATION_THRESHOLD * 2);
         vm.stopPrank();
+
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
     }
 
     function test_CrossContractEvents_UnstakeFlow() external {

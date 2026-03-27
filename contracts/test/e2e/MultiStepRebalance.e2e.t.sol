@@ -508,6 +508,71 @@ contract MultiStepRebalanceE2E is E2EBaseWithRealStaking {
     }
 
     /*//////////////////////////////////////////////////////////////
+       ALL-QUEUED ATTESTERS: UNSTAKE ADVANCES REBALANCE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice CRITICAL REGRESSION TEST: When all attesters are Queued (not yet promoted to Active),
+    ///         rebalance must not get stuck at InitiateUnstake. The check
+    ///         `initiated == 0 && getActivatedAttesterCount() == 0` should advance to StakeSurplus -> Done.
+    function test_MultiStepRebalance_AllQueuedAttesters_UnstakeAdvances() external {
+        uint256 threshold = _threshold();
+
+        // 1. Add keys and deposit funds (creates buffer)
+        _addKeys(2);
+        _deposit(alice, threshold * 2);
+
+        // 2. Rebalance to stake surplus -- creates Queued attesters via real stake flow.
+        //    Do NOT call _completeRebalance() because it calls _refreshAttesters() which
+        //    would promote Queued -> Active. Instead, inline the rebalance loop.
+        _rebalance();
+        // Complete the current cycle WITHOUT refreshing attesters
+        for (uint256 i; i < 20; ++i) {
+            IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
+            if (p.step == IOllaCore.RebalanceStep.Done) break;
+            vm.prank(operator);
+            core.rebalance();
+        }
+
+        // Verify: attesters are Queued, not Active
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "all attesters should be Queued (not Active)");
+        assertEq(core.accountingState().stakedPrincipal, threshold * 2, "2 attesters staked");
+        assertEq(vault.bufferedAssets(), 0, "buffer should be 0");
+
+        // 3. Request a large withdrawal (pendingWithdrawals > buffer)
+        uint256 redeemShares = stAztec.balanceOf(alice);
+        _requestRedeem(alice, redeemShares);
+
+        // 4. Rebalance -- it will:
+        //    - Harvest (no-op)
+        //    - PullUnstaked (no-op)
+        //    - FinalizeWithdrawals (no buffer to finalize)
+        //    - InitiateUnstake: calls unstake(), returns 0 (all Queued, none Active)
+        //    - Since initiated == 0 && getActivatedAttesterCount() == 0, it advances
+        //    - StakeSurplus -> Done
+        _warpPastCooldown();
+        _rebalance();
+
+        // Complete without refreshing attesters
+        for (uint256 i; i < 20; ++i) {
+            IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
+            if (p.step == IOllaCore.RebalanceStep.Done) break;
+            vm.prank(operator);
+            core.rebalance();
+        }
+
+        // 5. Assert: rebalance completed (step == Done), didn't get stuck
+        IOllaCore.RebalanceProgress memory finalProgress = core.rebalanceProgress();
+        assertEq(
+            uint256(finalProgress.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should complete (not stuck at InitiateUnstake)"
+        );
+
+        // Attesters should still be Queued (we never refreshed)
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "attesters still Queued");
+    }
+
+    /*//////////////////////////////////////////////////////////////
        ACCOUNTING CONSISTENCY AFTER MULTI-STEP COMPLETION
     //////////////////////////////////////////////////////////////*/
 

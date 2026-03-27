@@ -38,8 +38,13 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
-        stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
+
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
 
@@ -57,15 +62,20 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
-        stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
+
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         bool hasFinalized = stakingManager.hasFinalizedUnstakes();
         assertFalse(hasFinalized, "hasFinalizedUnstakes should be false before refresh finalizes exits");
     }
 
     function test_HasFinalizedUnstakes_ReturnsTrueAfterRefreshFinalizesExit() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -78,7 +88,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     }
 
     function test_HasFinalizedUnstakes_ReturnsFalseAfterClaim() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -94,7 +104,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     }
 
     function test_HasFinalizedUnstakes_ReturnsFalseWhenActiveExitNotExitable() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
@@ -108,7 +118,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     //////////////////////////////////////////////////////////////*/
 
     function test_GetStakingState_ReturnsCorrectValuesAfterStake() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3);
@@ -116,7 +126,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     }
 
     function test_GetStakingState_ReturnsCorrectValuesAfterUnstake() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
@@ -126,8 +136,57 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD * 2);
     }
 
-    function test_GetStakingState_ReturnsCorrectValuesWithDelayedExit() external {
+    /*//////////////////////////////////////////////////////////////
+                    TOTAL STAKED WITH QUEUED ATTESTERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Queued attesters contribute to totalStaked() but not to getActivatedAttesterCount().
+    ///         Promoting to Active does not change totalStaked().
+    function test_TotalStaked_IncludesQueuedAttesters() external {
+        // Stake 2 attesters (both Queued)
         _setupMultipleStakedAttesters(2);
+
+        // Queued attesters contribute to totalStaked
+        assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD * 2, "totalStaked includes queued");
+        // But are not counted as active
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "queued not counted as active");
+
+        // Promote 1 to Active via refresh
+        address[] memory oneAttester = new address[](1);
+        oneAttester[0] = address(uint160(1));
+        stakingManager.refreshAttesterState(oneAttester);
+
+        // totalStaked unchanged (same amount, different status)
+        assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD * 2, "totalStaked unchanged after promotion");
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "1 active after promotion");
+    }
+
+    /// @notice totalStaked remains consistent across Queued, Active, and Exiting statuses.
+    function test_TotalStaked_ConsistentAcrossQueuedActiveExiting() external {
+        // Stake 3 attesters (all Queued)
+        _setupMultipleStakedAttesters(3);
+
+        // Promote all to Active
+        stakingManager.refreshAttesterState(_attesterAddresses(3));
+        assertEq(stakingManager.getActivatedAttesterCount(), 3, "3 active");
+
+        // Unstake 1 (Active -> Exiting)
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        // totalStaked = stakedAmount + pendingUnstakeAmount + pendingClaimAmount
+        // = 2*THRESHOLD + 1*THRESHOLD + 0 = 3*THRESHOLD
+        assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD * 3, "totalStaked includes exiting");
+        assertEq(stakingManager.getActivatedAttesterCount(), 2, "2 active after unstake");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "1 exiting after unstake");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    STAKING STATE WITH DELAYED EXIT
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetStakingState_ReturnsCorrectValuesWithDelayedExit() external {
+        _setupMultipleActiveAttesters(2);
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
