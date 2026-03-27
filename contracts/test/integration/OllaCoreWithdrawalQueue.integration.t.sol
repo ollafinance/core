@@ -370,6 +370,8 @@ contract RealisticStakingManager is IStakingManager {
 
     function refreshAttesterState(address[] calldata) external override { }
 
+    function purgeFailedQueueEntry(address) external override { }
+
     function getUnstakedFunds() external override returns (uint256 received, uint256 exitAmount) {
         // Transfer pending unstaked funds back to caller (OllaCore)
         received = pendingUnstakeAmount;

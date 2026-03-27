@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
-import { AttesterView, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import { AttesterView, DepositArgs, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title IAztecRollup
@@ -80,4 +80,15 @@ interface IAztecRollup {
     /// @dev taken from IRollup
     /// @return The timestamp for earliest claimable rewards.
     function getEarliestRewardsClaimableTimestamp() external view returns (Timestamp);
+
+    /// @notice Returns the number of validators in the entry queue.
+    /// @dev taken from IStaking
+    /// @return The entry queue length.
+    function getEntryQueueLength() external view returns (uint256);
+
+    /// @notice Returns the deposit args for a validator at the given queue index.
+    /// @dev taken from IStaking
+    /// @param _index The queue index.
+    /// @return The deposit args for the queued validator.
+    function getEntryQueueAt(uint256 _index) external view returns (DepositArgs memory);
 }

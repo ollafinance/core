@@ -1878,6 +1878,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function refreshAttesterState(address[] calldata) external override { }
 
+    function purgeFailedQueueEntry(address) external override { }
+
     function getUnstakedFunds() external pure override returns (uint256 received, uint256 exitAmount) {
         return (0, 0);
     }

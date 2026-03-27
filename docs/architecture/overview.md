@@ -93,6 +93,7 @@ vault -->|"checkDepositAllowed / checkWithdrawalMinimum"| safety
 
 %% Permissionless operations (anyone can call)
 anyone -->|"refreshAttesterState(address[])"| stkMan
+anyone -->|"purgeFailedQueueEntry(address)"| stkMan
 anyone -->|"rebalance() (cooldown-gated)"| core
 anyone -->|"updateAccounting()"| core
 
@@ -303,6 +304,7 @@ end
 anyoneWallet -->|"rebalance() (cooldown-gated)"| core
 anyoneWallet -->|"updateAccounting()"| core
 anyoneWallet -->|"refreshAttesterState(address[])"| stkMan
+anyoneWallet -->|"purgeFailedQueueEntry(address)"| stkMan
 
 style anyoneWallet fill:#555
 style core stroke:#090,stroke-width:4px

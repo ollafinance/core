@@ -233,4 +233,7 @@ contract MockStakingManager is IStakingManager {
 
     /// @notice No-op in mock.
     function refreshAttesterState(address[] calldata) external pure override { }
+
+    /// @notice No-op in mock.
+    function purgeFailedQueueEntry(address) external pure override { }
 }
