@@ -13,7 +13,24 @@ import { OllaVault } from "src/vault/OllaVault.sol";
 /// @title AtomicProxyFactory
 /// @notice Deploys ERC1967 proxies and initializes them in the same transaction.
 contract AtomicProxyFactory {
+    address public immutable DEPLOYER;
+
     error AtomicProxyFactory__ZeroAddress(string arg);
+    error AtomicProxyFactory__UnauthorizedCaller(address caller);
+
+    modifier onlyDeployer() {
+        if (msg.sender != DEPLOYER) {
+            revert AtomicProxyFactory__UnauthorizedCaller(msg.sender);
+        }
+        _;
+    }
+
+    constructor(address deployer_) {
+        if (deployer_ == address(0)) {
+            revert AtomicProxyFactory__ZeroAddress("deployer");
+        }
+        DEPLOYER = deployer_;
+    }
 
     function deployCoreAndInitialize(
         address implementation,
@@ -26,7 +43,7 @@ contract AtomicProxyFactory {
         address governance,
         IRewardsAccumulator rewardsAccumulator,
         address safetyModule
-    ) external returns (address proxy) {
+    ) external onlyDeployer returns (address proxy) {
         if (implementation == address(0)) {
             revert AtomicProxyFactory__ZeroAddress("implementation");
         }
@@ -55,7 +72,7 @@ contract AtomicProxyFactory {
         address withdrawalQueue,
         address core,
         address governance
-    ) external returns (address proxy) {
+    ) external onlyDeployer returns (address proxy) {
         if (implementation == address(0)) {
             revert AtomicProxyFactory__ZeroAddress("implementation");
         }

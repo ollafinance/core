@@ -308,6 +308,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         emit FailedQueueEntryPurged(attester, cachedStake);
     }
+
     // slither-disable-end pess-multiple-storage-read
 
     /*//////////////////////////////////////////////////////////////

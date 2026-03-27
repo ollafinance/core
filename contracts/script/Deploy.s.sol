@@ -239,7 +239,7 @@ contract DeployScript is BaseDeployer {
         _recordAddress("StakingManager", stakingManager);
         _recordAddress("SafetyModule", safetyModule);
 
-        // 7.5 Deploy core/vault proxies with initialize calldata atomically in constructor tx.
+        // 7.5 Deploy core/vault proxies and initialize atomically in same transaction.
         config.withdrawalQueue = withdrawalQueue;
         config.rewardsAccumulator = rewardsAccumulator;
         config.safetyModule = safetyModule;
@@ -385,12 +385,28 @@ contract DeployScript is BaseDeployer {
     {
         address existing = _readAddress("AtomicProxyFactory");
         if (existing != address(0)) {
-            _requireCode(existing, "AtomicProxyFactory");
-            return AtomicProxyFactory(existing);
+            if (!_hasCode(existing)) {
+                if (_shouldFailFastOnMissingResumeCode(config)) {
+                    _requireCode(existing, "AtomicProxyFactory");
+                }
+            } else {
+                factory = AtomicProxyFactory(existing);
+                try factory.DEPLOYER() returns (address existingDeployer) {
+                    require(
+                        existingDeployer == config.deployer,
+                        "Deploy: ADDRESS_STATE_MISMATCH.AtomicProxyFactory.deployer"
+                    );
+                    return factory;
+                } catch {
+                    if (_shouldFailFastOnMissingResumeCode(config)) {
+                        revert("Deploy: ADDRESS_STATE_MISMATCH.AtomicProxyFactory.interface");
+                    }
+                }
+            }
         }
 
         vm.startBroadcast(config.deployerPrivateKey);
-        factory = new AtomicProxyFactory();
+        factory = new AtomicProxyFactory(config.deployer);
         vm.stopBroadcast();
         _recordAddress("AtomicProxyFactory", address(factory));
     }
@@ -991,7 +1007,8 @@ contract DeployScript is BaseDeployer {
     }
 
     function _isStaleLocalDeployment(DeployConfig memory config) internal view returns (bool) {
-        string[20] memory keys = [
+        string[21] memory keys = [
+            "AtomicProxyFactory",
             "OllaGovernanceImplementation",
             "OllaGovernanceProxy",
             "OllaCoreImplementation",

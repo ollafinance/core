@@ -3,12 +3,14 @@ pragma solidity ^0.8.27;
 
 import { Test } from "@forge-std/Test.sol";
 import { DeployScript } from "script/Deploy.s.sol";
+import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
+import { AtomicProxyFactory } from "script/deployers/AtomicProxyFactory.sol";
 
 contract DeployResumeTest is Test {
     string internal constant _DEPLOYMENT_PATH = "deployments/local.json";
@@ -39,6 +41,14 @@ contract DeployResumeTest is Test {
         address firstCore = vm.parseJsonAddress(first, ".addresses.OllaCoreProxy");
         address firstVaultImpl = vm.parseJsonAddress(first, ".addresses.OllaVaultImplementation");
         address firstVault = vm.parseJsonAddress(first, ".addresses.OllaVaultProxy");
+        address firstFactory = vm.parseJsonAddress(first, ".addresses.AtomicProxyFactory");
+        address firstAsset = vm.parseJsonAddress(first, ".addresses.Asset");
+        address firstStAztec = vm.parseJsonAddress(first, ".addresses.StAztec");
+        address firstStakingManager = vm.parseJsonAddress(first, ".addresses.StakingManagerProxy");
+        address firstRewardsAccumulator = vm.parseJsonAddress(first, ".addresses.RewardsAccumulatorProxy");
+        address firstSafetyModule = vm.parseJsonAddress(first, ".addresses.SafetyModule");
+        address firstWithdrawalQueue = vm.parseJsonAddress(first, ".addresses.WithdrawalQueueProxy");
+        address firstGovernance = vm.parseJsonAddress(first, ".addresses.OllaGovernanceProxy");
         bool firstCompleted = vm.parseJsonBool(first, ".status.completed");
         string memory firstPhase = vm.parseJsonString(first, ".status.phase");
 
@@ -46,22 +56,34 @@ contract DeployResumeTest is Test {
         assertEq(
             deploy.predictVaultProxy(firstVaultImpl), firstVault, "vault proxy should match deterministic prediction"
         );
+        assertEq(AtomicProxyFactory(firstFactory).DEPLOYER(), vm.addr(vm.envUint("PRIVATE_KEY")), "factory deployer");
 
-        vm.expectRevert();
-        OllaCore(firstCore)
-            .initialize(
-                IERC20(address(0)),
-                IStAztec(address(0)),
-                IStakingManager(address(0)),
-                0,
-                0,
-                address(0),
-                IRewardsAccumulator(address(0)),
-                address(0)
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        vm.expectRevert(
+            abi.encodeWithSelector(AtomicProxyFactory.AtomicProxyFactory__UnauthorizedCaller.selector, attacker)
+        );
+        AtomicProxyFactory(firstFactory)
+            .deployVaultAndInitialize(
+                address(0), bytes32(0), IERC20(address(0)), IStAztec(address(0)), address(0), address(0), address(0)
             );
 
-        vm.expectRevert();
-        OllaVault(firstVault).initialize(IERC20(address(0)), IStAztec(address(0)), address(0), address(0), address(0));
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        OllaCore(firstCore)
+            .initialize(
+                IERC20(firstAsset),
+                IStAztec(firstStAztec),
+                IStakingManager(firstStakingManager),
+                500,
+                5000,
+                firstGovernance,
+                IRewardsAccumulator(firstRewardsAccumulator),
+                firstSafetyModule
+            );
+
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        OllaVault(firstVault)
+            .initialize(IERC20(firstAsset), IStAztec(firstStAztec), firstWithdrawalQueue, firstCore, firstGovernance);
 
         _runDeploy();
 
