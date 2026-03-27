@@ -16,9 +16,9 @@ interface IStakingManager {
     /// @notice Local registry status for attesters.
     enum InternalAttesterStatus {
         Inactive,
+        Queued,
         Active,
-        Exiting,
-        Queued
+        Exiting
     }
 
     /// @notice Attester key information for staking.

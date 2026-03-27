@@ -551,9 +551,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         _setupActiveAttester();
         address attester = address(uint160(1));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__NotFailedQueueEntry.selector, attester)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__NotFailedQueueEntry.selector, attester));
         stakingManager.purgeFailedQueueEntry(attester);
     }
 
