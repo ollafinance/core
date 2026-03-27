@@ -18,6 +18,12 @@ sequenceDiagram
     loop for each attester in array
         SM->>AR: getAttesterView(attester)
         AR-->>SM: status, effectiveBalance, exit, config
+        alt Queued + VALIDATING on rollup (entry queue flushed)
+            SM->>SM: promote Queued to Active
+        end
+        alt Queued + NONE on rollup (still in entry queue)
+            SM->>SM: no-op, skip
+        end
         SM->>SM: delta-update stakedAmount (balance change)
         alt Active + balance decreased + no exit (slashing)
             SM->>SM: slashingDelta += decrease
@@ -43,7 +49,7 @@ sequenceDiagram
 
 ### Purge failed queue entry (permissionless)
 
-If `deposit()` adds an attester to the rollup's entry queue but `flushEntryQueue()` later fails (invalid BLS proof, duplicate key), the attester gets stuck as Active in StakingManager with inflated `stakedAmount`. This function detects and cleans up that state.
+If `deposit()` adds an attester to the rollup's entry queue but `flushEntryQueue()` later fails (invalid BLS proof, duplicate key), the attester gets stuck as Queued in StakingManager with inflated `stakedAmount`. This function detects and cleans up that state.
 
 ```mermaid
 sequenceDiagram
@@ -52,7 +58,7 @@ sequenceDiagram
     participant AR as AztecRollup
 
     A->>SM: purgeFailedQueueEntry(attester)
-    SM->>SM: verify attester is Active in local registry
+    SM->>SM: verify attester is Queued in local registry
     SM->>AR: getAttesterView(attester)
     AR-->>SM: Status.NONE, no balance, no exit
     SM->>AR: getEntryQueueLength()
