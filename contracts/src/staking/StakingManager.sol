@@ -161,21 +161,6 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
     }
 
-    /// @notice One-time migration to reconcile _activeCount and _activeAttesterSet after the
-    ///         Queued status enum reorder. Attesters that were stored as Active(1) under the old
-    ///         enum are now Queued(1). This function removes them from the active set and resets
-    ///         _activeCount so getActivatedAttesterCount() returns the correct value.
-    /// @param attestersToReconcile The attester addresses to move out of the active set.
-    function migrateQueuedAttesters(address[] calldata attestersToReconcile) external reinitializer(2) {
-        for (uint256 i; i < attestersToReconcile.length; ++i) {
-            address attester = attestersToReconcile[i];
-            if (_attesterMap[attester].status == InternalAttesterStatus.Queued) {
-                _activeAttesterSet.remove(attester);
-            }
-        }
-        _activeCount = uint64(_activeAttesterSet.length());
-    }
-
     /*//////////////////////////////////////////////////////////////
                             CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
