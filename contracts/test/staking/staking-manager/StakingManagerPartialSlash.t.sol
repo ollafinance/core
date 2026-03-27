@@ -18,7 +18,7 @@ contract StakingManagerPartialSlashTest is StakingManagerBaseTest {
     ///         the slashingDelta should equal the difference between the original stake and
     ///         the reduced exit amount.
     function test_PartialSlash_SlashingDeltaEqualsLostAmount() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
         address attester = attesters[0];
 
@@ -53,7 +53,7 @@ contract StakingManagerPartialSlashTest is StakingManagerBaseTest {
     ///         should be the sum of all individual slashing losses.
     function test_MultiAttester_PartialSlash_CumulativeDelta() external {
         uint256 numAttesters = 3;
-        _setupMultipleStakedAttesters(numAttesters);
+        _setupMultipleActiveAttesters(numAttesters);
         address[] memory attesters = _attesterAddresses(numAttesters);
 
         // Slash each attester by different amounts:
@@ -93,7 +93,7 @@ contract StakingManagerPartialSlashTest is StakingManagerBaseTest {
     /// @notice A total slash (exit amount = 0) should result in the full stake being lost.
     ///         The slashingDelta equals the full original stake, and no funds are claimable.
     function test_TotalSlash_ExitAmountZero() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
         address attester = attesters[0];
 

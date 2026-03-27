@@ -21,7 +21,7 @@ contract StakingManagerSlashDuringUnstakeTest is StakingManagerBaseTest {
     ///         during unstake). After finalization, the StakingManager receives fewer tokens
     ///         than the original pendingExitAmount.
     function test_SlashDuringUnstake_ReducedExitAmount() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         address[] memory attesters = _attesterAddresses(2);
 
         // Initiate unstake for one attester
@@ -56,9 +56,10 @@ contract StakingManagerSlashDuringUnstakeTest is StakingManagerBaseTest {
 
         IStakingManager.StakingState memory stateAfterSlash = stakingManager.getStakingState();
 
-        // Per StakingManager design: slashingDelta does NOT record losses for exiting attesters.
-        // The loss is implicit: fewer tokens arrived than pendingExitAmount predicted.
-        assertEq(stateAfterSlash.slashingDelta, 0, "slashingDelta stays 0 for exiting-attester slash");
+        // slashingDelta now captures exit-delay slashes: the difference between
+        // pendingExitAmount (snapshot at initiation) and exit.amount (actual on rollup).
+        uint256 expectedSlash = ACTIVATION_THRESHOLD - slashedExitAmount;
+        assertEq(stateAfterSlash.slashingDelta, expectedSlash, "slashingDelta records exit-delay slash");
 
         // pendingUnstakeAmount is cleared (the exit was finalized)
         assertEq(stateAfterSlash.pendingUnstakeAmount, 0, "pending unstake cleared after finalization");
@@ -81,7 +82,7 @@ contract StakingManagerSlashDuringUnstakeTest is StakingManagerBaseTest {
     ///         other completes normally. The total received reflects the difference.
     function test_SlashDuringUnstake_MixedHealthyAndSlashed() external {
         uint256 numAttesters = 3;
-        _setupMultipleStakedAttesters(numAttesters);
+        _setupMultipleActiveAttesters(numAttesters);
         address[] memory attesters = _attesterAddresses(numAttesters);
 
         // Unstake 2 attesters
@@ -122,8 +123,9 @@ contract StakingManagerSlashDuringUnstakeTest is StakingManagerBaseTest {
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
 
-        // slashingDelta stays 0 for exiting-attester slashes (by design)
-        assertEq(state.slashingDelta, 0, "slashingDelta 0 for exiting-attester slash");
+        // slashingDelta captures exit-delay slash: 100 - 40 = 60
+        uint256 expectedSlash = ACTIVATION_THRESHOLD - slashedAmount;
+        assertEq(state.slashingDelta, expectedSlash, "slashingDelta records exit-delay slash");
 
         // The active attester should still be staked
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD, "remaining attester still staked");

@@ -16,6 +16,7 @@ interface IStakingManager {
     /// @notice Local registry status for attesters.
     enum InternalAttesterStatus {
         Inactive,
+        Queued,
         Active,
         Exiting
     }
@@ -103,6 +104,11 @@ interface IStakingManager {
     /// @param newBalance The new balance from rollup.
     event AttesterStateRefreshed(address indexed attester, uint256 indexed oldBalance, uint256 indexed newBalance);
 
+    /// @notice Emitted when a failed queue entry is purged by governance.
+    /// @param attester The purged attester address.
+    /// @param recoveredAmount The stake amount removed from stakedAmount accounting.
+    event FailedQueueEntryPurged(address indexed attester, uint256 indexed recoveredAmount);
+
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -139,6 +145,9 @@ interface IStakingManager {
 
     /// @notice Thrown when attempting to activate an attester that is already registered.
     error StakingManager__AttesterAlreadyActive(address attester);
+
+    /// @notice Thrown when purgeFailedQueueEntry is called for an attester that is not a failed queue entry.
+    error StakingManager__NotFailedQueueEntry(address attester);
 
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
@@ -198,6 +207,17 @@ interface IStakingManager {
     ///      Idempotent: calling twice for the same attester in the same block is safe.
     /// @param attesters The attester addresses to refresh.
     function refreshAttesterState(address[] calldata attesters) external;
+
+    /// @notice Removes an attester whose deposit failed during the rollup's entry queue flush.
+    /// @dev Permissionless. When deposit() adds an attester to the rollup's entry queue and
+    ///      flushEntryQueue() later fails for that attester (e.g. invalid BLS proof, duplicate key),
+    ///      the rollup refunds the stake to StakingManager but the attester remains Active in the
+    ///      local registry with inflated stakedAmount. This function detects and cleans up that state.
+    ///      Safety: verifies the attester is not in the rollup's entry queue (still waiting for flush)
+    ///      AND has Status.NONE (never activated). Only fails entries can be purged.
+    ///      Reverts if the attester is still queued, not Active, or has a non-NONE status.
+    /// @param attester The attester address to purge.
+    function purgeFailedQueueEntry(address attester) external;
 
     /*//////////////////////////////////////////////////////////////
                               VIEW FUNCTIONS

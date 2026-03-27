@@ -97,6 +97,33 @@ Notes:
   - pre-renounce checks require configured governance to hold proposer/executor/canceller
   - post-deploy checks require at least one holder for proposer/executor/canceller
 
+## Emergency pause
+
+`GUARDIAN_ROLE` is granted to `OllaGovernance` during initialization of Core, Vault, and SafetyModule.
+The governance contract exposes emergency pause/unpause functions callable by the `governanceAdmin`
+(multisig) — no timelock delay.
+
+### Global pause/unpause
+
+`emergencyPauseAll()` pauses both OllaCore and OllaVault in a single transaction.
+SafetyModule is intentionally omitted since it is only reachable through Core and Vault.
+
+```bash
+# Pause everything
+cast send <GOVERNANCE_PROXY> "emergencyPauseAll()" --private-key <GOV_ADMIN_KEY> --rpc-url <sepolia-or-mainnet>
+
+# Unpause everything (also no timelock)
+cast send <GOVERNANCE_PROXY> "emergencyUnpauseAll()" --private-key <GOV_ADMIN_KEY> --rpc-url <sepolia-or-mainnet>
+```
+
+The SafetyModule circuit breaker can also auto-pause on rate drops, queue ratio spikes, or accounting staleness.
+
+### Recovery
+
+- `emergencyUnpauseAll()` is the fastest recovery path (no timelock).
+- Alternatively, use the governance timelock scripts (`GovUnpauseCore.s.sol`, `GovUnpauseVault.s.sol`).
+- If the guardian key is compromised: revoke `GUARDIAN_ROLE` via governance, grant to a new address, then unpause.
+
 ## Post-deploy activation (strict chains)
 
 On strict chains, deployment is complete but protocol activation is an explicit governance flow.

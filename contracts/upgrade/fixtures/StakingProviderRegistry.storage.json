@@ -1,0 +1,233 @@
+{
+  "storage": [
+    {
+      "astId": 2461,
+      "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+      "label": "stakingManager",
+      "offset": 0,
+      "slot": "0",
+      "type": "t_address"
+    },
+    {
+      "astId": 2465,
+      "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+      "label": "_provider",
+      "offset": 0,
+      "slot": "1",
+      "type": "t_struct(ProviderConfig)2942_storage"
+    },
+    {
+      "astId": 2469,
+      "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+      "label": "_providerQueue",
+      "offset": 0,
+      "slot": "2",
+      "type": "t_struct(Queue)3346_storage"
+    },
+    {
+      "astId": 2474,
+      "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+      "label": "_registeredAttesters",
+      "offset": 0,
+      "slot": "4",
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "astId": 2479,
+      "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+      "label": "__gap",
+      "offset": 0,
+      "slot": "5",
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "encoding": "inplace",
+      "label": "address",
+      "numberOfBytes": "20"
+    },
+    "t_array(t_uint256)50_storage": {
+      "encoding": "inplace",
+      "label": "uint256[50]",
+      "numberOfBytes": "1600",
+      "base": "t_uint256"
+    },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_address",
+      "label": "mapping(address => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
+    "t_mapping(t_uint256,t_struct(KeyStore)2925_storage)": {
+      "encoding": "mapping",
+      "key": "t_uint256",
+      "label": "mapping(uint256 => struct IStakingManager.KeyStore)",
+      "numberOfBytes": "32",
+      "value": "t_struct(KeyStore)2925_storage"
+    },
+    "t_struct(G1Point)3321_storage": {
+      "encoding": "inplace",
+      "label": "struct G1Point",
+      "numberOfBytes": "64",
+      "members": [
+        {
+          "astId": 3318,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "x",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 3320,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "y",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint256"
+        }
+      ]
+    },
+    "t_struct(G2Point)3331_storage": {
+      "encoding": "inplace",
+      "label": "struct G2Point",
+      "numberOfBytes": "128",
+      "members": [
+        {
+          "astId": 3324,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "x0",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 3326,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "x1",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 3328,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "y0",
+          "offset": 0,
+          "slot": "2",
+          "type": "t_uint256"
+        },
+        {
+          "astId": 3330,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "y1",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_uint256"
+        }
+      ]
+    },
+    "t_struct(KeyStore)2925_storage": {
+      "encoding": "inplace",
+      "label": "struct IStakingManager.KeyStore",
+      "numberOfBytes": "288",
+      "members": [
+        {
+          "astId": 2915,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "attester",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_address"
+        },
+        {
+          "astId": 2918,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "publicKeyG1",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_struct(G1Point)3321_storage"
+        },
+        {
+          "astId": 2921,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "publicKeyG2",
+          "offset": 0,
+          "slot": "3",
+          "type": "t_struct(G2Point)3331_storage"
+        },
+        {
+          "astId": 2924,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "proofOfPossession",
+          "offset": 0,
+          "slot": "7",
+          "type": "t_struct(G1Point)3321_storage"
+        }
+      ]
+    },
+    "t_struct(ProviderConfig)2942_storage": {
+      "encoding": "inplace",
+      "label": "struct IStakingManager.ProviderConfig",
+      "numberOfBytes": "32",
+      "members": [
+        {
+          "astId": 2941,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "rewardsRecipient",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_address"
+        }
+      ]
+    },
+    "t_struct(Queue)3346_storage": {
+      "encoding": "inplace",
+      "label": "struct Queue",
+      "numberOfBytes": "64",
+      "members": [
+        {
+          "astId": 3341,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "keyStores",
+          "offset": 0,
+          "slot": "0",
+          "type": "t_mapping(t_uint256,t_struct(KeyStore)2925_storage)"
+        },
+        {
+          "astId": 3343,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "first",
+          "offset": 0,
+          "slot": "1",
+          "type": "t_uint128"
+        },
+        {
+          "astId": 3345,
+          "contract": "src/staking/StakingProviderRegistry.sol:StakingProviderRegistry",
+          "label": "last",
+          "offset": 16,
+          "slot": "1",
+          "type": "t_uint128"
+        }
+      ]
+    },
+    "t_uint128": {
+      "encoding": "inplace",
+      "label": "uint128",
+      "numberOfBytes": "16"
+    },
+    "t_uint256": {
+      "encoding": "inplace",
+      "label": "uint256",
+      "numberOfBytes": "32"
+    }
+  }
+}

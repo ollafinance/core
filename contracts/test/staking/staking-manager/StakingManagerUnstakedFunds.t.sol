@@ -13,7 +13,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     //////////////////////////////////////////////////////////////*/
 
     function test_GetUnstakedFunds_ClaimsMaturedWithdrawals() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -31,7 +31,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     }
 
     function test_GetUnstakedFunds_EmitsEvent() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -66,7 +66,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     }
 
     function test_GetUnstakedFunds_MultipleAttesters() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
@@ -84,7 +84,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     }
 
     function test_GetUnstakedFunds_PartialExitReadiness_ClaimsOnlyReady() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
 
         vm.prank(core);
@@ -128,7 +128,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         // (exit no longer exists on rollup) and removes the attester. The funds
         // that were sent to the StakingManager by the external finalization are
         // then swept to core via getUnstakedFunds().
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
 
         // Unstake one attester through the StakingManager
@@ -176,7 +176,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     }
 
     function test_GetUnstakedFunds_ExternalFinalizeBeforeManagerFinalize() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
         vm.prank(core);
@@ -206,7 +206,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     }
 
     function test_GetUnstakedFunds_ExternalFinalize_NoUnstakeFinalizedEvent() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
         vm.prank(core);
@@ -250,7 +250,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     }
 
     function test_GetUnstakedFunds_SweepsPreExistingBalanceWhenNoPendingExits() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
         vm.prank(core);
@@ -287,7 +287,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
     }
 
     function test_GetUnstakedFunds_MixedFinalizePaths_SweepsAllFunds() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
 
         vm.prank(core);
@@ -321,9 +321,15 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
-        stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
 
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        // Refresh to finalize exit
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         vm.prank(core);
@@ -341,13 +347,15 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         stakingManager.stake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
 
+        // After restake, promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should be active again");
         assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester should not be exiting");
     }
 
     function test_GetUnstakedFunds_ActivatedExits_FinalizesAll() external {
         uint256 attesterCount = 6;
-        _setupMultipleStakedAttesters(attesterCount);
+        _setupMultipleActiveAttesters(attesterCount);
 
         // External exits are NOT reflected in running state until unstake() + refreshAttesterState()
         // Internal state still shows all attesters as active after rollup-side exits
@@ -379,7 +387,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
 
     function test_GetUnstakedFunds_Bounded_LowGasCompletesAcrossCalls() external {
         uint256 attesterCount = 5;
-        _setupMultipleStakedAttesters(attesterCount);
+        _setupMultipleActiveAttesters(attesterCount);
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD * attesterCount);

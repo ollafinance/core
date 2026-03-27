@@ -81,6 +81,15 @@ contract StakingManagerReentrancyTest is Test {
         return keys;
     }
 
+    function _attesterAddresses(uint256 count) internal pure returns (address[] memory) {
+        address[] memory attesters = new address[](count);
+        for (uint256 i; i < count; ++i) {
+            // forge-lint: disable-next-line(unsafe-typecast)
+            attesters[i] = address(uint160(i + 1));
+        }
+        return attesters;
+    }
+
     function _stakeOne() internal {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
@@ -89,6 +98,9 @@ contract StakingManagerReentrancyTest is Test {
         aztec.mint(core, ACTIVATION_THRESHOLD);
         vm.prank(core);
         stakingManager.stake(ACTIVATION_THRESHOLD);
+
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
     }
 
     function test_RevertWhen_Stake_ReenteredFromRollupDeposit() external {

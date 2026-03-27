@@ -56,9 +56,9 @@ contract StakingProviderRegistry is
 
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
-    ///      by the number of slots consumed.
+    ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[49] private __gap;
+    uint256[50] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   MODIFIERS

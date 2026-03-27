@@ -2,7 +2,7 @@
 pragma solidity 0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
-import { AttesterView, Exit, Status } from "src/staking/libraries/AztecTypes.sol";
+import { AttesterView, DepositArgs, Exit, Status } from "src/staking/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title IMockAztecRollup
@@ -180,9 +180,41 @@ interface IMockAztecRollup {
     /// @param count The new activated attester count.
     function setActivatedAttesterCount(uint256 count) external;
 
+    /// @notice Reduces an existing exit's amount in-place, simulating a slash during exit delay.
+    /// @dev Models the real Aztec StakingLib.slash() behavior on an already-exiting attester:
+    ///      the exit record stays intact but exit.amount is reduced by the slashed amount.
+    /// @param attester The attester address with an existing exit.
+    /// @param newAmount The new (reduced) exit amount.
+    function reduceExitAmount(address attester, uint256 newAmount) external;
+
+    /// @notice Sets the default exit delay applied to new exits from initiateWithdraw.
+    /// @dev When non-zero, initiateWithdraw sets exitableAt = block.timestamp + delay.
+    /// @param delay The exit delay in seconds.
+    function setExitDelay(uint256 delay) external;
+
+    /// @notice Adds an attester to the mock entry queue (test helper).
+    /// @param attester The attester address to add to the queue.
+    function addToEntryQueue(address attester) external;
+
+    /// @notice Clears the mock entry queue (test helper).
+    function clearEntryQueue() external;
+
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Returns the currently configured exit delay.
+    /// @return The exit delay in seconds.
+    function exitDelay() external view returns (uint256);
+
+    /// @notice Returns the length of the mock entry queue.
+    /// @return The entry queue length.
+    function getEntryQueueLength() external view returns (uint256);
+
+    /// @notice Returns deposit args for a queued attester at the given index.
+    /// @param index The queue index.
+    /// @return The deposit args.
+    function getEntryQueueAt(uint256 index) external view returns (DepositArgs memory);
 
     /// @notice Returns whether claim should fail for a coinbase/attester.
     /// @param coinbase The coinbase/attester address.

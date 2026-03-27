@@ -92,6 +92,20 @@ contract AztecInterfaceCompatibilityTest is Test {
         assertEq(encodedCustom, encodedAztec, "BN254 struct encoding mismatch");
     }
 
+    function test_Conformance_GetEntryQueueLengthSignature() public pure {
+        bytes4 expectedSelector = IStaking.getEntryQueueLength.selector;
+        bytes4 actualSelector = OllaOverrideIStaking.getEntryQueueLength.selector;
+
+        assertEq(expectedSelector, actualSelector, "GetEntryQueueLength selector mismatch");
+    }
+
+    function test_Conformance_GetEntryQueueAtSignature() public pure {
+        bytes4 expectedSelector = IStaking.getEntryQueueAt.selector;
+        bytes4 actualSelector = OllaOverrideIStaking.getEntryQueueAt.selector;
+
+        assertEq(expectedSelector, actualSelector, "GetEntryQueueAt selector mismatch");
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 IAztecRollupRegistry
     //////////////////////////////////////////////////////////////*/

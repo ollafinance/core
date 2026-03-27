@@ -4,7 +4,14 @@ pragma solidity 0.8.27;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { IERC20Mintable } from "src/interfaces/IERC20Mintable.sol";
-import { AttesterConfig, AttesterView, Exit, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
+import {
+    AttesterConfig,
+    AttesterView,
+    DepositArgs,
+    Exit,
+    Status,
+    Timestamp
+} from "src/staking/libraries/AztecTypes.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 
@@ -59,6 +66,12 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @notice Tracked count of activated attesters.
     uint256 private _activatedAttesterCount;
+
+    /// @notice Configurable exit delay for initiateWithdraw (default 0 = immediate).
+    uint256 public exitDelay;
+
+    /// @notice Mock entry queue for testing purgeFailedQueueEntry.
+    address[] private _entryQueue;
 
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
@@ -123,7 +136,7 @@ contract MockAztecRollup is IMockAztecRollup {
         _exits[_attester] = Exit({
             withdrawalId: 0,
             amount: amount,
-            exitableAt: Timestamp.wrap(block.timestamp), // Immediate for testing
+            exitableAt: Timestamp.wrap(block.timestamp + exitDelay),
             recipientOrWithdrawer: _recipient,
             isRecipient: true,
             exists: true
@@ -298,6 +311,32 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /*//////////////////////////////////////////////////////////////
+                          EXIT DELAY HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IMockAztecRollup
+    function reduceExitAmount(address _attester, uint256 _newAmount) external override {
+        require(_exits[_attester].exists, "MockAztecRollup: no exit");
+        require(_newAmount <= _exits[_attester].amount, "MockAztecRollup: new amount exceeds current");
+        _exits[_attester].amount = _newAmount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setExitDelay(uint256 _delay) external override {
+        exitDelay = _delay;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function addToEntryQueue(address _attester) external override {
+        _entryQueue.push(_attester);
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function clearEntryQueue() external override {
+        delete _entryQueue;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -352,5 +391,23 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     function getActivatedAttesterCount() external view override returns (uint256) {
         return _activatedAttesterCount;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function getEntryQueueLength() external view override returns (uint256) {
+        return _entryQueue.length;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function getEntryQueueAt(uint256 _index) external view override returns (DepositArgs memory) {
+        address attester = _entryQueue[_index];
+        return DepositArgs({
+            attester: attester,
+            withdrawer: address(0),
+            publicKeyInG1: G1Point({ x: 0, y: 0 }),
+            publicKeyInG2: G2Point({ x0: 0, x1: 0, y0: 0, y1: 0 }),
+            proofOfPossession: G1Point({ x: 0, y: 0 }),
+            moveWithLatestRollup: false
+        });
     }
 }

@@ -94,31 +94,33 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
         _logComponent("governance", governance, governanceCurrent, governanceImpl, governanceUpToDate);
 
         if (!hasAnyTargetChange) {
-            console2.log("step", "Step 0/14: No pending upgrade targets configured");
-            console2.log("step.index", uint256(0));
-            console2.log("step.total", _TOTAL_STEPS);
-            console2.log("next.action", "blocked_missing_upgrade_targets");
-            console2.log("upload.possible", false);
-            console2.log(
-                "next.step",
-                string.concat(
-                    "Deploy new implementations and set *_IMPLEMENTATION env overrides, or update ",
-                    "deployments/<env>.json, so candidates differ from current proxy implementations."
-                )
-            );
-            return;
-        }
+            // Distinguish "all upgraded" from "no targets configured" by checking whether
+            // any timelock operation in the canonical chain was executed (done).
+            bytes memory queueData = abi.encodeCall(OllaGovernance.upgradeSatellite, (queueProxy, queueImpl));
+            bytes32 queueOpId = gov.hashOperation(governance, 0, queueData, rootPredecessor, salt);
+            bool anyOpDone = gov.isOperationDone(queueOpId);
 
-        if (
-            queueUpToDate && rewardsUpToDate && sprUpToDate && stakingManagerUpToDate && vaultUpToDate && coreUpToDate
-                && governanceUpToDate
-        ) {
-            console2.log("step", "Step 14/14: Upgrade campaign complete");
-            console2.log("step.index", uint256(14));
-            console2.log("step.total", _TOTAL_STEPS);
-            console2.log("next.action", "none");
-            console2.log("next.status", "upgrade_complete");
-            console2.log("next.step", "No further upgrade payloads are required.");
+            if (anyOpDone) {
+                console2.log("step", "Step 14/14: Upgrade campaign complete");
+                console2.log("step.index", uint256(14));
+                console2.log("step.total", _TOTAL_STEPS);
+                console2.log("next.action", "none");
+                console2.log("next.status", "upgrade_complete");
+                console2.log("next.step", "No further upgrade payloads are required.");
+            } else {
+                console2.log("step", "Step 0/14: No pending upgrade targets configured");
+                console2.log("step.index", uint256(0));
+                console2.log("step.total", _TOTAL_STEPS);
+                console2.log("next.action", "blocked_missing_upgrade_targets");
+                console2.log("upload.possible", false);
+                console2.log(
+                    "next.step",
+                    string.concat(
+                        "Deploy new implementations and set *_IMPLEMENTATION env overrides, or update ",
+                        "deployments/<env>.json, so candidates differ from current proxy implementations."
+                    )
+                );
+            }
             return;
         }
 

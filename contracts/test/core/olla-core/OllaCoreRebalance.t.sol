@@ -556,7 +556,7 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(vault.bufferedAssets(), targetBuffered, "buffer unchanged");
     }
 
-    function test_Rebalance_PullUnstaked_WaitsForFinalizedUnstakes() external {
+    function test_Rebalance_PullUnstaked_AdvancesWithPendingExits() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 withdrawalShares = 4 * DECIMALS;
 
@@ -570,96 +570,58 @@ contract OllaCoreRebalanceTest is Test {
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
+        // Set hasFinalizedUnstakes=true to indicate pending exits exist
         stakingManager.setWithdrawableUnstakes(1);
 
         uint256 bufferBefore = vault.bufferedAssets();
-        uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
 
         vm.prank(operator);
         core.rebalance();
 
+        // PullUnstaked no longer blocks — rebalance advances past it and completes
         IOllaCore.RebalanceProgress memory progressAfterFirst = core.rebalanceProgress();
         assertEq(
             uint256(progressAfterFirst.step),
-            uint256(IOllaCore.RebalanceStep.PullUnstaked),
-            "rebalance should hold at pull unstaked while exitable unstakes"
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should advance past PullUnstaked even with pending exits"
         );
-        assertEq(withdrawalQueue.totalPendingAssets(), pendingBefore, "pending assets unchanged with exitable unstakes");
-        assertEq(vault.bufferedAssets(), bufferBefore, "buffer unchanged with exitable unstakes");
 
-        stakingManager.setWithdrawableUnstakes(0);
-
-        uint256 bufferBeforeFinalize = vault.bufferedAssets();
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progressAfterSecond = core.rebalanceProgress();
-        assertTrue(
-            uint256(progressAfterSecond.step) != uint256(IOllaCore.RebalanceStep.PullUnstaked),
-            "rebalance should advance after pending unstakes cleared"
+        // Pending exits had no unstaked funds to pull (unstakedAmount=0), so buffer is
+        // only reduced by the withdrawal finalization against the existing buffer.
+        assertEq(
+            vault.bufferedAssets(), bufferBefore - request.assetsExpected, "buffer reduced by finalized withdrawal"
         );
-        assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending assets finalized after pending unstakes cleared");
-        assertEq(vault.bufferedAssets(), bufferBeforeFinalize - request.assetsExpected, "buffer reduced after finalize");
+        assertEq(withdrawalQueue.totalPendingAssets(), 0, "pending assets finalized in same cycle");
     }
 
     /*//////////////////////////////////////////////////////////////
                         REBALANCE PARTIAL PROGRESS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtPullUnstaked() external {
+    function test_Rebalance_PullUnstaked_AlwaysCompletes() external {
         uint256 depositAmount = 10 * DECIMALS;
         uint256 rewardAmount = 3 * DECIMALS;
 
         _performDeposit(alice, depositAmount);
         stakingManager.setHarvestedRewards(rewardAmount);
 
+        // Set target buffer high so nothing gets staked — allows verifying buffer amount
         uint256 expectedBuffer = vault.bufferedAssets() + rewardAmount;
+        vm.prank(governance);
+        core.setTargetBufferedAssets(expectedBuffer);
 
-        uint256 snapshotId = vm.snapshotState();
-        uint256 selectedGas;
-        uint256[6] memory gasOptions = [uint256(200_000), 250_000, 300_000, 350_000, 400_000, 450_000];
-
-        for (uint256 i = 0; i < gasOptions.length; i++) {
-            vm.revertToState(snapshotId);
-            vm.prank(operator);
-            (bool success, bytes memory data) =
-                address(core).call{ gas: gasOptions[i] }(abi.encodeCall(core.rebalance, ()));
-            if (!success) {
-                continue;
-            }
-            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-            if (progress.step == IOllaCore.RebalanceStep.PullUnstaked) {
-                (
-                    uint256 loopRewardsDelta,
-                    uint256 loopFinalizedAmount,
-                    uint256 loopStakedAmount,
-                    uint256 loopResultingBuffer
-                ) = abi.decode(data, (uint256, uint256, uint256, uint256));
-                if (loopRewardsDelta == rewardAmount && loopFinalizedAmount == 0 && loopStakedAmount == 0) {
-                    selectedGas = gasOptions[i];
-                    assertEq(loopResultingBuffer, expectedBuffer, "buffer should include harvested rewards");
-                    break;
-                }
-            }
-        }
-
-        assertGt(selectedGas, 0, "should find gas stipend for pull-unstaked stop");
-
-        vm.revertToState(snapshotId);
+        // PullUnstaked is O(1) — just a balance transfer — so it always completes
+        // regardless of gas. Verify it advances past PullUnstaked in a single call.
         vm.prank(operator);
         (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
-            core.rebalance{ gas: selectedGas }();
+            core.rebalance();
 
         IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
-        assertEq(
-            uint256(progressAfter.step),
-            uint256(IOllaCore.RebalanceStep.PullUnstaked),
-            "rebalance should stop at pull unstaked"
+        assertTrue(
+            uint256(progressAfter.step) != uint256(IOllaCore.RebalanceStep.PullUnstaked),
+            "rebalance should always advance past PullUnstaked (O(1) step)"
         );
         assertEq(rewardsDelta, rewardAmount, "rewards delta should return harvested amount");
-        assertEq(finalizedAmount, 0, "finalized amount should be zero on partial progress");
-        assertEq(stakedAmount, 0, "staked amount should be zero on partial progress");
         assertEq(resultingBuffer, expectedBuffer, "buffer should include harvested rewards");
     }
 
@@ -1915,6 +1877,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function refreshAttesterState(address[] calldata) external override { }
+
+    function purgeFailedQueueEntry(address) external override { }
 
     function getUnstakedFunds() external pure override returns (uint256 received, uint256 exitAmount) {
         return (0, 0);

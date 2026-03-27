@@ -11,7 +11,7 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     //////////////////////////////////////////////////////////////*/
 
     function test_Unstake_InitiatesWithdrawal() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
@@ -42,13 +42,17 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         // Filter events to only those from stakingManager
         vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeInitiated(keys[0].attester, ACTIVATION_THRESHOLD);
 
+        vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
-        vm.stopPrank();
 
         vm.expectEmit(true, true, true, true, address(stakingManager));
         emit UnstakeFinalized(keys[0].attester, ACTIVATION_THRESHOLD);
@@ -71,7 +75,7 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     }
 
     function test_RevertWhen_Unstake_ZeroAmount() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__ZeroAmount.selector));
@@ -85,7 +89,7 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     }
 
     function test_Unstake_MultipleAttesters() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
 
         vm.prank(core);
         uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
@@ -103,7 +107,7 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
     }
 
     function test_Unstake_ExceedsStaked_ClampsAndUpdates() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
 
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
 
@@ -124,7 +128,7 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
 
     function test_Unstake_Bounded_LowGasInitiatesSubset() external {
         uint256 attesterCount = 6;
-        _setupMultipleStakedAttesters(attesterCount);
+        _setupMultipleActiveAttesters(attesterCount);
 
         uint256 requested = ACTIVATION_THRESHOLD * attesterCount;
 
@@ -182,7 +186,7 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
 
     function test_Unstake_Bounded_ResumesAcrossCalls() external {
         uint256 attesterCount = 5;
-        _setupMultipleStakedAttesters(attesterCount);
+        _setupMultipleActiveAttesters(attesterCount);
 
         uint256 requested = ACTIVATION_THRESHOLD * attesterCount;
 
@@ -244,17 +248,21 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
+        vm.stopPrank();
+
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         assertFalse(stakingManager.isUnstakePending(keys[0].attester));
 
+        vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
-        vm.stopPrank();
 
         assertTrue(stakingManager.isUnstakePending(keys[0].attester));
     }
 
     function test_Unstake_CursorDoesNotSkipAfterStateChange() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -278,7 +286,7 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         stakeCount = uint8(bound(stakeCount, 1, 10));
         unstakeCount = uint8(bound(unstakeCount, 1, stakeCount));
 
-        _setupMultipleStakedAttesters(stakeCount);
+        _setupMultipleActiveAttesters(stakeCount);
 
         uint256 unstakeAmount = ACTIVATION_THRESHOLD * unstakeCount;
 

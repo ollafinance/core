@@ -74,6 +74,8 @@ contract MockHarvestStakingManager is IStakingManager {
 
     function refreshAttesterState(address[] calldata) external override { }
 
+    function purgeFailedQueueEntry(address) external override { }
+
     function getUnstakedFunds() external pure override returns (uint256, uint256) {
         return (0, 0);
     }
