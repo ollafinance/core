@@ -508,6 +508,16 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         AttesterView memory view_ = rollup.getAttesterView(attester);
         exitAmount = view_.effectiveBalance;
 
+        // Attester is still in the rollup's entry queue (not yet activated in the GSE).
+        // The rollup returns Status.NONE with zero balance and empty config for queued attesters.
+        // Calling initiateWithdraw would revert -- skip gracefully so rebalance can continue.
+        if (
+            view_.status == Status.NONE && view_.effectiveBalance == 0 && view_.config.withdrawer == address(0)
+                && !view_.exit.exists
+        ) {
+            return 0;
+        }
+
         // slither-disable-next-line reentrancy-no-eth
         bool isInitiated = rollup.initiateWithdraw(attester, address(this));
         if (!isInitiated) {

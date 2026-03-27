@@ -364,4 +364,95 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         assertEq(stateAfter.pendingUnstakeAmount, 0, "pendingUnstakeAmount should saturate to 0");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "exiting count should be 0 after finalization");
     }
+
+    /*//////////////////////////////////////////////////////////////
+      UNSTAKE SKIPS QUEUED ATTESTERS (ENTRY QUEUE NOT YET FLUSHED)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice When an attester is staked via StakingManager but the rollup entry queue has not
+    ///         been flushed, the attester is Status.NONE with zero balance and no withdrawer.
+    ///         unstake() must skip these gracefully instead of reverting.
+    function test_Unstake_SkipsQueuedAttester_ReturnsZero() external {
+        // Setup: stake one attester (mock immediately activates it)
+        _setupStakedAttester();
+        address attester = address(uint160(1));
+
+        // Simulate "queued but not yet activated" on the rollup:
+        // clearAttester zeroes stake but keeps withdrawer. Also zero the withdrawer
+        // to match real rollup behavior where queued attesters have empty config.
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, 0, address(0));
+
+        // Unstake should skip this attester (not revert) and return 0
+        vm.prank(core);
+        uint256 unstaked = stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        assertEq(unstaked, 0, "unstaked should be 0 for queued attester");
+        // Attester remains Active in StakingManager (not transitioned)
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "active count should remain 1");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "no exiting attesters");
+    }
+
+    /// @notice With a mix of queued and activated attesters, unstake() should skip the queued
+    ///         ones and successfully unstake the activated ones.
+    function test_Unstake_SkipsQueuedAttester_UnstakesActivatedOnes() external {
+        // Setup: stake 3 attesters
+        _setupMultipleStakedAttesters(3);
+
+        // Simulate: attester 3 (last in iteration order) is queued on rollup
+        address queuedAttester = address(uint160(3));
+        rollup.clearAttester(queuedAttester);
+        rollup.setStake(queuedAttester, 0, address(0));
+
+        // Unstake enough for 2 attesters -- should skip the queued one and unstake the other 2
+        vm.prank(core);
+        uint256 unstaked = stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
+
+        // Only 2 activated attesters could be unstaked
+        assertEq(unstaked, ACTIVATION_THRESHOLD * 2, "should unstake 2 activated attesters");
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "1 queued attester remains active");
+        assertEq(stakingManager.getPendingUnstakeCount(), 2, "2 attesters exiting");
+    }
+
+    /// @notice When ALL attesters are queued (none activated on rollup), unstake() returns 0
+    ///         without reverting, allowing the rebalance to proceed.
+    function test_Unstake_AllQueuedAttesters_ReturnsZero() external {
+        // Setup: stake 3 attesters
+        _setupMultipleStakedAttesters(3);
+
+        // Simulate: all attesters are queued (rollup entry queue not flushed)
+        for (uint256 i = 1; i <= 3; ++i) {
+            rollup.clearAttester(address(uint160(i)));
+            rollup.setStake(address(uint160(i)), 0, address(0));
+        }
+
+        // Unstake should return 0 for all, no revert
+        vm.prank(core);
+        uint256 unstaked = stakingManager.unstake(ACTIVATION_THRESHOLD * 3);
+
+        assertEq(unstaked, 0, "should return 0 when all attesters queued");
+        assertEq(stakingManager.getActivatedAttesterCount(), 3, "all still active in SM");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "none exiting");
+    }
+
+    /// @notice Verifies that the existing RevertWhen_Unstake_InitiateWithdrawFails_NoExit test
+    ///         still reverts for attesters that ARE on the rollup (status != NONE) but whose
+    ///         initiateWithdraw returns false without an exit. The new skip guard must NOT
+    ///         swallow this case.
+    function test_Unstake_ActiveOnRollup_StillRevertsWhenInitiateWithdrawFails() external {
+        _setupStakedAttester();
+        address attester = address(uint160(1));
+
+        // Attester is VALIDATING on rollup (status != NONE, balance > 0).
+        // Mock initiateWithdraw to return false without an exit.
+        vm.mockCall(
+            address(rollup),
+            abi.encodeWithSelector(IAztecRollup.initiateWithdraw.selector, attester, address(stakingManager)),
+            abi.encode(false)
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnstakeFailed.selector, attester));
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+    }
 }

@@ -24,7 +24,7 @@
     "WithdrawalQueueProxy": "0x12a9d18085ca2725b4060ea1ffb98a6b36902888",
     "RewardsAccumulatorImplementation": "0x6acc84e7bb4e559815e8de89f0464d428a92f7be",
     "RewardsAccumulatorProxy": "0xc9d7235cb57e62e36c4c814fd80226d1ce6907fb",
-    "StakingManagerImplementation": "0xc79a8b85f7bb0026606e5b196cae09ddcbd12e6d",
+    "StakingManagerImplementation": "0x28940594d971402dc71292f13d6e96c423515a91",
     "StakingManagerProxy": "0xde847897cb4d964fba3022df3cd9ed7f520ba3be",
     "StakingProviderRegistryImplementation": "0x9e3ed19fefc596b05cd7c0b0176d5f891f562cae",
     "StakingProviderRegistryProxy": "0x62eb3a17629c8b600d494b88232874866272ae65",
@@ -34,7 +34,7 @@
   "status": {
     "phase": "D",
     "completed": true,
-    "updatedAtBlock": 10512641,
+    "updatedAtBlock": 10531879,
     "flags": {
       "coreInitialized": true,
       "vaultInitialized": true
