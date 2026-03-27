@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
-import { G1Point } from "src/staking/libraries/BN254Lib.sol";
+import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @title AztecTypes
 /// @notice Types for Aztec staking compatibility.
@@ -50,4 +50,20 @@ struct AttesterView {
     uint256 effectiveBalance;
     Exit exit;
     AttesterConfig config;
+}
+
+/// @notice Arguments for a queued validator deposit (mirrors Aztec's StakingQueue.DepositArgs).
+/// @param attester The address that will act as the attester.
+/// @param withdrawer The address that can withdraw the stake.
+/// @param publicKeyInG1 The G1 point of the BLS public key.
+/// @param publicKeyInG2 The G2 point of the BLS public key.
+/// @param proofOfPossession Proof of possession.
+/// @param moveWithLatestRollup Whether to follow rollup upgrades.
+struct DepositArgs {
+    address attester;
+    address withdrawer;
+    G1Point publicKeyInG1;
+    G2Point publicKeyInG2;
+    G1Point proofOfPossession;
+    bool moveWithLatestRollup;
 }

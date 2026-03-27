@@ -16,15 +16,54 @@ sequenceDiagram
 
     A->>SM: refreshAttesterState(address[] attesters)
     loop for each attester in array
-        SM->>AR: getInfo(attester)
-        AR-->>SM: attester state
-        SM->>SM: delta-update _aggregateState
-        alt attester is exitable
+        SM->>AR: getAttesterView(attester)
+        AR-->>SM: status, effectiveBalance, exit, config
+        SM->>SM: delta-update stakedAmount (balance change)
+        alt Active + balance decreased + no exit (slashing)
+            SM->>SM: slashingDelta += decrease
+        end
+        alt Active + zombie exit (isRecipient=false)
+            SM->>AR: initiateWithdraw(attester, StakingManager)
+            SM->>SM: transition to Exiting, track slashing loss
+        end
+        alt Exiting + exit is exitable
             SM->>AR: finalizeWithdraw(attester)
             AR-->>SM: AZTEC transferred
-            SM->>SM: _pendingClaimAmount += finalized
+            SM->>SM: _pendingClaimAmount += exit.amount
+            SM->>SM: slashingDelta += (pendingExit - exit.amount) if slashed during delay
+        end
+        alt Exiting + no exit record (externally finalized)
+            SM->>SM: _pendingClaimAmount += pendingExitAmount (stale, conservative)
+        end
+        alt Active + NONE + zero balance (externally fully exited)
+            SM->>SM: remove attester
         end
     end
+```
+
+### Purge failed queue entry (permissionless)
+
+If `deposit()` adds an attester to the rollup's entry queue but `flushEntryQueue()` later fails (invalid BLS proof, duplicate key), the attester gets stuck as Active in StakingManager with inflated `stakedAmount`. This function detects and cleans up that state.
+
+```mermaid
+sequenceDiagram
+    participant A as Anyone
+    participant SM as StakingManager
+    participant AR as AztecRollup
+
+    A->>SM: purgeFailedQueueEntry(attester)
+    SM->>SM: verify attester is Active in local registry
+    SM->>AR: getAttesterView(attester)
+    AR-->>SM: Status.NONE, no balance, no exit
+    SM->>AR: getEntryQueueLength()
+    AR-->>SM: queue length
+    loop scan entry queue
+        SM->>AR: getEntryQueueAt(i)
+        AR-->>SM: queued attester address
+        SM->>SM: revert if target attester still in queue
+    end
+    SM->>SM: correct stakedAmount, remove attester
+    SM->>SM: emit FailedQueueEntryPurged
 ```
 
 ### Harvest rewards

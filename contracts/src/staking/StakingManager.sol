@@ -267,6 +267,50 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end costly-loop
     // slither-disable-end calls-loop
 
+    // slither-disable-start pess-multiple-storage-read
+    /// @inheritdoc IStakingManager
+    function purgeFailedQueueEntry(address attester) external override nonReentrant {
+        AttesterInfo storage info = _attesterMap[attester];
+
+        // Must be an attester we know about and marked Active
+        if (info.attester == address(0) || info.status != InternalAttesterStatus.Active) {
+            revert StakingManager__NotFailedQueueEntry(attester);
+        }
+
+        // Query the rollup — the attester must be NONE (never activated or queue flush failed)
+        (, IAztecRollup rollup) = _getRollup();
+        AttesterView memory view_ = rollup.getAttesterView(attester);
+        if (view_.status != Status.NONE || view_.exit.exists || view_.effectiveBalance > 0) {
+            revert StakingManager__NotFailedQueueEntry(attester);
+        }
+
+        // Verify the attester is NOT still in the rollup's entry queue (waiting for flush).
+        // If found in the queue, the deposit hasn't been processed yet — not a failed entry.
+        uint256 queueLen = rollup.getEntryQueueLength();
+        for (uint256 i; i < queueLen; ++i) {
+            // slither-disable-next-line calls-loop
+            if (rollup.getEntryQueueAt(i).attester == attester) {
+                revert StakingManager__NotFailedQueueEntry(attester);
+            }
+        }
+
+        // Correct the accounting: remove the attester's cached stake from the aggregate
+        uint256 cachedStake = info.stakedAmount;
+        if (_aggregateState.stakedAmount >= cachedStake) {
+            _aggregateState.stakedAmount -= cachedStake;
+        } else {
+            _aggregateState.stakedAmount = 0;
+        }
+
+        // Transition to Exiting then remove (reuses existing cleanup path)
+        _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
+        _removeAttester(attester);
+
+        emit FailedQueueEntryPurged(attester, cachedStake);
+    }
+
+    // slither-disable-end pess-multiple-storage-read
+
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -464,6 +508,16 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         AttesterView memory view_ = rollup.getAttesterView(attester);
         exitAmount = view_.effectiveBalance;
 
+        // Attester is still in the rollup's entry queue (not yet activated in the GSE).
+        // The rollup returns Status.NONE with zero balance and empty config for queued attesters.
+        // Calling initiateWithdraw would revert -- skip gracefully so rebalance can continue.
+        if (
+            view_.status == Status.NONE && view_.effectiveBalance == 0 && view_.config.withdrawer == address(0)
+                && !view_.exit.exists
+        ) {
+            return 0;
+        }
+
         // slither-disable-next-line reentrancy-no-eth
         bool isInitiated = rollup.initiateWithdraw(attester, address(this));
         if (!isInitiated) {
@@ -605,8 +659,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 //     before the exit delay expires, giving keepers ample time to call
                 //     refreshAttesterState and route through the normal exitable path (which reads
                 //     the correct view_.exit.amount).
-                //  3. slashingDelta will not record this loss; safety-module monitoring should not
-                //     rely solely on slashingDelta for exiting-attester slashes.
+                //  3. slashingDelta will not record this loss (the exit record is deleted, so the
+                //     actual finalized amount is unrecoverable). The normal exitable path now
+                //     captures exit-delay slashes in slashingDelta, so this externally-finalized
+                //     edge case is the only remaining gap.
                 uint256 pendingExit = info.pendingExitAmount;
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
                     _aggregateState.pendingUnstakeAmount -= pendingExit;
@@ -626,6 +682,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 rollup.finalizeWithdraw(attester);
 
                 _pendingClaimAmount += exitAmount;
+
+                // Track slashing that occurred during the exit delay: the difference between
+                // what was snapshotted at exit initiation and what the rollup actually holds.
+                if (pendingExit > exitAmount) {
+                    _aggregateState.slashingDelta += (pendingExit - exitAmount);
+                }
 
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
                     _aggregateState.pendingUnstakeAmount -= pendingExit;
