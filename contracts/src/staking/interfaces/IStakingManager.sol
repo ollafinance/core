@@ -17,7 +17,8 @@ interface IStakingManager {
     enum InternalAttesterStatus {
         Inactive,
         Active,
-        Exiting
+        Exiting,
+        Queued
     }
 
     /// @notice Attester key information for staking.
