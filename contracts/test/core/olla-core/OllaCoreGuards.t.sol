@@ -180,7 +180,7 @@ contract OllaCoreGuardsTest is Test {
         vm.mockCall(
             address(stakingManager),
             abi.encodeWithSelector(IStakingManager.getUnstakedFunds.selector),
-            abi.encode(uint256(10 * DECIMALS), uint256(10 * DECIMALS), false)
+            abi.encode(uint256(10 * DECIMALS), uint256(10 * DECIMALS))
         );
 
         // Rebalance should revert because reported != actual

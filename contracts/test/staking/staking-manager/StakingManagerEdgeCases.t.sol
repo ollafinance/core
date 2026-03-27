@@ -192,7 +192,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
 
         // Attester should be removed, pendingUnstake should be reconciled
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "exiting count should be 0 after reconciliation");
-        assertTrue(stakingManager.hasExitableUnstakes(), "should have claimable funds");
+        assertTrue(stakingManager.hasFinalizedUnstakes(), "should have claimable funds");
     }
 
     function test_RefreshAttesterState_ExitableExitFinalization() external {
@@ -209,7 +209,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
 
         // Attester removed, funds should be claimable
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "exiting count should be 0 after finalization");
-        assertTrue(stakingManager.hasExitableUnstakes(), "should have claimable funds after finalization");
+        assertTrue(stakingManager.hasFinalizedUnstakes(), "should have claimable funds after finalization");
     }
 
     /*//////////////////////////////////////////////////////////////

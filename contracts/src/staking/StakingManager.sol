@@ -77,8 +77,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     EnumerableSet.AddressSet private _activeAttesterSet;
 
     /// @notice Storage gap for future upgrades.
+    /// @dev When adding new state variables, append them above this gap and reduce its length
+    ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[52] private __gap;
+    uint256[50] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -218,13 +220,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end calls-loop
 
     /// @inheritdoc IStakingManager
-    function getUnstakedFunds()
-        external
-        override
-        onlyCore
-        nonReentrant
-        returns (uint256 received, uint256 exitAmount, bool hasRemainingExits)
-    {
+    function getUnstakedFunds() external override onlyCore nonReentrant returns (uint256 received, uint256 exitAmount) {
         exitAmount = _pendingClaimAmount;
         _pendingClaimAmount = 0;
 
@@ -234,8 +230,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             emit UnstakedFundsClaimed(balance);
         }
         received = balance;
-        hasRemainingExits = _exitingCount > 0;
-        return (received, exitAmount, hasRemainingExits);
+        return (received, exitAmount);
     }
 
     /// @inheritdoc IStakingManager
@@ -301,7 +296,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     /// @inheritdoc IStakingManager
-    function hasExitableUnstakes() external view override returns (bool) {
+    function hasFinalizedUnstakes() external view override returns (bool) {
         return _pendingClaimAmount > 0;
     }
 

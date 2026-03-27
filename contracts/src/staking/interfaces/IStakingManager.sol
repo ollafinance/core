@@ -182,8 +182,7 @@ interface IStakingManager {
     /// @notice Claims matured unstaked funds back to core.
     /// @return received The amount of assets received.
     /// @return exitAmount The amount of finalized exit funds included in received.
-    /// @return hasRemainingExits True if there are still attesters in exiting state after finalization.
-    function getUnstakedFunds() external returns (uint256 received, uint256 exitAmount, bool hasRemainingExits);
+    function getUnstakedFunds() external returns (uint256 received, uint256 exitAmount);
 
     /// @notice Claims sequencer rewards to RewardsAccumulator.
     /// @return harvested The amount of rewards harvested.
@@ -226,9 +225,9 @@ interface IStakingManager {
     /// @return pendingUnstakeAmount The total pending unstake amount.
     function pendingUnstakes() external view returns (uint256 pendingUnstakeAmount);
 
-    /// @notice Returns true if any exitable unstake exists from cached state.
-    /// @return True if there are unstake exits ready to be finalized.
-    function hasExitableUnstakes() external view returns (bool);
+    /// @notice Returns true if there are finalized exit funds ready to be claimed via getUnstakedFunds().
+    /// @return True if there are funds sitting in StakingManager after rollup finalization.
+    function hasFinalizedUnstakes() external view returns (bool);
 
     /// @notice Returns the provider configuration.
     /// @dev Delegates to the StakingProviderRegistry.

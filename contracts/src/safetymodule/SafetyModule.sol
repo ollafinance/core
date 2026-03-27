@@ -178,14 +178,14 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
     /// @inheritdoc ISafetyModule
     function checkQueueRatio(uint256 queued, uint256 total) external override onlyCoreOrVault {
-        if (total == 0) {
-            if (queued > 0) {
-                _triggerBreaker(ISafetyModule.BreakerReason.QueueRatio);
-            }
+        // `total` is totalAssets() which already subtracts pending withdrawals,
+        // so the gross total is `queued + total`.
+        uint256 gross = queued + total;
+        if (gross == 0) {
             return;
         }
 
-        uint256 ratioBps = (queued * BPS_DENOMINATOR) / total;
+        uint256 ratioBps = (queued * BPS_DENOMINATOR) / gross;
         // solhint-disable-next-line gas-strict-inequalities
         if (ratioBps >= maxQueueRatioBps) {
             _triggerBreaker(ISafetyModule.BreakerReason.QueueRatio);

@@ -63,10 +63,9 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
 
         // Not yet claimable (exit not exitable yet)
         vm.prank(core);
-        (uint256 received, uint256 exitAmount, bool hasRemainingExits) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(received, 0, "no funds should be received yet");
         assertEq(exitAmount, 0, "no exit amount should be claimable yet");
-        assertTrue(hasRemainingExits, "should report remaining exits");
 
         // ── Phase 2: Warp past exitableAt - finalization succeeds ──
         vm.warp(block.timestamp + 1 days);
@@ -81,11 +80,9 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
 
         // Funds are now claimable
         vm.prank(core);
-        (uint256 receivedAfter, uint256 exitAmountAfter, bool hasRemainingExitsAfter) =
-            stakingManager.getUnstakedFunds();
+        (uint256 receivedAfter, uint256 exitAmountAfter) = stakingManager.getUnstakedFunds();
         assertEq(receivedAfter, ACTIVATION_THRESHOLD, "funds should be received after finalization");
         assertEq(exitAmountAfter, ACTIVATION_THRESHOLD, "exit amount should be claimable");
-        assertFalse(hasRemainingExitsAfter, "no remaining exits after finalization");
     }
 
     /// @notice A zombie exit does NOT block refresh of other legitimate attesters in the same call.
@@ -159,9 +156,8 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
 
         // Funds claimable
         vm.prank(core);
-        (uint256 received,, bool hasRemainingExits) = stakingManager.getUnstakedFunds();
+        (uint256 received,) = stakingManager.getUnstakedFunds();
         assertEq(received, 2 * ACTIVATION_THRESHOLD, "both exit amounts should be received");
-        assertFalse(hasRemainingExits, "no remaining exits");
     }
 
     /// @notice An immediately-exitable zombie exit is claimed and finalized in a single refresh call.
@@ -189,9 +185,8 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
 
         // Funds are claimable
         vm.prank(core);
-        (uint256 received, uint256 exitAmount, bool hasRemainingExits) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(received, ACTIVATION_THRESHOLD, "funds should be received");
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exit amount should be claimable");
-        assertFalse(hasRemainingExits, "no remaining exits");
     }
 }

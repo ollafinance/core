@@ -28,7 +28,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         assertEq(stakingManager.getPendingUnstakeCount(), 0);
     }
 
-    function test_HasExitableUnstakes_ReturnsFalseWhenOnlyPending() external {
+    function test_HasFinalizedUnstakes_ReturnsFalseWhenOnlyPending() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(keys);
@@ -43,11 +43,11 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
 
         rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
 
-        bool hasExitable = stakingManager.hasExitableUnstakes();
-        assertFalse(hasExitable, "hasExitableUnstakes should be false with only pending exits");
+        bool hasFinalized = stakingManager.hasFinalizedUnstakes();
+        assertFalse(hasFinalized, "hasFinalizedUnstakes should be false with only pending exits");
     }
 
-    function test_HasExitableUnstakes_ReturnsFalseBeforeRefresh() external {
+    function test_HasFinalizedUnstakes_ReturnsFalseBeforeRefresh() external {
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(keys);
@@ -60,11 +60,11 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
 
-        bool hasExitable = stakingManager.hasExitableUnstakes();
-        assertFalse(hasExitable, "hasExitableUnstakes should be false before refresh finalizes exits");
+        bool hasFinalized = stakingManager.hasFinalizedUnstakes();
+        assertFalse(hasFinalized, "hasFinalizedUnstakes should be false before refresh finalizes exits");
     }
 
-    function test_HasExitableUnstakes_ReturnsTrueAfterRefreshFinalizesExit() external {
+    function test_HasFinalizedUnstakes_ReturnsTrueAfterRefreshFinalizesExit() external {
         _setupStakedAttester();
 
         vm.prank(core);
@@ -73,34 +73,34 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         // Refresh finalizes the exit (mock sets exitableAt to block.timestamp)
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        bool hasExitable = stakingManager.hasExitableUnstakes();
-        assertTrue(hasExitable, "hasExitableUnstakes should be true after refresh finalizes an exit");
+        bool hasFinalized = stakingManager.hasFinalizedUnstakes();
+        assertTrue(hasFinalized, "hasFinalizedUnstakes should be true after refresh finalizes an exit");
     }
 
-    function test_HasExitableUnstakes_ReturnsFalseAfterClaim() external {
+    function test_HasFinalizedUnstakes_ReturnsFalseAfterClaim() external {
         _setupStakedAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         stakingManager.refreshAttesterState(_attesterAddresses(1));
-        assertTrue(stakingManager.hasExitableUnstakes(), "should be true after finalization");
+        assertTrue(stakingManager.hasFinalizedUnstakes(), "should be true after finalization");
 
         // Claim resets _pendingClaimAmount
         vm.prank(core);
         stakingManager.getUnstakedFunds();
 
-        assertFalse(stakingManager.hasExitableUnstakes(), "should be false after claim drains pending");
+        assertFalse(stakingManager.hasFinalizedUnstakes(), "should be false after claim drains pending");
     }
 
-    function test_HasExitableUnstakes_ReturnsFalseWhenActiveExitNotExitable() external {
+    function test_HasFinalizedUnstakes_ReturnsFalseWhenActiveExitNotExitable() external {
         _setupStakedAttester();
 
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
 
-        bool hasExitable = stakingManager.hasExitableUnstakes();
-        assertFalse(hasExitable, "hasExitableUnstakes should be false for active pending exits");
+        bool hasFinalized = stakingManager.hasFinalizedUnstakes();
+        assertFalse(hasFinalized, "hasFinalizedUnstakes should be false for active pending exits");
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -198,14 +198,19 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
         // --- Setup: deposit and force rebalance to stop mid-cycle ---
         _performDeposit(alice, 100 * DECIMALS);
 
-        // Make getUnstakedFunds return hasRemainingExits=true to stall at PullUnstaked
-        stakingManager.setWithdrawableUnstakes(1);
+        // Stall at StakeSurplus by making the mock stake() return a partial amount.
+        // With target buffer = 0 (default from setUp isn't overridden here), rebalance
+        // will try to stake 100e18 but the mock only stakes 10e18, saving progress.
+        vm.prank(address(gov));
+        core.setTargetBufferedAssets(0);
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(10 * DECIMALS);
+        stakingManager.setTotalStaked(10 * DECIMALS);
 
         _fullRebalance();
 
-        // Verify precondition: rebalance stuck mid-cycle
+        // Verify precondition: rebalance stuck mid-cycle at StakeSurplus
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertTrue(progress.step != IOllaCore.RebalanceStep.Done, "rebalance should be stuck mid-cycle");
 

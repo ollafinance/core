@@ -59,7 +59,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
         // getUnstakedFunds should report exitAmount equal to what was finalized
         vm.prank(core);
-        (, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match the finalized amount");
     }
@@ -80,7 +80,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         // First refreshAttesterState: only attester[1] is exitable
         stakingManager.refreshAttesterState(_attesterAddresses(2));
         vm.prank(core);
-        (, uint256 firstExitAmount,) = stakingManager.getUnstakedFunds();
+        (, uint256 firstExitAmount) = stakingManager.getUnstakedFunds();
         assertEq(firstExitAmount, ACTIVATION_THRESHOLD, "first call should finalize one attester");
 
         // Advance time so attester[0] becomes exitable
@@ -89,7 +89,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         // Second refreshAttesterState: attester[0] now exitable
         stakingManager.refreshAttesterState(_attesterAddresses(2));
         vm.prank(core);
-        (, uint256 secondExitAmount,) = stakingManager.getUnstakedFunds();
+        (, uint256 secondExitAmount) = stakingManager.getUnstakedFunds();
         assertEq(secondExitAmount, ACTIVATION_THRESHOLD, "second call should finalize remaining attester");
     }
 
@@ -105,15 +105,14 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
         // First getUnstakedFunds: should return exitAmount matching finalized amount
         vm.prank(core);
-        (uint256 received, uint256 exitAmount, bool hasRemainingExits) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "first call exitAmount should match finalized amount");
         assertEq(received, ACTIVATION_THRESHOLD, "first call received should include finalized tokens");
-        assertFalse(hasRemainingExits, "no remaining exits after full finalization");
 
         // Second getUnstakedFunds: _pendingClaimAmount was reset, so exitAmount should be 0
         vm.prank(core);
-        (uint256 receivedSecond, uint256 exitAmountSecond,) = stakingManager.getUnstakedFunds();
+        (uint256 receivedSecond, uint256 exitAmountSecond) = stakingManager.getUnstakedFunds();
 
         assertEq(exitAmountSecond, 0, "second call exitAmount should be 0 after reset");
         assertEq(receivedSecond, 0, "second call received should be 0 with no balance remaining");
@@ -135,11 +134,10 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
         // getUnstakedFunds should sweep the donation as `received` but exitAmount should be 0
         vm.prank(core);
-        (uint256 received, uint256 exitAmount, bool hasRemainingExits) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
         assertEq(received, donationAmount, "received should include donated tokens");
         assertEq(exitAmount, 0, "exitAmount should be 0 since no exits were finalized");
-        assertFalse(hasRemainingExits, "no remaining exits");
         assertEq(aztec.balanceOf(core), coreBalanceBefore + donationAmount, "core should receive donated tokens");
         assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should have zero balance after sweep");
     }
@@ -221,7 +219,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
         // _pendingClaimAmount should be populated for OllaCore to claim
         vm.prank(core);
-        (, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match the externally finalized amount");
     }
 
@@ -255,7 +253,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         assertEq(stateAfterReconcile.pendingUnstakeAmount, 0, "pending should be cleared after reconciliation");
 
         vm.prank(core);
-        (, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should be populated for OllaCore");
     }
 
@@ -296,42 +294,42 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         HASEXITABLEUNSTAKES / WORK DETECTION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice hasExitableUnstakes() returns true after refresh finalizes an exit,
+    /// @notice hasFinalizedUnstakes() returns true after refresh finalizes an exit,
     ///         enabling _hasRebalanceWorkAvailable() in OllaCore to detect work.
-    function test_HasExitableUnstakes_TrueAfterRefreshFinalizesExit() external {
+    function test_HasFinalizedUnstakes_TrueAfterRefreshFinalizesExit() external {
         _setupStakedAttester();
 
-        assertFalse(stakingManager.hasExitableUnstakes(), "should be false initially");
+        assertFalse(stakingManager.hasFinalizedUnstakes(), "should be false initially");
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
 
-        assertFalse(stakingManager.hasExitableUnstakes(), "should be false after unstake but before refresh");
+        assertFalse(stakingManager.hasFinalizedUnstakes(), "should be false after unstake but before refresh");
 
         // Refresh finalizes the exit (mock sets exitableAt = block.timestamp)
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        assertTrue(stakingManager.hasExitableUnstakes(), "should be true after refresh finalizes exit");
+        assertTrue(stakingManager.hasFinalizedUnstakes(), "should be true after refresh finalizes exit");
     }
 
-    /// @notice hasExitableUnstakes() returns false after getUnstakedFunds drains _pendingClaimAmount.
-    function test_HasExitableUnstakes_FalseAfterClaim() external {
+    /// @notice hasFinalizedUnstakes() returns false after getUnstakedFunds drains _pendingClaimAmount.
+    function test_HasFinalizedUnstakes_FalseAfterClaim() external {
         _setupStakedAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        assertTrue(stakingManager.hasExitableUnstakes(), "should be true after finalization");
+        assertTrue(stakingManager.hasFinalizedUnstakes(), "should be true after finalization");
 
         vm.prank(core);
         stakingManager.getUnstakedFunds();
 
-        assertFalse(stakingManager.hasExitableUnstakes(), "should be false after claim");
+        assertFalse(stakingManager.hasFinalizedUnstakes(), "should be false after claim");
     }
 
-    /// @notice hasExitableUnstakes() returns true for externally finalized exits too.
-    function test_HasExitableUnstakes_TrueAfterExternalFinalization() external {
+    /// @notice hasFinalizedUnstakes() returns true for externally finalized exits too.
+    function test_HasFinalizedUnstakes_TrueAfterExternalFinalization() external {
         _setupStakedAttester();
 
         vm.prank(core);
@@ -342,14 +340,14 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         rollup.finalizeWithdraw(keys[0].attester);
 
         assertFalse(
-            stakingManager.hasExitableUnstakes(), "should be false before refresh detects external finalization"
+            stakingManager.hasFinalizedUnstakes(), "should be false before refresh detects external finalization"
         );
 
         // Refresh detects and reconciles
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         assertTrue(
-            stakingManager.hasExitableUnstakes(), "should be true after refresh reconciles external finalization"
+            stakingManager.hasFinalizedUnstakes(), "should be true after refresh reconciles external finalization"
         );
     }
 
@@ -551,7 +549,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
         // Funds claimable
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(received, ACTIVATION_THRESHOLD, "funds should be received");
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exit amount should be claimable");
     }

@@ -40,7 +40,7 @@ contract StakingManagerPartialSlashTest is StakingManagerBaseTest {
 
         // Funds are claimable at the reduced amount
         vm.prank(core);
-        (uint256 received, uint256 exitAmount,) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(received, slashedAmount, "received should equal slashed exit amount");
         assertEq(exitAmount, slashedAmount, "exitAmount should equal slashed exit amount");
     }
@@ -81,7 +81,7 @@ contract StakingManagerPartialSlashTest is StakingManagerBaseTest {
 
         // All reduced amounts are claimable
         vm.prank(core);
-        (uint256 received,,) = stakingManager.getUnstakedFunds();
+        (uint256 received,) = stakingManager.getUnstakedFunds();
         uint256 expectedReceived = 80 ether + 50 ether + 90 ether;
         assertEq(received, expectedReceived, "received should equal sum of reduced exit amounts");
     }
@@ -108,9 +108,8 @@ contract StakingManagerPartialSlashTest is StakingManagerBaseTest {
 
         // No funds claimable
         vm.prank(core);
-        (uint256 received, uint256 exitAmount, bool hasRemainingExits) = stakingManager.getUnstakedFunds();
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
         assertEq(received, 0, "received should be 0 for total slash");
         assertEq(exitAmount, 0, "exitAmount should be 0 for total slash");
-        assertFalse(hasRemainingExits, "no remaining exits");
     }
 }

@@ -46,38 +46,37 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         return mockRollup.getActivationThreshold();
     }
 
-    /// @notice Gets the rebalance into an in-progress state (stuck at PullUnstaked).
-    /// @dev Stakes 3 attesters, requests redeem to trigger unstaking, completes the
-    ///      unstake cycle, then starts a new rebalance that gets stuck because exits
-    ///      haven't been refreshed (hasRemainingExits = true).
+    /// @notice Gets the rebalance into an in-progress state (stuck at StakeSurplus).
+    /// @dev Deposits enough for 3 attesters but only 1 key is available (setUp added 10,
+    ///      but we stake them first, then deposit more with only 1 extra key).
+    ///      The rebalance partially stakes and saves progress at StakeSurplus.
     /// @return depositAmount The total amount deposited.
     function _getRebalanceInProgress() internal returns (uint256 depositAmount) {
         uint256 threshold = _threshold();
-        depositAmount = threshold * 3;
 
-        // 1. Deposit and stake 3 attesters
+        // 1. First: stake all 10 keys added in setUp
+        depositAmount = threshold * 10;
         _deposit(alice, depositAmount);
         _rebalance();
         _completeRebalance();
 
-        // 2. Request redeem to trigger unstaking
-        uint256 halfShares = stAztec.balanceOf(alice) / 2;
-        _requestRedeem(alice, halfShares);
+        assertEq(core.accountingState().stakedPrincipal, threshold * 10, "10 attesters staked");
 
-        // 3. First rebalance: initiates unstakes -> Done
+        // 2. Deposit more funds (3 attesters worth) but only add 1 key
+        uint256 extraDeposit = threshold * 3;
+        _deposit(bob, extraDeposit);
+        depositAmount += extraDeposit;
+        _addKeys(1);
+
+        // 3. Rebalance: will stake 1 attester (the only available key) and save progress
+        //    at StakeSurplus with 2 attesters worth remaining
         _warpPastCooldown();
         _rebalance();
-        _completeRebalance();
 
-        // 4. Do NOT refresh attesters - exits are pending on rollup but not claimed by StakingManager
-        // 5. Second rebalance: PullUnstaked -> hasRemainingExits -> returns early
-        _warpPastCooldown();
-        _rebalance();
-
-        // Verify we're in progress
+        // Verify we're in progress at StakeSurplus
         IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
         assertEq(
-            uint256(p.step), uint256(IOllaCore.RebalanceStep.PullUnstaked), "Rebalance should be stuck at PullUnstaked"
+            uint256(p.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Rebalance should be stuck at StakeSurplus"
         );
     }
 
@@ -85,7 +84,7 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
                          FORCE REBALANCE RESET
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice forceRebalanceReset clears in-progress rebalance and system recovers.
+    /// @notice forceRebalanceReset clears in-progress rebalance (stuck at StakeSurplus) and system recovers.
     function test_ForceRebalanceReset_MidUnstake() external {
         _getRebalanceInProgress();
 
@@ -154,7 +153,7 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         _rebalance();
         _completeRebalance();
 
-        // 4. Start a rebalance that gets stuck at PullUnstaked (no refresh)
+        // 4. Start another rebalance (PullUnstaked advances; no funds to pull without refresh)
         _warpPastCooldown();
         _rebalance();
 
@@ -436,39 +435,47 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
     /// @notice Pending withdrawals survive a force reset cycle and eventually get finalized.
     function test_ForceRebalanceReset_PendingWithdrawalsSurvive() external {
         uint256 threshold = _threshold();
-        uint256 depositAmount = threshold * 3;
 
-        // 1. Deposit and stake
-        _deposit(alice, depositAmount);
+        // 1. Stake all 10 keys + deposit extra for 3 more (no keys available)
+        uint256 aliceDeposit = threshold * 10;
+        _deposit(alice, aliceDeposit);
         _rebalance();
         _completeRebalance();
 
-        // 2. Request redeem
+        // 2. Request redeem from alice (creates pending withdrawal)
         uint256 redeemShares = stAztec.balanceOf(alice) / 3;
         uint256 requestId = _requestRedeem(alice, redeemShares);
 
-        // 3. Start rebalance that initiates unstakes
+        // 3. Rebalance: initiates unstakes to cover the redeem. Completes to Done
+        //    (no surplus to stake since buffer covers the withdrawal queue).
         _warpPastCooldown();
         _rebalance();
         _completeRebalance();
 
-        // 4. Start next rebalance that gets stuck at PullUnstaked
+        // 4. Verify withdrawal request is not yet finalized (needs rollup exit finalization)
+        IWithdrawalQueue.WithdrawalRequest memory reqBefore = withdrawalQueue.getRequest(requestId);
+        assertFalse(reqBefore.finalized, "Request should not be finalized yet");
+
+        // 5. Bob deposits extra funds and add only 1 key to cause stall at StakeSurplus
+        //    Bob must deposit enough so buffer exceeds pendingWithdrawals (alice's ~3.33 attesters),
+        //    leaving surplus > 1 attester to trigger a partial stake with only 1 key.
+        uint256 bobDeposit = threshold * 5;
+        _deposit(bob, bobDeposit);
+        _addKeys(1);
+
         _warpPastCooldown();
         _rebalance();
 
         IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
-        assertEq(uint256(p.step), uint256(IOllaCore.RebalanceStep.PullUnstaked), "Should be stuck at PullUnstaked");
-
-        // 5. Verify withdrawal request exists and is not yet finalized
-        IWithdrawalQueue.WithdrawalRequest memory reqBefore = withdrawalQueue.getRequest(requestId);
-        assertFalse(reqBefore.finalized, "Request should not be finalized yet");
+        assertEq(uint256(p.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "Should be stuck at StakeSurplus");
 
         // 6. Force reset
         vm.prank(address(gov));
         core.forceRebalanceReset();
 
-        // 7. Refresh attesters to finalize exits
+        // 7. Refresh attesters to finalize exits, add keys to allow full staking
         _refreshAttesters();
+        _addKeys(5);
 
         // 8. New rebalance cycle pulls funds and finalizes withdrawals
         _warpPastCooldown();
