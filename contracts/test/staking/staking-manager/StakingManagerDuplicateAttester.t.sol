@@ -8,10 +8,10 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
-/// @notice Harness that exposes the internal `_setActive` for direct testing.
+/// @notice Harness that exposes the internal `_setQueued` for direct testing.
 contract StakingManagerHarness is StakingManager {
-    function exposed_setActive(address attester, uint256 stakedAmount) external {
-        _setActive(attester, stakedAmount);
+    function exposed_setQueued(address attester, uint256 stakedAmount) external {
+        _setQueued(attester, stakedAmount);
     }
 }
 
@@ -21,7 +21,7 @@ contract StakingManagerDuplicateAttesterTest is StakingManagerBaseTest {
     function setUp() public override {
         super.setUp();
 
-        // Deploy a harness behind a proxy for direct _setActive testing
+        // Deploy a harness behind a proxy for direct _setQueued testing
         StakingManagerHarness harnessImpl = new StakingManagerHarness();
         ERC1967Proxy harnessProxy = new ERC1967Proxy(address(harnessImpl), "");
         harness = StakingManagerHarness(address(harnessProxy));
@@ -36,30 +36,31 @@ contract StakingManagerDuplicateAttesterTest is StakingManagerBaseTest {
     }
 
     /*//////////////////////////////////////////////////////////////
-                  _setActive DEFENSE-IN-DEPTH TESTS
+                  _setQueued DEFENSE-IN-DEPTH TESTS
     //////////////////////////////////////////////////////////////*/
 
     function test_RevertWhen_SetActive_DuplicateAttester() external {
         address attester = address(uint160(42));
 
         // First activation succeeds
-        harness.exposed_setActive(attester, 100 ether);
+        harness.exposed_setQueued(attester, 100 ether);
 
         // Second activation of the same attester reverts
         vm.expectRevert(
             abi.encodeWithSelector(IStakingManager.StakingManager__AttesterAlreadyActive.selector, attester)
         );
-        harness.exposed_setActive(attester, 100 ether);
+        harness.exposed_setQueued(attester, 100 ether);
     }
 
     function test_SetActive_AccountingCorrectOnSingleActivation() external {
         address attester = address(uint160(42));
 
-        harness.exposed_setActive(attester, 100 ether);
+        harness.exposed_setQueued(attester, 100 ether);
 
         IStakingManager.StakingState memory state = harness.getStakingState();
         assertEq(state.stakedAmount, 100 ether, "stakedAmount should be 100 ether");
-        assertEq(harness.getActivatedAttesterCount(), 1, "should have 1 active attester");
+        // _setQueued creates Queued attesters, not Active, so activeCount is 0
+        assertEq(harness.getActivatedAttesterCount(), 0, "should have 0 active attesters (attester is Queued)");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -83,7 +84,7 @@ contract StakingManagerDuplicateAttesterTest is StakingManagerBaseTest {
         vm.prank(providerAdmin);
         stakingProviderRegistry.addKeysToProvider(keys);
 
-        // But staking it again should revert at _setActive (defense-in-depth)
+        // But staking it again should revert at _setQueued (defense-in-depth)
         aztec.mint(core, ACTIVATION_THRESHOLD);
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
@@ -108,14 +109,19 @@ contract StakingManagerDuplicateAttesterTest is StakingManagerBaseTest {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
-
-        // 2. Unstake
-        stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
 
-        // 3. Refresh to finalize exit
         address[] memory attesters = new address[](1);
         attesters[0] = keys[0].attester;
+
+        // Promote Queued -> Active so unstake can find the attester
+        stakingManager.refreshAttesterState(attesters);
+
+        // 2. Unstake
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        // 3. Refresh to finalize exit
         stakingManager.refreshAttesterState(attesters);
 
         // 4. Claim unstaked funds
@@ -137,6 +143,8 @@ contract StakingManagerDuplicateAttesterTest is StakingManagerBaseTest {
         vm.stopPrank();
 
         assertEq(staked, ACTIVATION_THRESHOLD, "restake should succeed");
+        // After restake, attester is Queued; promote to Active
+        stakingManager.refreshAttesterState(attesters);
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should be active again");
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();

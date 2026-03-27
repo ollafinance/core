@@ -21,7 +21,7 @@ contract StakingManagerSlashDuringUnstakeTest is StakingManagerBaseTest {
     ///         during unstake). After finalization, the StakingManager receives fewer tokens
     ///         than the original pendingExitAmount.
     function test_SlashDuringUnstake_ReducedExitAmount() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         address[] memory attesters = _attesterAddresses(2);
 
         // Initiate unstake for one attester
@@ -82,7 +82,7 @@ contract StakingManagerSlashDuringUnstakeTest is StakingManagerBaseTest {
     ///         other completes normally. The total received reflects the difference.
     function test_SlashDuringUnstake_MixedHealthyAndSlashed() external {
         uint256 numAttesters = 3;
-        _setupMultipleStakedAttesters(numAttesters);
+        _setupMultipleActiveAttesters(numAttesters);
         address[] memory attesters = _attesterAddresses(numAttesters);
 
         // Unstake 2 attesters

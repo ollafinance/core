@@ -23,7 +23,7 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
 
     /// @notice Unstaking a slashed attester must not leave a phantom in stakedAmount.
     function test_Unstake_SlashedAttester_NoPhantomInStakedAmount() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address attester = address(uint160(1));
 
         // Slash on rollup: 100 ether → 80 ether (no refresh called)
@@ -47,7 +47,7 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
 
     /// @notice The slashing gap must be recorded in slashingDelta.
     function test_Unstake_SlashedAttester_SlashingDeltaRecorded() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address attester = address(uint160(1));
 
         uint256 slashedBalance = 75 ether;
@@ -63,7 +63,7 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
 
     /// @notice Multiple attesters, one slashed — only the slashed one should produce a delta.
     function test_Unstake_OneSlashedAmongMultiple_CorrectAccounting() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
         address attester1 = address(uint160(1));
 
         // Slash only attester1: 100 → 60
@@ -89,7 +89,7 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
 
     /// @notice After unstaking a slashed attester, refreshAttesterState must not re-inflate stakedAmount.
     function test_Unstake_SlashedAttester_RefreshAfterDoesNotReInflate() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address attester = address(uint160(1));
 
         _slashOnRollup(attester, 80 ether);
@@ -111,7 +111,7 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
     /// @notice Full lifecycle: slash → unstake → refresh → finalize → claim.
     ///         Verifies no phantom leaks through the entire exit pipeline.
     function test_Unstake_SlashedAttester_FullLifecycle() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address attester = address(uint160(1));
         uint256 slashedBalance = 70 ether;
 
@@ -144,7 +144,7 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
     function testFuzz_Unstake_SlashedAttester(uint256 slashedBalance) external {
         slashedBalance = bound(slashedBalance, 0, ACTIVATION_THRESHOLD);
 
-        _setupStakedAttester();
+        _setupActiveAttester();
         address attester = address(uint160(1));
         _slashOnRollup(attester, slashedBalance);
 

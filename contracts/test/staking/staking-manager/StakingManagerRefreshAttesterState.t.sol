@@ -22,7 +22,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
     /// @notice Anyone can call refreshAttesterState() - it has no access control.
     function test_RefreshAttesterState_PermissionlessAccess() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -41,7 +41,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         // With staked attesters but none unstaking -- should not revert
-        _setupStakedAttester();
+        _setupActiveAttester();
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "active count should be unchanged");
@@ -50,7 +50,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice refreshAttesterState() tracks the finalized amount in _pendingClaimAmount,
     ///         which is then returned as exitAmount by getUnstakedFunds().
     function test_RefreshAttesterState_TracksPendingClaimAmount() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -67,7 +67,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice Multiple calls to refreshAttesterState() accumulate _pendingClaimAmount
     ///         until getUnstakedFunds() drains it.
     function test_RefreshAttesterState_AccumulatesAcrossMultipleCalls() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
 
         // Unstake both attesters
@@ -96,7 +96,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice getUnstakedFunds() returns exitAmount matching _pendingClaimAmount and resets it to 0.
     ///         A subsequent call to getUnstakedFunds() should return exitAmount=0.
     function test_GetUnstakedFunds_ReturnsExitAmountAndResetsIt() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -149,7 +149,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice An active attester that was externally fully exited (zero balance, no exit record)
     ///         should be removed during refreshAttesterState.
     function test_RefreshAttesterState_RemovesExternallyFinalizedActiveAttester() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         assertEq(stakingManager.getActivatedAttesterCount(), 1, "should have 1 active attester");
 
         // Simulate external full exit: zero balance but config still present on the GSE
@@ -168,7 +168,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice When an externally finalized active attester is removed, the aggregate stakedAmount
     ///         should be decremented by the attester's cached balance.
     function test_RefreshAttesterState_ExternallyFinalizedUpdatesAggregateState() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         assertEq(stakingManager.getActivatedAttesterCount(), 2, "should have 2 active attesters");
 
         // Externally finalize only the first attester (config persists on real rollup)
@@ -190,7 +190,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     ///         the subsequent refreshAttesterState() must reconcile pendingUnstakeAmount and
     ///         populate _pendingClaimAmount so OllaCore can reduce stakedPrincipal.
     function test_RefreshAttesterState_ExternalFinalization_ReconcilesPendingUnstake() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         // Unstake via StakingManager -- creates exit on rollup, increments pendingUnstakeAmount
         vm.prank(core);
@@ -226,7 +226,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice When an externally initiated exit (detected via refresh as Active -> Exiting)
     ///         is later externally finalized, pendingUnstakeAmount must still be reconciled.
     function test_RefreshAttesterState_ExternalInitiateAndFinalize_ReconcilesFully() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
         // External party initiates an exit on the rollup with a future exitable time
@@ -259,7 +259,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
     /// @notice totalStaked() remains consistent through the external finalization lifecycle.
     function test_RefreshAttesterState_ExternalFinalization_TotalStakedConsistent() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         uint256 initialTotal = stakingManager.totalStaked();
         assertEq(initialTotal, ACTIVATION_THRESHOLD * 2, "initial total should be 2x threshold");
@@ -297,7 +297,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice hasFinalizedUnstakes() returns true after refresh finalizes an exit,
     ///         enabling _hasRebalanceWorkAvailable() in OllaCore to detect work.
     function test_HasFinalizedUnstakes_TrueAfterRefreshFinalizesExit() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         assertFalse(stakingManager.hasFinalizedUnstakes(), "should be false initially");
 
@@ -314,7 +314,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
     /// @notice hasFinalizedUnstakes() returns false after getUnstakedFunds drains _pendingClaimAmount.
     function test_HasFinalizedUnstakes_FalseAfterClaim() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -330,7 +330,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
     /// @notice hasFinalizedUnstakes() returns true for externally finalized exits too.
     function test_HasFinalizedUnstakes_TrueAfterExternalFinalization() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -355,57 +355,48 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
             QUEUED ATTESTER PROTECTION TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice refreshAttesterState() must not remove an attester that is still in
-    ///         the rollup's entry queue (not yet activated in the GSE).
+    /// @notice A Queued attester whose rollup returns NONE (not yet flushed) stays Queued.
+    ///         refreshAttesterState() must not remove or promote it.
     function test_RefreshAttesterState_SkipsQueuedAttester() external {
+        // Stake creates a Queued attester. Clear rollup state to simulate
+        // "deposited but not yet flushed into the GSE."
         _setupStakedAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
-        // Simulate the real rollup queue state: attester deposited but not yet
-        // flushed into the GSE. The rollup returns Status.NONE with zero balance
-        // and empty config for queued attesters.
         rollup.clearAttester(keys[0].attester);
         rollup.setStake(keys[0].attester, 0, address(0));
 
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
-        uint256 activeCountBefore = stakingManager.getActivatedAttesterCount();
 
-        // Refresh should skip -- no state changes
+        // Refresh should skip -- attester is Queued and rollup is NONE
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        assertEq(stakingManager.getActivatedAttesterCount(), activeCountBefore, "active count must not change");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "active count must be 0 (still Queued)");
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "stakedAmount must not change");
         assertEq(stateAfter.slashingDelta, stateBefore.slashingDelta, "slashingDelta must not change");
     }
 
     /// @notice After the queue is flushed (attester becomes VALIDATING), refreshAttesterState
-    ///         should work normally again.
+    ///         promotes Queued -> Active.
     function test_RefreshAttesterState_WorksAfterQueueFlush() external {
+        // Stake creates a Queued attester. The mock rollup already has the attester
+        // as VALIDATING (deposit sets stakes > 0), so refresh promotes immediately.
         _setupStakedAttester();
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
-        // Simulate queue state
-        rollup.clearAttester(keys[0].attester);
-        rollup.setStake(keys[0].attester, 0, address(0));
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "attester should be Queued before refresh");
 
-        // Refresh while queued -- should be a no-op
+        // Refresh promotes Queued -> Active
         stakingManager.refreshAttesterState(_attesterAddresses(1));
-        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should still be active");
-
-        // Simulate queue flush: attester now has a balance and withdrawer on the rollup
-        rollup.setStake(keys[0].attester, ACTIVATION_THRESHOLD, address(stakingManager));
-
-        // Refresh after flush -- should work normally
-        stakingManager.refreshAttesterState(_attesterAddresses(1));
-        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should remain active after flush");
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "attester should be active after flush");
     }
 
-    /// @notice Multiple refreshes while queued should all be no-ops.
+    /// @notice Multiple refreshes on a Queued attester with NONE status should all be no-ops.
     function test_RefreshAttesterState_MultipleRefreshesWhileQueued() external {
         _setupStakedAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
+        // Clear rollup to simulate not-yet-flushed
         rollup.clearAttester(keys[0].attester);
         rollup.setStake(keys[0].attester, 0, address(0));
 
@@ -416,16 +407,16 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         stakingManager.refreshAttesterState(_attesterAddresses(1));
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        assertEq(stakingManager.getActivatedAttesterCount(), 1, "active count must not change");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "active count must stay 0 (still Queued)");
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "stakedAmount must not change");
         assertEq(stateAfter.slashingDelta, stateBefore.slashingDelta, "slashingDelta must not change");
     }
 
-    /// @notice An externally fully exited attester (has withdrawer set on rollup but zero balance)
-    ///         should still be removed -- the queued protection only applies when config is empty.
+    /// @notice An Active attester with zero balance and no exit is treated as externally
+    ///         fully exited and should be removed.
     function test_RefreshAttesterState_StillRemovesExternallyExitedWithConfig() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
         // Simulate external full exit: zero balance but config still present
@@ -448,7 +439,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     ///         localEjectionThreshold. The attester stays VALIDATING in the GSE with reduced
     ///         effectiveBalance and no exit record is created.
     function test_RefreshAttesterState_PartialSlash_AttesterStaysActive() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 
@@ -475,7 +466,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice After a partial slash, a second refresh with no further rollup changes should be
     ///         a no-op (cached balance matches rollup, delta is zero).
     function test_RefreshAttesterState_PartialSlash_SecondRefreshIsNoOp() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 
@@ -508,7 +499,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     ///         involvement. This test guards against future Aztec rollup changes where a
     ///         different actor could set isRecipient=true (e.g. governance-driven forced exits).
     function test_RefreshAttesterState_AlreadyClaimedExternalExit() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 
@@ -533,7 +524,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @dev    DEFENSIVE TEST -- see test_RefreshAttesterState_AlreadyClaimedExternalExit for
     ///         reachability notes.
     function test_RefreshAttesterState_AlreadyClaimedExternalExit_ImmediateFinalization() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 
@@ -561,7 +552,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice Calling refreshAttesterState twice for an Active+VALIDATING attester with
     ///         no rollup state changes should leave all aggregate state exactly unchanged.
     function test_RefreshAttesterState_IdempotentForActiveValidating() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
 
         IStakingManager.StakingState memory stateBefore = stakingManager.getStakingState();
         uint256 activeCountBefore = stakingManager.getActivatedAttesterCount();
@@ -622,6 +613,9 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         aztec.approve(address(maliciousSM), ACTIVATION_THRESHOLD);
         maliciousSM.stake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
+
+        // Promote Queued -> Active so unstake can find the attester
+        maliciousSM.refreshAttesterState(_attesterAddresses(1));
 
         // Unstake to put attester into exiting state
         vm.prank(core);

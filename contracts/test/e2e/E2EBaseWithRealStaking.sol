@@ -306,7 +306,7 @@ abstract contract E2EBaseWithRealStaking is Test {
         return core.rebalance();
     }
 
-    /// @notice Completes any in-progress rebalance cycle.
+    /// @notice Completes any in-progress rebalance cycle and promotes Queued attesters.
     function _completeRebalance() internal {
         for (uint256 i; i < 20; ++i) {
             IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
@@ -314,6 +314,8 @@ abstract contract E2EBaseWithRealStaking is Test {
             vm.prank(operator);
             core.rebalance();
         }
+        // Promote any Queued attesters to Active (mock rollup returns VALIDATING after deposit)
+        _refreshAttesters();
     }
 
     /// @notice Schedules and executes a governance action via the timelock.

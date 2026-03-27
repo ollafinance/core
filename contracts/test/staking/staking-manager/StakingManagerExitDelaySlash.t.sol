@@ -40,7 +40,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
     /// @notice Normal unstake with exit delay: attester stays Exiting until delay passes,
     ///         then finalizes on the next refreshAttesterState call.
     function test_NormalUnstake_ExitDelay_FullLifecycle() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         // 1. Unstake — exit created with exitableAt = now + EXIT_DELAY
@@ -75,7 +75,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
 
     /// @notice Multiple attesters unstaked with delay — staggered finalization.
     function test_NormalUnstake_ExitDelay_StaggeredFinalization() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
         address[] memory attesters = _attesterAddresses(3);
 
         // Unstake all 3
@@ -114,7 +114,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
     ///         reads the correct reduced amount. This is the "happy path" where the keeper
     ///         calls refreshAttesterState promptly.
     function test_SlashDuringExitDelay_RefreshBeforeFinalize_CorrectAmount() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         // 1. Unstake — exit with delay
@@ -153,7 +153,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
     ///         pendingExitAmount claims is the silent loss documented in StakingManager L595-609.
     ///         This test verifies the accounting is conservative (overstates the loss).
     function test_SlashDuringExitDelay_ExitableFinalize_ConservativeAccounting() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         address[] memory attesters = _attesterAddresses(2);
 
         // 1. Unstake attester[1] (iterates from end)
@@ -191,7 +191,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
     /// @notice Multiple sequential slashes during the exit delay. Each reduces exit.amount
     ///         further. Final finalization uses the last reduced amount.
     function test_MultipleSlashesDuringExitDelay() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         // 1. Unstake with delay
@@ -223,7 +223,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
     ///         afterward, the exit record is gone so it falls back to pendingExitAmount.
     ///         This test verifies the protocol does NOT revert and degrades gracefully.
     function test_SlashDuringExitDelay_ExternalFinalize_PendingClaimOverstated() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         // 1. Unstake with delay
@@ -275,7 +275,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
     /// @notice Zombie exit with non-trivial delay: first refresh claims the zombie,
     ///         second refresh (after delay) finalizes.
     function test_ZombieExit_WithExitDelay_TwoPhaseFinalization() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         // Create zombie exit with future exitableAt
@@ -302,7 +302,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
 
     /// @notice Zombie exit slashed during delay: reduced amount recovered.
     function test_ZombieExit_SlashedDuringExitDelay() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         // Create zombie exit (partial slash: 100 → 75)
@@ -340,7 +340,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
     ///         slashed while exiting (exit.amount reduced during delay). Both losses should
     ///         be reflected in the final accounting.
     function test_MixedActiveAndExitingSlash() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
         address[] memory attesters = _attesterAddresses(3);
 
         // 1. Unstake attester[2] (iterates from end)
@@ -392,7 +392,7 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
     function testFuzz_SlashDuringExitDelay(uint256 slashedAmount) external {
         slashedAmount = bound(slashedAmount, 0, ACTIVATION_THRESHOLD);
 
-        _setupStakedAttester();
+        _setupActiveAttester();
         address[] memory attesters = _attesterAddresses(1);
 
         // Unstake with delay

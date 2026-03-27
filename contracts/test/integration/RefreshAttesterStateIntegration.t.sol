@@ -169,6 +169,18 @@ contract RefreshAttesterStateIntegration is Test {
         }
     }
 
+    function _allAttesterAddresses() internal view returns (address[] memory) {
+        address[] memory addrs = new address[](_keyOffset);
+        for (uint256 i; i < _keyOffset; ++i) {
+            addrs[i] = address(uint160(i + 1));
+        }
+        return addrs;
+    }
+
+    function _refreshAttesters() internal {
+        stakingManager.refreshAttesterState(_allAttesterAddresses());
+    }
+
     /*//////////////////////////////////////////////////////////////
                               TESTS
     //////////////////////////////////////////////////////////////*/
@@ -189,6 +201,9 @@ contract RefreshAttesterStateIntegration is Test {
         vm.prank(operator);
         core.rebalance();
         _completeRebalance();
+
+        // Promote Queued -> Active
+        _refreshAttesters();
 
         uint256 attesterCount = stakingManager.getActivatedAttesterCount();
         assertGt(attesterCount, 0, "Should have at least one attester registered");
@@ -248,6 +263,9 @@ contract RefreshAttesterStateIntegration is Test {
         vm.prank(operator);
         core.rebalance();
         _completeRebalance();
+
+        // Promote Queued -> Active
+        _refreshAttesters();
 
         uint256 activatedCount = stakingManager.getActivatedAttesterCount();
         assertEq(activatedCount, numAttesters, "Should have all attesters registered");
@@ -317,6 +335,9 @@ contract RefreshAttesterStateIntegration is Test {
         vm.prank(operator);
         core.rebalance();
         _completeRebalance();
+
+        // Promote Queued -> Active
+        _refreshAttesters();
 
         assertEq(stakingManager.getActivatedAttesterCount(), 2, "should have 2 attesters");
 

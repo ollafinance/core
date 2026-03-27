@@ -38,8 +38,13 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
-        stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
+
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         rollup.setExitReady(keys[0].attester, block.timestamp + 1 days);
 
@@ -57,15 +62,20 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
         vm.startPrank(core);
         aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
         stakingManager.stake(ACTIVATION_THRESHOLD);
-        stakingManager.unstake(ACTIVATION_THRESHOLD);
         vm.stopPrank();
+
+        // Promote Queued -> Active
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
 
         bool hasFinalized = stakingManager.hasFinalizedUnstakes();
         assertFalse(hasFinalized, "hasFinalizedUnstakes should be false before refresh finalizes exits");
     }
 
     function test_HasFinalizedUnstakes_ReturnsTrueAfterRefreshFinalizesExit() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -78,7 +88,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     }
 
     function test_HasFinalizedUnstakes_ReturnsFalseAfterClaim() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -94,7 +104,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     }
 
     function test_HasFinalizedUnstakes_ReturnsFalseWhenActiveExitNotExitable() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
 
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         rollup.setExternalExit(keys[0].attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
@@ -108,7 +118,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     //////////////////////////////////////////////////////////////*/
 
     function test_GetStakingState_ReturnsCorrectValuesAfterStake() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
 
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         assertEq(state.stakedAmount, ACTIVATION_THRESHOLD * 3);
@@ -116,7 +126,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     }
 
     function test_GetStakingState_ReturnsCorrectValuesAfterUnstake() external {
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD * 2);
@@ -127,7 +137,7 @@ contract StakingManagerViewsTest is StakingManagerBaseTest {
     }
 
     function test_GetStakingState_ReturnsCorrectValuesWithDelayedExit() external {
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
 
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);

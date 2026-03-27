@@ -30,7 +30,7 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
     ///      Phase 2: After warping past exitableAt, refreshAttesterState() finalizes the exit
     ///      and funds become claimable.
     function test_ZombieExit_ClaimedAndFinalizedAfterRefresh() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
         address[] memory attesters = _attesterAddresses(1);
@@ -90,7 +90,7 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
     ///      entire batch processes without reverting.
     function test_RefreshAttesterState_ZombieExitDoesNotBlockOtherAttesters() external {
         // Stake 3 attesters
-        _setupMultipleStakedAttesters(3);
+        _setupMultipleActiveAttesters(3);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(3);
 
         // Create zombie exit on attester[0] (isRecipient=false, immediately exitable)
@@ -116,7 +116,7 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
     ///         without interference from the zombie.
     function test_Unstake_WorksAfterZombieClaimedByRefresh() external {
         // Stake 2 attesters
-        _setupMultipleStakedAttesters(2);
+        _setupMultipleActiveAttesters(2);
         IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
         address zombieAttester = keys[0].attester;
         address healthyAttester = keys[1].attester;
@@ -164,7 +164,7 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
     /// @dev The Active->Exiting block calls initiateWithdraw to claim the zombie, then the
     ///      Exiting block detects it's exitable and calls finalizeWithdraw - all in one refresh.
     function test_ZombieExit_ImmediatelyExitable_ClaimedAndFinalizedInSingleRefresh() external {
-        _setupStakedAttester();
+        _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         address attester = keys[0].attester;
 
