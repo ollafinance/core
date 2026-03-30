@@ -982,8 +982,8 @@ contract DeployScript is BaseDeployer {
     }
 
     function _shouldEnableResume(DeployConfig memory config) internal view returns (bool) {
-        if (vm.envOr("DEPLOY_RESUME", false)) {
-            return true;
+        if (vm.envExists("DEPLOY_RESUME")) {
+            return vm.envBool("DEPLOY_RESUME");
         }
         if (config.chainId == _CHAIN_LOCAL) {
             return true;
