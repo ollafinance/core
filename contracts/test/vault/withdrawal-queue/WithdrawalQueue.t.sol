@@ -302,7 +302,8 @@ contract WithdrawalQueueTest is Test {
         vm.prank(vault);
         queue.claimWithdrawal(1);
 
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__AlreadyClaimed.selector, 1));
+        // After claiming, the request is deleted — second claim reverts as invalid
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__InvalidRequest.selector, 1));
         vm.prank(vault);
         queue.claimWithdrawal(1);
     }

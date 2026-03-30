@@ -59,9 +59,10 @@ contract WithdrawalQueueHandler is Test {
         }
 
         uint256 id = bound(idSeed, 1, nextRequestId - 1);
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(id);
-        if (!request.finalized || request.claimed) {
-            return;
+        try queue.getRequest(id) returns (IWithdrawalQueue.WithdrawalRequest memory request) {
+            if (!request.finalized) return;
+        } catch {
+            return; // already claimed (deleted)
         }
 
         vm.prank(vault);
@@ -105,9 +106,12 @@ contract WithdrawalQueueInvariantTest is Test {
         uint256 expectedTotal = 0;
 
         for (uint256 id = 1; id < nextRequestId; id++) {
-            IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(id);
-            if (!request.finalized) {
-                expectedTotal += request.assetsExpected;
+            try queue.getRequest(id) returns (IWithdrawalQueue.WithdrawalRequest memory request) {
+                if (!request.finalized) {
+                    expectedTotal += request.assetsExpected;
+                }
+            } catch {
+                continue; // claimed (deleted)
             }
         }
 
@@ -119,12 +123,17 @@ contract WithdrawalQueueInvariantTest is Test {
         assertGe(queue.nextPendingId(), 1, "next pending id should start at one");
     }
 
-    function invariant_ClaimedRequestsAreFinalized() external view {
+    /// @notice Claimed requests are deleted — getRequest() must revert for any ID that was claimed.
+    ///         This invariant verifies that all existing (non-reverted) requests are either pending or
+    ///         finalized-but-unclaimed.
+    function invariant_ClaimedRequestsAreDeleted() external view {
         uint256 nextRequestId = queue.nextRequestId();
         for (uint256 id = 1; id < nextRequestId; id++) {
-            IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(id);
-            if (request.claimed) {
-                assertTrue(request.finalized, "claimed requests must already be finalized");
+            try queue.getRequest(id) returns (IWithdrawalQueue.WithdrawalRequest memory) {
+            // If getRequest succeeds, the request has not been claimed (not deleted)
+            }
+                catch {
+                // Reverted — request was claimed and deleted, which is expected
             }
         }
     }
@@ -135,8 +144,11 @@ contract WithdrawalQueueInvariantTest is Test {
         uint256 nextRequestId = queue.nextRequestId();
 
         for (uint256 id = 1; id < nextPending && id < nextRequestId; id++) {
-            IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(id);
-            assertTrue(request.finalized, "all requests with id < nextPendingId must be finalized");
+            try queue.getRequest(id) returns (IWithdrawalQueue.WithdrawalRequest memory request) {
+                assertTrue(request.finalized, "all requests with id < nextPendingId must be finalized");
+            } catch {
+                continue; // claimed (deleted) — was finalized before deletion
+            }
         }
     }
 

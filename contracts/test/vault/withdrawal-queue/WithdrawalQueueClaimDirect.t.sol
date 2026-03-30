@@ -193,8 +193,8 @@ contract WithdrawalQueueClaimDirectTest is Test {
         assertEq(claimed, expectedAssets, "claimed assets should match expected");
         assertEq(balanceAfter - balanceBefore, expectedAssets, "alice should receive the claimed assets");
 
-        // Verify the request is now marked as claimed
-        IWithdrawalQueue.WithdrawalRequest memory claimedRequest = withdrawalQueue.getRequest(requestId);
-        assertTrue(claimedRequest.claimed, "request should be marked as claimed");
+        // Verify the request is deleted after claiming
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__InvalidRequest.selector, requestId));
+        withdrawalQueue.getRequest(requestId);
     }
 }
