@@ -15,6 +15,7 @@
   "scripts": {
     "forge:build": "cd contracts && forge build",
     "forge:build:tiny-memory": "cd contracts && bash build-tiny-mem-footprint.sh",
+    "forge:build:tiny-memory:no-tests": "cd contracts && bash build-tiny-mem-footprint.sh --no-tests",
     "forge:build-all": "cd contracts && forge build --force --threads 0",
     "forge:fmt": "cd contracts && forge fmt && forge fmt script/",
     "postinstall": "husky install",
