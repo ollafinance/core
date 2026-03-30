@@ -148,8 +148,8 @@ contract WithdrawalQueueSlashingTest is Test {
         uint256 assets = queue.claimWithdrawal(1);
         assertEq(assets, 100, "first claim should return assets");
 
-        // Second claim reverts
-        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__AlreadyClaimed.selector, 1));
+        // Second claim reverts — request deleted after first claim
+        vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__InvalidRequest.selector, 1));
         queue.claimWithdrawal(1);
     }
 

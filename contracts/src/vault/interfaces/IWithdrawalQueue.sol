@@ -72,9 +72,6 @@ interface IWithdrawalQueue {
     /// @notice Thrown when a request is not finalized.
     error WithdrawalQueue__NotFinalized(uint256 id);
 
-    /// @notice Thrown when a request is already claimed.
-    error WithdrawalQueue__AlreadyClaimed(uint256 id);
-
     /// @notice Thrown when a request id is invalid.
     error WithdrawalQueue__InvalidRequest(uint256 id);
 

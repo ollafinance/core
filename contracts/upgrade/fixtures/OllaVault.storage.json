@@ -146,7 +146,7 @@
       "label": "contract IStAztec",
       "numberOfBytes": "20"
     },
-    "t_contract(IWithdrawalQueue)9125": {
+    "t_contract(IWithdrawalQueue)9120": {
       "encoding": "inplace",
       "label": "contract IWithdrawalQueue",
       "numberOfBytes": "20"
@@ -220,7 +220,7 @@
           "label": "withdrawalQueue",
           "offset": 0,
           "slot": "2",
-          "type": "t_contract(IWithdrawalQueue)9125"
+          "type": "t_contract(IWithdrawalQueue)9120"
         },
         {
           "astId": 8189,

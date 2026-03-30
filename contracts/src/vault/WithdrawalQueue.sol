@@ -262,13 +262,9 @@ contract WithdrawalQueue is
         if (!request.finalized) {
             revert WithdrawalQueue__NotFinalized(id);
         }
-        if (request.claimed) {
-            revert WithdrawalQueue__AlreadyClaimed(id);
-        }
-
-        request.claimed = true;
         assetsExpected = request.assetsExpected;
         emit WithdrawalClaimed(id, request.recipient, assetsExpected);
+        delete _requests[id];
         return assetsExpected;
     }
 

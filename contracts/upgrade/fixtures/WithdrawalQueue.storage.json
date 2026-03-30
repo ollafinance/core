@@ -38,7 +38,7 @@
       "label": "_requests",
       "offset": 0,
       "slot": "2",
-      "type": "t_mapping(t_uint256,t_struct(WithdrawalRequest)4783_storage)"
+      "type": "t_mapping(t_uint256,t_struct(WithdrawalRequest)4774_storage)"
     },
     {
       "astId": 4154,
@@ -82,20 +82,20 @@
       "label": "bool",
       "numberOfBytes": "1"
     },
-    "t_mapping(t_uint256,t_struct(WithdrawalRequest)4783_storage)": {
+    "t_mapping(t_uint256,t_struct(WithdrawalRequest)4774_storage)": {
       "encoding": "mapping",
       "key": "t_uint256",
       "label": "mapping(uint256 => struct IWithdrawalQueue.WithdrawalRequest)",
       "numberOfBytes": "32",
-      "value": "t_struct(WithdrawalRequest)4783_storage"
+      "value": "t_struct(WithdrawalRequest)4774_storage"
     },
-    "t_struct(WithdrawalRequest)4783_storage": {
+    "t_struct(WithdrawalRequest)4774_storage": {
       "encoding": "inplace",
       "label": "struct IWithdrawalQueue.WithdrawalRequest",
       "numberOfBytes": "128",
       "members": [
         {
-          "astId": 4772,
+          "astId": 4763,
           "contract": "src/vault/WithdrawalQueue.sol:WithdrawalQueue",
           "label": "recipient",
           "offset": 0,
@@ -103,7 +103,7 @@
           "type": "t_address"
         },
         {
-          "astId": 4774,
+          "astId": 4765,
           "contract": "src/vault/WithdrawalQueue.sol:WithdrawalQueue",
           "label": "finalized",
           "offset": 20,
@@ -111,7 +111,7 @@
           "type": "t_bool"
         },
         {
-          "astId": 4776,
+          "astId": 4767,
           "contract": "src/vault/WithdrawalQueue.sol:WithdrawalQueue",
           "label": "claimed",
           "offset": 21,
@@ -119,7 +119,7 @@
           "type": "t_bool"
         },
         {
-          "astId": 4778,
+          "astId": 4769,
           "contract": "src/vault/WithdrawalQueue.sol:WithdrawalQueue",
           "label": "shares",
           "offset": 0,
@@ -127,7 +127,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 4780,
+          "astId": 4771,
           "contract": "src/vault/WithdrawalQueue.sol:WithdrawalQueue",
           "label": "assetsExpected",
           "offset": 0,
@@ -135,7 +135,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 4782,
+          "astId": 4773,
           "contract": "src/vault/WithdrawalQueue.sol:WithdrawalQueue",
           "label": "rate",
           "offset": 0,

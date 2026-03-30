@@ -116,7 +116,7 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         return (used, finalizedCount, 0);
     }
 
-    /// @notice Claims a finalized request. Reverts if not finalized or already claimed.
+    /// @notice Claims a finalized request. Reverts if not finalized. Deletes request after claim.
     /// @param id The request id.
     /// @return assetsExpected The assets expected for the request.
     function claimWithdrawal(uint256 id) external override returns (uint256 assetsExpected) {
@@ -124,11 +124,8 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         if (!request.finalized) {
             revert WithdrawalQueue__NotFinalized(id);
         }
-        if (request.claimed) {
-            revert WithdrawalQueue__AlreadyClaimed(id);
-        }
-        request.claimed = true;
         assetsExpected = request.assetsExpected;
+        delete _requests[id];
         return assetsExpected;
     }
 
