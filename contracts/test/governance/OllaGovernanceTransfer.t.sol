@@ -352,6 +352,68 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         assertTrue(gov.hasRole(gov.PROPOSER_ROLE(), newGov), "newGov has PROPOSER_ROLE");
     }
 
+    function test_AcceptGovernance_SkipsRevokeWhenGrantFails() external {
+        // Propose
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+
+        // Mock stakingProviderRegistry() to return a valid address
+        vm.mockCall(
+            address(stakingManager),
+            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
+            abi.encode(sprMock)
+        );
+
+        bytes32 defaultAdminRole = gov.DEFAULT_ADMIN_ROLE();
+
+        // Mock grantRole: stakingManager FAILS, all others succeed
+        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCallRevert(
+            address(stakingManager), abi.encodeWithSelector(IAccessControl.grantRole.selector), "mock revert"
+        );
+        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
+
+        // Mock revokeRole to succeed on all satellites
+        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
+
+        // revokeRole MUST NOT be called on stakingManager (grant failed → skip revoke to preserve old admin)
+        vm.expectCall(
+            address(stakingManager),
+            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin),
+            0 // expect exactly 0 calls
+        );
+
+        // revokeRole MUST still be called on the satellites where grant succeeded
+        vm.expectCall(
+            address(withdrawalQueue),
+            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin),
+            1
+        );
+        vm.expectCall(
+            address(rewardsAccumulator),
+            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin),
+            1
+        );
+        vm.expectCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin), 1);
+        vm.expectCall(
+            address(safetyModule),
+            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin),
+            1
+        );
+
+        // Accept
+        vm.prank(newGov);
+        gov.acceptGovernance();
+
+        // Core governance transfer still completed
+        assertEq(gov.governanceAdmin(), newGov, "admin updated");
+    }
+
     function test_OldAdmin_CannotScheduleAfterTransfer() external {
         // Propose + accept
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));

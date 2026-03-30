@@ -344,6 +344,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         // Best-effort read of the queue address; failures must not block governance transfer.
         try IOllaVault(vaultAddr).withdrawalQueue() returns (address queueAddr) {
             wq = queueAddr;
+            // solhint-disable-next-line no-empty-blocks
         } catch { }
         address rv = IOllaCore(coreAddr).rewardsAccumulator();
         address sm = IOllaCore(coreAddr).stakingManager();
@@ -352,27 +353,37 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
 
         address[6] memory satellites = [vaultAddr, wq, rv, sm, spr, sfm];
 
-        _propagateSatelliteAdminRole(satellites, newGovernance, true);
-
-        if (oldGovernance != address(0) && oldGovernance != newGovernance) {
-            _propagateSatelliteAdminRole(satellites, oldGovernance, false);
-        }
+        _propagateSatelliteAdminRoles(satellites, oldGovernance, newGovernance);
     }
 
-    function _propagateSatelliteAdminRole(address[6] memory satellites, address account, bool isGrant) internal {
+    /// @notice Grants newGovernance and revokes oldGovernance on each satellite atomically.
+    /// @dev Revoke only executes on satellites where the grant succeeded, preventing orphaned admin.
+    /// @param satellites The array of satellite contract addresses.
+    /// @param oldGovernance The old governance address to revoke from.
+    /// @param newGovernance The new governance address to grant to.
+    function _propagateSatelliteAdminRoles(address[6] memory satellites, address oldGovernance, address newGovernance)
+        internal
+    {
+        bool shouldRevoke = oldGovernance != address(0) && oldGovernance != newGovernance;
+
         for (uint256 i; i < satellites.length; ++i) {
             address satellite = satellites[i];
             if (satellite == address(0)) continue;
 
-            if (isGrant) {
-                try AccessControlUpgradeable(satellite).grantRole(DEFAULT_ADMIN_ROLE, account) { }
+            bool granted = false;
+            try AccessControlUpgradeable(satellite).grantRole(DEFAULT_ADMIN_ROLE, newGovernance) {
+                granted = true;
+            } catch {
+                emit AdminRolePropagationFailed(satellite, newGovernance, true);
+            }
+
+            // Only revoke the old admin if the new admin was successfully granted,
+            // preventing a state where the satellite has zero DEFAULT_ADMIN_ROLE holders.
+            if (shouldRevoke && granted) {
+                // solhint-disable-next-line no-empty-blocks
+                try AccessControlUpgradeable(satellite).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance) { }
                 catch {
-                    emit AdminRolePropagationFailed(satellite, account, true);
-                }
-            } else {
-                try AccessControlUpgradeable(satellite).revokeRole(DEFAULT_ADMIN_ROLE, account) { }
-                catch {
-                    emit AdminRolePropagationFailed(satellite, account, false);
+                    emit AdminRolePropagationFailed(satellite, oldGovernance, false);
                 }
             }
         }
