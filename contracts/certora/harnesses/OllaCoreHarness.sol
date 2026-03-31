@@ -57,4 +57,18 @@ contract OllaCoreHarness is OllaCore {
     function getLatestReportTimestamp() external view returns (uint256) {
         return this.latestReport().timestamp;
     }
+
+    /// @notice Returns the latest-report snapshot of cumulative deposits.
+    /// @dev The latestReportCumulativeDeposits field comes from _flowCounters storage,
+    ///      not from external calls. flowCounters() only overwrites cumulative* fields.
+    function getLatestReportCumulativeDeposits() external view returns (uint256) {
+        return this.flowCounters().latestReportCumulativeDeposits;
+    }
+
+    /// @notice Returns the latest-report snapshot of cumulative withdrawals.
+    /// @dev The latestReportCumulativeWithdrawals field comes from _flowCounters storage,
+    ///      not from external calls. flowCounters() only overwrites cumulative* fields.
+    function getLatestReportCumulativeWithdrawals() external view returns (uint256) {
+        return this.flowCounters().latestReportCumulativeWithdrawals;
+    }
 }

@@ -152,13 +152,22 @@ rule finalizeUsedBoundedByAvailable(env e) {
 }
 
 /// @title Claim deletes the request
-/// @notice After claimWithdrawal, the request's recipient is zeroed (deleted).
+/// @notice After a successful claimWithdrawal, the request's recipient is zeroed (deleted).
+/// @dev Requires valid preconditions to avoid vacuous satisfaction:
+///      the request must exist (recipient != 0), be finalized, and caller must be vault.
 rule claimDeletesRequest(env e) {
     uint256 id;
+
+    // Require the request exists and is finalized (claim preconditions)
+    require getRequestRecipient(id) != 0;
+    require isFinalized(id);
+
+    // claimWithdrawal has onlyVault modifier — require caller is vault
+    // to prevent vacuous pass via access-control revert
+    require e.msg.sender == vault();
+
     claimWithdrawal(e, id);
 
-    // After claim, getRequest should revert (recipient == 0 triggers revert).
-    // We verify this by checking the recipient is address(0).
     assert getRequestRecipient(id) == 0,
         "claimed request must be deleted from storage";
 }
@@ -211,16 +220,23 @@ rule slashingNeverIncreasesRequestPayout(env e) {
         "slashing adjustment must never increase a request's payout";
 }
 
-/// @title Slashing adjustment is non-negative
-/// @notice The totalAdjusted return value from finalization is always >= 0.
+/// @title Slashing adjustment bounded by pending reduction
+/// @notice The adjustment cannot exceed the total pending decrease minus used assets.
 /// @dev totalAdjusted accumulates (original - adjusted) for each slashed request.
-rule slashingAdjustmentNonNegative(env e) {
+///      Since used goes to claimable and adjusted is "lost" to slashing, their sum
+///      cannot exceed the total pending reduction.
+rule slashingAdjustmentBoundedByPendingReduction(env e) {
+    uint256 pendingBefore = totalPendingAssets();
+
     uint256 available; uint256 currentRate;
     uint256 used; uint256 count; uint256 adjusted;
     used, count, adjusted = finalizeWithdrawals(e, available, currentRate);
 
-    assert adjusted >= 0,
-        "total slashing adjustment must be non-negative";
+    uint256 pendingAfter = totalPendingAssets();
+    mathint decrease = pendingBefore - pendingAfter;
+
+    assert adjusted <= decrease,
+        "slashing adjustment must not exceed total pending decrease";
 }
 
 /// @title Pending assets decrease matches used + adjusted

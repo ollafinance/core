@@ -9,12 +9,17 @@
  *   5. forceRebalanceReset — always resets to Done
  *   6. updateAccounting gating — reverts when rebalance in progress
  *   7. Parameter setter bounds — all setters enforce their bounds
+ *   8. Report timestamp monotonicity — timestamp only increases via updateAccounting
+ *   9. Flow counter snapshot monotonicity — report snapshots never decrease
+ *  10. Rebalance FSM transition edges — only forward or self-loop, never backward
+ *  11. Rebalance step stability — only rebalance() and forceRebalanceReset() modify step
  *
- * NOTE: Rules that iterate over ALL functions (flowCountersMonotonic, reportTimestampMonotonic)
- * are excluded because rebalance() and updateAccounting() make 5+ external calls
- * (StakingManager, RewardsAccumulator, SafetyModule, Vault, WithdrawalQueue) that would
- * require full protocol modeling. Those properties are better tested by the existing
- * Foundry invariant suite which runs against the real deployed contracts.
+ * NOTE: Broad "for all functions" variants of monotonicity rules are impractical because
+ * rebalance() and updateAccounting() make 5+ external calls (StakingManager,
+ * RewardsAccumulator, SafetyModule, Vault, WithdrawalQueue) that would require full
+ * protocol modeling. Instead, we use targeted rules that verify monotonicity for the
+ * specific functions that write these fields, and stability rules that prove other
+ * functions cannot modify them.
  */
 
 using OllaCoreHarness as core;
@@ -37,6 +42,10 @@ methods {
     function getLatestReportTotalAssets() external returns (uint256) envfree;
     function getLatestReportExchangeRate() external returns (uint256) envfree;
     function getLatestReportTimestamp() external returns (uint256) envfree;
+
+    // Harness getters — flow counter snapshots
+    function getLatestReportCumulativeDeposits() external returns (uint256) envfree;
+    function getLatestReportCumulativeWithdrawals() external returns (uint256) envfree;
 
     // Mutating functions
     function rebalance() external returns (uint256, uint256, uint256, uint256);
@@ -187,6 +196,96 @@ rule updateAccountingRequiresDone(env e) {
         "updateAccounting must revert when rebalance is in progress";
 }
 
+/// @title updateAccounting is reachable when step is Done
+/// @notice Verifies the happy path exists — updateAccounting can succeed when not rebalancing.
+/// @dev satisfy (not assert) — proves the success path is not dead code.
+rule updateAccountingReachableWhenDone(env e) {
+    require getRebalanceStep() == STEP_DONE();
+
+    updateAccounting@withrevert(e);
+
+    satisfy !lastReverted,
+        "updateAccounting must be reachable when rebalance step is Done";
+}
+
+/*//////////////////////////////////////////////////////////////
+              REBALANCE FSM TRANSITION EDGES
+//////////////////////////////////////////////////////////////*/
+
+/// Valid rebalance transition edges. The FSM can only advance forward or self-loop.
+/// Allowed edges derived from rebalance() control flow:
+///   Done(5)              -> Done(5)              [idle no-op early return]
+///   Done(5)              -> Harvest(0)           [start new cycle; may continue through]
+///   Done(5)              -> PullUnstaked(1)      [Harvest completes in same call]
+///   Done(5)              -> FinalizeWithdrawals(2) [continues through Harvest+Pull]
+///   Done(5)              -> InitiateUnstake(3)   [continues further]
+///   Done(5)              -> StakeSurplus(4)      [continues further]
+///   Harvest(0)           -> PullUnstaked(1)      [always advances]
+///   Harvest(0)           -> FinalizeWithdrawals(2) [continues through PullUnstaked]
+///   Harvest(0)           -> InitiateUnstake(3)   [continues further]
+///   Harvest(0)           -> StakeSurplus(4)      [continues further]
+///   PullUnstaked(1)      -> FinalizeWithdrawals(2) [always advances]
+///   PullUnstaked(1)      -> InitiateUnstake(3)   [continues further]
+///   PullUnstaked(1)      -> StakeSurplus(4)      [continues further]
+///   FinalizeWithdrawals(2) -> FinalizeWithdrawals(2) [gas gate or more work]
+///   FinalizeWithdrawals(2) -> InitiateUnstake(3) [finalization complete]
+///   FinalizeWithdrawals(2) -> StakeSurplus(4)    [continues further]
+///   InitiateUnstake(3)   -> InitiateUnstake(3)   [gas gate or partial unstake]
+///   InitiateUnstake(3)   -> StakeSurplus(4)      [unstake complete]
+///   StakeSurplus(4)      -> StakeSurplus(4)       [gas gate or partial stake]
+///   StakeSurplus(4)      -> Done(5)               [stake complete]
+///
+/// Additionally, when the cycle fully completes (reaches Done) and _rebalanceCompletionSatisfied,
+/// _updateAccountingInternal() runs, but the step is already Done.
+///
+/// The key invariant: step can never go BACKWARD (except Done->Harvest which is the cycle restart),
+/// and can never skip a step in the forward direction.
+/// Simplified: stepAfter >= stepBefore (mod cycle restart), or equivalently:
+///   if stepBefore != Done: stepAfter >= stepBefore
+///   if stepBefore == Done: any stepAfter is valid (cycle restart goes through 0..5)
+
+definition isValidRebalanceTransition(uint8 before, uint8 after) returns bool =
+    // From Done: can go to any step (cycle restart traverses forward, or idle self-loop)
+    (before == STEP_DONE() && after <= STEP_DONE())
+    ||
+    // From non-Done: must advance forward or self-loop (never backward, never skip to Done
+    // without passing through intermediate steps — but the call CAN traverse multiple steps
+    // in sequence, so we only assert after >= before, not after == before or before+1)
+    (before != STEP_DONE() && after >= before && after <= STEP_DONE());
+
+/// @title Rebalance transitions only advance forward or self-loop
+/// @notice rebalance() never moves the FSM backward. From any non-Done step, the step
+///         can only stay the same (partial progress/gas gate) or advance to a later step
+///         (one or more steps completed in the same call).
+rule rebalanceOnlyAdvancesForward(env e) {
+    uint8 stepBefore = getRebalanceStep();
+    require stepBefore <= STEP_DONE();
+
+    rebalance@withrevert(e);
+    bool reverted = lastReverted;
+
+    uint8 stepAfter = getRebalanceStep();
+
+    assert !reverted => isValidRebalanceTransition(stepBefore, stepAfter),
+        "rebalance must only advance forward or self-loop, never skip backward";
+}
+
+/// @title forceRebalanceReset is the only way to go backward
+/// @notice No function other than forceRebalanceReset and rebalance (which has constrained
+///         transitions) can change the rebalance step. All other functions must leave it unchanged.
+rule rebalanceStepStableUnderOtherOps(env e, method f, calldataarg args)
+    filtered { f -> !isInitOrUpgrade(f)
+                  && f.selector != sig:rebalance().selector
+                  && f.selector != sig:forceRebalanceReset().selector }
+{
+    uint8 stepBefore = getRebalanceStep();
+
+    f(e, args);
+
+    assert getRebalanceStep() == stepBefore,
+        "only rebalance() and forceRebalanceReset() may change the rebalance step";
+}
+
 /*//////////////////////////////////////////////////////////////
                PARAMETER SETTER ACCESS CONTROL
 //////////////////////////////////////////////////////////////*/
@@ -214,4 +313,87 @@ rule setGasThresholdRespectsBounds(env e) {
     // MIN = 20_000, MAX = 1_000_000
     assert !lastReverted => (core.rebalanceGasThreshold(e) >= 20000 && core.rebalanceGasThreshold(e) <= 1000000),
         "successful setRebalanceGasThreshold must result in threshold within bounds";
+}
+
+/*//////////////////////////////////////////////////////////////
+                 REPORT & FLOW COUNTER MONOTONICITY
+//////////////////////////////////////////////////////////////*/
+
+/// @title Report timestamp never decreases after updateAccounting
+/// @notice _updateReportingSnapshots sets report.timestamp = block.timestamp.
+///         Since block.timestamp >= any prior timestamp, the report timestamp is monotonic.
+rule reportTimestampMonotonicOnUpdate(env e) {
+    uint256 tsBefore = getLatestReportTimestamp();
+
+    updateAccounting@withrevert(e);
+    bool reverted = lastReverted;
+
+    assert !reverted => getLatestReportTimestamp() >= tsBefore,
+        "report timestamp must not decrease after successful updateAccounting";
+}
+
+/// @title Report timestamp never decreases after rebalance
+/// @notice rebalance() calls _updateAccountingInternal() on completion, which sets
+///         report.timestamp = block.timestamp. Timestamp must not decrease.
+rule reportTimestampMonotonicOnRebalance(env e) {
+    uint256 tsBefore = getLatestReportTimestamp();
+
+    rebalance@withrevert(e);
+    bool reverted = lastReverted;
+
+    assert !reverted => getLatestReportTimestamp() >= tsBefore,
+        "report timestamp must not decrease after successful rebalance";
+}
+
+/// @title Report timestamp is current after updateAccounting
+/// @notice After a successful updateAccounting, the report timestamp equals block.timestamp.
+rule reportTimestampIsCurrentOnUpdate(env e) {
+    updateAccounting@withrevert(e);
+    bool reverted = lastReverted;
+
+    assert !reverted => getLatestReportTimestamp() == e.block.timestamp,
+        "report timestamp must equal block.timestamp after successful updateAccounting";
+}
+
+/// @title Flow counter snapshots never decrease after updateAccounting
+/// @notice latestReportCumulativeDeposits and latestReportCumulativeWithdrawals are updated
+///         to the current vault counters during updateAccounting. Since vault counters only
+///         grow (+=), the snapshots must be monotonically non-decreasing.
+/// @dev We require getCumulativeDeposits() >= snapshot (vault counter monotonicity) because
+///      vault counters are summarized as NONDET — Certora can't verify vault-side monotonicity
+///      here. This models the real invariant: vault counters only increase.
+rule flowCounterSnapshotsMonotonicOnUpdate(env e) {
+    uint256 depsBefore = getLatestReportCumulativeDeposits();
+    uint256 wdsBefore = getLatestReportCumulativeWithdrawals();
+
+    // Model vault counter monotonicity: vault counters are always >= the last snapshot.
+    // This holds because OllaVault only does cumulativeDeposits += and cumulativeWithdrawals +=.
+    require getCumulativeDeposits() >= depsBefore;
+    require getCumulativeWithdrawals() >= wdsBefore;
+
+    updateAccounting@withrevert(e);
+    bool reverted = lastReverted;
+
+    assert !reverted => getLatestReportCumulativeDeposits() >= depsBefore,
+        "latestReportCumulativeDeposits must not decrease after updateAccounting";
+    assert !reverted => getLatestReportCumulativeWithdrawals() >= wdsBefore,
+        "latestReportCumulativeWithdrawals must not decrease after updateAccounting";
+}
+
+/// @title Report timestamp stable under non-accounting operations
+/// @notice Only updateAccounting and rebalance (on completion) update the report timestamp.
+///         All other operations must leave it unchanged.
+/// @dev rebalance() calls _updateAccountingInternal() when _rebalanceCompletionSatisfied(),
+///      so it must be excluded alongside updateAccounting.
+rule reportTimestampStableUnderOtherOps(env e, method f, calldataarg args)
+    filtered { f -> !isInitOrUpgrade(f)
+                  && f.selector != sig:updateAccounting().selector
+                  && f.selector != sig:rebalance().selector }
+{
+    uint256 tsBefore = getLatestReportTimestamp();
+
+    f(e, args);
+
+    assert getLatestReportTimestamp() == tsBefore,
+        "report timestamp must not change except via updateAccounting or rebalance";
 }
