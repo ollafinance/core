@@ -64,12 +64,21 @@ methods {
     function _.pendingWithdrawalAssets() external => PER_CALLEE_CONSTANT;
     function _.pendingWithdrawalShares() external => PER_CALLEE_CONSTANT;
     function _.totalSupply() external => PER_CALLEE_CONSTANT;
+    // Vault flow counters — called by _updateReportingSnapshots in updateAccounting.
+    // Without these, the prover havocs the return (unresolved callee) and can produce
+    // counterexamples where cumulative counters appear to decrease.
+    function _.cumulativeDeposits() external => PER_CALLEE_CONSTANT;
+    function _.cumulativeWithdrawals() external => PER_CALLEE_CONSTANT;
+    function _.cumulativeExitFees() external => PER_CALLEE_CONSTANT;
+    function _.cumulativeSlashingAdjustments() external => PER_CALLEE_CONSTANT;
+    // RewardsAccumulator view — called during rebalance accounting
+    function _.balance() external => PER_CALLEE_CONSTANT;
     // Summarize all other external calls as NONDET (rebalance calls many contracts)
     function _.harvestRewards() external => NONDET;
     function _.recordBalance() external => NONDET;
     function _.stake(uint256) external => NONDET;
-    function _.totalStaked() external => NONDET;
-    function _.pendingUnstakes() external => NONDET;
+    function _.totalStaked() external => PER_CALLEE_CONSTANT;
+    function _.pendingUnstakes() external => PER_CALLEE_CONSTANT;
     function _.claimUnstakedFunds() external => NONDET;
     function _.refreshAttesterState(address[]) external => NONDET;
     function _.finalizeWithdrawals(uint256, uint256) external => NONDET;
