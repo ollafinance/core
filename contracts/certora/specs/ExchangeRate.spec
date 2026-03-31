@@ -2,12 +2,12 @@
  * Certora Verification Spec: Exchange Rate Properties
  *
  * Properties verified:
- *   1. Conversion round-trip — converting assets->shares->assets loses at most 1 wei (floor rounding)
- *   2. Virtual offset protection — exchange rate is well-defined even with 0 supply/assets
- *   3. Share/asset conversion consistency — convertToAssets and convertToShares are inverse up to rounding
- *   4. Ceiling >= floor — convertToAssetsCeil >= convertToAssets for same input
- *   5. Zero input produces zero output — converting 0 gives 0
- *   6. Monotonicity — more assets converts to more-or-equal shares (and vice versa)
+ *   1. Conversion round-trip -- converting assets->shares->assets loses at most 1 wei (floor rounding)
+ *   2. Virtual offset protection -- exchange rate is well-defined even with 0 supply/assets
+ *   3. Share/asset conversion consistency -- convertToAssets and convertToShares are inverse up to rounding
+ *   4. Ceiling >= floor -- convertToAssetsCeil >= convertToAssets for same input
+ *   5. Zero input produces zero output -- converting 0 gives 0
+ *   6. Monotonicity -- more assets converts to more-or-equal shares (and vice versa)
  */
 
 using OllaCoreHarness as core;
@@ -25,7 +25,7 @@ methods {
     function getClaimableRewards() external returns (uint256) envfree;
     function getTotalSupply() external returns (uint256) envfree;
 
-    // External contract summaries — PER_CALLEE_CONSTANT ensures consistent
+    // External contract summaries -- PER_CALLEE_CONSTANT ensures consistent
     // return values within a single rule (models: state doesn't change mid-tx).
     function _.bufferedAssets() external => PER_CALLEE_CONSTANT;
     function _.pendingWithdrawalAssets() external => PER_CALLEE_CONSTANT;
@@ -38,7 +38,7 @@ methods {
 //////////////////////////////////////////////////////////////*/
 
 // totalAssets() sums buffered + staked + rewardsAcc + claimable - pending.
-// With unconstrained storage, this can overflow uint256 → revert → spurious violations.
+// With unconstrained storage, this can overflow uint256 -> revert -> spurious violations.
 // We require totalAssets() returns successfully and is bounded, which covers all
 // realistic protocol states (total AZTEC supply is ~1B tokens = ~1e27 wei).
 //
@@ -47,7 +47,7 @@ methods {
 // totalAssets to prevent spurious counterexamples from unreachable extreme states.
 function requireRealisticState() {
     // Require totalAssets doesn't overflow (implicitly: sum of buckets fits uint256).
-    // Bound to 2^96 — realistic max is ~1e27 (1B AZTEC tokens in wei, ~2^90).
+    // Bound to 2^96 -- realistic max is ~1e27 (1B AZTEC tokens in wei, ~2^90).
     // This also keeps mulDiv's 512-bit intermediate products well under 2^256,
     // avoiding Certora modeling issues with OZ's assembly-based mulDiv.
     require totalAssets() < 2^96;
@@ -111,7 +111,7 @@ rule zeroConvertsToZero() {
 ///         composed round-trip loss is at most ceil(totalAssets + offset, supply + offset).
 rule roundTripAssetsToSharesLossBounded(uint256 assets) {
     requireRealisticState();
-    // Bound to 2^96 — matches realistic state bounds. With state and inputs < 2^96,
+    // Bound to 2^96 -- matches realistic state bounds. With state and inputs < 2^96,
     // mulDiv intermediate products stay < 2^192, well within uint256.
     require assets > 0 && assets < 2^96;
 
@@ -138,7 +138,7 @@ rule roundTripAssetsToSharesLossBounded(uint256 assets) {
 ///         and the rounding loss is bounded (symmetric to the assets round-trip).
 rule roundTripSharesToAssetsLossBounded(uint256 shares) {
     requireRealisticState();
-    // Bound to 2^96 — matches realistic state bounds
+    // Bound to 2^96 -- matches realistic state bounds
     require shares > 0 && shares < 2^96;
 
     uint256 assets = convertToAssets(shares);
@@ -185,7 +185,7 @@ rule ceilFloorDiffBounded(uint256 shares) {
 rule conversionMonotonicAssetsToShares(uint256 assets1, uint256 assets2) {
     requireRealisticState();
     require assets1 <= assets2;
-    // Bound to 2^96 — matches realistic state bounds
+    // Bound to 2^96 -- matches realistic state bounds
     require assets2 < 2^96;
 
     uint256 shares1 = convertToShares(assets1);
@@ -200,7 +200,7 @@ rule conversionMonotonicAssetsToShares(uint256 assets1, uint256 assets2) {
 rule conversionMonotonicSharesToAssets(uint256 shares1, uint256 shares2) {
     requireRealisticState();
     require shares1 <= shares2;
-    // Bound to 2^96 — matches realistic state bounds
+    // Bound to 2^96 -- matches realistic state bounds
     require shares2 < 2^96;
 
     uint256 assets1 = convertToAssets(shares1);
@@ -231,7 +231,7 @@ rule noFreeMoney(uint256 assets) {
 ///         sharesBack >= shares holds when the two rounding directions compensate.
 rule mintCeilGuaranteesSufficientPayment(uint256 shares) {
     requireRealisticState();
-    // Bound to 2^96 — matches realistic state bounds
+    // Bound to 2^96 -- matches realistic state bounds
     require shares > 0 && shares < 2^96;
 
     uint256 assetsCeil = convertToAssetsCeil(shares);

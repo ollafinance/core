@@ -2,15 +2,15 @@
  * Certora Verification Spec: OllaVault
  *
  * Properties verified:
- *   1. Deposit value passthrough — shares returned == core.convertToShares(assets)
- *   2. Mint value passthrough — assets taken == core.convertToAssetsCeil(shares)
- *   3. Instant redeem fee accounting — fee stays in buffer, net payout = gross - fee
- *   4. Cumulative counter monotonicity — cumulativeDeposits/Withdrawals/ExitFees only increase
- *   5. Buffered assets accounting — deposit increases buffer, redeem decreases it
- *   6. Role gating — CORE_ROLE functions revert for non-core callers
- *   7. Pause behavior — user-facing functions revert when paused
- *   8. Instant redemption fee bounds — fee BP never exceeds MAX
- *   9. No free shares — deposit(0) reverts, mint(0) reverts
+ *   1. Deposit value passthrough -- shares returned == core.convertToShares(assets)
+ *   2. Mint value passthrough -- assets taken == core.convertToAssetsCeil(shares)
+ *   3. Instant redeem fee accounting -- fee stays in buffer, net payout = gross - fee
+ *   4. Cumulative counter monotonicity -- cumulativeDeposits/Withdrawals/ExitFees only increase
+ *   5. Buffered assets accounting -- deposit increases buffer, redeem decreases it
+ *   6. Role gating -- CORE_ROLE functions revert for non-core callers
+ *   7. Pause behavior -- user-facing functions revert when paused
+ *   8. Instant redemption fee bounds -- fee BP never exceeds MAX
+ *   9. No free shares -- deposit(0) reverts, mint(0) reverts
  *
  * Summarization note:
  *   Core pricing functions (convertToShares, convertToAssets, convertToAssetsCeil) are
@@ -69,8 +69,8 @@ methods {
     function unpause() external;
     function setInstantRedemptionFeeBP(uint256) external;
 
-    // External contract summaries — vault calls core for pricing and queue for pending.
-    // PER_CALLEE_CONSTANT: same callee + same input → same return within one rule.
+    // External contract summaries -- vault calls core for pricing and queue for pending.
+    // PER_CALLEE_CONSTANT: same callee + same input -> same return within one rule.
     // This models "Core returns a consistent price" without linking the full Core contract.
     function _.convertToShares(uint256) external => PER_CALLEE_CONSTANT;
     function _.convertToAssets(uint256) external => PER_CALLEE_CONSTANT;
@@ -88,7 +88,7 @@ methods {
     function _.checkWithdrawalMinimum(uint256) external => NONDET;
     function _.checkAccountingLiveness() external => NONDET;
 
-    // Token operations — summarize the actual ERC20 external functions.
+    // Token operations -- summarize the actual ERC20 external functions.
     // SafeERC20.safeTransfer/safeTransferFrom are internal library functions that compile
     // to low-level calls to transfer/transferFrom. The _.safeTransfer* signatures never
     // match any external call. We must summarize the real ERC20 signatures instead.
@@ -123,19 +123,19 @@ definition isInitOrUpgrade(method f) returns bool =
 
 // Functions that trigger DanglingAllocatorIdException (Certora Prover bug 2773053678)
 // in BMC unrolling due to SafeERC20 low-level calls compiled with via_ir=true.
-// redeem() and claimRequestById() both call _claimWithdrawal → safeTransfer.
-// Neither modifies cumulative counters or fee state — filtering is safe.
+// redeem() and claimRequestById() both call _claimWithdrawal -> safeTransfer.
+// Neither modifies cumulative counters or fee state -- filtering is safe.
 definition crashesProver(method f) returns bool =
     f.selector == sig:redeem(uint256, address, address).selector
     || f.selector == sig:claimRequestById(uint256).selector;
 
 /*//////////////////////////////////////////////////////////////
-                   GHOST AXIOMS — CONVERSION MODEL
+                   GHOST AXIOMS -- CONVERSION MODEL
 //////////////////////////////////////////////////////////////*/
 
 // Ghost variables that capture what Core's conversion functions return for specific inputs.
 // These let us write value-equality rules without linking the full Core contract.
-// The ghosts are populated by the PER_CALLEE_CONSTANT summaries automatically —
+// The ghosts are populated by the PER_CALLEE_CONSTANT summaries automatically --
 // when the vault calls core.convertToShares(X), the prover picks a value K and uses it
 // consistently. The harness's coreConvertToShares(X) calls the same external function
 // on the same callee with the same input, so it returns the same K.
@@ -210,7 +210,7 @@ rule cumulativeSlashingAdjustmentsMonotonic(env e, method f, calldataarg args)
 /// @title Deposit returns exactly core.convertToShares(assets)
 /// @notice _deposit calls coreRef.convertToShares(assets) and passes the result through
 ///         to _processDeposit as the shares parameter. The vault does not manipulate the
-///         conversion — it uses Core's pricing as-is.
+///         conversion -- it uses Core's pricing as-is.
 /// @dev Under PER_CALLEE_CONSTANT summary, both the vault's internal call and our harness
 ///      call resolve to the same value K. This proves the vault passes K through faithfully.
 rule depositSharesEqualConversion(env e) {

@@ -2,17 +2,17 @@
  * Certora Verification Spec: OllaCore Accounting
  *
  * Properties verified:
- *   1. Fee bounds — protocol fee never exceeds MAX_PROTOCOL_FEE_BP
- *   2. Treasury split bounds — always within [MIN, MAX]
- *   3. Rebalance step validity — always a valid enum value
- *   4. Rebalance state machine — valid transitions only
- *   5. forceRebalanceReset — always resets to Done
- *   6. updateAccounting gating — reverts when rebalance in progress
- *   7. Parameter setter bounds — all setters enforce their bounds
- *   8. Report timestamp monotonicity — timestamp only increases via updateAccounting
- *   9. Flow counter snapshot monotonicity — report snapshots never decrease
- *  10. Rebalance FSM transition edges — only forward or self-loop, never backward
- *  11. Rebalance step stability — only rebalance() and forceRebalanceReset() modify step
+ *   1. Fee bounds -- protocol fee never exceeds MAX_PROTOCOL_FEE_BP
+ *   2. Treasury split bounds -- always within [MIN, MAX]
+ *   3. Rebalance step validity -- always a valid enum value
+ *   4. Rebalance state machine -- valid transitions only
+ *   5. forceRebalanceReset -- always resets to Done
+ *   6. updateAccounting gating -- reverts when rebalance in progress
+ *   7. Parameter setter bounds -- all setters enforce their bounds
+ *   8. Report timestamp monotonicity -- timestamp only increases via updateAccounting
+ *   9. Flow counter snapshot monotonicity -- report snapshots never decrease
+ *  10. Rebalance FSM transition edges -- only forward or self-loop, never backward
+ *  11. Rebalance step stability -- only rebalance() and forceRebalanceReset() modify step
  *
  * NOTE: Broad "for all functions" variants of monotonicity rules are impractical because
  * rebalance() and updateAccounting() make 5+ external calls (StakingManager,
@@ -43,7 +43,7 @@ methods {
     function getLatestReportExchangeRate() external returns (uint256) envfree;
     function getLatestReportTimestamp() external returns (uint256) envfree;
 
-    // Harness getters — flow counter snapshots
+    // Harness getters -- flow counter snapshots
     function getLatestReportCumulativeDeposits() external returns (uint256) envfree;
     function getLatestReportCumulativeWithdrawals() external returns (uint256) envfree;
 
@@ -57,21 +57,21 @@ methods {
     function setRebalanceGasThreshold(uint256) external;
     function forceRebalanceReset() external;
 
-    // External contract summaries — all external calls return consistent arbitrary values.
+    // External contract summaries -- all external calls return consistent arbitrary values.
     // This is sufficient for parameter-bound and state-machine rules that don't depend
     // on external return values.
     function _.bufferedAssets() external => PER_CALLEE_CONSTANT;
     function _.pendingWithdrawalAssets() external => PER_CALLEE_CONSTANT;
     function _.pendingWithdrawalShares() external => PER_CALLEE_CONSTANT;
     function _.totalSupply() external => PER_CALLEE_CONSTANT;
-    // Vault flow counters — called by _updateReportingSnapshots in updateAccounting.
+    // Vault flow counters -- called by _updateReportingSnapshots in updateAccounting.
     // Without these, the prover havocs the return (unresolved callee) and can produce
     // counterexamples where cumulative counters appear to decrease.
     function _.cumulativeDeposits() external => PER_CALLEE_CONSTANT;
     function _.cumulativeWithdrawals() external => PER_CALLEE_CONSTANT;
     function _.cumulativeExitFees() external => PER_CALLEE_CONSTANT;
     function _.cumulativeSlashingAdjustments() external => PER_CALLEE_CONSTANT;
-    // RewardsAccumulator view — called during rebalance accounting
+    // RewardsAccumulator view -- called during rebalance accounting
     function _.balance() external => PER_CALLEE_CONSTANT;
     // Summarize all other external calls as NONDET (rebalance calls many contracts)
     function _.harvestRewards() external => NONDET;
@@ -89,9 +89,9 @@ methods {
     function _.checkQueueRatio(uint256, uint256) external => NONDET;
     function _.checkRateDrop(uint256, uint256) external => NONDET;
     function _.setLatestAccountingTimestamp(uint256) external => NONDET;
-    // SafetyModule checks — called during updateAccounting/rebalance
+    // SafetyModule checks -- called during updateAccounting/rebalance
     function _.checkAccountingLiveness() external => NONDET;
-    // StakingManager views — called during rebalance/updateAccounting
+    // StakingManager views -- called during rebalance/updateAccounting
     function _.getClaimableRewards() external => PER_CALLEE_CONSTANT;
     function _.getSlashingDelta() external => PER_CALLEE_CONSTANT;
     function _.getProviderConfig() external => PER_CALLEE_CONSTANT;
@@ -100,7 +100,7 @@ methods {
     function _.getUnstakedFunds() external => PER_CALLEE_CONSTANT;
     function _.hasFinalizedUnstakes() external => PER_CALLEE_CONSTANT;
     function _.setGasThreshold(uint256) external => NONDET;
-    // Governance treasury address — called during fee distribution
+    // Governance treasury address -- called during fee distribution
     function _.treasury() external => PER_CALLEE_CONSTANT;
 }
 
@@ -219,8 +219,8 @@ rule updateAccountingRequiresDone(env e) {
 }
 
 /// @title updateAccounting is reachable when step is Done
-/// @notice Verifies the happy path exists — updateAccounting can succeed when not rebalancing.
-/// @dev satisfy (not assert) — proves the success path is not dead code.
+/// @notice Verifies the happy path exists -- updateAccounting can succeed when not rebalancing.
+/// @dev satisfy (not assert) -- proves the success path is not dead code.
 rule updateAccountingReachableWhenDone(env e) {
     require getRebalanceStep() == STEP_DONE();
 
@@ -271,7 +271,7 @@ definition isValidRebalanceTransition(uint8 before, uint8 after) returns bool =
     (before == STEP_DONE() && after <= STEP_DONE())
     ||
     // From non-Done: must advance forward or self-loop (never backward, never skip to Done
-    // without passing through intermediate steps — but the call CAN traverse multiple steps
+    // without passing through intermediate steps -- but the call CAN traverse multiple steps
     // in sequence, so we only assert after >= before, not after == before or before+1)
     (before != STEP_DONE() && after >= before && after <= STEP_DONE());
 
@@ -347,7 +347,7 @@ rule setGasThresholdRespectsBounds(env e) {
 ///         to the current vault counters during updateAccounting. Since vault counters only
 ///         grow (+=), the snapshots must be monotonically non-decreasing.
 /// @dev We require getCumulativeDeposits() >= snapshot (vault counter monotonicity) because
-///      vault counters are summarized as NONDET — Certora can't verify vault-side monotonicity
+///      vault counters are summarized as NONDET -- Certora can't verify vault-side monotonicity
 ///      here. This models the real invariant: vault counters only increase.
 rule flowCounterSnapshotsMonotonicOnUpdate(env e) {
     uint256 depsBefore = getLatestReportCumulativeDeposits();

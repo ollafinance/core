@@ -2,12 +2,12 @@
  * Certora Verification Spec: WithdrawalQueue
  *
  * Properties verified:
- *   1. FIFO ordering — all requests below nextPendingId are finalized
- *   2. Pointer monotonicity — nextPendingId <= nextRequestId, both only increase
- *   3. Pending assets consistency — totalPendingAssets tracks unfinalized sum
- *   4. Claim deletes request — claimed requests are removed from storage
- *   5. No double-finalization — finalized requests stay finalized
- *   6. Request ID monotonicity — each new request gets a strictly higher ID
+ *   1. FIFO ordering -- all requests below nextPendingId are finalized
+ *   2. Pointer monotonicity -- nextPendingId <= nextRequestId, both only increase
+ *   3. Pending assets consistency -- totalPendingAssets tracks unfinalized sum
+ *   4. Claim deletes request -- claimed requests are removed from storage
+ *   5. No double-finalization -- finalized requests stay finalized
+ *   6. Request ID monotonicity -- each new request gets a strictly higher ID
  */
 
 using WithdrawalQueueHarness as queue;
@@ -162,7 +162,7 @@ rule claimDeletesRequest(env e) {
     require getRequestRecipient(id) != 0;
     require isFinalized(id);
 
-    // claimWithdrawal has onlyVault modifier — require caller is vault
+    // claimWithdrawal has onlyVault modifier -- require caller is vault
     // to prevent vacuous pass via access-control revert
     require e.msg.sender == vault();
 
@@ -202,7 +202,7 @@ rule finalizationConsistency(env e) {
 /// @title Slashing adjustment only reduces payouts
 /// @notice After finalization with a slashed rate, each request's payout is <= its original payout.
 /// @dev The critical property: a slash event can never INCREASE what a user receives.
-///      Violation would mean users profit from slashing — direct protocol insolvency risk.
+///      Violation would mean users profit from slashing -- direct protocol insolvency risk.
 rule slashingNeverIncreasesRequestPayout(env e) {
     // Pick a request that exists and is not yet finalized
     uint256 id;
