@@ -48,4 +48,5 @@ contract OllaVaultHarness is OllaVault {
     function coreConvertToAssetsCeil(uint256 shares) external view returns (uint256) {
         return IOllaCore(this.core()).convertToAssetsCeil(shares);
     }
+
 }
