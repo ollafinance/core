@@ -2,6 +2,9 @@
 cache/
 out/
 
+# Certora files
+.certora_internal
+
 # Broadcast/run artifacts
 broadcast/
 
