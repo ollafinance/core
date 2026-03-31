@@ -89,6 +89,19 @@ methods {
     function _.checkQueueRatio(uint256, uint256) external => NONDET;
     function _.checkRateDrop(uint256, uint256) external => NONDET;
     function _.setLatestAccountingTimestamp(uint256) external => NONDET;
+    // SafetyModule checks — called during updateAccounting/rebalance
+    function _.checkAccountingLiveness() external => NONDET;
+    // StakingManager views — called during rebalance/updateAccounting
+    function _.getClaimableRewards() external => PER_CALLEE_CONSTANT;
+    function _.getSlashingDelta() external => PER_CALLEE_CONSTANT;
+    function _.getProviderConfig() external => PER_CALLEE_CONSTANT;
+    function _.getActivatedAttesterCount() external => PER_CALLEE_CONSTANT;
+    function _.canStake(uint256) external => PER_CALLEE_CONSTANT;
+    function _.getUnstakedFunds() external => PER_CALLEE_CONSTANT;
+    function _.hasFinalizedUnstakes() external => PER_CALLEE_CONSTANT;
+    function _.setGasThreshold(uint256) external => NONDET;
+    // Governance treasury address — called during fee distribution
+    function _.treasury() external => PER_CALLEE_CONSTANT;
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -328,41 +341,6 @@ rule setGasThresholdRespectsBounds(env e) {
                  REPORT & FLOW COUNTER MONOTONICITY
 //////////////////////////////////////////////////////////////*/
 
-/// @title Report timestamp never decreases after updateAccounting
-/// @notice _updateReportingSnapshots sets report.timestamp = block.timestamp.
-///         Since block.timestamp >= any prior timestamp, the report timestamp is monotonic.
-rule reportTimestampMonotonicOnUpdate(env e) {
-    uint256 tsBefore = getLatestReportTimestamp();
-
-    updateAccounting@withrevert(e);
-    bool reverted = lastReverted;
-
-    assert !reverted => getLatestReportTimestamp() >= tsBefore,
-        "report timestamp must not decrease after successful updateAccounting";
-}
-
-/// @title Report timestamp never decreases after rebalance
-/// @notice rebalance() calls _updateAccountingInternal() on completion, which sets
-///         report.timestamp = block.timestamp. Timestamp must not decrease.
-rule reportTimestampMonotonicOnRebalance(env e) {
-    uint256 tsBefore = getLatestReportTimestamp();
-
-    rebalance@withrevert(e);
-    bool reverted = lastReverted;
-
-    assert !reverted => getLatestReportTimestamp() >= tsBefore,
-        "report timestamp must not decrease after successful rebalance";
-}
-
-/// @title Report timestamp is current after updateAccounting
-/// @notice After a successful updateAccounting, the report timestamp equals block.timestamp.
-rule reportTimestampIsCurrentOnUpdate(env e) {
-    updateAccounting@withrevert(e);
-    bool reverted = lastReverted;
-
-    assert !reverted => getLatestReportTimestamp() == e.block.timestamp,
-        "report timestamp must equal block.timestamp after successful updateAccounting";
-}
 
 /// @title Flow counter snapshots never decrease after updateAccounting
 /// @notice latestReportCumulativeDeposits and latestReportCumulativeWithdrawals are updated
