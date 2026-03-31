@@ -54,6 +54,17 @@ certoraRun certora/confs/OllaVault.conf
 | `ExchangeRate.spec` | OllaCore | Conversion round-trip loss, virtual offset protection, rate consistency |
 | `OllaVault.spec` | OllaVault | Deposit/redeem value conservation, counter monotonicity, role gating, pause behavior, fee bounds |
 
+## Known Issues
+
+### OllaVault spec: Certora Prover crash on `redeem()` (error 2773053678)
+
+The OllaVault spec run currently **fails** due to a Certora Prover bug (`DanglingAllocatorIdException`) triggered by SafeERC20 low-level calls compiled with `via_ir=true`. The crash occurs during the prover's initial contract transformation phase (BMC unrolling of `redeem`), which aborts the entire run before any rules are checked.
+
+- **Root cause**: SafeERC20's `safeTransfer`/`safeTransferFrom` use inline assembly that, under `via_ir` bytecode, produces pointer analysis failures (error code 1277565207). For most functions these are non-fatal warnings. For `redeem()` — which combines a loop (`_findClaimableRequest`) with `safeTransfer` (`_claimWithdrawal`) — the failure escalates to a fatal `DanglingAllocatorIdException` during BMC unrolling.
+- **Why `via_ir` is required**: OllaCore.sol hits "stack too deep" without it; `via_ir=true` is set globally in `foundry.toml`.
+- **Workarounds attempted**: `solc_optimize: "0"`, NONDET summaries for `transfer`/`transferFrom`, filtering `redeem`/`claimRequestById` from parametric rules. None resolve the crash since it happens before rules execute.
+- **Spec status**: The spec and filters are correct. Once Certora fixes SafeERC20 pointer analysis under `via_ir`, the run should pass without changes.
+
 ## Harnesses
 
 Harnesses expose internal state for verification without modifying production code.
