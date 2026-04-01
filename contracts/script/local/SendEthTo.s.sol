@@ -5,19 +5,57 @@ import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title SendEthTo
 /// @notice Sends native ETH to a target address.
+/// @dev Supports sending a percentage of a base amount (or full sender balance).
 contract SendEthTo is BaseScript {
     function run() external {
         uint256 pk = _privateKey();
         address to = vm.envAddress("TO");
         require(to != address(0), "TO must be nonzero");
 
-        // Prefer explicit wei amount for precision.
-        uint256 amountWei = vm.envOr("AMOUNT_WEI", uint256(0));
-        if (amountWei == 0) {
+        // Percentage to send from the base amount. Defaults to 100.
+        // Example split flow when no explicit AMOUNT_WEI/AMOUNT_GWEI is set
+        // and the base is derived from the sender's spendable balance:
+        //   1) PERCENT=50 to address A (sends half of that spendable base)
+        //   2) PERCENT=100 to address B (sends all remaining spendable base)
+        // When AMOUNT_WEI/AMOUNT_GWEI is provided, each run uses that fixed base,
+        // so a second run with PERCENT=100 will resend 100% of the original base,
+        // not the "remaining" portion from a previous run.
+        uint256 percent = vm.envOr("PERCENT", uint256(100));
+        require(percent > 0 && percent <= 100, "PERCENT must be 1..100");
+
+        // Optional explicit base amount for precision. When set, it is reused as the base
+        // on every run. If omitted, use sender spendable balance (wallet balance minus a
+        // gas reserve) so PERCENT=100 can still succeed.
+        uint256 baseAmountWei = vm.envOr("AMOUNT_WEI", uint256(0));
+        if (baseAmountWei == 0) {
             uint256 amountGwei = vm.envOr("AMOUNT_GWEI", uint256(0));
-            amountWei = amountGwei * 1 gwei;
+            baseAmountWei = amountGwei * 1 gwei;
         }
-        require(amountWei > 0, "amount missing: set AMOUNT_WEI or AMOUNT_GWEI");
+
+        if (baseAmountWei == 0) {
+            uint256 balanceWei = vm.addr(pk).balance;
+
+            // Gas reserve strategy:
+            // 1) If GAS_RESERVE_WEI is set, use it directly.
+            // 2) Else reserve GAS_RESERVE_UNITS * tx.gasprice (default 50k gas units).
+            uint256 gasReserveWei = vm.envOr("GAS_RESERVE_WEI", uint256(0));
+            if (gasReserveWei == 0) {
+                uint256 gasReserveUnits = vm.envOr("GAS_RESERVE_UNITS", uint256(50_000));
+                uint256 gasPriceWei = vm.envOr("GAS_PRICE_WEI", uint256(tx.gasprice));
+                require(
+                    gasPriceWei > 0,
+                    "GAS_RESERVE_WEI or GAS_PRICE_WEI must be set when tx.gasprice is 0"
+                );
+                gasReserveWei = gasReserveUnits * gasPriceWei;
+            }
+
+            require(balanceWei > gasReserveWei, "insufficient balance after gas reserve");
+            baseAmountWei = balanceWei - gasReserveWei;
+        }
+
+        uint256 amountWei = (baseAmountWei * percent) / 100;
+        require(amountWei > 0, "computed amount is zero");
+        require(vm.addr(pk).balance >= amountWei, "insufficient sender balance");
 
         vm.startBroadcast(pk);
         (bool ok,) = payable(to).call{ value: amountWei }("");
