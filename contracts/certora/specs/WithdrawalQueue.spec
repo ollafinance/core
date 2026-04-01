@@ -61,7 +61,8 @@ rule initializeSetsValidPointers(env e) {
     address vault_; address admin_; uint256 gasThreshold_;
     initialize(e, vault_, admin_, gasThreshold_);
 
-    satisfy nextRequestId() == 1 && nextPendingId() == 1;
+    assert nextRequestId() == 1 && nextPendingId() == 1,
+        "initialize must set both pointers to 1";
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -172,8 +173,8 @@ rule claimDeletesRequest(env e) {
         "claimed request must be deleted from storage";
 }
 
-/// @title No state change from non-vault callers
-/// @notice Only the vault can modify queue state via requestWithdrawal and finalizeWithdrawals.
+/// @title Non-vault callers cannot request withdrawals
+/// @notice Only the vault can call requestWithdrawal.
 rule onlyVaultCanRequest(env e) {
     address vaultAddr = vault();
 
@@ -181,11 +182,23 @@ rule onlyVaultCanRequest(env e) {
     requestWithdrawal@withrevert(e, recipient, shares, assets, rate);
 
     assert e.msg.sender != vaultAddr => lastReverted,
-        "non-vault callers must be rejected";
+        "non-vault callers must be rejected from requestWithdrawal";
 }
 
-/// @title Finalization consistency: used == 0 iff count == 0
-/// @notice If no requests were finalized, no assets were consumed (and vice versa).
+/// @title Non-vault callers cannot finalize withdrawals
+/// @notice Only the vault can call finalizeWithdrawals.
+rule onlyVaultCanFinalize(env e) {
+    address vaultAddr = vault();
+
+    uint256 available; uint256 currentRate;
+    finalizeWithdrawals@withrevert(e, available, currentRate);
+
+    assert e.msg.sender != vaultAddr => lastReverted,
+        "non-vault callers must be rejected from finalizeWithdrawals";
+}
+
+/// @title Finalization consistency: zero count implies zero used
+/// @notice If no requests were finalized, no assets were consumed.
 /// @dev Slashing-to-zero requests are finalized with 0 assets but increment currentId,
 ///      not finalizedCount, so this invariant holds.
 rule finalizationConsistency(env e) {
