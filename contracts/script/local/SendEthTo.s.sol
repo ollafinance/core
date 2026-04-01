@@ -36,7 +36,12 @@ contract SendEthTo is BaseScript {
             uint256 gasReserveWei = vm.envOr("GAS_RESERVE_WEI", uint256(0));
             if (gasReserveWei == 0) {
                 uint256 gasReserveUnits = vm.envOr("GAS_RESERVE_UNITS", uint256(50_000));
-                gasReserveWei = gasReserveUnits * tx.gasprice;
+                uint256 gasPriceWei = vm.envOr("GAS_PRICE_WEI", uint256(tx.gasprice));
+                require(
+                    gasPriceWei > 0,
+                    "GAS_RESERVE_WEI or GAS_PRICE_WEI must be set when tx.gasprice is 0"
+                );
+                gasReserveWei = gasReserveUnits * gasPriceWei;
             }
 
             require(balanceWei > gasReserveWei, "insufficient balance after gas reserve");
