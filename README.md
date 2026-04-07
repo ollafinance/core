@@ -20,12 +20,6 @@ to grow into an open-source, auditable codebase.
 - `contracts/src/staking/mocks/` Staking module mocks and mock interfaces.
 - `contracts/script/` Foundry scripts.
 - `contracts/test/` Component-based Foundry tests (e.g., `core/`, `bridge/`, `governance/`, `safetymodule/`, `staking/`, `integration/`, `e2e/`).
-- `research/` Protocol research and design notes (Obsidian vault).
-
-Key research index:
-
-- `research/technical/technical-architecture.md`
-
 ## Tooling
 
 - Solidity + Foundry for development and testing
