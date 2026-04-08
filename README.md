@@ -4,6 +4,8 @@ Olla Core is the Ethereum smart contract layer for the Olla liquid staking proto
 This repository pairs a research vault with a Foundry-based contract workspace, and is structured
 to grow into an open-source, auditable codebase.
 
+**[Documentation](https://docs.olla.finance)**
+
 ## Repository layout
 
 - `contracts/` Foundry project for the core contracts.
