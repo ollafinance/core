@@ -1,5 +1,12 @@
 # Olla Core
 
+[![Unit tests](https://github.com/ollafinance/olla-core/actions/workflows/foundry-unit-tests.yml/badge.svg)](https://github.com/ollafinance/olla-core/actions/workflows/foundry-unit-tests.yml)
+[![Invariant tests](https://github.com/ollafinance/olla-core/actions/workflows/foundry-invariant-tests.yml/badge.svg)](https://github.com/ollafinance/olla-core/actions/workflows/foundry-invariant-tests.yml)
+[![Slither](https://github.com/ollafinance/olla-core/actions/workflows/slither.yml/badge.svg)](https://github.com/ollafinance/olla-core/actions/workflows/slither.yml)
+[![Solidity lint](https://github.com/ollafinance/olla-core/actions/workflows/solidity-lint.yml/badge.svg)](https://github.com/ollafinance/olla-core/actions/workflows/solidity-lint.yml)
+[![Storage layout](https://github.com/ollafinance/olla-core/actions/workflows/storage-layout-check.yml/badge.svg)](https://github.com/ollafinance/olla-core/actions/workflows/storage-layout-check.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Olla is a liquid staking protocol for Aztec. This repository contains the Ethereum smart contract
 layer: an ERC-7540/ERC-4626 vault that holds user assets and mints stAztec, an accounting and
 rebalancing engine, staking and staking-provider registry modules, a safety module, LayerZero V2
