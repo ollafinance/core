@@ -1,14 +1,15 @@
-# Olla Core
-
 [![Unit tests](https://github.com/ollafinance/core/actions/workflows/foundry-unit-tests.yml/badge.svg)](https://github.com/ollafinance/core/actions/workflows/foundry-unit-tests.yml)
 [![Invariant tests](https://github.com/ollafinance/core/actions/workflows/foundry-invariant-tests.yml/badge.svg)](https://github.com/ollafinance/core/actions/workflows/foundry-invariant-tests.yml)
 [![Slither](https://github.com/ollafinance/core/actions/workflows/slither.yml/badge.svg)](https://github.com/ollafinance/core/actions/workflows/slither.yml)
 [![Solidity lint](https://github.com/ollafinance/core/actions/workflows/solidity-lint.yml/badge.svg)](https://github.com/ollafinance/core/actions/workflows/solidity-lint.yml)
 [![Storage layout](https://github.com/ollafinance/core/actions/workflows/storage-layout-check.yml/badge.svg)](https://github.com/ollafinance/core/actions/workflows/storage-layout-check.yml)
-
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.27-363636.svg?logo=solidity)](https://soliditylang.org)
-[![Foundry](https://img.shields.io/badge/Built_with-Foundry-FFDB1C.svg?logo=foundry)](https://getfoundry.sh)
+[![Foundry](https://img.shields.io/badge/Foundry-1.4.1-FFDB1C.svg?logo=foundry)](https://getfoundry.sh)
+[![Node.js](https://img.shields.io/badge/Node.js-20-5FA04E.svg?logo=nodedotjs)](https://nodejs.org)
+[![Yarn](https://img.shields.io/badge/Yarn-4.12.0-2C8EBB.svg?logo=yarn)](https://yarnpkg.com)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+# Olla Core
 
 **Olla** is a liquid staking protocol for Aztec. This repository contains the Ethereum smart contract layer: an ERC-7540/ERC-4626 vault that holds user assets and mints stAztec, an accounting and rebalancing engine, staking and staking-provider registry modules, a safety module, LayerZero V2 bridging, and a timelocked governance contract.
 
