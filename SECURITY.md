@@ -9,7 +9,7 @@ disclosure process below.
 **Do not open a public GitHub issue or pull request for security vulnerabilities.**
 
 Instead, please report vulnerabilities through
-[GitHub Private Vulnerability Reporting](https://github.com/ollafinance/olla-core/security/advisories/new).
+[GitHub Private Vulnerability Reporting](https://github.com/ollafinance/core/security/advisories/new).
 
 If you are unable to use GitHub's reporting tool, email **<security@olla.finance>** with:
 
