@@ -32,7 +32,7 @@ The following are **in scope** for security reports:
 The following are **out of scope**:
 
 - Test contracts, mocks, and harnesses under `contracts/test/` and `contracts/src/*/mocks/`.
-- Known trust assumptions documented in [`trust-assumptions.md`](trust-assumptions.md).
+- Known trust assumptions documented in [`docs/security/trust-assumptions.md`](docs/security/trust-assumptions.md).
 - Findings that require governance multisig compromise as a prerequisite (these are acknowledged
   risks — see T-3 through T-5 in the trust assumptions document).
 - Gas optimizations (report these as regular issues using the audit finding template).
@@ -70,8 +70,8 @@ This repository maintains several layers of defense:
 - **Storage layout validation**: CI checks prevent accidental storage collisions in upgradeable contracts.
 - **Pre-commit hooks**: Formatting, linting, and static analysis run before every commit.
 - **Trust assumptions**: Explicit documentation of privileged roles and external dependencies
-  in [`trust-assumptions.md`](trust-assumptions.md).
+  in [`docs/security/trust-assumptions.md`](docs/security/trust-assumptions.md).
 
 ## Audit Reports
 
-Published audit reports are available in the [`audit-reports/`](audit-reports/) directory.
+Published audit reports are available in the [`audits/`](audits/) directory.
