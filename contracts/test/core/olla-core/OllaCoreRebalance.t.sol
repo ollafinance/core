@@ -943,41 +943,28 @@ contract OllaCoreRebalanceTest is Test {
         asset.mint(address(stakingManager), unstakedAmount);
         stakingManager.setStakeReturnAmount(20 * DECIMALS);
 
-        uint256 snapshotId = vm.snapshotState();
-        uint256 selectedGas;
-        IOllaCore.RebalanceStep observedStep = IOllaCore.RebalanceStep.Done;
-        uint256[6] memory gasOptions = [uint256(190_000), 210_000, 230_000, 250_000, 270_000, 290_000];
+        // Force the gas gate to always fail by writing `rebalanceGasThreshold`
+        // directly to type(uint32).max. This bypasses the setter's 1M cap and
+        // its whenRebalanceDone modifier. Any realistic call budget is now
+        // below the gate, so the state machine deterministically parks at the
+        // first gated step (FinalizeWithdrawals) regardless of optimizer
+        // settings — the test no longer depends on a fragile gas-stipend sweep.
+        uint32 defaultThreshold = core.rebalanceGasThreshold();
+        _forceRebalanceGasThreshold(type(uint32).max);
 
-        for (uint256 i; i < gasOptions.length; ++i) {
-            vm.revertToState(snapshotId);
-            vm.prank(operator);
-            (bool success,) = address(core).call{ gas: gasOptions[i] }(abi.encodeCall(core.rebalance, ()));
-            if (!success) {
-                continue;
-            }
-            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-            if (
-                progress.step == IOllaCore.RebalanceStep.PullUnstaked
-                    || progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals
-            ) {
-                selectedGas = gasOptions[i];
-                observedStep = progress.step;
-                break;
-            }
-        }
-
-        assertGt(selectedGas, 0, "should find gas stipend for early-step rebalance");
-
-        vm.revertToState(snapshotId);
         vm.recordLogs();
         vm.prank(operator);
-        core.rebalance{ gas: selectedGas }();
+        core.rebalance();
 
         IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
-        assertEq(uint256(progressAfter.step), uint256(observedStep), "rebalance should stop at early step");
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "rebalance should park at first gated step"
+        );
 
-        Vm.Log[] memory earlyLogs = vm.getRecordedLogs();
         bytes32 rebalancedSelector = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+        Vm.Log[] memory earlyLogs = vm.getRecordedLogs();
         bool earlyEmit;
         for (uint256 i; i < earlyLogs.length; ++i) {
             if (earlyLogs[i].topics[0] == rebalancedSelector) {
@@ -986,6 +973,10 @@ contract OllaCoreRebalanceTest is Test {
             }
         }
         assertFalse(earlyEmit, "should not emit Rebalanced before completion");
+
+        // Restore threshold so the remaining steps can proceed. vm.store
+        // bypasses whenRebalanceDone (we are mid-rebalance here).
+        _forceRebalanceGasThreshold(defaultThreshold);
 
         uint256 rebalancedEvents;
         uint256 maxIterations = 10;
@@ -1010,6 +1001,25 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(progressFinal.stakeRemaining, 0, "stake remaining should clear");
         assertEq(progressFinal.unstakeRemaining, 0, "unstake remaining should clear");
         assertEq(rebalancedEvents, 1, "Rebalanced should emit once at completion");
+    }
+
+    /// @dev Overwrites OllaCore.rebalanceGasThreshold without going through the
+    ///      setter — bypasses the 1M cap and whenRebalanceDone modifier.
+    ///      Slot 29 layout (from forge inspect OllaCore storage-layout):
+    ///        offset  0: protocolFeeBP         (uint16)
+    ///        offset  2: treasuryFeeSplitBP    (uint16)
+    ///        offset  4: rebalanceGasThreshold (uint32)  <-- bits 32..63
+    ///        offset  8: rebalanceCooldown     (uint32)
+    ///        offset 12: lastRebalanceTimestamp(uint48)
+    ///      A layout change invalidates this helper; the getter roundtrip
+    ///      assertion below catches that case loudly.
+    function _forceRebalanceGasThreshold(uint32 value) internal {
+        bytes32 slot = bytes32(uint256(29));
+        uint256 current = uint256(vm.load(address(core), slot));
+        uint256 mask = ~(uint256(type(uint32).max) << 32);
+        uint256 updated = (current & mask) | (uint256(value) << 32);
+        vm.store(address(core), slot, bytes32(updated));
+        require(core.rebalanceGasThreshold() == value, "_forceRebalanceGasThreshold: slot layout drifted");
     }
 
     function test_Rebalance_NoOp_WhenNoRewardsNoUnstakedNoQueue() external {
