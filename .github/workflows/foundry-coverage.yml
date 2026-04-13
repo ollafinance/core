@@ -23,24 +23,45 @@ jobs:
         working-directory: contracts
     env:
       COVERAGE_THRESHOLD: "95"
-      FOUNDRY_PROFILE: ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Add extra swap
-        # forge coverage with --ir-minimum on this codebase peaks above the
-        # 7GB RAM of ubuntu-latest runners and gets OOM-killed mid-compile
-        # (SIGTERM / exit 143). ubuntu-latest already has ~4GB of swap
-        # mounted at /swapfile, so we allocate an additional file under a
-        # different name and activate it alongside.
+      - name: Free disk space and add swap
+        # forge coverage with --ir-minimum on this codebase peaks well above
+        # 24GB total virtual memory and gets killed mid-compile. Remove
+        # preinstalled SDKs we don't need (~30GB) to make room for a large
+        # swap file on the root volume, then allocate an extra 24GB of swap
+        # alongside the default /swapfile. Total virtual memory after this
+        # step is ~7GB RAM + ~26GB swap ≈ 33GB, which comfortably covers the
+        # compile peak we've seen in prior runs.
         working-directory: .
         run: |
-          sudo fallocate -l 14G /mnt/extra-swap
-          sudo chmod 600 /mnt/extra-swap
-          sudo mkswap /mnt/extra-swap
-          sudo swapon /mnt/extra-swap
+          set -euo pipefail
+          echo "--- before cleanup ---"
+          df -h /
           free -h
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /opt/hostedtoolcache/CodeQL \
+            /opt/hostedtoolcache/Python \
+            /opt/hostedtoolcache/Ruby \
+            /opt/hostedtoolcache/PyPy \
+            /opt/hostedtoolcache/go \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            "$AGENT_TOOLSDIRECTORY" || true
+          echo "--- after cleanup ---"
+          df -h /
+          sudo fallocate -l 24G /extra-swap
+          sudo chmod 600 /extra-swap
+          sudo mkswap /extra-swap
+          sudo swapon /extra-swap
+          echo "--- after swap ---"
+          free -h
+          swapon --show
 
       - name: Setup Foundry CI
         uses: ./.github/actions/setup-foundry-ci
