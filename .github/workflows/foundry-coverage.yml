@@ -28,16 +28,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create swap file
+      - name: Add extra swap
         # forge coverage with --ir-minimum on this codebase peaks above the
         # 7GB RAM of ubuntu-latest runners and gets OOM-killed mid-compile
-        # (SIGTERM / exit 143). A disk-backed swap file lets solc complete.
+        # (SIGTERM / exit 143). ubuntu-latest already has ~4GB of swap
+        # mounted at /swapfile, so we allocate an additional file under a
+        # different name and activate it alongside.
         working-directory: .
         run: |
-          sudo fallocate -l 14G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          sudo fallocate -l 14G /mnt/extra-swap
+          sudo chmod 600 /mnt/extra-swap
+          sudo mkswap /mnt/extra-swap
+          sudo swapon /mnt/extra-swap
           free -h
 
       - name: Setup Foundry CI
