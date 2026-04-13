@@ -23,9 +23,22 @@ jobs:
         working-directory: contracts
     env:
       COVERAGE_THRESHOLD: "95"
+      FOUNDRY_PROFILE: ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Create swap file
+        # forge coverage with --ir-minimum on this codebase peaks above the
+        # 7GB RAM of ubuntu-latest runners and gets OOM-killed mid-compile
+        # (SIGTERM / exit 143). A disk-backed swap file lets solc complete.
+        working-directory: .
+        run: |
+          sudo fallocate -l 14G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
 
       - name: Setup Foundry CI
         uses: ./.github/actions/setup-foundry-ci
