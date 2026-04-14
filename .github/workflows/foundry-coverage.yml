@@ -1,0 +1,159 @@
+name: Forge Coverage
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  coverage:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: contracts
+    env:
+      COVERAGE_THRESHOLD: "95"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space and add swap
+        # forge coverage with --ir-minimum on this codebase peaks well above
+        # 24GB total virtual memory and gets killed mid-compile. Remove
+        # preinstalled SDKs we don't need (~30GB) to make room for a large
+        # swap file on the root volume, then allocate an extra 24GB of swap
+        # alongside the default /swapfile. Total virtual memory after this
+        # step is ~7GB RAM + ~26GB swap ≈ 33GB, which comfortably covers the
+        # compile peak we've seen in prior runs.
+        working-directory: .
+        run: |
+          set -euo pipefail
+          echo "--- before cleanup ---"
+          df -h /
+          free -h
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /opt/hostedtoolcache/CodeQL \
+            /opt/hostedtoolcache/Python \
+            /opt/hostedtoolcache/Ruby \
+            /opt/hostedtoolcache/PyPy \
+            /opt/hostedtoolcache/go \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /usr/share/dotnet \
+            /usr/share/swift \
+            "$AGENT_TOOLSDIRECTORY" || true
+          echo "--- after cleanup ---"
+          df -h /
+          sudo fallocate -l 24G /extra-swap
+          sudo chmod 600 /extra-swap
+          sudo mkswap /extra-swap
+          sudo swapon /extra-swap
+          echo "--- after swap ---"
+          free -h
+          swapon --show
+
+      - name: Setup Foundry CI
+        uses: ./.github/actions/setup-foundry-ci
+        with:
+          workdir: contracts
+          cache-prefix: forge-out-coverage
+          compile-contracts: "false"
+
+      - name: Restore main baseline coverage
+        id: baseline
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: contracts/lcov.info
+          key: forge-coverage-baseline-none
+          restore-keys: |
+            forge-coverage-baseline-
+
+      - name: Stash baseline before running coverage
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.cache-matched-key != ''
+        run: mv lcov.info lcov.main.info
+
+      - name: Run forge coverage
+        run: |
+          forge coverage \
+            --ir-minimum \
+            --skip '*.s.sol' \
+            --skip '*DeployResume*' \
+            --skip 'script/**' \
+            --skip 'test/script/**' \
+            --no-match-coverage '(test|script|mock|Mock)' \
+            --report summary \
+            --report lcov
+
+      - name: Save main baseline coverage
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: contracts/lcov.info
+          key: forge-coverage-baseline-${{ github.sha }}
+
+      - name: Render coverage summary
+        id: render
+        run: |
+          set -euo pipefail
+          baseline_arg=""
+          if [[ -f lcov.main.info ]]; then
+            baseline_arg="--baseline lcov.main.info"
+          fi
+          set +e
+          python3 ../.github/scripts/lcov_summary.py \
+            --lcov lcov.info \
+            $baseline_arg \
+            --threshold "$COVERAGE_THRESHOLD" \
+            --output coverage_summary.md
+          gate_status=$?
+          set -e
+          cat coverage_summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo "gate_status=$gate_status" >> "$GITHUB_OUTPUT"
+
+      - name: Upload lcov artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-coverage-lcov
+          path: contracts/lcov.info
+          if-no-files-found: error
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MARKER: "<!-- forge-coverage-report -->"
+        run: |
+          set -euo pipefail
+          body_file=coverage_summary.md
+          # Prepend a hidden marker so we can find and update the same comment
+          # on subsequent runs instead of spamming new ones.
+          tmp=$(mktemp)
+          printf '%s\n\n' "$MARKER" > "$tmp"
+          cat "$body_file" >> "$tmp"
+          existing=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -n1)
+          if [[ -n "$existing" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" \
+              -X PATCH -f body="$(cat "$tmp")" >/dev/null
+          else
+            gh pr comment "$PR_NUMBER" --body-file "$tmp"
+          fi
+
+      - name: Enforce coverage threshold
+        if: steps.render.outputs.gate_status != '0'
+        run: |
+          echo "::error::Coverage gate failed — total line coverage below ${COVERAGE_THRESHOLD}%"
+          exit 1

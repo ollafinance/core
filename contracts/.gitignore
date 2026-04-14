@@ -2,6 +2,12 @@
 cache/
 out/
 
+# Coverage artifacts
+lcov.info
+lcov.main.info
+coverage_summary.md
+coverage-html/
+
 # Certora files
 .certora_internal
 
