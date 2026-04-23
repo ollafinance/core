@@ -565,6 +565,19 @@ contract OllaCore is
     }
 
     /// @inheritdoc IOllaCore
+    function withdrawalRate() external view override returns (uint256) {
+        return _withdrawalRate(IOllaVault(_modules.vault));
+    }
+
+    /// @inheritdoc IOllaCore
+    function convertToAssetsGross(uint256 shares) external view override returns (uint256) {
+        IOllaVault vaultRef = IOllaVault(_modules.vault);
+        uint256 grossAssets = _computeTotalAssets(_accountingState, vaultRef.bufferedAssets(), 0);
+        uint256 grossSupply = _modules.stAztec.totalSupply() + vaultRef.pendingWithdrawalShares();
+        return shares.mulDiv(grossAssets + _VIRTUAL_OFFSET, grossSupply + _VIRTUAL_OFFSET, Math.Rounding.Floor);
+    }
+
+    /// @inheritdoc IOllaCore
     function convertToShares(uint256 assets) external view override returns (uint256 shares) {
         return _convertToShares(assets, Math.Rounding.Floor);
     }

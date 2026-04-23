@@ -875,8 +875,11 @@ contract OllaVault is
         VaultModules memory modules = _modules;
         IOllaCore coreRef = IOllaCore(modules.core);
 
-        uint256 rate = coreRef.exchangeRate();
-        assetsExpected = coreRef.convertToAssets(shares);
+        // Settlement rate and assetsExpected are both computed in the gross per-share-backing
+        // frame, so `request.rate` stored here matches `currentRate` at finalize -- the slashing-
+        // adjustment gate compares like-for-like quantities and only fires on real slashing.
+        uint256 rate = coreRef.withdrawalRate();
+        assetsExpected = coreRef.convertToAssetsGross(shares);
         ISafetyModule(_safetyModule()).checkWithdrawalMinimum(shares);
         uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
 
