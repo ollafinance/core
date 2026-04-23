@@ -379,6 +379,24 @@ interface IOllaCore {
     /// @return The current exchange rate in 18-decimal fixed-point units.
     function exchangeRate() external view returns (uint256);
 
+    /// @notice Returns the withdrawal-queue settlement rate in 18-decimal fixed-point units.
+    /// @dev Uses gross total assets (before subtracting pending withdrawals) and gross total supply
+    ///      (including shares burned for pending requests). This is the rate used both when
+    ///      locking a redemption request (`OllaVault._executeRedeemRequest`) and when finalizing
+    ///      it (`OllaCore.rebalance` -> `WithdrawalQueue.finalizeWithdrawals`), so the slashing-
+    ///      adjustment gate compares like-for-like quantities and only fires on real slashing.
+    /// @return The withdrawal-queue settlement rate in 18-decimal fixed-point units.
+    function withdrawalRate() external view returns (uint256);
+
+    /// @notice Converts a share amount to assets using the gross per-share backing (rounds down).
+    /// @dev Mirrors `convertToAssets` but computed against gross totals, matching `withdrawalRate`.
+    ///      Used by `OllaVault._executeRedeemRequest` to derive `assetsExpected` in the same
+    ///      accounting frame as the rate stored on the request, so the slashing-adjustment gate
+    ///      writes down by the real-slash amount only.
+    /// @param shares The amount of shares to convert.
+    /// @return assets The equivalent asset amount against gross backing (rounds down).
+    function convertToAssetsGross(uint256 shares) external view returns (uint256 assets);
+
     /// @notice Computes the shares for an asset amount.
     /// @param assets The amount of assets to convert.
     /// @return shares The computed share amount.
