@@ -22,6 +22,7 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { MockCacheCoherentStakingManager } from "test/core/olla-core/OllaCoreCacheCoherence.t.sol";
 
 contract OllaCoreHandler is Test {
     using Math for uint256;
@@ -1557,5 +1558,314 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             uint256 smallShares = core.convertToShares(smallAmount);
             assertEq(smallShares, smallAmount, "empty vault small deposit should give 1:1 shares");
         }
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+            CACHE COHERENCE HANDLER (PRE PULL-MODEL)
+//////////////////////////////////////////////////////////////*/
+
+/// @notice Invariant handler that exercises cache-coherence failure paths:
+///         mid-rebalance pauses, validator accrual between rebalances, slashing via
+///         rollup-side attester refresh, and tight-gas rebalance probing. Uses the
+///         custom `MockCacheCoherentStakingManager` so `harvestRewards` drains the
+///         live claimable value and `stake` updates live `totalStaked`, matching the
+///         real rollup's post-claim behavior.
+contract OllaCoreCacheCoherenceHandler is Test {
+    using Math for uint256;
+
+    MockAztec public asset;
+    OllaCore public core;
+    OllaVault public vault;
+    StAztec public stAztec;
+    MockCacheCoherentStakingManager public stakingManager;
+    MockRewardsAccumulator public rewardsAccumulator;
+    WithdrawalQueue public withdrawalQueue;
+    address public operator;
+    address public governance;
+
+    address[] public actors;
+
+    constructor(
+        MockAztec _asset,
+        OllaCore _core,
+        OllaVault _vault,
+        StAztec _stAztec,
+        MockCacheCoherentStakingManager _stakingManager,
+        MockRewardsAccumulator _rewardsAccumulator,
+        WithdrawalQueue _withdrawalQueue,
+        address _operator,
+        address _governance
+    ) {
+        asset = _asset;
+        core = _core;
+        vault = _vault;
+        stAztec = _stAztec;
+        stakingManager = _stakingManager;
+        rewardsAccumulator = _rewardsAccumulator;
+        withdrawalQueue = _withdrawalQueue;
+        operator = _operator;
+        governance = _governance;
+
+        for (uint256 i = 0; i < 5; i++) {
+            actors.push(makeAddr(string(abi.encode("cc_actor", i))));
+        }
+    }
+
+    function actorsLength() external view returns (uint256) {
+        return actors.length;
+    }
+
+    function actorAt(uint256 index) external view returns (address) {
+        return actors[index];
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE ACTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function deposit(uint96 amount, uint256 actorSeed) external {
+        uint256 assets = uint256(bound(amount, 1, type(uint96).max));
+        address actor = actors[bound(actorSeed, 0, actors.length - 1)];
+
+        asset.mint(actor, assets);
+        vm.startPrank(actor);
+        asset.approve(address(vault), assets);
+        try vault.deposit(assets, actor, 0) { }
+        catch {
+            vm.stopPrank();
+            return;
+        }
+        vm.stopPrank();
+    }
+
+    function handler_accrueRollupRewards(uint256 amt) external {
+        uint256 accrual = bound(amt, 0, 1e24);
+        if (accrual == 0) return;
+        stakingManager.addClaimable(accrual);
+    }
+
+    function handler_slashViaRefreshAttester(uint256 amt) external {
+        uint256 slash = bound(amt, 0, stakingManager.totalStaked() / 4);
+        if (slash == 0) return;
+        stakingManager.applySlashing(slash);
+    }
+
+    function handler_tickTime(uint256 dt) external {
+        uint256 warpBy = bound(dt, 1, 30 days);
+        vm.warp(block.timestamp + warpBy);
+    }
+
+    function handler_startRebalanceWithTightGas(uint256 gasSeed) external {
+        // Warp so cooldown is satisfied (cooldown is 1 hour; warp enough to clear).
+        vm.warp(block.timestamp + 1 hours + bound(gasSeed, 0, 59 minutes));
+        uint256 gasLimit = bound(gasSeed, 250_000, 800_000);
+        vm.prank(operator);
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool ok,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
+        ok; // ignore outcome — tight gas may partially progress or revert
+    }
+
+    function rebalance() external {
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.prank(operator);
+        try core.rebalance() { }
+        catch {
+            return;
+        }
+    }
+
+    function updateAccounting() external {
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
+        if (progress.step != IOllaCore.RebalanceStep.Done) return;
+        vm.prank(operator);
+        try core.updateAccounting() { }
+        catch {
+            return;
+        }
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+          CACHE COHERENCE INVARIANT TEST CONTRACT
+//////////////////////////////////////////////////////////////*/
+
+/// @title OllaCoreCacheCoherenceInvariantTest
+/// @notice Invariant suite that targets the `_accountingState` cache-coherence
+///         refactor. Two of its three invariants are EXPECTED TO FAIL on the
+///         current cached-mirror code and pass once pull-model reads land.
+///         `invariant_NoMirrorDrift` will become trivially true (and the fields
+///         it checks will cease to exist) once the pull refactor deletes the
+///         mirror; it is annotated as transitional.
+contract OllaCoreCacheCoherenceInvariantTest is Test {
+    using Math for uint256;
+
+    OllaCore internal core;
+    OllaVault internal vault;
+    StAztec internal stAztec;
+    MockAztec internal asset;
+    MockCacheCoherentStakingManager internal stakingManager;
+    WithdrawalQueue internal withdrawalQueue;
+    MockSafetyModule internal safetyModule;
+    MockRewardsAccumulator internal rewardsAccumulator;
+    OllaCoreCacheCoherenceHandler internal handler;
+    address internal operator;
+    address internal governance;
+
+    uint256 internal _previousRate;
+    bool internal _rateWasCaptured;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+        governance = makeAddr("cc_governance");
+        operator = makeAddr("cc_operator");
+
+        OllaCore implementation = new OllaCore();
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
+
+        stAztec = new StAztec(address(vault));
+        stakingManager = new MockCacheCoherentStakingManager();
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
+
+        WithdrawalQueue queueImplementation = new WithdrawalQueue();
+        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
+        withdrawalQueue = WithdrawalQueue(address(queueProxy));
+
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
+        stakingManager.setUnstakedToken(asset);
+        address providerRewardsRecipient = makeAddr("cc_providerRewardsRecipient");
+        stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
+
+        withdrawalQueue.initialize(address(vault), governance, 180_000);
+
+        core.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            5_000,
+            governance,
+            IRewardsAccumulator(address(rewardsAccumulator)),
+            address(safetyModule)
+        );
+        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
+        vm.prank(governance);
+        vault.unpause();
+
+        handler = new OllaCoreCacheCoherenceHandler(
+            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator, governance
+        );
+
+        targetContract(address(handler));
+
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = handler.deposit.selector;
+        selectors[1] = handler.handler_accrueRollupRewards.selector;
+        selectors[2] = handler.handler_slashViaRefreshAttester.selector;
+        selectors[3] = handler.handler_tickTime.selector;
+        selectors[4] = handler.handler_startRebalanceWithTightGas.selector;
+        selectors[5] = handler.rebalance.selector;
+        targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _readThroughTotalAssets() internal view returns (uint256) {
+        uint256 buffered = vault.bufferedAssets();
+        uint256 staked = stakingManager.totalStaked();
+        uint256 claimable = stakingManager.getClaimableRewards();
+        uint256 raBalance = rewardsAccumulator.balance();
+        uint256 pending = vault.pendingWithdrawalAssets();
+        uint256 total = buffered + staked + claimable + raBalance;
+        return pending >= total ? 0 : total - pending;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              INVARIANT: totalAssets MATCHES LIVE READ-THROUGH
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice `totalAssets()` must equal the pull-model read-through sum at every
+    ///         protocol state reachable by the handler. Drift between the mirror
+    ///         and the live sources breaks this invariant. Expected to FAIL on the
+    ///         current cached-mirror code when rollup accrual or mid-rebalance
+    ///         pauses occur between updateAccounting calls; expected to PASS once
+    ///         `_computeTotalAssets` reads live state.
+    function invariant_TotalAssetsMatchesLiveReadThrough() external view {
+        assertEq(core.totalAssets(), _readThroughTotalAssets(), "totalAssets drift from live sources");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+          INVARIANT: exchangeRate REFLECTS CONTINUOUS ACCRUAL
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The exchange rate computed from live sources must be non-decreasing
+    ///         across any sequence of handler actions that involve validator accrual
+    ///         (excluding explicit slashing). Because the handler is mock-aware, we
+    ///         skip the check when `slashingDelta` changed since the last tick.
+    ///         Expected to FAIL on the current mirror code when accrual happens
+    ///         without `updateAccounting` — the rate goes stale.
+    function invariant_ExchangeRateReflectsContinuousAccrual() external {
+        // Only meaningful once supply exists.
+        uint256 supply = stAztec.totalSupply();
+        if (supply == 0) {
+            return;
+        }
+
+        // Skip when slashing caused a legitimate rate drop this tick.
+        uint256 slashNow = core.accountingState().slashingDelta;
+        uint256 slashPrev = _previousSlashingDelta;
+        if (slashNow > slashPrev) {
+            _previousSlashingDelta = slashNow;
+            _rateWasCaptured = false;
+            return;
+        }
+
+        uint256 liveTotal = _readThroughTotalAssets();
+        uint256 liveRate = (liveTotal + 1e3).mulDiv(1e18, supply + 1e3, Math.Rounding.Floor);
+
+        if (_rateWasCaptured) {
+            assertGe(liveRate, _previousRate, "live exchange rate must be non-decreasing between ticks");
+        }
+        _previousRate = liveRate;
+        _rateWasCaptured = true;
+    }
+
+    uint256 internal _previousSlashingDelta;
+
+    /*//////////////////////////////////////////////////////////////
+         INVARIANT (TRANSITIONAL): NO MIRROR DRIFT (DELETE WITH MIRROR)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The mirror fields `stakedPrincipal` and `claimableRewards` must
+    ///         match the live sources at every reachable protocol state. This is
+    ///         TRANSITIONAL: it exists to mechanically surface the cache-coherence
+    ///         failure class. After the pull-model refactor removes the mirror
+    ///         fields, this invariant becomes trivially true (or the fields cease
+    ///         to exist and this invariant must be deleted).
+    /// @dev Expected to FAIL today — any handler sequence that accrues rewards or
+    ///      runs a tight-gas rebalance will surface a drift counterexample.
+    function invariant_NoMirrorDrift() external view {
+        IOllaCore.AccountingState memory accounting = core.accountingState();
+        assertEq(accounting.stakedPrincipal, stakingManager.totalStaked(), "stakedPrincipal mirror must track live");
+        assertEq(
+            accounting.claimableRewards, stakingManager.getClaimableRewards(), "claimableRewards mirror must track live"
+        );
     }
 }

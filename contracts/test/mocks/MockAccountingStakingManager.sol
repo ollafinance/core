@@ -144,7 +144,7 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setGasThreshold(uint256) external override { }
 
-    function stake(uint256 amount) external override returns (uint256 stakedAmount) {
+    function stake(uint256 amount) external virtual override returns (uint256 stakedAmount) {
         uint256 actualAmount = amount;
         if (useStakeReturnAmount) {
             actualAmount = stakeReturnAmount;
@@ -213,7 +213,7 @@ contract MockAccountingStakingManager is IStakingManager {
         return (amount, reportedExit);
     }
 
-    function harvestRewards() external override returns (uint256 harvested) {
+    function harvestRewards() external virtual override returns (uint256 harvested) {
         harvested = harvestedRewards;
         // Actually transfer tokens to rewards vault to simulate real harvest
         if (harvested > 0 && address(rewardsToken) != address(0) && rewardsAccumulator != address(0)) {
