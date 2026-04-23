@@ -14,15 +14,17 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
     uint256 internal constant REAL_SAFETY_MODULE_CAP = 1_000_000 ether;
 
     address internal newGov;
+    address internal safetyGuardian;
 
     function setUp() public override {
         super.setUp();
         newGov = makeAddr("newGovernance");
+        safetyGuardian = makeAddr("safetyGuardian");
     }
 
-    function _deployRealSafetyModuleWithGovernanceAdmin() internal returns (SafetyModule realSafetyModule) {
+    function _deployRealSafetyModuleWithGovernanceContractAsAdmin() internal returns (SafetyModule realSafetyModule) {
         realSafetyModule = new SafetyModule(
-            address(gov), admin, address(core), address(vault), REAL_SAFETY_MODULE_CAP, 500, 6_000, 1 days
+            address(gov), safetyGuardian, address(core), address(vault), REAL_SAFETY_MODULE_CAP, 500, 6_000, 1 days
         );
 
         vm.prank(address(gov));
@@ -113,7 +115,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
     }
 
     function test_AcceptGovernance_KeepsSafetyModuleAdminOnGovernanceContract() external {
-        SafetyModule realSafetyModule = _deployRealSafetyModuleWithGovernanceAdmin();
+        SafetyModule realSafetyModule = _deployRealSafetyModuleWithGovernanceContractAsAdmin();
 
         assertTrue(
             realSafetyModule.hasRole(realSafetyModule.DEFAULT_ADMIN_ROLE(), address(gov)),
@@ -140,7 +142,7 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
     }
 
     function test_AcceptGovernance_NewGovernanceWalletCannotDirectlyChangeSafetyModuleParams() external {
-        SafetyModule realSafetyModule = _deployRealSafetyModuleWithGovernanceAdmin();
+        SafetyModule realSafetyModule = _deployRealSafetyModuleWithGovernanceContractAsAdmin();
         uint256 originalCap = realSafetyModule.depositCap();
 
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
