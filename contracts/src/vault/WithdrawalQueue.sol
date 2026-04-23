@@ -2,7 +2,6 @@
 pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
-import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
@@ -57,6 +56,9 @@ contract WithdrawalQueue is
     /// @notice Gas threshold used to gate the finalization loop.
     uint32 private _gasThreshold;
 
+    /// @notice Governance contract authorized to perform UUPS upgrades.
+    address public governanceUpgradeAuthority;
+
     /// @notice Tracks all withdrawal requests.
     mapping(uint256 requestId => WithdrawalRequest request) private _requests;
 
@@ -70,7 +72,7 @@ contract WithdrawalQueue is
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   ERRORS
@@ -119,6 +121,7 @@ contract WithdrawalQueue is
         nextRequestId = 1;
         nextPendingId = 1;
         _gasThreshold = SafeCast.toUint32(gasThreshold_);
+        governanceUpgradeAuthority = admin_;
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, admin_);
     }
@@ -301,10 +304,10 @@ contract WithdrawalQueue is
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Authorizes a UUPS upgrade; requires DEFAULT_ADMIN_ROLE and vault owner match.
+    /// @notice Authorizes a UUPS upgrade; requires DEFAULT_ADMIN_ROLE and governance authority match.
     /// @param newImplementation The address of the new implementation contract.
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != OwnableUpgradeable(vault).owner()) {
+        if (msg.sender != governanceUpgradeAuthority) {
             revert WithdrawalQueue__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {

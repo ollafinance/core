@@ -2,7 +2,6 @@
 pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
-import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
@@ -35,11 +34,14 @@ contract RewardsAccumulator is
     /// @notice The latest recorded rewards amount.
     uint256 public latestRecordedRewardsAmount;
 
+    /// @notice Governance contract authorized to perform UUPS upgrades.
+    address public governanceUpgradeAuthority;
+
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   ERRORS
@@ -89,6 +91,7 @@ contract RewardsAccumulator is
 
         rewardsToken = rewardsToken_;
         core = core_;
+        governanceUpgradeAuthority = defaultAdmin_;
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, defaultAdmin_);
     }
@@ -150,7 +153,7 @@ contract RewardsAccumulator is
     /// @notice Authorizes upgrade to new implementation.
     /// @param newImplementation The new implementation address.
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != OwnableUpgradeable(core).owner()) {
+        if (msg.sender != governanceUpgradeAuthority) {
             revert RewardsAccumulator__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {
