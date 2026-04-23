@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
-import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { TimelockControllerUpgradeable } from "@oz-upgradeable/governance/TimelockControllerUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 /// @title OllaGovernance
@@ -139,9 +137,6 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         _grantRole(EXECUTOR_ROLE, newGovernance);
         _grantRole(CANCELLER_ROLE, newGovernance);
         _grantRole(DEFAULT_ADMIN_ROLE, newGovernance);
-
-        // Propagate DEFAULT_ADMIN_ROLE on satellite contracts
-        _propagateAdminRole(oldGovernance, newGovernance);
 
         // Revoke roles from the old governance
         if (oldGovernance != address(0) && oldGovernance != newGovernance) {
@@ -326,71 +321,6 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         }
         UUPSUpgradeable(proxy).upgradeToAndCall(newImplementation, "");
     }
-
-    /*//////////////////////////////////////////////////////////////
-                          INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    // slither-disable-start calls-loop
-    // slither-disable-start reentrancy-events
-    /// @notice Propagates DEFAULT_ADMIN_ROLE changes to all satellite contracts.
-    /// @param oldGovernance The old governance address to revoke from.
-    /// @param newGovernance The new governance address to grant to.
-    function _propagateAdminRole(address oldGovernance, address newGovernance) internal {
-        address coreAddr = core;
-        if (coreAddr == address(0)) return; // Core not yet set; propagation deferred to setCore()
-        address vaultAddr = IOllaCore(coreAddr).vault();
-        address wq = address(0);
-        // Best-effort read of the queue address; failures must not block governance transfer.
-        try IOllaVault(vaultAddr).withdrawalQueue() returns (address queueAddr) {
-            wq = queueAddr;
-            // solhint-disable-next-line no-empty-blocks
-        } catch { }
-        address rv = IOllaCore(coreAddr).rewardsAccumulator();
-        address sm = IOllaCore(coreAddr).stakingManager();
-        address spr = address(IStakingManager(sm).stakingProviderRegistry());
-        address sfm = IOllaCore(coreAddr).safetyModule();
-
-        address[6] memory satellites = [vaultAddr, wq, rv, sm, spr, sfm];
-
-        _propagateSatelliteAdminRoles(satellites, oldGovernance, newGovernance);
-    }
-
-    /// @notice Grants newGovernance and revokes oldGovernance on each satellite atomically.
-    /// @dev Revoke only executes on satellites where the grant succeeded, preventing orphaned admin.
-    /// @param satellites The array of satellite contract addresses.
-    /// @param oldGovernance The old governance address to revoke from.
-    /// @param newGovernance The new governance address to grant to.
-    function _propagateSatelliteAdminRoles(address[6] memory satellites, address oldGovernance, address newGovernance)
-        internal
-    {
-        bool shouldRevoke = oldGovernance != address(0) && oldGovernance != newGovernance;
-
-        for (uint256 i; i < satellites.length; ++i) {
-            address satellite = satellites[i];
-            if (satellite == address(0)) continue;
-
-            bool granted = false;
-            try AccessControlUpgradeable(satellite).grantRole(DEFAULT_ADMIN_ROLE, newGovernance) {
-                granted = true;
-            } catch {
-                emit AdminRolePropagationFailed(satellite, newGovernance, true);
-            }
-
-            // Only revoke the old admin if the new admin was successfully granted,
-            // preventing a state where the satellite has zero DEFAULT_ADMIN_ROLE holders.
-            if (shouldRevoke && granted) {
-                // solhint-disable-next-line no-empty-blocks
-                try AccessControlUpgradeable(satellite).revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance) { }
-                catch {
-                    emit AdminRolePropagationFailed(satellite, oldGovernance, false);
-                }
-            }
-        }
-    }
-
-    // slither-disable-end reentrancy-events
-    // slither-disable-end calls-loop
 
     /// @notice Authorizes UUPS upgrades. Only the timelock (self) can upgrade this contract.
     /// @param newImplementation The new implementation address to authorize.

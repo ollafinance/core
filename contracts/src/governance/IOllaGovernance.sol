@@ -38,15 +38,8 @@ interface IOllaGovernance {
     /// @param core The OllaCore contract address.
     event CoreSet(address indexed core);
 
-    /// @notice Emitted when a grantRole or revokeRole call fails during admin role propagation.
-    /// @dev Governance should retry the failed operation via a timelock-scheduled call.
-    /// @param satellite The satellite contract where the call failed.
-    /// @param account The account that was being granted/revoked.
-    /// @param isGrant True if the failed call was grantRole, false if revokeRole.
-    event AdminRolePropagationFailed(address indexed satellite, address indexed account, bool indexed isGrant);
-
     /*//////////////////////////////////////////////////////////////
-                                ERRORS
+                                 ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a function is called by someone other than address(this) (timelock self-call).
@@ -100,8 +93,8 @@ interface IOllaGovernance {
 
     /// @notice Accepts governance by the pending governance address.
     /// @dev NOT timelocked - must be called directly by the pending governance address.
-    ///      Atomically transfers proposer/executor/canceller roles and propagates
-    ///      DEFAULT_ADMIN_ROLE changes across all satellite contracts.
+    ///      Atomically transfers timelock roles to the pending governance address.
+    ///      Satellite DEFAULT_ADMIN_ROLE remains on this governance contract.
     function acceptGovernance() external;
 
     /// @notice Cancels a pending governance proposal.
