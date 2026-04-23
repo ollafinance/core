@@ -206,6 +206,10 @@ contract WithdrawalQueue is
                 if (currentRate < request.rate && request.rate - currentRate > _SLASHING_RATE_TOLERANCE) {
                     uint256 payout = (request.shares * currentRate) / _RATE_SCALE;
                     if (payout < assetsExpected) {
+                        // Check liquidity against the ADJUSTED payout before any storage write.
+                        if (available < payout) {
+                            break;
+                        }
                         uint256 adjustment = assetsExpected - payout;
                         pendingAssets -= adjustment;
                         totalAdjusted += adjustment;
@@ -226,7 +230,7 @@ contract WithdrawalQueue is
                     continue;
                 }
 
-                // Breaks on first under-funded request; does not skip.
+                // Breaks on first under-funded non-adjusted request; does not skip.
                 if (available < assetsExpected) {
                     break;
                 }
