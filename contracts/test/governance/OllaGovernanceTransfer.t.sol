@@ -5,49 +5,35 @@ import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { OllaGovernanceSetup } from "./OllaGovernanceSetup.t.sol";
-
-contract RevertingVaultReader {
-    function withdrawalQueue() external pure returns (address) {
-        revert("mock revert");
-    }
-}
 
 /// @title OllaGovernanceTransferTest
 /// @notice Tests for two-step governance transfer on OllaGovernance.
 contract OllaGovernanceTransferTest is OllaGovernanceSetup {
+    uint256 internal constant REAL_SAFETY_MODULE_CAP = 1_000_000 ether;
+
     address internal newGov;
-    address internal sprMock;
 
     function setUp() public override {
         super.setUp();
         newGov = makeAddr("newGovernance");
-        sprMock = makeAddr("sprMock");
     }
 
-    /// @dev Mocks satellite AccessControl calls so _propagateAdminRole succeeds
-    ///      with non-AccessControl mock satellites.
-    function _mockSatelliteACL() internal {
-        // Mock stakingProviderRegistry() to return a valid address
-        vm.mockCall(
-            address(stakingManager),
-            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
-            abi.encode(sprMock)
+    function _deployRealSafetyModuleWithGovernanceAdmin() internal returns (SafetyModule realSafetyModule) {
+        realSafetyModule = new SafetyModule(
+            address(gov), admin, address(core), address(vault), REAL_SAFETY_MODULE_CAP, 500, 6_000, 1 days
         );
 
-        // Mock grantRole / revokeRole on all non-vault satellite addresses
-        address[5] memory sats = [
-            address(withdrawalQueue),
-            address(rewardsAccumulator),
-            address(stakingManager),
-            sprMock,
-            address(safetyModule)
-        ];
-        for (uint256 i; i < sats.length; i++) {
-            vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-            vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        }
+        vm.prank(address(gov));
+        core.setSafetyModule(address(realSafetyModule));
+    }
+
+    function _seedVaultBuffer(uint256 amount) internal {
+        asset.mint(address(vault), amount);
+
+        vm.prank(address(core));
+        vault.receiveUnstaked(amount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -103,9 +89,6 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         // Propose
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
 
-        // Mock satellite AccessControl so _propagateAdminRole succeeds
-        _mockSatelliteACL();
-
         // Accept
         vm.prank(newGov);
         gov.acceptGovernance();
@@ -129,42 +112,71 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         assertFalse(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), admin), "old lost DEFAULT_ADMIN_ROLE");
     }
 
-    function test_AcceptGovernance_PropagatesWithdrawalQueueAdminRole() external {
-        // Propose
+    function test_AcceptGovernance_KeepsSafetyModuleAdminOnGovernanceContract() external {
+        SafetyModule realSafetyModule = _deployRealSafetyModuleWithGovernanceAdmin();
+
+        assertTrue(
+            realSafetyModule.hasRole(realSafetyModule.DEFAULT_ADMIN_ROLE(), address(gov)),
+            "governance contract starts as safety module admin"
+        );
+        assertFalse(
+            realSafetyModule.hasRole(realSafetyModule.DEFAULT_ADMIN_ROLE(), newGov),
+            "new governance wallet starts without safety module admin"
+        );
+
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-        _mockSatelliteACL();
-
-        bytes32 defaultAdminRole = gov.DEFAULT_ADMIN_ROLE();
-
-        vm.expectCall(
-            address(withdrawalQueue),
-            abi.encodeWithSelector(IAccessControl.grantRole.selector, defaultAdminRole, newGov)
-        );
-        vm.expectCall(
-            address(withdrawalQueue),
-            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin)
-        );
 
         vm.prank(newGov);
         gov.acceptGovernance();
+
+        assertFalse(
+            realSafetyModule.hasRole(realSafetyModule.DEFAULT_ADMIN_ROLE(), newGov),
+            "incoming governance wallet should not receive direct safety module admin"
+        );
+        assertTrue(
+            realSafetyModule.hasRole(realSafetyModule.DEFAULT_ADMIN_ROLE(), address(gov)),
+            "governance contract should retain safety module admin"
+        );
     }
 
-    function test_AcceptGovernance_AllowsTransferWhenWithdrawalQueueReadFails() external {
-        // Propose
+    function test_AcceptGovernance_NewGovernanceWalletCannotDirectlyChangeSafetyModuleParams() external {
+        SafetyModule realSafetyModule = _deployRealSafetyModuleWithGovernanceAdmin();
+        uint256 originalCap = realSafetyModule.depositCap();
+
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-
-        // Simulate a vault module whose withdrawalQueue() call reverts.
-        RevertingVaultReader revertingVault = new RevertingVaultReader();
-        vm.mockCall(address(core), abi.encodeWithSignature("vault()"), abi.encode(address(revertingVault)));
-
-        // Mock the non-vault satellites to keep propagation deterministic.
-        _mockSatelliteACL();
 
         vm.prank(newGov);
         gov.acceptGovernance();
 
-        assertEq(gov.pendingGovernance(), address(0), "pending cleared");
-        assertEq(gov.governanceAdmin(), newGov, "admin updated");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, newGov, realSafetyModule.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(newGov);
+        realSafetyModule.setDepositCap(1);
+
+        assertEq(
+            realSafetyModule.depositCap(), originalCap, "direct wallet call should not change safety module params"
+        );
+    }
+
+    function test_AcceptGovernance_NewGovernanceWalletCannotSelfGrantCoreRoleOnVault() external {
+        bytes32 coreRole = vault.CORE_ROLE();
+
+        _seedVaultBuffer(10 ether);
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+
+        vm.prank(newGov);
+        gov.acceptGovernance();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, newGov, vault.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(newGov);
+        vault.grantRole(coreRole, newGov);
     }
 
     function test_RevertWhen_AcceptGovernance_NotPending() external {
@@ -228,7 +240,6 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
     function test_FullGovernanceTransfer_NewAdminCanSchedule() external {
         // Propose + accept
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-        _mockSatelliteACL();
         vm.prank(newGov);
         gov.acceptGovernance();
 
@@ -252,7 +263,6 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
 
         // Propose + accept
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-        _mockSatelliteACL();
         vm.prank(newGov);
         gov.acceptGovernance();
 
@@ -272,152 +282,9 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         gov.grantRole(defaultAdminRole, admin);
     }
 
-    function test_AcceptGovernance_EmitsEventOnSatelliteFailure() external {
-        // Propose
-        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-
-        // Mock stakingProviderRegistry() to return a valid address
-        vm.mockCall(
-            address(stakingManager),
-            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
-            abi.encode(sprMock)
-        );
-
-        // Mock grantRole to succeed on non-vault satellites except stakingManager.
-        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCallRevert(
-            address(stakingManager), abi.encodeWithSelector(IAccessControl.grantRole.selector), "mock revert"
-        );
-        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-
-        // Mock revokeRole to succeed on all
-        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-
-        // Expect the failure event for stakingManager grant
-        vm.expectEmit(true, true, false, true);
-        emit IOllaGovernance.AdminRolePropagationFailed(address(stakingManager), newGov, true);
-
-        // Accept should NOT revert despite the satellite failure
-        vm.prank(newGov);
-        gov.acceptGovernance();
-
-        // Core governance transfer still completed
-        assertEq(gov.governanceAdmin(), newGov, "admin updated despite satellite failure");
-        assertTrue(gov.hasRole(gov.PROPOSER_ROLE(), newGov), "newGov has PROPOSER_ROLE");
-    }
-
-    function test_AcceptGovernance_EmitsEventOnWithdrawalQueueGrantRoleFailure() external {
-        // Propose
-        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-
-        // Mock stakingProviderRegistry() to return a valid address
-        vm.mockCall(
-            address(stakingManager),
-            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
-            abi.encode(sprMock)
-        );
-
-        // Mock grantRole: withdrawalQueue fails, all other non-vault satellites succeed
-        vm.mockCallRevert(
-            address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.grantRole.selector), "mock revert"
-        );
-        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-
-        // Mock revokeRole to succeed on all non-vault satellites
-        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-
-        // Expect the failure event for withdrawalQueue grant
-        vm.expectEmit(true, true, true, true);
-        emit IOllaGovernance.AdminRolePropagationFailed(address(withdrawalQueue), newGov, true);
-
-        // Accept should NOT revert despite withdrawalQueue failure
-        vm.prank(newGov);
-        gov.acceptGovernance();
-
-        // Core governance transfer still completed
-        assertEq(gov.governanceAdmin(), newGov, "admin updated despite withdrawalQueue failure");
-        assertTrue(gov.hasRole(gov.PROPOSER_ROLE(), newGov), "newGov has PROPOSER_ROLE");
-    }
-
-    function test_AcceptGovernance_SkipsRevokeWhenGrantFails() external {
-        // Propose
-        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-
-        // Mock stakingProviderRegistry() to return a valid address
-        vm.mockCall(
-            address(stakingManager),
-            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
-            abi.encode(sprMock)
-        );
-
-        bytes32 defaultAdminRole = gov.DEFAULT_ADMIN_ROLE();
-
-        // Mock grantRole: stakingManager FAILS, all others succeed
-        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCallRevert(
-            address(stakingManager), abi.encodeWithSelector(IAccessControl.grantRole.selector), "mock revert"
-        );
-        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-
-        // Mock revokeRole to succeed on all satellites
-        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-
-        // revokeRole MUST NOT be called on stakingManager (grant failed → skip revoke to preserve old admin)
-        vm.expectCall(
-            address(stakingManager),
-            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin),
-            0 // expect exactly 0 calls
-        );
-
-        // revokeRole MUST still be called on the satellites where grant succeeded
-        vm.expectCall(
-            address(withdrawalQueue),
-            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin),
-            1
-        );
-        vm.expectCall(
-            address(rewardsAccumulator),
-            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin),
-            1
-        );
-        vm.expectCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin), 1);
-        vm.expectCall(
-            address(safetyModule),
-            abi.encodeWithSelector(IAccessControl.revokeRole.selector, defaultAdminRole, admin),
-            1
-        );
-
-        // Accept
-        vm.prank(newGov);
-        gov.acceptGovernance();
-
-        // Core governance transfer still completed
-        assertEq(gov.governanceAdmin(), newGov, "admin updated");
-    }
-
     function test_OldAdmin_CannotScheduleAfterTransfer() external {
         // Propose + accept
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-        _mockSatelliteACL();
         vm.prank(newGov);
         gov.acceptGovernance();
 
@@ -426,54 +293,5 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         vm.expectRevert();
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(uint256(100)), MIN_DELAY);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-            REVOKE ROLE CATCH BLOCK IN _propagateAdminRole
-    //////////////////////////////////////////////////////////////*/
-
-    function test_AcceptGovernance_EmitsEventOnRevokeRoleFailure() external {
-        // Propose
-        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
-
-        // Mock stakingProviderRegistry() to return a valid address
-        vm.mockCall(
-            address(stakingManager),
-            abi.encodeWithSelector(IStakingManager.stakingProviderRegistry.selector),
-            abi.encode(sprMock)
-        );
-
-        // Mock grantRole to succeed on all non-vault satellites
-        address[5] memory sats = [
-            address(withdrawalQueue),
-            address(rewardsAccumulator),
-            address(stakingManager),
-            sprMock,
-            address(safetyModule)
-        ];
-        for (uint256 i; i < sats.length; i++) {
-            vm.mockCall(sats[i], abi.encodeWithSelector(IAccessControl.grantRole.selector), "");
-        }
-
-        // Mock revokeRole to succeed on all EXCEPT stakingManager
-        vm.mockCall(address(withdrawalQueue), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(rewardsAccumulator), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCallRevert(
-            address(stakingManager), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "mock revert"
-        );
-        vm.mockCall(sprMock, abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-        vm.mockCall(address(safetyModule), abi.encodeWithSelector(IAccessControl.revokeRole.selector), "");
-
-        // Expect the failure event for stakingManager revoke (isGrant = false)
-        vm.expectEmit(true, true, true, true);
-        emit IOllaGovernance.AdminRolePropagationFailed(address(stakingManager), admin, false);
-
-        // Accept should NOT revert despite the satellite revoke failure
-        vm.prank(newGov);
-        gov.acceptGovernance();
-
-        // Core governance transfer still completed
-        assertEq(gov.governanceAdmin(), newGov, "admin updated despite satellite revoke failure");
-        assertTrue(gov.hasRole(gov.PROPOSER_ROLE(), newGov), "newGov has PROPOSER_ROLE");
     }
 }
