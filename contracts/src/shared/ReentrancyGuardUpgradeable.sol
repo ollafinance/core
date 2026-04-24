@@ -31,24 +31,24 @@ abstract contract ReentrancyGuardUpgradeable is Initializable {
     }
 
     function __ReentrancyGuard_init_unchained() internal onlyInitializing {
-        _reentrancyGuardStorageSlot().getUint256Slot().value = NOT_ENTERED;
+        _reentrancyGuardStorageSlot().getUint256Slot().value = _NOT_ENTERED;
     }
 
     function _reentrancyGuardEntered() internal view returns (bool) {
-        return _reentrancyGuardStorageSlot().getUint256Slot().value == ENTERED;
+        return _reentrancyGuardStorageSlot().getUint256Slot().value == _ENTERED;
     }
 
     function _reentrancyGuardStorageSlot() internal pure virtual returns (bytes32) {
-        return REENTRANCY_GUARD_STORAGE;
+        return _REENTRANCY_GUARD_STORAGE;
     }
 
     function _nonReentrantBefore() private {
         _nonReentrantBeforeView();
-        _reentrancyGuardStorageSlot().getUint256Slot().value = ENTERED;
+        _reentrancyGuardStorageSlot().getUint256Slot().value = _ENTERED;
     }
 
     function _nonReentrantAfter() private {
-        _reentrancyGuardStorageSlot().getUint256Slot().value = NOT_ENTERED;
+        _reentrancyGuardStorageSlot().getUint256Slot().value = _NOT_ENTERED;
     }
 
     function _nonReentrantBeforeView() private view {
