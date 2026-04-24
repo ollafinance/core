@@ -1055,7 +1055,7 @@ contract OllaCoreRebalanceTest is Test {
     ///      A layout change invalidates this helper; the getter roundtrip
     ///      assertion below catches that case loudly.
     function _forceRebalanceGasThreshold(uint32 value) internal {
-        bytes32 slot = bytes32(uint256(29));
+        bytes32 slot = bytes32(uint256(24));
         uint256 current = uint256(vm.load(address(core), slot));
         uint256 mask = ~(uint256(type(uint32).max) << 32);
         uint256 updated = (current & mask) | (uint256(value) << 32);

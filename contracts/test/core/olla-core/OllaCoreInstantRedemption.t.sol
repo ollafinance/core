@@ -55,14 +55,12 @@ contract OllaCoreInstantRedemptionTest is Test {
 
     /// @dev Storage slot for OllaVault._bufferedAssets (from `forge inspect OllaVault storage-layout`).
     uint256 internal constant VAULT_BUFFERED_ASSETS_SLOT = 4;
-    /// @dev Storage slot for OllaCore._accountingState.stakedPrincipal (slot 6).
-    uint256 internal constant CORE_STAKED_PRINCIPAL_SLOT = 6;
     /// @dev Storage slot for OllaVault._finalizedUnclaimedAssets (from `forge inspect OllaVault storage-layout`).
     uint256 internal constant VAULT_FINALIZED_UNCLAIMED_SLOT = 5;
-    /// @dev Storage slot for OllaCore._rebalanceIdleBuffer.
-    uint256 internal constant CORE_REBALANCE_IDLE_BUFFER_SLOT = 29;
-    /// @dev Storage slot for OllaCore._rebalanceProgress (struct at slot 22).
-    uint256 internal constant CORE_REBALANCE_PROGRESS_SLOT = 22;
+    /// @dev Storage slot for OllaCore._rebalanceIdleBuffer (from `forge inspect OllaCore storage-layout`).
+    uint256 internal constant CORE_REBALANCE_IDLE_BUFFER_SLOT = 23;
+    /// @dev Storage slot for OllaCore._rebalanceProgress (struct at slot 19).
+    uint256 internal constant CORE_REBALANCE_PROGRESS_SLOT = 19;
 
     /*//////////////////////////////////////////////////////////////
                            TEST FIXTURES

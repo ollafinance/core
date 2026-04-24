@@ -187,9 +187,6 @@ interface IOllaCore {
     /// @notice Thrown when deposits are blocked by the safety module pause.
     error OllaCore__SafetyModulePaused();
 
-    /// @notice Thrown when a slashing delta is invalid.
-    error OllaCore__InvalidSlashingDelta(uint256 previous, uint256 current);
-
     /// @notice Thrown when an amount is zero or otherwise invalid.
     error OllaCore__InvalidAmount();
 

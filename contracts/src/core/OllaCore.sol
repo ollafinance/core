@@ -76,8 +76,9 @@ contract OllaCore is
     /// @notice Contract related interfaces and addresses.
     IOllaCore.CoreModules private _modules;
 
-    /// @notice Accounting and reporting values.
-    IOllaCore.AccountingState private _accountingState;
+    /// @notice Protocol-internal ledger of cumulative rewards. Every other accounting figure is
+    ///         derived live from the owning module via `_liveAccountingState()`.
+    uint256 private _cumulativeRewards;
     IOllaCore.FlowCounters private _flowCounters;
     IOllaCore.LatestReport private _latestReport;
 
@@ -610,7 +611,7 @@ contract OllaCore is
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Runs the full accounting update pipeline: reads module state, validates deltas, computes fees, and emits reports.
+    /// @notice Runs the full accounting update pipeline: reads module state, computes fees, and emits reports.
     function _updateAccountingInternal() internal {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         // slither-disable-start reentrancy-no-eth
@@ -621,8 +622,7 @@ contract OllaCore is
         safetyModuleRef.checkAccountingLiveness();
 
         (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows, uint256 exitFeesThisPeriod) = _getFlowsSnapshot();
-        (uint256 currentRewards, uint256 slashingDelta) = _getStakingManagerState();
-        _validateSlashingDelta(slashingDelta);
+        uint256 currentRewards = _cumulativeRewards + _modules.stakingManager.getClaimableRewards();
 
         _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, exitFeesThisPeriod, currentRewards);
         // slither-disable-end reentrancy-events
@@ -644,7 +644,7 @@ contract OllaCore is
         // slither-disable-next-line reentrancy-benign
         rewardsDelta = rewardsAccumulatorRef.recordBalance();
         if (rewardsDelta != 0) {
-            _accountingState.cumulativeRewards += rewardsDelta;
+            _cumulativeRewards += rewardsDelta;
         }
         emit RewardsDelta(rewardsDelta);
 
@@ -677,18 +677,16 @@ contract OllaCore is
         return rewardsAccumulatorBalance;
     }
 
-    // Reads _modules fields and _accountingState atomically for correctness.
     /// @notice Claims exited unstaked funds from StakingManager and forwards them to the Vault.
     /// @return receivedAmount The actual token amount received.
-    // slither-disable-next-line pess-multiple-storage-read
     function _pullUnstakedFunds() internal returns (uint256 receivedAmount) {
-        IERC20 assetRef = _modules.asset;
+        IOllaCore.CoreModules memory modules = _modules;
+        IERC20 assetRef = modules.asset;
         uint256 balanceBefore = assetRef.balanceOf(address(this));
 
-        uint256 exitAmount;
         // Trusted StakingManager; transfers unstaked funds to this contract.
-        // slither-disable-next-line reentrancy-benign
-        (receivedAmount, exitAmount) = _modules.stakingManager.getUnstakedFunds();
+        // slither-disable-next-line reentrancy-benign,unused-return
+        (receivedAmount,) = modules.stakingManager.getUnstakedFunds();
 
         uint256 balanceAfter = assetRef.balanceOf(address(this));
         uint256 actualReceived = balanceAfter - balanceBefore;
@@ -699,19 +697,10 @@ contract OllaCore is
 
         // Forward received funds to Vault
         if (actualReceived > 0) {
-            IOllaVault vaultRef = IOllaVault(_modules.vault);
+            IOllaVault vaultRef = IOllaVault(modules.vault);
             assetRef.safeTransfer(address(vaultRef), actualReceived);
             vaultRef.receiveUnstaked(actualReceived);
             emit UnstakedFundsClaimed(actualReceived);
-        }
-
-        // Positive-amount guard; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        if (exitAmount > 0) {
-            if (exitAmount > _accountingState.stakedPrincipal) {
-                exitAmount = _accountingState.stakedPrincipal;
-            }
-            _accountingState.stakedPrincipal -= exitAmount;
         }
 
         return actualReceived;
@@ -788,12 +777,6 @@ contract OllaCore is
         if (excess > 0) {
             assetRef.safeTransfer(address(vaultRef), excess);
             vaultRef.receiveUnstaked(excess);
-        }
-
-        // Benign: calls go to trusted vault/stakingManager within nonReentrant rebalance().
-        // slither-disable-next-line timestamp,reentrancy-benign
-        if (totalStaked > 0) {
-            _accountingState.stakedPrincipal += totalStaked;
         }
 
         return totalStaked;
@@ -1054,17 +1037,14 @@ contract OllaCore is
     /// @return snapshot A freshly-assembled AccountingState populated from authoritative sources.
     function _liveAccountingState() internal view returns (IOllaCore.AccountingState memory snapshot) {
         IOllaCore.CoreModules memory modules = _modules;
-        uint256 cumulativeRewards = _accountingState.cumulativeRewards;
+        uint256 cumulativeRewards = _cumulativeRewards;
         uint256 claimableRewards = modules.stakingManager.getClaimableRewards();
 
-        uint256 rewardsDelta;
         uint256 latestReportRewards = _latestReport.rewardsSnapshot;
         uint256 currentRewards = cumulativeRewards + claimableRewards;
         // Positive-delta guard; signed comparison is not a timestamp concern.
         // slither-disable-next-line timestamp
-        if (currentRewards > latestReportRewards) {
-            rewardsDelta = currentRewards - latestReportRewards;
-        }
+        uint256 rewardsDelta = currentRewards > latestReportRewards ? currentRewards - latestReportRewards : 0;
 
         snapshot = IOllaCore.AccountingState({
             stakedPrincipal: modules.stakingManager.totalStaked(),
@@ -1075,16 +1055,6 @@ contract OllaCore is
             cumulativeRewards: cumulativeRewards
         });
         return snapshot;
-    }
-
-    /// @notice Reads the live reward/slashing baselines used by the accounting update path.
-    /// @return currentRewards The cumulative rewards including claimable, used as the rewards snapshot.
-    /// @return slashingDelta The cumulative slashing delta from StakingManager, validated for monotonicity.
-    function _getStakingManagerState() internal view returns (uint256 currentRewards, uint256 slashingDelta) {
-        IStakingManager stakingManagerRef = _modules.stakingManager;
-        currentRewards = _accountingState.cumulativeRewards + stakingManagerRef.getClaimableRewards();
-        slashingDelta = stakingManagerRef.getSlashingDelta();
-        return (currentRewards, slashingDelta);
     }
 
     /// @notice Returns true if enough gas remains to execute another rebalance step.
@@ -1200,17 +1170,6 @@ contract OllaCore is
     /// @return rewardsAccumulatorBalance The token balance of the RewardsAccumulator.
     function _getRewardsAccumulatorBalance() internal view returns (uint256 rewardsAccumulatorBalance) {
         return IRewardsAccumulator(_modules.rewardsAccumulator).balance();
-    }
-
-    /// @notice Validates that the cumulative slashing delta is monotonically non-decreasing.
-    /// @param slashingDelta The new cumulative slashing delta to validate.
-    function _validateSlashingDelta(uint256 slashingDelta) internal view {
-        uint256 previousSlashingDelta = _accountingState.slashingDelta;
-        // Monotonicity check on cumulative slashing; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        if (slashingDelta < previousSlashingDelta) {
-            revert OllaCore__InvalidSlashingDelta(previousSlashingDelta, slashingDelta);
-        }
     }
 
     /// @notice Calculates protocol fee in assets, then splits into treasury and provider share amounts.
