@@ -156,7 +156,9 @@ contract OllaCoreDepositTest is Test {
         uint256 firstShares = _performDeposit(alice, depositAssetAmountAlice);
         assertEq(firstShares, depositAssetAmountAlice, "first deposit: 1:1 shares at zero supply");
 
-        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        // totalAssets() pulls `rewardsAccumulator.balance()` live; seeding the accumulator
+        // directly replaces the pre-Stage-3 harness write to `_accountingState.rewardsAccumulatorBalance`.
+        deal(address(asset), address(rewardsAccumulator), 50 * DECIMALS);
 
         uint256 totalAssetsBeforeSecondDeposit = core.totalAssets();
         uint256 totalSharesBeforeSecondDeposit = stAztec.totalSupply();

@@ -329,21 +329,6 @@ contract OllaCoreInvariantTest is Test {
                         ACCOUNTING INVARIANTS
     //////////////////////////////////////////////////////////////*/
 
-    function invariant_TotalAssetsEqualBuckets() external view {
-        IOllaCore.AccountingState memory accounting = core.accountingState();
-
-        uint256 positiveTotal =
-            vault.bufferedAssets() + accounting.stakedPrincipal + accounting.rewardsAccumulatorBalance
-            + accounting.claimableRewards;
-        uint256 expectedTotal = positiveTotal;
-
-        // totalAssets() subtracts pending withdrawals (shares already burned)
-        uint256 pendingWithdrawals = withdrawalQueue.totalPendingAssets();
-        expectedTotal = pendingWithdrawals >= expectedTotal ? 0 : expectedTotal - pendingWithdrawals;
-
-        assertEq(core.totalAssets(), expectedTotal, "total assets sum");
-    }
-
     function invariant_TotalAssetsNeverReverts() external view {
         // totalAssets() must always be callable regardless of slashing state
         uint256 total = core.totalAssets();
@@ -883,15 +868,6 @@ contract OllaCoreLifecycleInvariantTest is Test {
     function invariant_FinalizedUnclaimedAssetsLeqBalance() external view {
         uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(30))));
         assertLe(finalizedUnclaimed, asset.balanceOf(address(vault)), "finalized unclaimed <= balance");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-            D3 - STAKED PRINCIPAL <= TOTAL STAKED
-    //////////////////////////////////////////////////////////////*/
-
-    function invariant_StakedPrincipalLeqTotalStaked() external view {
-        IOllaCore.AccountingState memory accounting = core.accountingState();
-        assertLe(accounting.stakedPrincipal, stakingManager.totalStakedAmount(), "stakedPrincipal <= totalStaked");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1691,12 +1667,10 @@ contract OllaCoreCacheCoherenceHandler is Test {
 //////////////////////////////////////////////////////////////*/
 
 /// @title OllaCoreCacheCoherenceInvariantTest
-/// @notice Invariant suite that targets the `_accountingState` cache-coherence
-///         refactor. Two of its three invariants are EXPECTED TO FAIL on the
-///         current cached-mirror code and pass once pull-model reads land.
-///         `invariant_NoMirrorDrift` will become trivially true (and the fields
-///         it checks will cease to exist) once the pull refactor deletes the
-///         mirror; it is annotated as transitional.
+/// @notice Invariant suite that guards the `_accountingState` pull-model contract:
+///         `totalAssets()` must equal the live read-through sum of the owning modules,
+///         and exchange-rate accrual must be non-decreasing across handler actions that
+///         do not involve slashing.
 contract OllaCoreCacheCoherenceInvariantTest is Test {
     using Math for uint256;
 
@@ -1848,24 +1822,4 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
     }
 
     uint256 internal _previousSlashingDelta;
-
-    /*//////////////////////////////////////////////////////////////
-         INVARIANT (TRANSITIONAL): NO MIRROR DRIFT (DELETE WITH MIRROR)
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice The mirror fields `stakedPrincipal` and `claimableRewards` must
-    ///         match the live sources at every reachable protocol state. This is
-    ///         TRANSITIONAL: it exists to mechanically surface the cache-coherence
-    ///         failure class. After the pull-model refactor removes the mirror
-    ///         fields, this invariant becomes trivially true (or the fields cease
-    ///         to exist and this invariant must be deleted).
-    /// @dev Expected to FAIL today — any handler sequence that accrues rewards or
-    ///      runs a tight-gas rebalance will surface a drift counterexample.
-    function invariant_NoMirrorDrift() external view {
-        IOllaCore.AccountingState memory accounting = core.accountingState();
-        assertEq(accounting.stakedPrincipal, stakingManager.totalStaked(), "stakedPrincipal mirror must track live");
-        assertEq(
-            accounting.claimableRewards, stakingManager.getClaimableRewards(), "claimableRewards mirror must track live"
-        );
-    }
 }

@@ -227,14 +227,11 @@ contract OllaCoreWithdrawalRateTest is Test {
     function test_WithdrawalRate_EqualsExchangeRate_WithRewards() external {
         _deposit(alice, 100 * DECIMALS);
 
-        // Simulate rewards accrual
-        core.exposedApplyAccountingUpdates(
-            0, // stakedPrincipal
-            10 * DECIMALS, // rewardsAccumulatorBalance
-            0, // claimableRewards
-            10 * DECIMALS, // rewardsDelta
-            0 // slashingDelta
-        );
+        // Simulate rewards accrual sitting in the RewardsAccumulator. totalAssets() reads
+        // `rewardsAccumulator.balance()` live via `_liveAccountingState()`, so dealing the
+        // asset to the accumulator is the pull-model equivalent of seeding
+        // `_accountingState.rewardsAccumulatorBalance` directly.
+        deal(address(asset), address(rewardsAccumulator), 10 * DECIMALS);
 
         uint256 withdrawalRate = core.exposedWithdrawalRate();
         uint256 exchangeRate = core.exchangeRate();

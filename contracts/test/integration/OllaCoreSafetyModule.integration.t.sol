@@ -21,24 +21,6 @@ import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingMa
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
-contract OllaCoreSafetyModuleHarness is OllaCore {
-    /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function exposedApplyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) external {
-        _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
-        );
-    }
-}
-
 contract OllaCoreSafetyModuleTest is Test {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -57,7 +39,7 @@ contract OllaCoreSafetyModuleTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreSafetyModuleHarness internal core;
+    OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
@@ -78,9 +60,9 @@ contract OllaCoreSafetyModuleTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreSafetyModuleHarness coreImplementation = new OllaCoreSafetyModuleHarness();
+        OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        core = OllaCoreSafetyModuleHarness(address(coreProxy));
+        core = OllaCore(address(coreProxy));
 
         OllaVault vaultImplementation = new OllaVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");

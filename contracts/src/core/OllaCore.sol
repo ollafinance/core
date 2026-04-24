@@ -610,7 +610,7 @@ contract OllaCore is
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Runs the full accounting update pipeline: reads module state, applies updates, computes fees, and emits reports.
+    /// @notice Runs the full accounting update pipeline: reads module state, validates deltas, computes fees, and emits reports.
     function _updateAccountingInternal() internal {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         // slither-disable-start reentrancy-no-eth
@@ -621,20 +621,8 @@ contract OllaCore is
         safetyModuleRef.checkAccountingLiveness();
 
         (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows, uint256 exitFeesThisPeriod) = _getFlowsSnapshot();
-        (
-            uint256 currentRewards,
-            uint256 rewardsDelta,
-            uint256 slashingDelta,
-            uint256 stakedPrincipal,
-            uint256 claimableRewards
-        ) = _getStakingManagerState();
+        (uint256 currentRewards, uint256 slashingDelta) = _getStakingManagerState();
         _validateSlashingDelta(slashingDelta);
-
-        uint256 rewardsAccumulatorBalance = _getRewardsAccumulatorBalance();
-
-        _applyAccountingUpdates(
-            stakedPrincipal, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
-        );
 
         _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, exitFeesThisPeriod, currentRewards);
         // slither-disable-end reentrancy-events
@@ -685,7 +673,6 @@ contract OllaCore is
         modules.asset.safeTransfer(address(vaultRef), rewardsAccumulatorBalance);
         vaultRef.receiveUnstaked(rewardsAccumulatorBalance);
 
-        _accountingState.rewardsAccumulatorBalance = 0;
         emit RewardsAccumulatorFundsPulled(rewardsAccumulatorBalance);
         return rewardsAccumulatorBalance;
     }
@@ -895,24 +882,6 @@ contract OllaCore is
         flows.latestReportCumulativeSlashingAdjustments = updatedCumulativeSlashingAdjustments;
     }
 
-    // Writes all accounting bucket fields atomically.
-    /// @notice Writes fresh staking/reward/slashing values into the accounting state storage.
-    // slither-disable-next-line pess-multiple-storage-read
-    function _applyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) internal {
-        IOllaCore.AccountingState storage stateSnapshot = _accountingState;
-        stateSnapshot.stakedPrincipal = newStakedPrincipal;
-        stateSnapshot.rewardsAccumulatorBalance = newRewardsAccumulatorBalance;
-        stateSnapshot.claimableRewards = newClaimableRewards;
-        stateSnapshot.rewardsDelta = newRewardsDelta;
-        stateSnapshot.slashingDelta = newSlashingDelta;
-    }
-
     /// @notice Computes updated accounting outputs, runs safety checks, and persists the final report.
     /// @param safetyModuleRef The SafetyModule instance for rate-drop and queue-ratio checks.
     /// @param flowsSnapshot The flow counters snapshot for the current accounting cycle.
@@ -929,6 +898,16 @@ contract OllaCore is
         (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();
+        // Capture the live rewards/slashing deltas BEFORE `_updateReportingSnapshots` advances
+        // `_latestReport.rewardsSnapshot`, otherwise `AttestersStateRead` would emit a zero
+        // rewardsDelta (the snapshot will have caught up by the time the event fires).
+        uint256 preSnapshotRewardsDelta;
+        uint256 preSnapshotSlashingDelta;
+        {
+            IOllaCore.AccountingState memory attesterSnapshot = _liveAccountingState();
+            preSnapshotRewardsDelta = attesterSnapshot.rewardsDelta;
+            preSnapshotSlashingDelta = attesterSnapshot.slashingDelta;
+        }
         // _computeAccountingOutputs calls trusted Vault and pays fees via trusted mint path.
         // slither-disable-next-line reentrancy-no-eth
         // slither-disable-next-line reentrancy-benign
@@ -957,6 +936,7 @@ contract OllaCore is
         );
         _latestReportCumulativeExitFees = vaultRef.cumulativeExitFees();
         _updateAccountingTimestamp(safetyModuleRef);
+        emit AttestersStateRead(preSnapshotRewardsDelta, preSnapshotSlashingDelta, _latestReport.timestamp);
         _emitAccountingReport(
             newTotalAssets, rate, grossRewards, netFlows, protocolFeeAssets, treasuryShares, providerShares
         );
@@ -994,7 +974,7 @@ contract OllaCore is
         )
     {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
-        newTotalAssets = _computeTotalAssets(_accountingState, vaultRef.bufferedAssets(), pendingWithdrawals);
+        newTotalAssets = _computeTotalAssets(_liveAccountingState(), vaultRef.bufferedAssets(), pendingWithdrawals);
         int256 grossRewardsSigned;
         (grossRewards, grossRewardsSigned) = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         // Signed comparison for negative rewards detection; not a timestamp concern.
@@ -1030,7 +1010,9 @@ contract OllaCore is
         safetyModuleRef.setLatestAccountingTimestamp(block.timestamp);
     }
 
-    /// @notice Emits AttestersStateRead and AccountingUpdated events for the current accounting cycle.
+    /// @notice Emits the AccountingUpdated event for the current accounting cycle.
+    /// @dev AttestersStateRead is emitted by `_computeAndFinalizeAccounting` using the pre-snapshot
+    ///      rewardsDelta/slashingDelta (captured before `_updateReportingSnapshots` runs).
     /// @param newTotalAssets The updated total assets value.
     /// @param rate The new exchange rate.
     /// @param grossRewards The gross rewards earned this period.
@@ -1047,7 +1029,6 @@ contract OllaCore is
         uint256 treasuryShares,
         uint256 providerShares
     ) internal {
-        emit AttestersStateRead(_accountingState.rewardsDelta, _accountingState.slashingDelta, _latestReport.timestamp);
         emit AccountingUpdated(
             newTotalAssets,
             rate,
@@ -1096,42 +1077,14 @@ contract OllaCore is
         return snapshot;
     }
 
-    /// @notice Reads staking state from StakingManager: cumulative rewards, deltas, principal, and claimable.
-    /// @return currentRewards The cumulative rewards including claimable.
-    /// @return rewardsDelta The positive reward delta since the last report.
-    /// @return slashingDelta The cumulative slashing delta.
-    /// @return stakedPrincipal The total staked principal.
-    /// @return claimableRewards The claimable rewards from StakingManager.
-    function _getStakingManagerState()
-        internal
-        view
-        returns (
-            uint256 currentRewards,
-            uint256 rewardsDelta,
-            uint256 slashingDelta,
-            uint256 stakedPrincipal,
-            uint256 claimableRewards
-        )
-    {
-        IOllaCore.CoreModules memory modules = _modules;
-        IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
-        claimableRewards = modules.stakingManager.getClaimableRewards();
-        currentRewards = accountingSnapshot.cumulativeRewards + claimableRewards;
-
-        uint256 latestReportRewards = _latestReport.rewardsSnapshot;
-
-        // Signed arithmetic for reward delta computation; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(latestReportRewards);
-
-        // Positive-delta guard; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        if (rewardsDeltaSigned > 0) {
-            rewardsDelta = SafeCast.toUint256(rewardsDeltaSigned);
-        }
-        slashingDelta = modules.stakingManager.getSlashingDelta();
-        stakedPrincipal = modules.stakingManager.totalStaked();
-        return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal, claimableRewards);
+    /// @notice Reads the live reward/slashing baselines used by the accounting update path.
+    /// @return currentRewards The cumulative rewards including claimable, used as the rewards snapshot.
+    /// @return slashingDelta The cumulative slashing delta from StakingManager, validated for monotonicity.
+    function _getStakingManagerState() internal view returns (uint256 currentRewards, uint256 slashingDelta) {
+        IStakingManager stakingManagerRef = _modules.stakingManager;
+        currentRewards = _accountingState.cumulativeRewards + stakingManagerRef.getClaimableRewards();
+        slashingDelta = stakingManagerRef.getSlashingDelta();
+        return (currentRewards, slashingDelta);
     }
 
     /// @notice Returns true if enough gas remains to execute another rebalance step.
@@ -1280,12 +1233,11 @@ contract OllaCore is
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
 
-    /// @dev Core is the pricing authority because it owns totalAssets() (computed from _accountingState).
+    /// @dev Core is the pricing authority because it owns totalAssets() (assembled live via `_liveAccountingState`).
     ///      The Vault delegates pricing to Core via cross-contract calls to avoid circular dependencies.
-    ///      Rate reflects state as of the last `updateAccounting()` or `rebalance()` call.
-    ///      Accrued rewards and pending slashing between updates are not reflected.
-    ///      Keeper infrastructure should call `updateAccounting()` at a cadence that
-    ///      bounds the staleness window to an acceptable level for depositors.
+    ///      Rate reflects the current state of the owning modules (StakingManager, RewardsAccumulator, Vault)
+    ///      read at call time — no intermediate caching. `updateAccounting()` only advances the reporting
+    ///      snapshot (`_latestReport`); it does not gate pricing reads.
     function _exchangeRate() internal view returns (uint256) {
         return (totalAssets() + _VIRTUAL_OFFSET)
         .mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, Math.Rounding.Floor);
