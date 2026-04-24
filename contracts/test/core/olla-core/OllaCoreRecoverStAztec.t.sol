@@ -178,4 +178,21 @@ contract OllaCoreRecoverStAztecTest is Test {
         vault.recoverStAztec(alice, recoverAmount);
         assertEq(stAztec.balanceOf(alice) - aliceBalanceBefore, recoverAmount, "alice receives recovered stAztec");
     }
+
+    function test_RecoverStAztec_SucceedsWhileVaultPaused() external {
+        uint256 shares = _performDeposit(alice, 8 * DECIMALS);
+        uint256 recoverAmount = shares / 4;
+
+        vm.prank(alice);
+        stAztec.transfer(address(vault), recoverAmount);
+
+        vm.prank(governance);
+        vault.pause();
+
+        uint256 aliceBalanceBefore = stAztec.balanceOf(alice);
+        vm.prank(governance);
+        vault.recoverStAztec(alice, recoverAmount);
+
+        assertEq(stAztec.balanceOf(alice) - aliceBalanceBefore, recoverAmount, "alice receives recovered stAztec");
+    }
 }

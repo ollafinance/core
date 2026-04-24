@@ -11,7 +11,7 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
@@ -31,7 +31,7 @@ contract OllaVault is
     AccessControlUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard,
+    ReentrancyGuardTransient,
     IOllaVault
 {
     using SafeERC20 for IERC20;
@@ -289,8 +289,9 @@ contract OllaVault is
     /// @param operator The address to set as operator.
     /// @param approved Whether the operator is approved.
     /// @return Whether the call succeeded.
-    function setOperator(address operator, bool approved) external override whenNotPaused returns (bool) {
+    function setOperator(address operator, bool approved) external override returns (bool) {
         if (operator == msg.sender) revert OllaVault__InvalidParameter();
+        if (approved && paused()) revert PausableUpgradeable.EnforcedPause();
         _operators[msg.sender][operator] = approved;
         emit OperatorSet(msg.sender, operator, approved);
         return true;
@@ -475,7 +476,7 @@ contract OllaVault is
     }
 
     /// @inheritdoc IOllaVault
-    function recoverStAztec(address recipient, uint256 amount) external override onlyOwner whenNotPaused {
+    function recoverStAztec(address recipient, uint256 amount) external override onlyOwner {
         if (amount == 0) revert OllaVault__InvalidAmount();
         address resolvedRecipient = recipient == address(0) ? _treasury() : recipient;
         IERC20(address(_modules.stAztec)).safeTransfer(resolvedRecipient, amount);
@@ -692,6 +693,10 @@ contract OllaVault is
     /*//////////////////////////////////////////////////////////////
                         PUBLIC VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    function renounceOwnership() public view override onlyOwner {
+        revert("renouncing ownership not allowed");
+    }
 
     /// @notice ERC-165 interface detection, extended for ERC-7540/ERC-7575.
     /// @param interfaceId The interface identifier to check.
