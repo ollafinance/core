@@ -7,8 +7,8 @@ import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { EnumerableSet } from "@oz/utils/structs/EnumerableSet.sol";
-import { ReentrancyGuardUpgradeable } from "src/shared/ReentrancyGuardUpgradeable.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -25,7 +25,7 @@ contract StakingManager is
     Initializable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuardUpgradeable,
+    ReentrancyGuardTransient,
     IStakingManager
 {
     using SafeERC20 for IERC20;

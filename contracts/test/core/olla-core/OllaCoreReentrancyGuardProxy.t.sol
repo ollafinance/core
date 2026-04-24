@@ -7,9 +7,9 @@ pragma solidity >=0.8.27 <0.9.0;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
-import { ReentrancyGuardUpgradeable } from "src/shared/ReentrancyGuardUpgradeable.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
@@ -183,7 +183,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
             true
         );
 
-        vm.expectRevert(ReentrancyGuardUpgradeable.ReentrancyGuardReentrantCall.selector);
+        vm.expectRevert(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
         vault.deposit(amount, alice, 0);
     }

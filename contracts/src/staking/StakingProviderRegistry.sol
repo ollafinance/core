@@ -4,7 +4,7 @@ pragma solidity 0.8.27;
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ReentrancyGuardUpgradeable } from "src/shared/ReentrancyGuardUpgradeable.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
@@ -17,7 +17,7 @@ contract StakingProviderRegistry is
     Initializable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuardUpgradeable,
+    ReentrancyGuardTransient,
     IStakingProviderRegistry
 {
     using QueueLib for Queue;

@@ -11,10 +11,10 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
-import { ReentrancyGuardUpgradeable } from "src/shared/ReentrancyGuardUpgradeable.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
@@ -31,7 +31,7 @@ contract OllaVault is
     AccessControlUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuardUpgradeable,
+    ReentrancyGuardTransient,
     IOllaVault
 {
     using SafeERC20 for IERC20;
