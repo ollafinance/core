@@ -94,7 +94,7 @@ contract PrintStakingManagerUpgradePayload is BaseScript {
         bool alreadySameCode = candidateCodeHash != bytes32(0) && candidateCodeHash == currentCodeHash;
 
         bytes memory operationData =
-            abi.encodeCall(OllaGovernance.upgradeSatellite, (stakingManagerProxy, candidateImplementation));
+            abi.encodeCall(OllaGovernance.upgradeSatellite, (stakingManagerProxy, candidateImplementation, bytes("")));
         bytes32 operationId = gov.hashOperation(governance, 0, operationData, predecessor, salt);
         OperationState memory op = _operationState(gov, operationId);
 

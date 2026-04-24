@@ -304,22 +304,26 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IOllaGovernance
-    function upgradeCore(address newImplementation) external override onlySelf {
+    function upgradeCore(address newImplementation, bytes calldata data) external override onlySelf {
         if (newImplementation == address(0)) {
             revert OllaGovernance__ZeroAddress("newImplementation");
         }
-        UUPSUpgradeable(core).upgradeToAndCall(newImplementation, "");
+        UUPSUpgradeable(core).upgradeToAndCall(newImplementation, data);
     }
 
     /// @inheritdoc IOllaGovernance
-    function upgradeSatellite(address proxy, address newImplementation) external override onlySelf {
+    function upgradeSatellite(address proxy, address newImplementation, bytes calldata data)
+        external
+        override
+        onlySelf
+    {
         if (proxy == address(0)) {
             revert OllaGovernance__ZeroAddress("proxy");
         }
         if (newImplementation == address(0)) {
             revert OllaGovernance__ZeroAddress("newImplementation");
         }
-        UUPSUpgradeable(proxy).upgradeToAndCall(newImplementation, "");
+        UUPSUpgradeable(proxy).upgradeToAndCall(newImplementation, data);
     }
 
     /// @notice Authorizes UUPS upgrades. Only the timelock (self) can upgrade this contract.
