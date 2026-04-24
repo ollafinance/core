@@ -346,6 +346,12 @@ contract OllaVaultGuardsTest is Test {
         vault.recoverStAztec(alice, 0);
     }
 
+    function test_RevertWhen_RenounceOwnership() external {
+        vm.expectRevert(bytes("renouncing ownership not allowed"));
+        vm.prank(address(governance));
+        vault.renounceOwnership();
+    }
+
     function test_MaxMint_SafetyModulePaused_ReturnsZero() external {
         safetyModule.pause();
         assertEq(vault.maxMint(alice), 0, "maxMint should return 0 when safety module is paused");

@@ -2,29 +2,14 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 /// @title OllaCore ReentrancyGuard Proxy Compatibility Tests
-/// @notice Verifies that OpenZeppelin 5.x's non-upgradeable `ReentrancyGuard` works correctly
-///         behind UUPS proxies as used by the Olla protocol.
-///
-///         Background:
-///         - OZ 5.x removed `ReentrancyGuardUpgradeable` and annotated `ReentrancyGuard` with
-///           `@custom:stateless`, meaning it uses ERC-7201 namespaced storage and is safe for
-///           both upgradeable and non-upgradeable contracts.
-///         - The `ReentrancyGuard` constructor sets the namespaced slot to `NOT_ENTERED (1)`,
-///           but this only executes on the **implementation** -- not on the proxy.
-///         - On a freshly deployed proxy the slot starts at `0` (uninitialized).
-///         - The guard still works because `_reentrancyGuardEntered()` checks `value == ENTERED (2)`,
-///           so `0` passes the check just as `1` does.
-///         - After the first `nonReentrant` call completes, `_nonReentrantAfter()` writes `1`
-///           (`NOT_ENTERED`) to the slot, normalizing it going forward.
-///
-///         These tests document and verify these assumptions end-to-end on an actual OllaCore proxy.
+/// @notice Verifies the explicit upgradeable reentrancy guard initialization used by the protocol.
 
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
+import { ReentrancyGuardUpgradeable } from "src/shared/ReentrancyGuardUpgradeable.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
@@ -127,9 +112,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Documents that on a fresh proxy (before `initialize()`), the
-    ///         ReentrancyGuard slot is `0`.  The guard is safe because
-    ///         `_reentrancyGuardEntered()` checks `value == ENTERED (2)`, so
-    ///         `0` passes just like `1`.
+    ///         reentrancy guard slot is `0`.
     function test_ReentrancyGuardSlot_IsZeroBeforeInitialize() external view {
         bytes32 slotValue = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(slotValue), 0, "slot should be 0 (uninitialized) on fresh proxy");
@@ -139,23 +122,21 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
                     SLOT VALUE AFTER INITIALIZE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Proves that `initialize()` does NOT touch the ReentrancyGuard
-    ///         slot -- it remains `0`.  This confirms the guard does not rely
-    ///         on an `__ReentrancyGuard_init()` call.
-    function test_ReentrancyGuardSlot_RemainsZeroAfterInitialize() external {
+    /// @notice Proves that `initialize()` primes the proxy guard slot to
+    ///         `NOT_ENTERED (1)` via `__ReentrancyGuard_init()`.
+    function test_ReentrancyGuardSlot_InitializedAfterInitialize() external {
         _initializeVault();
 
         bytes32 slotValue = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
-        assertEq(uint256(slotValue), 0, "slot should still be 0 after initialize()");
+        assertEq(uint256(slotValue), NOT_ENTERED, "slot should be initialized after initialize()");
     }
 
     /*//////////////////////////////////////////////////////////////
               FIRST NONREENTRANT CALL SUCCEEDS ON PROXY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The first `nonReentrant` call on the proxy must succeed even
-    ///         though the slot starts at `0` instead of `NOT_ENTERED (1)`.
-    ///         After the call the slot is set to `NOT_ENTERED (1)`.
+    /// @notice The first `nonReentrant` call on the proxy must succeed after
+    ///         initialization and leave the slot at `NOT_ENTERED (1)`.
     function test_Deposit_FirstNonReentrantCallSucceeds() external {
         _initializeVault();
 
@@ -202,7 +183,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
             true
         );
 
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        vm.expectRevert(ReentrancyGuardUpgradeable.ReentrancyGuardReentrantCall.selector);
         vm.prank(alice);
         vault.deposit(amount, alice, 0);
     }
@@ -211,16 +192,12 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
           IMPLEMENTATION SLOT VS PROXY SLOT
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Confirms the implementation's constructor sets its own slot to
-    ///         `NOT_ENTERED (1)`, while the proxy's slot remains `0`.
-    ///         This highlights the decoupling between implementation and proxy
-    ///         storage, which the ERC-7201 + stateless pattern handles safely.
+    /// @notice Confirms the implementation does not initialize proxy storage,
+    ///         while the proxy itself starts uninitialized.
     function test_ReentrancyGuardSlot_ImplementationVsProxy() external view {
-        // Implementation slot -- set to 1 by the constructor
         bytes32 implSlot = vm.load(address(vaultImplementation), REENTRANCY_GUARD_SLOT);
-        assertEq(uint256(implSlot), NOT_ENTERED, "implementation slot should be NOT_ENTERED (1)");
+        assertEq(uint256(implSlot), 0, "implementation slot should remain zero");
 
-        // Proxy slot -- uninitialised, defaults to 0
         bytes32 proxySlot = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
         assertEq(uint256(proxySlot), 0, "proxy slot should be 0 (uninitialized)");
     }
@@ -229,15 +206,16 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
           SLOT NORMALIZED AFTER FIRST CALL
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice After the very first `nonReentrant` call on the proxy, the slot
-    ///         transitions from `0` -> `2` (ENTERED) -> `1` (NOT_ENTERED).
-    ///         Subsequent calls therefore start from `1`, identical to a
-    ///         non-proxy deployment.
+    /// @notice After initialization and a nonReentrant call, the slot stays normalized
+    ///         at `NOT_ENTERED (1)`.
     function test_ReentrancyGuardSlot_NormalizedAfterFirstDeposit() external {
         _initializeVault();
 
-        // Before any call: slot is 0
-        assertEq(uint256(vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT)), 0, "pre-call: slot should be 0");
+        assertEq(
+            uint256(vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT)),
+            NOT_ENTERED,
+            "pre-call: slot should be NOT_ENTERED (1)"
+        );
 
         // First deposit
         uint256 amount = 1 * DECIMALS;

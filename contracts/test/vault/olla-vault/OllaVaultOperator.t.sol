@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import { Test } from "@forge-std/Test.sol";
 
+import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { StAztec } from "src/vault/StAztec.sol";
@@ -133,6 +134,30 @@ contract OllaVaultOperatorTest is Test {
         vm.prank(alice);
         vault.setOperator(bob, false);
         assertFalse(vault.isOperator(alice, bob), "bob revoked");
+    }
+
+    /// @notice setOperator allows revoking an operator while paused.
+    function test_SetOperator_RevokesOperatorWhilePaused() external {
+        vm.prank(alice);
+        vault.setOperator(bob, true);
+
+        vm.prank(governance);
+        vault.pause();
+
+        vm.prank(alice);
+        vault.setOperator(bob, false);
+
+        assertFalse(vault.isOperator(alice, bob), "bob revoked while paused");
+    }
+
+    /// @notice setOperator still blocks new approvals while paused.
+    function test_RevertWhen_SetOperator_ApproveWhilePaused() external {
+        vm.prank(governance);
+        vault.pause();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        vm.prank(alice);
+        vault.setOperator(bob, true);
     }
 
     /// @notice setOperator emits OperatorSet event.

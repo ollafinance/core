@@ -5,7 +5,7 @@ import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUp
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { ReentrancyGuardUpgradeable } from "src/shared/ReentrancyGuardUpgradeable.sol";
 import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 /// @title WithdrawalQueue
@@ -22,7 +22,7 @@ contract WithdrawalQueue is
     Initializable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard,
+    ReentrancyGuardUpgradeable,
     IWithdrawalQueue
 {
     /*//////////////////////////////////////////////////////////////
@@ -116,6 +116,7 @@ contract WithdrawalQueue is
         }
 
         __AccessControl_init();
+        __ReentrancyGuard_init();
 
         vault = vault_;
         nextRequestId = 1;
