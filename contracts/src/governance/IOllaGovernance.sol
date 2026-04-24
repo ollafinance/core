@@ -186,14 +186,16 @@ interface IOllaGovernance {
                           UPGRADE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Upgrades the OllaCore implementation.
+    /// @notice Upgrades the OllaCore implementation and optionally executes init calldata.
     /// @param newImplementation The new implementation address.
-    function upgradeCore(address newImplementation) external;
+    /// @param data Optional calldata forwarded to `upgradeToAndCall` for atomic initialization.
+    function upgradeCore(address newImplementation, bytes calldata data) external;
 
-    /// @notice Upgrades a satellite contract implementation.
+    /// @notice Upgrades a satellite contract implementation and optionally executes init calldata.
     /// @param proxy The proxy address of the satellite.
     /// @param newImplementation The new implementation address.
-    function upgradeSatellite(address proxy, address newImplementation) external;
+    /// @param data Optional calldata forwarded to `upgradeToAndCall` for atomic initialization.
+    function upgradeSatellite(address proxy, address newImplementation, bytes calldata data) external;
 
     /*//////////////////////////////////////////////////////////////
                          EMERGENCY FUNCTIONS

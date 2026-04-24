@@ -96,7 +96,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
         if (!hasAnyTargetChange) {
             // Distinguish "all upgraded" from "no targets configured" by checking whether
             // any timelock operation in the canonical chain was executed (done).
-            bytes memory queueData = abi.encodeCall(OllaGovernance.upgradeSatellite, (queueProxy, queueImpl));
+            bytes memory queueData = abi.encodeCall(OllaGovernance.upgradeSatellite, (queueProxy, queueImpl, bytes("")));
             bytes32 queueOpId = gov.hashOperation(governance, 0, queueData, rootPredecessor, salt);
             bool anyOpDone = gov.isOperationDone(queueOpId);
 
@@ -124,7 +124,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
             return;
         }
 
-        bytes memory queueData = abi.encodeCall(OllaGovernance.upgradeSatellite, (queueProxy, queueImpl));
+        bytes memory queueData = abi.encodeCall(OllaGovernance.upgradeSatellite, (queueProxy, queueImpl, bytes("")));
         bytes32 queueCanonicalOpId = gov.hashOperation(governance, 0, queueData, rootPredecessor, salt);
         OperationState memory queueCanonicalOp = _operationState(gov, queueCanonicalOpId);
 
@@ -147,7 +147,8 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
             return;
         }
 
-        bytes memory rewardsData = abi.encodeCall(OllaGovernance.upgradeSatellite, (rewardsProxy, rewardsImpl));
+        bytes memory rewardsData =
+            abi.encodeCall(OllaGovernance.upgradeSatellite, (rewardsProxy, rewardsImpl, bytes("")));
         bytes32 rewardsCanonicalPredecessor = queueCanonicalOpId;
         bytes32 rewardsCanonicalOpId = gov.hashOperation(governance, 0, rewardsData, rewardsCanonicalPredecessor, salt);
         OperationState memory rewardsCanonicalOp = _operationState(gov, rewardsCanonicalOpId);
@@ -178,7 +179,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
             return;
         }
 
-        bytes memory sprData = abi.encodeCall(OllaGovernance.upgradeSatellite, (sprProxy, sprImpl));
+        bytes memory sprData = abi.encodeCall(OllaGovernance.upgradeSatellite, (sprProxy, sprImpl, bytes("")));
         bytes32 sprCanonicalPredecessor = rewardsCanonicalOpId;
         bytes32 sprCanonicalOpId = gov.hashOperation(governance, 0, sprData, sprCanonicalPredecessor, salt);
         OperationState memory sprCanonicalOp = _operationState(gov, sprCanonicalOpId);
@@ -209,7 +210,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
         }
 
         bytes memory stakingManagerData =
-            abi.encodeCall(OllaGovernance.upgradeSatellite, (stakingManagerProxy, stakingManagerImpl));
+            abi.encodeCall(OllaGovernance.upgradeSatellite, (stakingManagerProxy, stakingManagerImpl, bytes("")));
         bytes32 stakingManagerCanonicalPredecessor = sprCanonicalOpId;
         bytes32 stakingManagerCanonicalOpId =
             gov.hashOperation(governance, 0, stakingManagerData, stakingManagerCanonicalPredecessor, salt);
@@ -242,7 +243,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
             return;
         }
 
-        bytes memory vaultData = abi.encodeCall(OllaGovernance.upgradeSatellite, (vaultProxy, vaultImpl));
+        bytes memory vaultData = abi.encodeCall(OllaGovernance.upgradeSatellite, (vaultProxy, vaultImpl, bytes("")));
         bytes32 vaultCanonicalPredecessor = stakingManagerCanonicalOpId;
         bytes32 vaultCanonicalOpId = gov.hashOperation(governance, 0, vaultData, vaultCanonicalPredecessor, salt);
         OperationState memory vaultCanonicalOp = _operationState(gov, vaultCanonicalOpId);
@@ -273,7 +274,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
             return;
         }
 
-        bytes memory coreData = abi.encodeCall(OllaGovernance.upgradeCore, (coreImpl));
+        bytes memory coreData = abi.encodeCall(OllaGovernance.upgradeCore, (coreImpl, bytes("")));
         bytes32 coreCanonicalPredecessor = vaultCanonicalOpId;
         bytes32 coreCanonicalOpId = gov.hashOperation(governance, 0, coreData, coreCanonicalPredecessor, salt);
         OperationState memory coreCanonicalOp = _operationState(gov, coreCanonicalOpId);
