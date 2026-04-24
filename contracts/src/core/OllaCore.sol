@@ -163,7 +163,6 @@ contract OllaCore is
         __Ownable_init(governanceContract_);
         __AccessControl_init();
         __Pausable_init();
-        __ReentrancyGuard_init();
         _pause();
 
         _modules = IOllaCore.CoreModules({

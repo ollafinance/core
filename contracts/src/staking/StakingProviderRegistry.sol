@@ -106,7 +106,6 @@ contract StakingProviderRegistry is
         }
 
         __AccessControl_init();
-        __ReentrancyGuard_init();
 
         stakingManager = stakingManager_;
         _provider = IStakingManager.ProviderConfig({ rewardsRecipient: providerRewardsRecipient_ });

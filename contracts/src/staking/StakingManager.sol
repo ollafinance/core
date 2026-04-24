@@ -158,7 +158,6 @@ contract StakingManager is
         }
 
         __AccessControl_init();
-        __ReentrancyGuard_init();
 
         stakingAsset = stakingAsset_;
         rollupRegistry = IAztecRollupRegistry(rollupRegistry_);

@@ -2,7 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 /// @title OllaCore ReentrancyGuard Proxy Compatibility Tests
-/// @notice Verifies the explicit upgradeable reentrancy guard initialization used by the protocol.
+/// @notice Verifies transient reentrancy protection works correctly behind the protocol proxies.
 
 import { Test } from "@forge-std/Test.sol";
 
@@ -27,16 +27,8 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
 
     uint256 internal constant DECIMALS = 1e18;
 
-    /// @dev ERC-7201 namespaced storage slot for ReentrancyGuard.
-    /// keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ReentrancyGuard")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 internal constant REENTRANCY_GUARD_SLOT =
-        0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00;
-
-    /// @dev The value OZ ReentrancyGuard writes when a nonReentrant call completes.
-    uint256 internal constant NOT_ENTERED = 1;
-
     /*//////////////////////////////////////////////////////////////
-                           TEST FIXTURES
+                            TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
     MaliciousAztec internal asset;
@@ -108,35 +100,11 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    SLOT VALUE BEFORE INITIALIZE
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Documents that on a fresh proxy (before `initialize()`), the
-    ///         reentrancy guard slot is `0`.
-    function test_ReentrancyGuardSlot_IsZeroBeforeInitialize() external view {
-        bytes32 slotValue = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
-        assertEq(uint256(slotValue), 0, "slot should be 0 (uninitialized) on fresh proxy");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    SLOT VALUE AFTER INITIALIZE
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Proves that `initialize()` primes the proxy guard slot to
-    ///         `NOT_ENTERED (1)` via `__ReentrancyGuard_init()`.
-    function test_ReentrancyGuardSlot_InitializedAfterInitialize() external {
-        _initializeVault();
-
-        bytes32 slotValue = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
-        assertEq(uint256(slotValue), NOT_ENTERED, "slot should be initialized after initialize()");
-    }
-
-    /*//////////////////////////////////////////////////////////////
               FIRST NONREENTRANT CALL SUCCEEDS ON PROXY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The first `nonReentrant` call on the proxy must succeed after
-    ///         initialization and leave the slot at `NOT_ENTERED (1)`.
+    /// @notice The first protected call on the proxy must succeed without any
+    ///         constructor or initializer priming.
     function test_Deposit_FirstNonReentrantCallSucceeds() external {
         _initializeVault();
 
@@ -151,10 +119,6 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
 
         assertGt(shares, 0, "shares should be > 0");
         assertEq(stAztec.balanceOf(alice), shares, "alice should hold minted shares");
-
-        // After the call, the slot must be normalised to NOT_ENTERED (1)
-        bytes32 slotValue = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
-        assertEq(uint256(slotValue), NOT_ENTERED, "slot should be NOT_ENTERED (1) after first call");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -189,33 +153,13 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-          IMPLEMENTATION SLOT VS PROXY SLOT
+                  MULTIPLE CALLS REMAIN USABLE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Confirms the implementation does not initialize proxy storage,
-    ///         while the proxy itself starts uninitialized.
-    function test_ReentrancyGuardSlot_ImplementationVsProxy() external view {
-        bytes32 implSlot = vm.load(address(vaultImplementation), REENTRANCY_GUARD_SLOT);
-        assertEq(uint256(implSlot), 0, "implementation slot should remain zero");
-
-        bytes32 proxySlot = vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT);
-        assertEq(uint256(proxySlot), 0, "proxy slot should be 0 (uninitialized)");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-          SLOT NORMALIZED AFTER FIRST CALL
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice After initialization and a nonReentrant call, the slot stays normalized
-    ///         at `NOT_ENTERED (1)`.
-    function test_ReentrancyGuardSlot_NormalizedAfterFirstDeposit() external {
+    /// @notice Transient guard state clears at the end of the call, so later
+    ///         protected calls on the proxy still succeed.
+    function test_Deposit_MultipleSequentialCallsSucceed() external {
         _initializeVault();
-
-        assertEq(
-            uint256(vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT)),
-            NOT_ENTERED,
-            "pre-call: slot should be NOT_ENTERED (1)"
-        );
 
         // First deposit
         uint256 amount = 1 * DECIMALS;
@@ -225,13 +169,6 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         vm.prank(alice);
         vault.deposit(amount, alice, 0);
 
-        // After first call: slot is 1
-        assertEq(
-            uint256(vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT)),
-            NOT_ENTERED,
-            "post-first-call: slot should be NOT_ENTERED (1)"
-        );
-
         // Second deposit also succeeds
         asset.mint(alice, amount);
         vm.prank(alice);
@@ -239,12 +176,5 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         vm.prank(alice);
         uint256 shares = vault.deposit(amount, alice, 0);
         assertGt(shares, 0, "second deposit should succeed");
-
-        // Slot remains NOT_ENTERED after the second call
-        assertEq(
-            uint256(vm.load(address(vaultProxy), REENTRANCY_GUARD_SLOT)),
-            NOT_ENTERED,
-            "post-second-call: slot should still be NOT_ENTERED (1)"
-        );
     }
 }

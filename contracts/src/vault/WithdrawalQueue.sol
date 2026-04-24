@@ -116,7 +116,6 @@ contract WithdrawalQueue is
         }
 
         __AccessControl_init();
-        __ReentrancyGuard_init();
 
         vault = vault_;
         nextRequestId = 1;

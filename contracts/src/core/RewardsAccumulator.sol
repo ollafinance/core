@@ -88,7 +88,6 @@ contract RewardsAccumulator is
         }
 
         __AccessControl_init();
-        __ReentrancyGuard_init();
 
         rewardsToken = rewardsToken_;
         core = core_;
