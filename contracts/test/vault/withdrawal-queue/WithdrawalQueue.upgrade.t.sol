@@ -168,6 +168,17 @@ contract WithdrawalQueueUpgradeTest is Test {
         assertEq(v2.v2Value(), 123, "v2 storage works");
     }
 
+    function test_Upgrade_SucceedsAfterVaultOwnerDrift() external {
+        WithdrawalQueueUpgradeMock newImplementation = new WithdrawalQueueUpgradeMock();
+
+        mockVault.setOwner(makeAddr("newVaultOwner"));
+
+        vm.prank(admin);
+        queue.upgradeToAndCall(address(newImplementation), "");
+
+        assertEq(WithdrawalQueueUpgradeMock(address(queue)).version(), 2, "upgrade should ignore vault owner drift");
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 HELPERS
     //////////////////////////////////////////////////////////////*/

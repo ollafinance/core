@@ -179,6 +179,19 @@ contract StakingProviderRegistryUpgradeTest is Test {
         assertEq(v2.v2Value(), 456, "v2 storage works");
     }
 
+    function test_GovernanceCanUpgrade_AfterCoreOwnerDrift() external {
+        StakingProviderRegistryUpgradeMock newImplementation = new StakingProviderRegistryUpgradeMock();
+
+        mockCore.setOwner(makeAddr("newCoreOwner"));
+
+        vm.prank(defaultAdmin);
+        registry.upgradeToAndCall(address(newImplementation), "");
+
+        assertEq(
+            StakingProviderRegistryUpgradeMock(address(registry)).version(), 2, "upgrade should ignore core owner drift"
+        );
+    }
+
     function test_Upgrade_PreservesStakingManagerAccess() external {
         _addKeys(3);
 

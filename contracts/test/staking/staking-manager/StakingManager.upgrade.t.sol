@@ -190,4 +190,17 @@ contract StakingManagerUpgradeTest is Test {
         v2.setV2Value(123);
         assertEq(v2.v2Value(), 123, "v2 storage works");
     }
+
+    function test_GovernanceCanUpgrade_AfterCoreOwnerDrift() external {
+        StakingManagerUpgradeMock newImplementation = new StakingManagerUpgradeMock();
+
+        mockCore.setOwner(makeAddr("newCoreOwner"));
+
+        vm.prank(defaultAdmin);
+        stakingManager.upgradeToAndCall(address(newImplementation), "");
+
+        assertEq(
+            StakingManagerUpgradeMock(address(stakingManager)).version(), 2, "upgrade should ignore core owner drift"
+        );
+    }
 }
