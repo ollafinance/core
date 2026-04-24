@@ -12,6 +12,7 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -211,6 +212,20 @@ contract OllaCoreAccessControlTest is Test {
         core.setSafetyModule(address(newSafetyModule));
 
         assertEq(core.safetyModule(), address(newSafetyModule), "safety module updated");
+    }
+
+    function test_SetSafetyModule_PrimesAccountingTimestampOnNewModule() external {
+        SafetyModule newSafetyModule =
+            new SafetyModule(governance, governance, address(core), address(vault), 1_000 ether, 500, 6_000, 1 days);
+
+        vm.warp(block.timestamp + 7 days);
+
+        vm.prank(governance);
+        core.setSafetyModule(address(newSafetyModule));
+
+        assertEq(
+            newSafetyModule.lastAccountingTimestamp(), block.timestamp, "new safety module timestamp should be primed"
+        );
     }
 
     function test_RevertWhen_SafetyModuleCoreDoesNotMatch() external {
