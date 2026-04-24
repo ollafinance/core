@@ -18,37 +18,21 @@ import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.so
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 
-/// @title OllaCoreHarnessForCumulativeTest
-/// @notice Harness that exposes _applyAccountingUpdates for direct slashing injection.
-contract OllaCoreHarnessForCumulativeTest is OllaCore {
-    function exposedApplyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) external {
-        _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
-        );
-    }
-}
-
 /// @title CumulativeWithdrawalsUnderflowTest
 /// @notice Verifies that the fix for issue #335 works correctly: cumulativeWithdrawals
 ///         remains monotonic (never decreases) and slashing adjustments are tracked via
 ///         a separate cumulativeSlashingAdjustments counter.
-/// @dev Uses exposedApplyAccountingUpdates to inject stakedPrincipal into the accounting state so
-///      that slashingDelta properly reduces the exchange rate used for withdrawal finalization.
-///      The MockStakingManager cachedState must be kept in sync with the accounting state to pass
-///      the monotonicity check on slashingDelta during rebalance.
+/// @dev Drives slashing via `MockStakingManager.mockSetCachedState` — `totalStaked()` and
+///      `getSlashingDelta()` are live-read by OllaCore through `_liveAccountingState()`, so
+///      updating the mock is sufficient to reduce the exchange rate used for withdrawal
+///      finalization. The mock also enforces the monotonicity invariant on slashingDelta.
 contract CumulativeWithdrawalsUnderflowTest is Test {
     /*//////////////////////////////////////////////////////////////
                           TEST FIXTURES
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreHarnessForCumulativeTest internal core;
+    OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
@@ -66,9 +50,9 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreHarnessForCumulativeTest coreImplementation = new OllaCoreHarnessForCumulativeTest();
+        OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        core = OllaCoreHarnessForCumulativeTest(address(coreProxy));
+        core = OllaCore(address(coreProxy));
 
         OllaVault vaultImplementation = new OllaVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
@@ -127,13 +111,10 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         vm.warp(block.timestamp + 1 hours + 1);
     }
 
-    /// @notice Injects slashing into both the core accounting state and the MockStakingManager,
-    ///         keeping them in sync so the monotonicity check passes during rebalance.
+    /// @notice Drives slashing through the MockStakingManager. OllaCore reads
+    ///         `totalStaked()` and `getSlashingDelta()` live via `_liveAccountingState()`,
+    ///         so updating the mock is the single source of truth.
     function _injectSlashing(uint256 stakedPrincipal, uint256 slashingDelta) internal {
-        // Update core's internal accounting state
-        core.exposedApplyAccountingUpdates(stakedPrincipal, 0, 0, 0, slashingDelta);
-        // Keep MockStakingManager in sync: stakedAmount matches stakedPrincipal,
-        // slashingDelta matches the cumulative slashing
         stakingManager.mockSetCachedState(slashingDelta, stakedPrincipal, 0);
     }
 

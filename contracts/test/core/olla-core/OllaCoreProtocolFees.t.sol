@@ -156,7 +156,9 @@ contract OllaCoreProtocolFeesTest is Test {
     function test_CalculateProtocolFees_LargeAssetsTinyRewards_MatchesConvertToShares() external {
         uint256 depositAmount = 1e24;
         _performDeposit(alice, depositAmount);
-        core.exposedApplyAccountingUpdates(1, 0, 0, 0, 0);
+        // Under pull-model accounting, totalAssets reads stakedPrincipal live from stakingManager.
+        // Pushing a 1-wei staked delta exercises the off-by-one path the test targets.
+        stakingManager.setTotalStaked(1);
 
         uint256 grossRewards = 20;
         (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =

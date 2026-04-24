@@ -23,24 +23,6 @@ import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
-contract OllaCoreWithdrawalQueueHarness is OllaCore {
-    /*//////////////////////////////////////////////////////////////
-                            CORE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function exposedApplyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) external {
-        _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
-        );
-    }
-}
-
 contract OllaCoreWithdrawalQueueTest is Test {
     /*//////////////////////////////////////////////////////////////
                               EVENTS
@@ -56,7 +38,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreWithdrawalQueueHarness internal core;
+    OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
@@ -76,9 +58,9 @@ contract OllaCoreWithdrawalQueueTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreWithdrawalQueueHarness coreImplementation = new OllaCoreWithdrawalQueueHarness();
+        OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        core = OllaCoreWithdrawalQueueHarness(address(coreProxy));
+        core = OllaCore(address(coreProxy));
 
         OllaVault vaultImplementation = new OllaVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
@@ -146,7 +128,8 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(request.assetsExpected, expectedAssets, "assetsExpected locked at request rate");
         assertEq(request.rate, rate, "rate locked at request time");
 
-        core.exposedApplyAccountingUpdates(0, 3 ether, 0, 0, 0);
+        // Simulate rewards accrual by funding the accumulator; exchange rate reads its balance live.
+        deal(address(asset), address(rewardsAccumulator), 3 ether);
         uint256 updatedRate = core.exchangeRate();
         assertGt(updatedRate, rate, "exchange rate should increase after rewards");
         request = queue.getRequest(requestId);
@@ -192,19 +175,20 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
     function test_RequestRedeem_AssetsExpectedMatchesRate() external {
         _deposit(alice, 18 ether);
-        core.exposedApplyAccountingUpdates(0, 6 ether, 0, 0, 0);
+        // Fund the accumulator so the rate reflects reward backing.
+        deal(address(asset), address(rewardsAccumulator), 6 ether);
 
         uint256 shares = 9 ether;
-        uint256 totalAssets = core.totalAssets();
-        uint256 supply = stAztec.totalSupply();
-        uint256 expectedAssets = Math.mulDiv(shares, totalAssets + 1e3, supply + 1e3, Math.Rounding.Floor);
-        uint256 rate = core.exchangeRate();
+        uint256 expectedRate = core.withdrawalRate();
+        // Hand-formula spec: shares * rate / 1e18. Tolerance absorbs the rounding wedge between
+        // this two-step floor and the one-step mulDiv in convertToAssetsGross.
+        uint256 expectedAssets = shares * expectedRate / 1e18;
 
         (uint256 requestId,) = _requestRedeem(alice, shares, alice);
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
 
-        assertEq(request.assetsExpected, expectedAssets, "assetsExpected should match rate at request time");
-        assertEq(request.rate, rate, "request rate should match current rate");
+        assertApproxEqAbs(request.assetsExpected, expectedAssets, 10, "assetsExpected matches shares * rate / 1e18");
+        assertEq(request.rate, expectedRate, "request rate matches core.withdrawalRate");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -455,7 +439,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreWithdrawalQueueHarness internal core;
+    OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
     RealisticStakingManager internal stakingManager;
@@ -474,9 +458,9 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreWithdrawalQueueHarness coreImplementation = new OllaCoreWithdrawalQueueHarness();
+        OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        core = OllaCoreWithdrawalQueueHarness(address(coreProxy));
+        core = OllaCore(address(coreProxy));
 
         OllaVault vaultImplementation = new OllaVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");

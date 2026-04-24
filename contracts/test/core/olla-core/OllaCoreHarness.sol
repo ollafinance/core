@@ -10,18 +10,6 @@ contract OllaCoreHarness is OllaCore {
                            CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function exposedApplyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) external {
-        _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
-        );
-    }
-
     function exposedComputeNetFlows(IOllaCore.FlowCounters memory flows)
         external
         pure

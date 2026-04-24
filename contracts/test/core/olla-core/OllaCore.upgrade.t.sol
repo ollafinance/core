@@ -20,24 +20,6 @@ import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 
-contract OllaCoreUpgradeHarness is OllaCore {
-    /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function exposedApplyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) external {
-        _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
-        );
-    }
-}
-
 contract OllaCoreUpgradeMock is OllaCore {
     /*//////////////////////////////////////////////////////////////
                                   STATE
@@ -76,7 +58,7 @@ contract OllaCoreUpgradeTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreUpgradeHarness internal core;
+    OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
@@ -97,9 +79,9 @@ contract OllaCoreUpgradeTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreUpgradeHarness coreImplementation = new OllaCoreUpgradeHarness();
+        OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        core = OllaCoreUpgradeHarness(address(coreProxy));
+        core = OllaCore(address(coreProxy));
 
         OllaVault vaultImplementation = new OllaVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
@@ -205,10 +187,22 @@ contract OllaCoreUpgradeTest is Test {
         uint256 requestId = vault.requestRedeem(queueShares, bob, alice);
         assertEq(requestId, 1, "request id starts at 1");
 
-        vm.prank(operator);
-        core.exposedApplyAccountingUpdates(4 * DECIMALS, 2 * DECIMALS, 3 * DECIMALS, 1 * DECIMALS, 1 * DECIMALS);
+        // Drive non-zero module state so every live-read field in `AccountingState`
+        // exercises the live-read path (StakingManager + RewardsAccumulator).
+        // `cumulativeRewards` is the only protocol-owned ledger persisted in
+        // `OllaCore` storage across upgrades; the remaining fields are derived
+        // at read-time from the owning modules, so module state IS the accounting
+        // state from the caller's perspective.
+        stakingManager.mockSetCachedState(1 * DECIMALS, 4 * DECIMALS, 0); // slashingDelta, totalStaked, pendingUnstake
+        stakingManager.mockSetClaimableRewards(3 * DECIMALS);
+        deal(address(asset), address(rewardsAccumulator), 2 * DECIMALS);
 
         IOllaCore.AccountingState memory accountingBefore = core.accountingState();
+        assertEq(accountingBefore.stakedPrincipal, 4 * DECIMALS, "staked seeded");
+        assertEq(accountingBefore.rewardsAccumulatorBalance, 2 * DECIMALS, "accumulator seeded");
+        assertEq(accountingBefore.claimableRewards, 3 * DECIMALS, "claimable seeded");
+        assertEq(accountingBefore.slashingDelta, 1 * DECIMALS, "slashing seeded");
+
         uint256 totalAssetsBefore = core.totalAssets();
         uint256 aliceSharesBefore = stAztec.balanceOf(alice);
         uint256 bobBalanceBefore = asset.balanceOf(bob);
@@ -226,8 +220,14 @@ contract OllaCoreUpgradeTest is Test {
 
         assertEq(v2.version(), 2, "upgrade applied");
         assertEq(v2.totalAssets(), totalAssetsBefore, "total assets preserved");
-        // bufferedAssets is now on vault, not in core's AccountingState
+        // bufferedAssets lives on the vault, not in core's AccountingState.
         assertEq(vault.bufferedAssets(), vault.bufferedAssets(), "buffered preserved");
+        // Storage-backed field must survive the proxy upgrade.
+        assertEq(
+            accountingAfter.cumulativeRewards, accountingBefore.cumulativeRewards, "cumulativeRewards ledger preserved"
+        );
+        // Live-read fields are derived from the modules each call; they must match the
+        // pre-upgrade snapshot because the modules themselves are unchanged.
         assertEq(accountingAfter.stakedPrincipal, accountingBefore.stakedPrincipal, "staked preserved");
         assertEq(
             accountingAfter.rewardsAccumulatorBalance,
