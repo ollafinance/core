@@ -76,10 +76,9 @@ contract OllaCore is
     /// @notice Contract related interfaces and addresses.
     IOllaCore.CoreModules private _modules;
 
-    /// @dev Legacy storage reservation for upgrade compatibility. The pull-model no longer reads
-    ///      these fields directly, but the struct must remain in-place so downstream slots stay
-    ///      stable. `cumulativeRewards` remains the live protocol-owned ledger.
-    IOllaCore.AccountingState private _accountingState;
+    /// @notice Protocol-internal ledger of cumulative rewards. Every other accounting figure is
+    ///         derived live from the owning module via `_liveAccountingState()`.
+    uint256 private _cumulativeRewards;
     IOllaCore.FlowCounters private _flowCounters;
     IOllaCore.LatestReport private _latestReport;
 
@@ -629,7 +628,7 @@ contract OllaCore is
         safetyModuleRef.checkAccountingLiveness();
 
         (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows, uint256 exitFeesThisPeriod) = _getFlowsSnapshot();
-        uint256 currentRewards = _accountingState.cumulativeRewards + _modules.stakingManager.getClaimableRewards();
+        uint256 currentRewards = _cumulativeRewards + _modules.stakingManager.getClaimableRewards();
 
         _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, exitFeesThisPeriod, currentRewards);
         // slither-disable-end reentrancy-events
@@ -651,7 +650,7 @@ contract OllaCore is
         // slither-disable-next-line reentrancy-benign
         rewardsDelta = rewardsAccumulatorRef.recordBalance();
         if (rewardsDelta != 0) {
-            _accountingState.cumulativeRewards += rewardsDelta;
+            _cumulativeRewards += rewardsDelta;
         }
         emit RewardsDelta(rewardsDelta);
 
@@ -1039,7 +1038,7 @@ contract OllaCore is
     /// @return snapshot A freshly-assembled AccountingState populated from authoritative sources.
     function _liveAccountingState() internal view returns (IOllaCore.AccountingState memory snapshot) {
         IOllaCore.CoreModules memory modules = _modules;
-        uint256 cumulativeRewards = _accountingState.cumulativeRewards;
+        uint256 cumulativeRewards = _cumulativeRewards;
         uint256 claimableRewards = modules.stakingManager.getClaimableRewards();
 
         uint256 latestReportRewards = _latestReport.rewardsSnapshot;

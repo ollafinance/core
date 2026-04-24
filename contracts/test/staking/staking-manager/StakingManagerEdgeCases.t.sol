@@ -16,12 +16,12 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
     ///      The actual mapping key is keccak256(abi.encode(attester, ROLLUP_STAKES_MAPPING_SLOT)).
     uint256 internal constant ROLLUP_STAKES_MAPPING_SLOT = 1;
 
-    /// @dev Storage slot for StakingManager._aggregateState.stakedAmount (proxy slot 10).
-    ///      Layout: slot 9 = slashingDelta, slot 10 = stakedAmount, slot 11 = pendingUnstakeAmount.
-    uint256 internal constant STAKING_MANAGER_STAKED_AMOUNT_SLOT = 10;
+    /// @dev Storage slot for StakingManager._aggregateState.stakedAmount (proxy slot 9).
+    ///      Layout: slot 8 = slashingDelta, slot 9 = stakedAmount, slot 10 = pendingUnstakeAmount.
+    uint256 internal constant STAKING_MANAGER_STAKED_AMOUNT_SLOT = 9;
 
-    /// @dev Storage slot for StakingManager._aggregateState.pendingUnstakeAmount (proxy slot 11).
-    uint256 internal constant STAKING_MANAGER_PENDING_UNSTAKE_SLOT = 11;
+    /// @dev Storage slot for StakingManager._aggregateState.pendingUnstakeAmount (proxy slot 10).
+    uint256 internal constant STAKING_MANAGER_PENDING_UNSTAKE_SLOT = 10;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
