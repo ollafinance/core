@@ -146,7 +146,7 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // ---- Wire contracts ----
         vm.prank(address(gov));
         core.setVault(address(vault));
-        vm.prank(admin);
+        vm.prank(address(gov));
         gov.setCore(address(core));
 
         // ---- Unpause ----

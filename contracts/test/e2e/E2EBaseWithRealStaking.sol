@@ -215,7 +215,7 @@ abstract contract E2EBaseWithRealStaking is Test {
     function _wireContracts() internal {
         vm.prank(address(gov));
         core.setVault(address(vault));
-        vm.prank(admin);
+        vm.prank(address(gov));
         gov.setCore(address(core));
     }
 

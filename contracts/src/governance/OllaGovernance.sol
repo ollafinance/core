@@ -84,6 +84,8 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         if (proposers.length > 0) {
             governanceAdmin = proposers[0];
         }
+
+        _revokeRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
     /*//////////////////////////////////////////////////////////////
