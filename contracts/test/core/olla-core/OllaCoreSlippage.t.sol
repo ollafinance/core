@@ -272,8 +272,8 @@ contract OllaCoreSlippageTest is Test {
         // Initial deposit by alice at 1:1
         _performDeposit(alice, 100 * DECIMALS);
 
-        // Simulate rewards accrual to change the exchange rate (makes shares worth more)
-        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        // Simulate rewards accrual by funding the accumulator; totalAssets() reads its live balance.
+        deal(address(asset), address(rewardsAccumulator), 50 * DECIMALS);
 
         // Bob wants to deposit 50 tokens, expecting old 1:1 rate
         uint256 bobAssets = 50 * DECIMALS;
@@ -327,9 +327,9 @@ contract OllaCoreSlippageTest is Test {
 
     /// @notice 6. Permit variant where slippage check fires.
     function test_RevertWhen_DepositWithPermitAndMinShares_SlippageExceeded() external {
-        // Initial deposit to set up non-1:1 rate
+        // Initial deposit to set up non-1:1 rate; live-source funding keeps totalAssets honest.
         _performDeposit(alice, 100 * DECIMALS);
-        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        deal(address(asset), address(rewardsAccumulator), 50 * DECIMALS);
 
         uint256 assets = 50 * DECIMALS;
         asset.mint(permitOwner, assets);
@@ -503,8 +503,8 @@ contract OllaCoreSlippageTest is Test {
     function test_PreviewRedeem_ReturnsCorrectNetAtHigherRate() external {
         _performDeposit(alice, 100 * DECIMALS);
 
-        // Simulate rewards to change the exchange rate
-        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        // Simulate rewards by funding the accumulator; totalAssets() reads its live balance.
+        deal(address(asset), address(rewardsAccumulator), 50 * DECIMALS);
 
         uint256 sharesToPreview = 50 * DECIMALS;
 

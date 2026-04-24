@@ -161,6 +161,47 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
     }
 }
 
+/// @notice MockAccountingStakingManager override that can optionally keep `totalStakedAmount` in
+///         sync with the tokens it actually receives, so `totalStaked()` reflects real stake flow
+///         after a rebalance. The base mock leaves `totalStakedAmount` as a purely orthogonal
+///         knob, which breaks pull-model tests that expect `core.totalAssets()` (now a live
+///         read-through of `stakingManager.totalStaked()`) to reflect post-rebalance state.
+/// @dev Tracking is opt-in via `setTrackStakedAmount(true)` to preserve compatibility with the
+///      majority of rebalance tests that prime `totalStakedAmount` explicitly via
+///      `setTotalStaked()` as an oracle value and would double-count if stake() also incremented
+///      it.
+contract MockStakeTrackingStakingManager is MockAccountingStakingManager {
+    bool public trackStakedAmount;
+
+    function setTrackStakedAmount(bool enabled) external {
+        trackStakedAmount = enabled;
+    }
+
+    function stake(uint256 amount) external override returns (uint256 stakedAmount) {
+        uint256 actualAmount = amount;
+        if (useStakeReturnAmount) {
+            actualAmount = stakeReturnAmount;
+            if (!allowStakeReturnExceeds && actualAmount > amount) {
+                actualAmount = amount;
+            }
+        }
+        if (actualAmount == 0) {
+            return 0;
+        }
+        if (address(rewardsToken) == address(0)) {
+            return 0;
+        }
+        uint256 transferAmount = actualAmount > amount ? amount : actualAmount;
+        if (transferAmount != 0) {
+            rewardsToken.transferFrom(msg.sender, address(this), transferAmount);
+        }
+        if (trackStakedAmount) {
+            totalStakedAmount += transferAmount;
+        }
+        return actualAmount;
+    }
+}
+
 contract OllaCoreRebalanceTest is Test {
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -187,7 +228,7 @@ contract OllaCoreRebalanceTest is Test {
     OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
-    MockAccountingStakingManager internal stakingManager;
+    MockStakeTrackingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
     WithdrawalQueue internal withdrawalQueue;
@@ -214,7 +255,7 @@ contract OllaCoreRebalanceTest is Test {
 
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
-        stakingManager = new MockAccountingStakingManager();
+        stakingManager = new MockStakeTrackingStakingManager();
         operator = makeAddr("operator");
         WithdrawalQueue queueImplementation = new WithdrawalQueue();
         ERC1967Proxy queueProxy = new ERC1967Proxy(
@@ -1014,7 +1055,7 @@ contract OllaCoreRebalanceTest is Test {
     ///      A layout change invalidates this helper; the getter roundtrip
     ///      assertion below catches that case loudly.
     function _forceRebalanceGasThreshold(uint32 value) internal {
-        bytes32 slot = bytes32(uint256(29));
+        bytes32 slot = bytes32(uint256(24));
         uint256 current = uint256(vm.load(address(core), slot));
         uint256 mask = ~(uint256(type(uint32).max) << 32);
         uint256 updated = (current & mask) | (uint256(value) << 32);
@@ -1172,6 +1213,11 @@ contract OllaCoreRebalanceTest is Test {
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
+
+        // Under pull-model accounting, core.accountingState().stakedPrincipal reads
+        // stakingManager.totalStaked() live, so the mock must propagate the actual staked amount
+        // into its own accounting rather than leaving totalStakedAmount as a static oracle.
+        stakingManager.setTrackStakedAmount(true);
 
         uint256 actualStaked = 64 * DECIMALS;
         stakingManager.setStakeReturnAmount(actualStaked);

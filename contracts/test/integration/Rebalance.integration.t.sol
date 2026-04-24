@@ -237,9 +237,8 @@ contract RebalanceIntegrationTest is Test {
         vm.prank(governance);
         core.setTargetBufferedAssets(targetBufferAmount);
 
-        // Set staked principal in accounting to cover the unstaked funds that will be pulled.
-        // getUnstakedFunds() returns exitAmount which is subtracted from stakedPrincipal,
-        // so stakedPrincipal must be >= exitAmount to avoid underflow.
+        // Prime StakingManager.totalStaked() so the live-read pricing path reflects the staked
+        // amount the rebalance will subsequently pull out.
         stakingManager.setTotalStaked(unstakedAmount);
         vm.prank(operator);
         core.updateAccounting();
