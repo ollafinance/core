@@ -245,6 +245,7 @@ contract OllaCore is
     /// @inheritdoc IOllaCore
     function setSafetyModule(address newSafetyModule) external override onlyOwner whenNotPaused whenRebalanceDone {
         address oldSafetyModule = GovernanceLib.setSafetyModule(_modules, newSafetyModule);
+        _updateAccountingTimestamp(ISafetyModule(newSafetyModule));
         emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
     }
 
