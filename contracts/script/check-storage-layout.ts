@@ -46,6 +46,14 @@ type StorageLayout = {
     types?: Record<string, unknown>;
 };
 
+function normalizeTypeId(typeId: unknown): unknown {
+    if (typeof typeId !== "string") {
+        return typeId;
+    }
+
+    return typeId.replace(/\)\d+(?=_storage|$)/g, ")");
+}
+
 function stableStringify(value: unknown): string {
     if (value === null || typeof value !== "object") {
         return JSON.stringify(value);
@@ -86,9 +94,11 @@ function diffStorageEntries(
         const fixtureEntry = fixtureStorage[i];
         const fields = ["label", "slot", "offset", "type", "contract"];
         for (const field of fields) {
-            if (currentEntry[field] !== fixtureEntry[field]) {
+            const currentValue = field === "type" ? normalizeTypeId(currentEntry[field]) : currentEntry[field];
+            const fixtureValue = field === "type" ? normalizeTypeId(fixtureEntry[field]) : fixtureEntry[field];
+            if (currentValue !== fixtureValue) {
                 differences.push(
-                    `storage[${i}].${field} mismatch: expected ${fixtureEntry[field]}, got ${currentEntry[field]}`
+                    `storage[${i}].${field} mismatch: expected ${fixtureValue}, got ${currentValue}`
                 );
             }
         }
@@ -103,8 +113,16 @@ function diffTypeEntries(
     fixtureTypes: Record<string, any>,
     differences: string[]
 ) {
-    const currentKeys = Object.keys(currentTypes).sort();
-    const fixtureKeys = Object.keys(fixtureTypes).sort();
+    const normalizeTypeMap = (types: Record<string, any>) => {
+        const normalizedEntries = Object.entries(types).map(([key, value]) => [normalizeTypeId(key) as string, value]);
+        return Object.fromEntries(normalizedEntries) as Record<string, any>;
+    };
+
+    const normalizedCurrentTypes = normalizeTypeMap(currentTypes);
+    const normalizedFixtureTypes = normalizeTypeMap(fixtureTypes);
+
+    const currentKeys = Object.keys(normalizedCurrentTypes).sort();
+    const fixtureKeys = Object.keys(normalizedFixtureTypes).sort();
 
     if (currentKeys.length !== fixtureKeys.length) {
         differences.push(`types length mismatch: expected ${fixtureKeys.length}, got ${currentKeys.length}`);
@@ -126,13 +144,15 @@ function diffTypeEntries(
 
     const keysToCompare = currentKeys.filter((key) => fixtureSet.has(key));
     for (const key of keysToCompare) {
-        const currentType = currentTypes[key];
-        const fixtureType = fixtureTypes[key];
+        const currentType = normalizedCurrentTypes[key];
+        const fixtureType = normalizedFixtureTypes[key];
         const fields = ["label", "encoding", "numberOfBytes", "base"];
         for (const field of fields) {
-            if (currentType[field] !== fixtureType[field]) {
+            const currentValue = field === "base" ? normalizeTypeId(currentType[field]) : currentType[field];
+            const fixtureValue = field === "base" ? normalizeTypeId(fixtureType[field]) : fixtureType[field];
+            if (currentValue !== fixtureValue) {
                 differences.push(
-                    `types[${key}].${field} mismatch: expected ${fixtureType[field]}, got ${currentType[field]}`
+                    `types[${key}].${field} mismatch: expected ${fixtureValue}, got ${currentValue}`
                 );
             }
         }
@@ -151,9 +171,11 @@ function diffTypeEntries(
             const fixtureMember = fixtureMembers[i];
             const memberFields = ["label", "slot", "offset", "type"];
             for (const field of memberFields) {
-                if (currentMember[field] !== fixtureMember[field]) {
+                const currentValue = field === "type" ? normalizeTypeId(currentMember[field]) : currentMember[field];
+                const fixtureValue = field === "type" ? normalizeTypeId(fixtureMember[field]) : fixtureMember[field];
+                if (currentValue !== fixtureValue) {
                     differences.push(
-                        `types[${key}].members[${i}].${field} mismatch: expected ${fixtureMember[field]}, got ${currentMember[field]}`
+                        `types[${key}].members[${i}].${field} mismatch: expected ${fixtureValue}, got ${currentValue}`
                     );
                 }
             }
