@@ -106,8 +106,8 @@ abstract contract OllaGovernanceSetup is Test {
         vm.prank(address(gov));
         core.setVault(address(vault));
 
-        // Wire OllaGovernance -> OllaCore
-        vm.prank(admin);
+        // Wire OllaGovernance -> OllaCore via the timelock identity.
+        vm.prank(address(gov));
         gov.setCore(address(core));
 
         // Unpause (gov contract holds GUARDIAN_ROLE from OllaCore.initialize)

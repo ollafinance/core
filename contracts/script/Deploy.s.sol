@@ -1103,7 +1103,13 @@ contract DeployScript is BaseDeployer {
         address rewardsAccumulator,
         address safetyModule
     ) internal view {
-        require(OllaGovernance(payable(ollaGovProxy)).core() == ollaCoreProxy, "Deploy: governance core mismatch");
+        if (config.timelockMinDelay == 0) {
+            require(OllaGovernance(payable(ollaGovProxy)).core() == ollaCoreProxy, "Deploy: governance core mismatch");
+        } else {
+            require(
+                OllaGovernance(payable(ollaGovProxy)).core() == address(0), "Deploy: governance core should be unset"
+            );
+        }
         require(OllaCore(ollaCoreProxy).owner() == ollaGovProxy, "Deploy: core owner mismatch");
         require(OllaVault(ollaVaultProxy).owner() == ollaGovProxy, "Deploy: vault owner mismatch");
 
