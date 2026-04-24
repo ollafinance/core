@@ -189,12 +189,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         vault.deposit(amount, depositor, 0);
     }
 
-    function _assertInstantRedeemBlocked(address redeemer, uint256 shares) internal {
-        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__SafetyModulePaused.selector));
-        vm.prank(redeemer);
-        vault.instantRedeem(shares, redeemer, 0);
-    }
-
     /*//////////////////////////////////////////////////////////////
         TEST 3A: RATE DROP DURING REBALANCE PAUSES PROTOCOL
     //////////////////////////////////////////////////////////////*/
@@ -236,9 +230,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // --- Verify deposit blocked ---
         _assertDepositBlocked(bob, 10 * DECIMALS);
 
-        // --- Verify instant redeem blocked ---
-        _assertInstantRedeemBlocked(alice, 1 * DECIMALS);
-
         // --- Recovery: guardian unpause ---
         vm.expectEmit(true, true, true, true, address(safetyModule));
         emit Unpaused();
@@ -250,12 +241,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // --- Verify all operations succeed after unpause ---
         uint256 bobShares = _performDeposit(bob, 10 * DECIMALS);
         assertGt(bobShares, 0, "recovery: bob deposit should mint shares");
-
-        // Instant redeem works
-        uint256 bobAssetsBefore = asset.balanceOf(bob);
-        vm.prank(bob);
-        vault.instantRedeem(bobShares / 2, bob, 0);
-        assertGt(asset.balanceOf(bob), bobAssetsBefore, "recovery: bob instant redeem should return assets");
 
         // Request redeem works
         vm.prank(bob);
@@ -369,18 +354,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // --- Rebalance now updates accounting timestamp ---
         _warpPastCooldown();
         _fullRebalance();
-
-        // --- Verify all operations succeed ---
-        uint256 bobShares = _performDeposit(bob, 10 * DECIMALS);
-        assertGt(bobShares, 0, "recovery: bob deposit should mint shares");
-
-        // Instant redeem works
-        vm.prank(bob);
-        vault.instantRedeem(bobShares / 2, bob, 0);
-
-        // Request redeem works
-        vm.prank(bob);
-        vault.requestRedeem(bobShares / 4, bob, bob);
 
         // --- Verify liveness doesn't re-trigger within delay ---
         _warpPastCooldown();
@@ -541,12 +514,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // Exchange rate still reflects slashing but is stable
         IOllaCore.LatestReport memory report2 = core.latestReport();
         assertApproxEqAbs(report2.exchangeRate, report.exchangeRate, 1, "exchange rate should be stable after recovery");
-
-        // Instant redeem works (while buffer is still available from bob's deposit)
-        uint256 bobAssetsBefore = asset.balanceOf(bob);
-        vm.prank(bob);
-        vault.instantRedeem(bobShares / 4, bob, 0);
-        assertGt(asset.balanceOf(bob), bobAssetsBefore, "recovery: instant redeem returns assets");
 
         // Request redeem works
         vm.prank(bob);

@@ -280,38 +280,6 @@ contract PermitEdgeCasesE2E is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-        6C: INSTANT REDEEM WITH PERMIT — FRONTRUN PROTECTION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Attacker frontruns the stAztec permit but instantRedeem still succeeds.
-    function test_InstantRedeemWithPermit_FrontrunProtection() external {
-        _performDeposit(alice, 100 * DECIMALS);
-
-        uint256 deadline = block.timestamp + 1 hours;
-        (uint8 v, bytes32 r, bytes32 s) =
-            _signPermit(address(stAztec), aliceKey, alice, address(vault), 30 * DECIMALS, deadline);
-
-        // Attacker frontruns the stAztec permit
-        address attacker = makeAddr("attacker");
-        vm.prank(attacker);
-        IERC20Permit(address(stAztec)).permit(alice, address(vault), 30 * DECIMALS, deadline, v, r, s);
-
-        assertEq(stAztec.allowance(alice, address(vault)), 30 * DECIMALS, "stAztec allowance set by attacker");
-
-        // Alice's instantRedeemWithPermit succeeds via catch block fallthrough
-        vm.prank(alice);
-        uint256 assetsOut = vault.instantRedeemWithPermit(30 * DECIMALS, alice, 0, deadline, v, r, s);
-
-        // 5% instant redemption fee: 30e18 shares → 30e18 gross - 1.5e18 fee = 28.5e18 net
-        uint256 grossAssets = 30 * DECIMALS;
-        uint256 fee = grossAssets * 500 / BP_DIVISOR;
-        uint256 expectedNet = grossAssets - fee;
-        assertEq(assetsOut, expectedNet, "alice receives correct net assets after fee");
-        assertEq(stAztec.balanceOf(alice), 70 * DECIMALS, "alice should have 70e18 shares remaining");
-        assertEq(stAztec.allowance(alice, address(vault)), 0, "allowance consumed by transferFrom");
-    }
-
-    /*//////////////////////////////////////////////////////////////
         6D: DEPOSIT WITH PERMIT — INVALID SIGNATURE REVERTS
     //////////////////////////////////////////////////////////////*/
 

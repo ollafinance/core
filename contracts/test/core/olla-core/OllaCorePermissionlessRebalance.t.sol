@@ -334,12 +334,12 @@ contract OllaCorePermissionlessRebalance is Test {
         uint256 bobShares = _performDeposit(bob, 5 * DECIMALS);
         assertGt(bobShares, 0, "Bob should receive shares");
 
-        // Redeem from alice should succeed (instant redemption from buffer)
-        // Alice has shares and there should be assets in the buffer from the deposit
+        // Redeem request from alice should succeed during in-progress rebalance.
+        // The async path queues the request; we only verify it doesn't revert here.
         uint256 redeemShares = aliceShares / 10; // redeem a small portion
         vm.prank(alice);
-        uint256 assetsRedeemed = vault.instantRedeem(redeemShares, alice, 0);
-        assertGt(assetsRedeemed, 0, "Alice should receive assets from instant redemption");
+        uint256 requestId = vault.requestRedeem(redeemShares, alice, alice);
+        assertGt(requestId, 0, "Alice should receive a redeem request id");
     }
 
     /*//////////////////////////////////////////////////////////////

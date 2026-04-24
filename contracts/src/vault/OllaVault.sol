@@ -49,9 +49,6 @@ contract OllaVault is
     /// @notice Basis points divisor.
     uint256 public constant BP_DIVISOR = 10_000;
 
-    /// @notice Maximum instant redemption fee: 20%.
-    uint256 public constant MAX_INSTANT_REDEMPTION_FEE_BP = 2_000;
-
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
@@ -73,17 +70,11 @@ contract OllaVault is
     /// @notice ERC-7540 operator approvals: controller -> operator -> approved.
     mapping(address controller => mapping(address operator => bool approved)) private _operators;
 
-    /// @notice The instant redemption fee in basis points.
-    uint256 public instantRedemptionFeeBP;
-
     /// @notice Cumulative deposits tracked for Core accounting.
     uint256 public cumulativeDeposits;
 
     /// @notice Cumulative withdrawals tracked for Core accounting.
     uint256 public cumulativeWithdrawals;
-
-    /// @notice Cumulative instant redemption fees collected, tracked for Core accounting.
-    uint256 public cumulativeExitFees;
 
     /// @notice Cumulative slashing adjustments tracked for Core accounting.
     uint256 public cumulativeSlashingAdjustments;
@@ -131,8 +122,6 @@ contract OllaVault is
         _modules = VaultModules({
             asset: asset_, stAztec: stAztec_, withdrawalQueue: IWithdrawalQueue(withdrawalQueue_), core: core_
         });
-
-        instantRedemptionFeeBP = 500; // 5% default
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governanceContract_);
         _grantRole(GUARDIAN_ROLE, governanceContract_);
@@ -220,45 +209,6 @@ contract OllaVault is
         _checkControllerOrOperator(_requestOwners[requestId]);
         assets = _claimWithdrawal(requestId, address(0));
         return assets;
-    }
-
-    /// @inheritdoc IOllaVault
-    function instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut)
-        external
-        override(IOllaVault)
-        nonReentrant
-        whenNotPaused
-        returns (uint256 assetsAfterFee)
-    {
-        return _instantRedeem(shares, recipient, minAssetsOut, false);
-    }
-
-    /// @inheritdoc IOllaVault
-    function instantRedeemWithPermit(
-        uint256 shares,
-        address recipient,
-        uint256 minAssetsOut,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external override nonReentrant whenNotPaused returns (uint256 assetsAfterFee) {
-        IStAztec stAztecRef = _modules.stAztec;
-        // ERC-20 permit call on trusted stAztec token; sets allowance only.
-        // Wrapped in try/catch for frontrun protection: if an attacker consumes the
-        // permit signature first, the allowance is already set and the instant redeem
-        // can proceed. Only reverts when the permit fails AND no sufficient allowance exists.
-        // slither-disable-next-line reentrancy-benign
-        try stAztecRef.permit(msg.sender, address(this), shares, deadline, v, r, s) { }
-        catch (bytes memory reason) {
-            if (stAztecRef.allowance(msg.sender, address(this)) < shares) {
-                revert OllaVault__PermitFailed(reason);
-            }
-        }
-        // Pull shares to vault via transferFrom, consuming the permit-set allowance.
-        // slither-disable-next-line reentrancy-benign
-        IERC20(address(stAztecRef)).safeTransferFrom(msg.sender, address(this), shares);
-        return _instantRedeem(shares, recipient, minAssetsOut, true);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -509,14 +459,6 @@ contract OllaVault is
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IOllaVault
-    function setInstantRedemptionFeeBP(uint256 newFeeBP) external override onlyOwner whenNotPaused {
-        if (newFeeBP > MAX_INSTANT_REDEMPTION_FEE_BP) revert OllaVault__InvalidFeeBP(newFeeBP);
-        uint256 oldFeeBP = instantRedemptionFeeBP;
-        instantRedemptionFeeBP = newFeeBP;
-        emit InstantRedemptionFeeUpdated(oldFeeBP, newFeeBP);
-    }
-
-    /// @inheritdoc IOllaVault
     function reconcileBufferedAssets() external override onlyOwner whenNotPaused returns (uint256 delta) {
         delta = _reconcileBufferedAssets(address(this));
         return delta;
@@ -715,16 +657,6 @@ contract OllaVault is
         return IOllaCore(_modules.core).convertToAssets(shares);
     }
 
-    /// @notice Returns the net assets previewed for an instant redemption.
-    /// @param shares The amount of shares to redeem.
-    /// @return assetsAfterFee The net assets after fee deduction.
-    function previewInstantRedeem(uint256 shares) external view override returns (uint256 assetsAfterFee) {
-        uint256 grossAssets = IOllaCore(_modules.core).convertToAssets(shares);
-        uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
-        assetsAfterFee = grossAssets - fee;
-        return assetsAfterFee;
-    }
-
     /*//////////////////////////////////////////////////////////////
                         EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -776,37 +708,9 @@ contract OllaVault is
         return IOllaCore(_modules.core).totalAssets();
     }
 
-    /// @notice Returns the maximum assets currently available for instant redemptions.
-    /// @dev Excludes assets reserved for pending async withdrawals so that instant
-    ///      redemptions cannot consume liquidity earmarked for the withdrawal queue.
-    /// @return The maximum assets available.
-    function availableForInstantRedemption() public view override returns (uint256) {
-        uint256 pending = _modules.withdrawalQueue.totalPendingAssets();
-        if (pending >= _bufferedAssets) return 0;
-        return _bufferedAssets - pending;
-    }
-
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Executes an instant redemption and checks slippage.
-    /// @param shares The amount of shares to redeem.
-    /// @param recipient The address that will receive the redeemed assets.
-    /// @param minAssetsOut The minimum acceptable net assets after fee.
-    /// @param sharesPulledToVault True when shares were already transferred to the vault
-    ///        (permit paths use safeTransferFrom to consume the allowance).
-    /// @return assetsAfterFee The net assets received after fee deduction.
-    function _instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut, bool sharesPulledToVault)
-        internal
-        returns (uint256 assetsAfterFee)
-    {
-        assetsAfterFee = _redeem(msg.sender, shares, recipient, sharesPulledToVault);
-        // Slippage bound check; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        if (assetsAfterFee < minAssetsOut) revert OllaVault__SlippageExceeded(assetsAfterFee, minAssetsOut);
-        return assetsAfterFee;
-    }
 
     /// @notice Validates deposit preconditions (safety module, cap) and computes shares.
     /// @param caller The depositor address.
@@ -900,59 +804,6 @@ contract OllaVault is
         }
 
         return (requestId, assetsExpected);
-    }
-
-    /// @notice Burns shares, deducts instant redemption fee, and transfers net assets.
-    /// @dev The fee is absorbed into the protocol (remains in _bufferedAssets), benefiting
-    ///      all remaining shareholders.
-    /// @param owner The address whose shares are burned.
-    /// @param shares The amount of shares to redeem.
-    /// @param recipient The address that receives the net assets.
-    /// @param sharesPulledToVault True when shares were already transferred to the vault
-    ///        (permit paths use safeTransferFrom to consume the allowance).
-    /// @return netAssets The amount of assets transferred after fee deduction.
-    function _redeem(address owner, uint256 shares, address recipient, bool sharesPulledToVault)
-        internal
-        returns (uint256 netAssets)
-    {
-        if (recipient == address(0)) revert OllaVault__ZeroAddress("recipient");
-        if (shares == 0) revert OllaVault__InvalidAmount();
-
-        VaultModules memory modules = _modules;
-        ISafetyModule sm = ISafetyModule(_safetyModule());
-
-        if (sm.isPaused()) revert OllaVault__SafetyModulePaused();
-
-        _syncBufferedWithBalance();
-
-        sm.checkWithdrawalMinimum(shares);
-
-        IOllaCore coreRef = IOllaCore(modules.core);
-        uint256 rate = coreRef.exchangeRate();
-        uint256 grossAssets = coreRef.convertToAssets(shares);
-        uint256 fee = grossAssets * instantRedemptionFeeBP / BP_DIVISOR;
-        netAssets = grossAssets - fee;
-
-        uint256 available = availableForInstantRedemption();
-        // Liquidity sufficiency check; only netAssets leaves the buffer (fee is absorbed).
-        // slither-disable-next-line timestamp
-        if (netAssets > available) revert OllaVault__InsufficientLiquidity(netAssets, available);
-
-        // Permit paths pull shares to vault via safeTransferFrom before calling this function,
-        // so burn from vault's balance. Non-permit paths burn directly from the owner.
-        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
-        modules.stAztec.burn(sharesPulledToVault ? address(this) : owner, shares);
-
-        // Only subtract netAssets; the fee stays in _bufferedAssets, benefiting remaining shareholders.
-        _bufferedAssets -= netAssets;
-
-        modules.asset.safeTransfer(recipient, netAssets);
-
-        cumulativeWithdrawals += grossAssets;
-        cumulativeExitFees += fee;
-
-        emit InstantRedemption(owner, recipient, shares, grossAssets, fee, netAssets, rate);
-        return netAssets;
     }
 
     /// @dev Claims a withdrawal request. If receiverOverride is address(0), uses the request's recipient.

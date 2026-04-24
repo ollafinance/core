@@ -217,11 +217,6 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IOllaGovernance
-    function setInstantRedemptionFeeBP(uint256 newFeeBP) external override onlySelf {
-        IOllaVault(IOllaCore(core).vault()).setInstantRedemptionFeeBP(newFeeBP);
-    }
-
-    /// @inheritdoc IOllaGovernance
     function recoverStAztec(address recipient, uint256 amount) external override onlySelf {
         IOllaVault(IOllaCore(core).vault()).recoverStAztec(recipient, amount);
     }

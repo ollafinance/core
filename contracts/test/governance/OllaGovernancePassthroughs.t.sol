@@ -78,23 +78,6 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    setInstantRedemptionFeeBP
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SetInstantRedemptionFeeBP_ViaTimelock() external {
-        uint256 newFee = 50;
-        bytes memory data = abi.encodeCall(IOllaGovernance.setInstantRedemptionFeeBP, (newFee));
-        _scheduleAndExecute(address(gov), data);
-        assertEq(vault.instantRedemptionFeeBP(), newFee, "instant redemption fee updated");
-    }
-
-    function test_RevertWhen_SetInstantRedemptionFeeBP_DirectCall() external {
-        vm.expectRevert(IOllaGovernance.OllaGovernance__OnlySelf.selector);
-        vm.prank(admin);
-        gov.setInstantRedemptionFeeBP(50);
-    }
-
-    /*//////////////////////////////////////////////////////////////
                          setSafetyModule
     //////////////////////////////////////////////////////////////*/
 

@@ -335,27 +335,6 @@ contract OllaCoreReentrancyTest is Test {
         vm.prank(governance);
         core.rebalance();
     }
-
-    /*//////////////////////////////////////////////////////////////
-                     INSTANT REDEMPTION WITH PERMIT
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_RedeemWithPermit_ReenteredFromTransferHook() external {
-        _deposit(permitOwner, 100 * DECIMALS);
-
-        uint256 sharesToRedeem = 10 * DECIMALS;
-        uint256 deadline = block.timestamp + 1 days;
-        (uint8 v, bytes32 r, bytes32 s) =
-            _signPermit(permitOwner, permitOwnerKey, address(vault), sharesToRedeem, deadline);
-
-        asset.configureTransferReentry(
-            address(vault), abi.encodeCall(vault.instantRedeem, (sharesToRedeem, bob, 0)), true
-        );
-
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        vm.prank(permitOwner);
-        vault.instantRedeemWithPermit(sharesToRedeem, bob, 0, deadline, v, r, s);
-    }
 }
 
 contract OllaCoreHarvestReentrancyTest is Test {

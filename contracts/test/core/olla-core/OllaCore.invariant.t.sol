@@ -551,7 +551,6 @@ contract OllaCoreLifecycleHandler is Test {
 
     uint256 public ghost_totalDeposited;
     uint256 public ghost_totalWithdrawn;
-    uint256 public ghost_totalInstantRedeemed;
     bool public ghost_rebalanceMonotonic;
     uint256 public ghost_rateBeforeAccounting;
     uint256 public ghost_rateAfterAccounting;
@@ -691,34 +690,6 @@ contract OllaCoreLifecycleHandler is Test {
         ghost_totalWithdrawn += assetsExpected;
     }
 
-    function instantRedeem(uint256 actorSeed) external {
-        address actor = address(0);
-        uint256 actorShares = 0;
-        uint256 base = actorSeed % actors.length;
-        for (uint256 i = 0; i < actors.length; i++) {
-            uint256 idx = (base + i) % actors.length;
-            uint256 bal = stAztec.balanceOf(actors[idx]);
-            if (bal > 0) {
-                actor = actors[idx];
-                actorShares = bal;
-                break;
-            }
-        }
-        if (actor == address(0)) return;
-
-        uint256 sharesToRedeem = actorShares / 2;
-        if (sharesToRedeem == 0) sharesToRedeem = actorShares;
-
-        vm.startPrank(actor);
-        stAztec.approve(address(vault), sharesToRedeem);
-        try vault.instantRedeem(sharesToRedeem, actor, 0) returns (uint256 netAssets) {
-            ghost_totalInstantRedeemed += netAssets;
-        } catch {
-            // May revert if insufficient buffer or instant redemption disabled
-        }
-        vm.stopPrank();
-    }
-
     function updateAccounting() external {
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         if (progress.step != IOllaCore.RebalanceStep.Done) return;
@@ -830,10 +801,6 @@ contract OllaCoreLifecycleInvariantTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-
-        // Enable instant redemption fee (1% = 100 BP)
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(100);
 
         handler = new OllaCoreLifecycleHandler(
             asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator
@@ -1062,46 +1029,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
         try vault.requestRedeem(sharesToRedeem, actor, actor) returns (uint256 requestId) {
             _pendingRequestIds.push(requestId);
         } catch {
-            return;
-        }
-
-        // Update rate after
-        ghost_latestExchangeRate = core.exchangeRate();
-    }
-
-    function instantRedeem(uint256 actorSeed) external {
-        address actor = address(0);
-        uint256 actorShares = 0;
-        uint256 base = actorSeed % actors.length;
-        for (uint256 i = 0; i < actors.length; i++) {
-            uint256 idx = (base + i) % actors.length;
-            uint256 bal = stAztec.balanceOf(actors[idx]);
-            if (bal > 0) {
-                actor = actors[idx];
-                actorShares = bal;
-                break;
-            }
-        }
-        if (actor == address(0)) return;
-
-        // Only redeem a small portion to avoid InsufficientLiquidity
-        uint256 sharesToRedeem = actorShares / 4;
-        if (sharesToRedeem == 0) sharesToRedeem = 1;
-
-        uint256 grossAssets = core.convertToAssets(sharesToRedeem);
-        if (grossAssets == 0) return;
-        if (grossAssets > vault.availableForInstantRedemption()) return;
-
-        // Snapshot counters before
-        _snapshotFlowCounters();
-        // Snapshot rate before (instantRedeem is a protocol op)
-        ghost_previousExchangeRate = ghost_latestExchangeRate;
-        ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
-
-        vm.prank(actor);
-        try vault.instantRedeem(sharesToRedeem, actor, 0) { }
-        catch {
             return;
         }
 
@@ -1463,23 +1390,6 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             handler.ghost_totalMinted(),
             "total tokens across all contracts must equal total minted"
         );
-    }
-
-    /*//////////////////////////////////////////////////////////////
-            INSTANT REDEMPTION FEE CONSERVATION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice fee + netAssets == grossAssets (no value created or lost in fee split).
-    function invariant_InstantRedemptionFeeConservation() external view {
-        uint256 shares = bound(uint256(block.timestamp), 1, type(uint96).max);
-        uint256 grossAssets = core.convertToAssets(shares);
-
-        uint256 feeBP = vault.instantRedemptionFeeBP();
-        uint256 bpDivisor = vault.BP_DIVISOR();
-        uint256 fee = grossAssets * feeBP / bpDivisor;
-        uint256 netAssets = grossAssets - fee;
-
-        assertEq(fee + netAssets, grossAssets, "fee + netAssets must equal grossAssets exactly");
     }
 
     /*//////////////////////////////////////////////////////////////

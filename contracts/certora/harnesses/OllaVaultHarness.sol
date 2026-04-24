@@ -19,19 +19,9 @@ contract OllaVaultHarness is OllaVault {
         return cumulativeWithdrawals;
     }
 
-    /// @notice Returns the cumulative exit fees counter.
-    function getCumulativeExitFees() external view returns (uint256) {
-        return cumulativeExitFees;
-    }
-
     /// @notice Returns the cumulative slashing adjustments counter.
     function getCumulativeSlashingAdjustments() external view returns (uint256) {
         return cumulativeSlashingAdjustments;
-    }
-
-    /// @notice Returns the instant redemption fee in basis points.
-    function getInstantRedemptionFeeBP() external view returns (uint256) {
-        return instantRedemptionFeeBP;
     }
 
     /// @notice Returns core's convertToShares result for given assets.

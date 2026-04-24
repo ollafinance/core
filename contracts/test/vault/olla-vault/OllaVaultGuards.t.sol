@@ -461,17 +461,6 @@ contract OllaVaultGuardsTest is Test {
         );
     }
 
-    function test_RevertWhen_InstantRedeemWithPermit_InvalidSignature() external {
-        _performDeposit(alice, 10 * DECIMALS);
-
-        // Call with invalid permit signature
-        vm.expectRevert();
-        vm.prank(alice);
-        vault.instantRedeemWithPermit(
-            10 * DECIMALS, alice, 0, block.timestamp + 1, 27, bytes32(uint256(1)), bytes32(uint256(2))
-        );
-    }
-
     /*//////////////////////////////////////////////////////////////
               UNEXPECTED REQUEST ID IN _executeRedeemRequest
     //////////////////////////////////////////////////////////////*/
