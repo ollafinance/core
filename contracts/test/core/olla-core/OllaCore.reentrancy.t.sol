@@ -14,6 +14,7 @@ import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousRewardsAccumulator } from "src/core/mocks/MaliciousRewardsAccumulator.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MaliciousSafetyModule } from "src/safetymodule/mocks/MaliciousSafetyModule.sol";
@@ -144,7 +145,7 @@ contract OllaCoreReentrancyTest is Test {
     MaliciousWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     address internal governance;
-    address internal rewardsAccumulator;
+    MockRewardsAccumulator internal rewardsAccumulator;
     address internal alice;
     address internal bob;
     address internal permitOwner;
@@ -168,7 +169,7 @@ contract OllaCoreReentrancyTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsAccumulator = makeAddr("rewardsAccumulator");
+        rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(asset)), address(core));
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MaliciousWithdrawalQueue();
 
@@ -182,7 +183,7 @@ contract OllaCoreReentrancyTest is Test {
             protocolFeeBP,
             treasuryFeeSplitBP,
             governance,
-            IRewardsAccumulator(rewardsAccumulator),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
@@ -483,7 +484,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
     MaliciousSafetyModule internal safetyModule;
     MockWithdrawalQueue internal withdrawalQueue;
     address internal governance;
-    address internal rewardsAccumulator;
+    MockRewardsAccumulator internal rewardsAccumulator;
     address internal alice;
 
     /*//////////////////////////////////////////////////////////////
@@ -504,7 +505,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        rewardsAccumulator = makeAddr("rewardsAccumulator");
+        rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(asset)), address(core));
         safetyModule = new MaliciousSafetyModule(address(implementation), address(vault));
         withdrawalQueue = new MockWithdrawalQueue();
 
@@ -515,7 +516,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
             500,
             5_000,
             governance,
-            IRewardsAccumulator(rewardsAccumulator),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
         vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);

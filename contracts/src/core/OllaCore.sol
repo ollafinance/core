@@ -555,8 +555,11 @@ contract OllaCore is
     }
 
     /// @inheritdoc IOllaCore
+    /// @dev Returns a freshly-assembled snapshot derived from live module reads (StakingManager,
+    ///      RewardsAccumulator). The `cumulativeRewards` field is a genuine ledger and is still
+    ///      sourced from storage. Staticcall-safe for indexers/UI.
     function accountingState() external view override returns (IOllaCore.AccountingState memory) {
-        return _accountingState;
+        return _liveAccountingState();
     }
 
     /// @inheritdoc IOllaCore
@@ -572,7 +575,7 @@ contract OllaCore is
     /// @inheritdoc IOllaCore
     function convertToAssetsGross(uint256 shares) external view override returns (uint256) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
-        uint256 grossAssets = _computeTotalAssets(_accountingState, vaultRef.bufferedAssets(), 0);
+        uint256 grossAssets = _computeTotalAssets(_liveAccountingState(), vaultRef.bufferedAssets(), 0);
         uint256 grossSupply = _modules.stAztec.totalSupply() + vaultRef.pendingWithdrawalShares();
         return shares.mulDiv(grossAssets + _VIRTUAL_OFFSET, grossSupply + _VIRTUAL_OFFSET, Math.Rounding.Floor);
     }
@@ -599,7 +602,8 @@ contract OllaCore is
     ///      (excluding exit fee redistribution), use `_latestReport.grossRewards`.
     function totalAssets() public view override returns (uint256) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
-        return _computeTotalAssets(_accountingState, vaultRef.bufferedAssets(), vaultRef.pendingWithdrawalAssets());
+        return
+            _computeTotalAssets(_liveAccountingState(), vaultRef.bufferedAssets(), vaultRef.pendingWithdrawalAssets());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1056,6 +1060,42 @@ contract OllaCore is
         );
     }
 
+    /// @notice Assembles an `AccountingState` snapshot from live module reads.
+    /// @dev Authoritative source of accounting data for `totalAssets()`, `_withdrawalRate()`, and the
+    ///      external `accountingState()` getter. Every field except `cumulativeRewards` is derived at
+    ///      call time from the owning module -- `stakedPrincipal` and `slashingDelta` from
+    ///      `StakingManager`, `claimableRewards` from the rollup via `StakingManager`, and
+    ///      `rewardsAccumulatorBalance` from `RewardsAccumulator`. `cumulativeRewards` is a
+    ///      protocol-internal ledger maintained in storage and copied through. `rewardsDelta` is
+    ///      derived relative to `_latestReport.rewardsSnapshot` so the snapshot remains meaningful to
+    ///      indexers between accounting reports. Because all reads occur inside a single staticcall,
+    ///      callers receive a snapshot consistent as of the containing block.
+    /// @return snapshot A freshly-assembled AccountingState populated from authoritative sources.
+    function _liveAccountingState() internal view returns (IOllaCore.AccountingState memory snapshot) {
+        IOllaCore.CoreModules memory modules = _modules;
+        uint256 cumulativeRewards = _accountingState.cumulativeRewards;
+        uint256 claimableRewards = modules.stakingManager.getClaimableRewards();
+
+        uint256 rewardsDelta;
+        uint256 latestReportRewards = _latestReport.rewardsSnapshot;
+        uint256 currentRewards = cumulativeRewards + claimableRewards;
+        // Positive-delta guard; signed comparison is not a timestamp concern.
+        // slither-disable-next-line timestamp
+        if (currentRewards > latestReportRewards) {
+            rewardsDelta = currentRewards - latestReportRewards;
+        }
+
+        snapshot = IOllaCore.AccountingState({
+            stakedPrincipal: modules.stakingManager.totalStaked(),
+            rewardsAccumulatorBalance: modules.rewardsAccumulator.balance(),
+            claimableRewards: claimableRewards,
+            rewardsDelta: rewardsDelta,
+            slashingDelta: modules.stakingManager.getSlashingDelta(),
+            cumulativeRewards: cumulativeRewards
+        });
+        return snapshot;
+    }
+
     /// @notice Reads staking state from StakingManager: cumulative rewards, deltas, principal, and claimable.
     /// @return currentRewards The cumulative rewards including claimable.
     /// @return rewardsDelta The positive reward delta since the last report.
@@ -1259,7 +1299,7 @@ contract OllaCore is
     /// @return The withdrawal-safe exchange rate.
     function _withdrawalRate(IOllaVault vaultRef) internal view returns (uint256) {
         uint256 buffered = vaultRef.bufferedAssets();
-        uint256 grossAssets = _computeTotalAssets(_accountingState, buffered, 0);
+        uint256 grossAssets = _computeTotalAssets(_liveAccountingState(), buffered, 0);
         uint256 grossSupply = _modules.stAztec.totalSupply() + vaultRef.pendingWithdrawalShares();
         return (grossAssets + _VIRTUAL_OFFSET)
         .mulDiv(_EXCHANGE_RATE_SCALE, grossSupply + _VIRTUAL_OFFSET, Math.Rounding.Floor);

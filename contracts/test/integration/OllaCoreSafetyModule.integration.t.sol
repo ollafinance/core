@@ -181,8 +181,9 @@ contract OllaCoreSafetyModuleTest is Test {
         vm.prank(admin);
         safetyModule.setDepositCap(cap);
 
-        vm.prank(operator);
-        core.exposedApplyAccountingUpdates(0, 60 * DECIMALS, 0, 0, 0);
+        // Seed totalAssets by funding the accumulator directly; totalAssets() now reads the
+        // accumulator's live balance via rewardsAccumulator.balance().
+        deal(address(asset), address(rewardsAccumulator), 60 * DECIMALS);
 
         uint256 depositAmount = 100 * DECIMALS;
         asset.mint(alice, depositAmount);

@@ -147,13 +147,21 @@ contract OllaCoreAccountingTest is Test {
         uint256 staked = 6 * DECIMALS;
         uint256 rewardsAccumulatorBalance = 4 * DECIMALS;
         uint256 claimableRewards = 3 * DECIMALS;
-        uint256 rewardsDelta = 2 * DECIMALS;
         uint256 slashingDelta = 1 * DECIMALS;
 
         _performDeposit(alice, assets);
-        core.exposedApplyAccountingUpdates(
-            staked, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
-        );
+
+        // Under pull-model accounting, bucket fields on accountingState() are derived at call
+        // time from the owning modules. Drive each field through its live source: stakingManager
+        // owns stakedPrincipal/claimableRewards/slashingDelta, and the accumulator's balance() is
+        // the single source of truth for rewardsAccumulatorBalance.
+        stakingManager.setTotalStaked(staked);
+        stakingManager.setClaimableRewards(claimableRewards);
+        stakingManager.setSlashingDelta(slashingDelta);
+        // setSlashingDelta subtracts (slashingDelta - prior) from totalStakedAmount; restore the
+        // target staked amount so the test sees the intended composition.
+        stakingManager.setTotalStaked(staked);
+        deal(address(asset), address(rewardsAccumulator), rewardsAccumulatorBalance);
 
         IOllaCore.AccountingState memory accounting = core.accountingState();
         assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
@@ -164,7 +172,6 @@ contract OllaCoreAccountingTest is Test {
             "rewardsAccumulatorBalance matches rewards vault"
         );
         assertEq(accounting.claimableRewards, claimableRewards, "claimableRewards matches claimable rewards");
-        assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
 
         assertEq(
@@ -563,18 +570,26 @@ contract OllaCoreAccountingTest is Test {
         core.rebalance();
         stakingManager.setClaimableRewards(9 * DECIMALS);
 
+        // Under pull-model accounting, `accountingState().rewardsDelta` is derived relative to the
+        // latest report's rewardsSnapshot. Snapshot the LIVE delta BEFORE updateAccounting() runs
+        // to capture what the delta computation consumed, since the report will then advance the
+        // rewardsSnapshot and collapse the live delta back to zero.
         IOllaCore.AccountingState memory accountingBefore = core.accountingState();
         IOllaCore.LatestReport memory reportBefore = core.latestReport();
         uint256 currentRewards = accountingBefore.cumulativeRewards + 9 * DECIMALS;
         uint256 expectedDelta =
             currentRewards > reportBefore.rewardsSnapshot ? currentRewards - reportBefore.rewardsSnapshot : 0;
+        assertEq(accountingBefore.rewardsDelta, expectedDelta, "live rewards delta reflects cumulative+claimable");
         vm.prank(operator);
         core.updateAccounting();
 
         IOllaCore.LatestReport memory secondReport = core.latestReport();
-        IOllaCore.AccountingState memory accounting = core.accountingState();
-        assertEq(accounting.rewardsDelta, expectedDelta, "rewards delta stored");
         assertEq(secondReport.rewardsSnapshot, 14 * DECIMALS, "rewards snapshot advanced");
+        assertEq(
+            secondReport.rewardsSnapshot - reportBefore.rewardsSnapshot,
+            expectedDelta,
+            "snapshot advancement matches computed delta"
+        );
     }
 
     function test_UpdateAccounting_RewardsDeltaClampsWhenClaimableDecreases() external {
@@ -719,30 +734,32 @@ contract OllaCoreAccountingTest is Test {
         uint96 staked,
         uint96 rewardsAccumulatorBalance,
         uint96 claimableRewards,
-        uint96 rewardsDelta,
         uint96 slashingDeltaSeed
     ) external {
         buffered = uint96(bound(buffered, 1, type(uint96).max));
         staked = uint96(bound(staked, 1, type(uint96).max));
         rewardsAccumulatorBalance = uint96(bound(rewardsAccumulatorBalance, 1, type(uint96).max));
         claimableRewards = uint96(bound(claimableRewards, 0, type(uint96).max));
-        rewardsDelta = uint96(bound(rewardsDelta, 0, type(uint96).max));
 
         uint256 positiveTotal =
             uint256(buffered) + uint256(staked) + uint256(rewardsAccumulatorBalance) + uint256(claimableRewards);
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
-        // Mint assets to vault to simulate buffered assets
+        // Drive each composition term through its live source so the pull-model totalAssets() reads
+        // the intended value at call time: vault owns buffered, stakingManager owns staked +
+        // claimable + slashingDelta, and the accumulator contract owns rewardsAccumulatorBalance.
         asset.mint(address(vault), buffered);
-        // Use reconcileBufferedAssets to sync the vault's buffer
         vm.prank(governance);
         vault.reconcileBufferedAssets();
-        core.exposedApplyAccountingUpdates(
-            staked, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
-        );
+        stakingManager.setTotalStaked(staked);
+        stakingManager.setClaimableRewards(claimableRewards);
+        // setSlashingDelta subtracts the increment from totalStakedAmount; restore staked after.
+        stakingManager.setSlashingDelta(slashingDelta);
+        stakingManager.setTotalStaked(staked);
+        deal(address(asset), address(rewardsAccumulator), rewardsAccumulatorBalance);
 
-        // exposedApplyAccountingUpdates sets stakedPrincipal directly (not via mock),
-        // so stakedPrincipal is already the value we passed. slashingDelta is informational only.
+        // totalAssets() is net-of-slashing via stakingManager.totalStaked(); slashingDelta is
+        // informational in the accountingState() view only.
         assertEq(
             core.totalAssets(), positiveTotal, "totalAssets equals positive total (slashingDelta is informational)"
         );

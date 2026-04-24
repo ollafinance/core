@@ -133,11 +133,23 @@ contract WithdrawalQueuePhantomSlashTest is Test {
         return requestId;
     }
 
+    /// @notice Sets the rewards-accumulator-backed gross backing by funding or draining the
+    ///         accumulator contract's balance. All pricing read paths resolve this live.
+    function _setAccumulatorBacking(uint256 target) internal {
+        uint256 current = asset.balanceOf(address(rewardsAccumulator));
+        if (target > current) {
+            asset.mint(address(rewardsAccumulator), target - current);
+        } else if (current > target) {
+            vm.prank(address(rewardsAccumulator));
+            asset.transfer(address(0xdead), current - target);
+        }
+    }
+
     /// @notice Shared prefix: two deposits + two requests separated by reward accrual.
     /// @dev After this prefix:
     ///      - supply: 0 (both users burned their 100e18 shares on request)
     ///      - bufferedAssets: 200e18 (both deposits still held, no rebalance)
-    ///      - rewardsAccumulatorBalance: 200e18 (two accrual steps of 100e18 each)
+    ///      - rewardsAccumulator holds 200e18 of aztec (two accrual steps of 100e18 each)
     ///      - pendingShares: 200e18, pendingAssets: aliceReq.assetsExpected + bobReq.assetsExpected
     ///      - Alice's locked rate is strictly below Bob's locked rate (the two requests were made
     ///        at different per-share-backing levels due to the intervening reward accrual)
@@ -154,15 +166,15 @@ contract WithdrawalQueuePhantomSlashTest is Test {
         _deposit(alice, DEPOSIT);
         _deposit(bob, DEPOSIT);
 
-        // Step 2: First reward accrual: rewardsAccumulatorBalance = 100e18, rewardsDelta = 100e18.
-        core.exposedApplyAccountingUpdates(0, 100 * DECIMALS, 0, 100 * DECIMALS, 0);
+        // Step 2: First reward accrual: gross-backing from accumulator = 100e18.
+        _setAccumulatorBacking(100 * DECIMALS);
 
         // Step 3: Alice requests redemption.
         aliceId = _requestRedeem(alice, DEPOSIT);
         aliceReq = withdrawalQueue.getRequest(aliceId);
 
-        // Step 4: Second reward accrual: rewardsAccumulatorBalance = 200e18 total.
-        core.exposedApplyAccountingUpdates(0, 200 * DECIMALS, 0, 100 * DECIMALS, 0);
+        // Step 4: Second reward accrual: accumulator-backed gross total = 200e18.
+        _setAccumulatorBacking(200 * DECIMALS);
 
         // Step 5: Bob requests redemption -- at a higher per-share rate than Alice.
         bobId = _requestRedeem(bob, DEPOSIT);
@@ -173,26 +185,12 @@ contract WithdrawalQueuePhantomSlashTest is Test {
     }
 
     /// @notice Simulates a rewards harvest: physical aztec flows from the rewards accumulator
-    ///         into the vault. Mints `amount` to the vault and decrements the
-    ///         `rewardsAccumulatorBalance` mirror by the same amount, preserving gross total
-    ///         assets (and hence the gross withdrawal rate) as seen by Core.
-    /// @dev This is the physically-correct funding model for finalize: in the real rebalance flow,
-    ///      liquidity delivered to the vault comes either from unstakes (stakedPrincipal --> buffered)
-    ///      or from rewards harvests (rewardsAccumulatorBalance --> buffered). Both preserve
-    ///      gross backing. Minting aztec to the vault without adjusting a mirror would
-    ///      non-physically inflate the gross rate and mask the net/gross divergence this suite
-    ///      targets.
+    ///         into the vault, preserving gross total assets (accumulator balance decreases,
+    ///         buffered assets increase by the same amount).
     function _harvestIntoVault(uint256 amount) internal {
-        IOllaCore.AccountingState memory state = core.accountingState();
-        require(state.rewardsAccumulatorBalance >= amount, "harvest > mirror");
-        core.exposedApplyAccountingUpdates(
-            state.stakedPrincipal,
-            state.rewardsAccumulatorBalance - amount,
-            state.claimableRewards,
-            state.rewardsDelta,
-            state.slashingDelta
-        );
-        asset.mint(address(vault), amount);
+        require(asset.balanceOf(address(rewardsAccumulator)) >= amount, "harvest > accumulator balance");
+        vm.prank(address(rewardsAccumulator));
+        asset.transfer(address(vault), amount);
         vm.prank(governance);
         vault.reconcileBufferedAssets();
     }
@@ -225,8 +223,8 @@ contract WithdrawalQueuePhantomSlashTest is Test {
         ) = _runSharedPrefix();
 
         // Deliver liquidity via a simulated rewards harvest: physical aztec flows from the
-        // accumulator to the vault, bufferedAssets grows and the mirror shrinks by the same
-        // amount. No slashing is applied. After harvest: buffered = 400e18, rewardsAcc = 0,
+        // accumulator to the vault, bufferedAssets grows and the accumulator balance shrinks by
+        // the same amount. No slashing is applied. After harvest: buffered = 400e18, rewardsAcc = 0,
         // grossAssets = 400e18, grossSupply = 200e18 --> grossRate ~= 2.0e18. This is strictly
         // between Alice's locked net rate (~1.5e18) and Bob's locked net rate (~2.5e18), which
         // is exactly the spurious-slash regime the fix targets.
@@ -277,11 +275,11 @@ contract WithdrawalQueuePhantomSlashTest is Test {
         // `bobReq.assetsExpected` is derived: `bobReq.shares * grossRateAtBobRequest / 1e18`.
         uint256 grossRateAtBobRequest = core.exposedWithdrawalRate();
 
-        // Apply a real slash that drops the rewards-accumulator mirror from 200e18 to 120e18
-        // and records 80e18 of slashingDelta. Before harvest: grossAssets = 200 (buffered) +
-        // 120 (mirror) = 320e18 against 200e18 of pending shares, so grossRate = 1.6e18
-        // (between Alice's ~1.5e18 and Bob's ~2.5e18).
-        core.exposedApplyAccountingUpdates(0, 120 * DECIMALS, 0, 0, 80 * DECIMALS);
+        // Apply a real slash: drop the accumulator-backed gross from 200e18 to 120e18 (loss of
+        // 80e18). Before harvest: grossAssets = 200 (buffered) + 120 (accumulator) = 320e18
+        // against 200e18 of pending shares, so grossRate = 1.6e18 (between Alice's ~1.5e18 and
+        // Bob's ~2.5e18).
+        _setAccumulatorBacking(120 * DECIMALS);
 
         uint256 postSlashRate = core.exposedWithdrawalRate();
 
@@ -290,10 +288,10 @@ contract WithdrawalQueuePhantomSlashTest is Test {
         assertGt(postSlashRate, aliceReq.rate, "sanity: post-slash rate must be above alice's locked rate");
         assertLt(postSlashRate, bobReq.rate, "sanity: post-slash rate must be below bob's locked rate");
 
-        // Harvest the remaining mirror balance (120e18) into the vault. This delivers physical
-        // liquidity (buffered --> 320e18) while preserving grossAssets (and therefore the gross
-        // rate at finalize). Buffered 320e18 covers Alice's 150e18 payout + Bob's 160e18 clamped
-        // payout = 310e18.
+        // Harvest the remaining accumulator balance (120e18) into the vault. This delivers
+        // physical liquidity (buffered --> 320e18) while preserving grossAssets (and therefore
+        // the gross rate at finalize). Buffered 320e18 covers Alice's 150e18 payout + Bob's
+        // 160e18 clamped payout = 310e18.
         _harvestIntoVault(120 * DECIMALS);
 
         uint256 rateUsed = _finalize(400 * DECIMALS);
@@ -346,11 +344,10 @@ contract WithdrawalQueuePhantomSlashTest is Test {
             IWithdrawalQueue.WithdrawalRequest memory bobReq
         ) = _runSharedPrefix();
 
-        // Catastrophic slash: wipe the rewards-accumulator mirror entirely (200e18 --> 0) and
-        // record 200e18 of slashingDelta. Gross backing falls from 400e18 to 200e18 against
-        // 200e18 of pending shares -- grossRate ~= 1.0e18, below both Alice's (~1.5e18) and
-        // Bob's (~2.5e18) locked rates.
-        core.exposedApplyAccountingUpdates(0, 0, 0, 0, 200 * DECIMALS);
+        // Catastrophic slash: wipe the accumulator-backed gross entirely (200e18 --> 0). Gross
+        // backing falls from 400e18 to 200e18 against 200e18 of pending shares -- grossRate
+        // ~= 1.0e18, below both Alice's (~1.5e18) and Bob's (~2.5e18) locked rates.
+        _setAccumulatorBacking(0);
 
         uint256 postSlashRate = core.exposedWithdrawalRate();
 
@@ -359,7 +356,7 @@ contract WithdrawalQueuePhantomSlashTest is Test {
 
         // No harvest needed: bufferedAssets (200e18) exactly covers the clamped payouts
         // (Alice 100e18 + Bob 100e18 = 200e18 at grossRate 1.0e18). Harvesting is impossible
-        // anyway -- the mirror is empty after the slash.
+        // anyway -- the accumulator is empty after the slash.
         _finalize(400 * DECIMALS);
 
         IWithdrawalQueue.WithdrawalRequest memory aliceFinal = withdrawalQueue.getRequest(aliceId);

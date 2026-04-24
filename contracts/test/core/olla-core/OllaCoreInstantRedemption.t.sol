@@ -154,7 +154,9 @@ contract OllaCoreInstantRedemptionTest is Test {
     }
 
     function _setStakedPrincipal(uint256 amount) internal {
-        vm.store(address(core), bytes32(CORE_STAKED_PRINCIPAL_SLOT), bytes32(amount));
+        // Under pull-model accounting, stakedPrincipal on core is derived from
+        // stakingManager.totalStaked() at call time. Drive the value through the owning module.
+        stakingManager.setTotalStaked(amount);
     }
 
     function _setRebalanceIdleBuffer(uint256 amount) internal {

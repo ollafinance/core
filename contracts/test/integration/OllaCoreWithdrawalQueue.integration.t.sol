@@ -146,7 +146,8 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(request.assetsExpected, expectedAssets, "assetsExpected locked at request rate");
         assertEq(request.rate, rate, "rate locked at request time");
 
-        core.exposedApplyAccountingUpdates(0, 3 ether, 0, 0, 0);
+        // Simulate rewards accrual by funding the accumulator; exchange rate reads its balance live.
+        deal(address(asset), address(rewardsAccumulator), 3 ether);
         uint256 updatedRate = core.exchangeRate();
         assertGt(updatedRate, rate, "exchange rate should increase after rewards");
         request = queue.getRequest(requestId);
@@ -192,19 +193,20 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
     function test_RequestRedeem_AssetsExpectedMatchesRate() external {
         _deposit(alice, 18 ether);
-        core.exposedApplyAccountingUpdates(0, 6 ether, 0, 0, 0);
+        // Fund the accumulator so the rate reflects reward backing.
+        deal(address(asset), address(rewardsAccumulator), 6 ether);
 
         uint256 shares = 9 ether;
-        uint256 totalAssets = core.totalAssets();
-        uint256 supply = stAztec.totalSupply();
-        uint256 expectedAssets = Math.mulDiv(shares, totalAssets + 1e3, supply + 1e3, Math.Rounding.Floor);
-        uint256 rate = core.exchangeRate();
+        uint256 expectedRate = core.withdrawalRate();
+        // Hand-formula spec: shares * rate / 1e18. Tolerance absorbs the rounding wedge between
+        // this two-step floor and the one-step mulDiv in convertToAssetsGross.
+        uint256 expectedAssets = shares * expectedRate / 1e18;
 
         (uint256 requestId,) = _requestRedeem(alice, shares, alice);
         IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
 
-        assertEq(request.assetsExpected, expectedAssets, "assetsExpected should match rate at request time");
-        assertEq(request.rate, rate, "request rate should match current rate");
+        assertApproxEqAbs(request.assetsExpected, expectedAssets, 10, "assetsExpected matches shares * rate / 1e18");
+        assertEq(request.rate, expectedRate, "request rate matches core.withdrawalRate");
     }
 
     /*//////////////////////////////////////////////////////////////
