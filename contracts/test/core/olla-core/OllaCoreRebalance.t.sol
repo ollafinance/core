@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import { Test, Vm } from "@forge-std/Test.sol";
+import { StdStorage, stdStorage } from "@forge-std/StdStorage.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
@@ -203,6 +204,8 @@ contract MockStakeTrackingStakingManager is MockAccountingStakingManager {
 }
 
 contract OllaCoreRebalanceTest is Test {
+    using stdStorage for StdStorage;
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -1045,21 +1048,11 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     /// @dev Overwrites OllaCore.rebalanceGasThreshold without going through the
-    ///      setter — bypasses the 1M cap and whenRebalanceDone modifier.
-    ///      Slot 29 layout (from forge inspect OllaCore storage-layout):
-    ///        offset  0: protocolFeeBP         (uint16)
-    ///        offset  2: treasuryFeeSplitBP    (uint16)
-    ///        offset  4: rebalanceGasThreshold (uint32)  <-- bits 32..63
-    ///        offset  8: rebalanceCooldown     (uint32)
-    ///        offset 12: lastRebalanceTimestamp(uint48)
-    ///      A layout change invalidates this helper; the getter roundtrip
-    ///      assertion below catches that case loudly.
+    ///      setter to bypass the 1M cap and whenRebalanceDone modifier.
+    ///      StdStorage resolves the packed slot from the getter so the helper
+    ///      tracks layout changes automatically.
     function _forceRebalanceGasThreshold(uint32 value) internal {
-        bytes32 slot = bytes32(uint256(24));
-        uint256 current = uint256(vm.load(address(core), slot));
-        uint256 mask = ~(uint256(type(uint32).max) << 32);
-        uint256 updated = (current & mask) | (uint256(value) << 32);
-        vm.store(address(core), slot, bytes32(updated));
+        stdstore.target(address(core)).sig("rebalanceGasThreshold()").enable_packed_slots().checked_write(value);
         require(core.rebalanceGasThreshold() == value, "_forceRebalanceGasThreshold: slot layout drifted");
     }
 
