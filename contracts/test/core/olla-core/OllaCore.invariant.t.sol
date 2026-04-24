@@ -1775,12 +1775,12 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
               INVARIANT: totalAssets MATCHES LIVE READ-THROUGH
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice `totalAssets()` must equal the pull-model read-through sum at every
-    ///         protocol state reachable by the handler. Drift between the mirror
-    ///         and the live sources breaks this invariant. Expected to FAIL on the
-    ///         current cached-mirror code when rollup accrual or mid-rebalance
-    ///         pauses occur between updateAccounting calls; expected to PASS once
-    ///         `_computeTotalAssets` reads live state.
+    /// @notice `totalAssets()` must equal the live read-through sum of the owning
+    ///         modules at every protocol state reachable by the handler —
+    ///         including rollup accrual between `updateAccounting` calls and
+    ///         mid-rebalance pause windows, where any divergence between the
+    ///         exposed totalAssets and the authoritative module balances would
+    ///         mispricing user operations.
     function invariant_TotalAssetsMatchesLiveReadThrough() external view {
         assertEq(core.totalAssets(), _readThroughTotalAssets(), "totalAssets drift from live sources");
     }
@@ -1793,8 +1793,9 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
     ///         across any sequence of handler actions that involve validator accrual
     ///         (excluding explicit slashing). Because the handler is mock-aware, we
     ///         skip the check when `slashingDelta` changed since the last tick.
-    ///         Expected to FAIL on the current mirror code when accrual happens
-    ///         without `updateAccounting` — the rate goes stale.
+    ///         The rate is derived from live module state so accrual between
+    ///         `updateAccounting` calls is visible immediately — the invariant
+    ///         holds without any interim reconciliation call.
     function invariant_ExchangeRateReflectsContinuousAccrual() external {
         // Only meaningful once supply exists.
         uint256 supply = stAztec.totalSupply();

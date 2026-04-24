@@ -95,12 +95,12 @@ contract MockCacheCoherentStakingManager is MockAccountingStakingManager {
 //////////////////////////////////////////////////////////////*/
 
 /// @title OllaCoreCacheCoherenceTest
-/// @notice Behavior-oriented test specification that drives the upcoming
-///         `_accountingState` pull-model refactor on `OllaCore`.
-///         Tests in the "FAILS_NOW" section are expected to fail on the
-///         current cached-mirror implementation and pass once pull-model
-///         reads land. The regression-guard tests document behavior that
-///         must continue to hold across the refactor.
+/// @notice Behavior-oriented regression suite for the `_accountingState`
+///         pull-model contract on `OllaCore`. The invariant-guard tests lock
+///         in that `totalAssets()` tracks the live read-through sum of the
+///         owning modules across rebalance, harvest, slashing, and accrual
+///         boundaries. The strict-propagation tests lock in that dependency
+///         read failures revert rather than silently returning stale values.
 contract OllaCoreCacheCoherenceTest is Test {
     using Math for uint256;
 
@@ -192,8 +192,7 @@ contract OllaCoreCacheCoherenceTest is Test {
     }
 
     /// @notice Read-through total-assets expression: the pull-model value that
-    ///         `totalAssets()` MUST equal under the refactored read-through design.
-    ///         Reads live from every source of truth (no mirror).
+    ///         `totalAssets()` MUST equal. Reads live from every source of truth.
     function _readThroughTotalAssets() internal view returns (uint256) {
         uint256 buffered = vault.bufferedAssets();
         uint256 staked = stakingManager.totalStaked();
@@ -207,7 +206,8 @@ contract OllaCoreCacheCoherenceTest is Test {
     /// @notice Probe-and-replay: find a gas stipend that pauses rebalance exactly at
     ///         `FinalizeWithdrawals` AFTER `Harvest` + `PullUnstaked` have run.
     ///         At that point `Harvest` has drained validator rewards into the buffer
-    ///         but no `_updateAccountingInternal` has reconciled the mirror yet.
+    ///         while no `_updateAccountingInternal` has yet written a new report —
+    ///         the pricing window where pull-model invariants are most load-bearing.
     /// @param expectedRewards The reward amount expected to have been harvested.
     function _pauseAfterHarvestAtFinalize(uint256 expectedRewards) internal returns (uint256 selectedGas) {
         uint256 snap = vm.snapshotState();
@@ -245,29 +245,28 @@ contract OllaCoreCacheCoherenceTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-            FAILS NOW — TO PASS POST PULL-MODEL REFACTOR
+              PULL-MODEL READ-THROUGH INVARIANT GUARDS
     //////////////////////////////////////////////////////////////*/
 
-    /// FAILS_NOW: After `Harvest` drains `X` to the vault buffer, the cached
-    /// `_accountingState.claimableRewards` still holds `X`. With pull reads, the
-    /// claimable bucket would read `rollup.getSequencerRewards == 0` and `totalAssets`
-    /// at pause == `totalAssets` before the rebalance started. Harvest is a value-
-    /// conserving move (claimable → buffer) and must not change `totalAssets`. The
-    /// current code double-counts `X` and inflates `totalAssets` by exactly `X`.
+    /// @notice `Harvest` is a value-conserving move: rewards transfer from the
+    ///         claimable bucket into the vault buffer. `totalAssets()` must
+    ///         therefore be invariant across the harvest boundary. This guards
+    ///         against any pricing path that would sum a stale claimable figure
+    ///         alongside the grown buffer and double-count the harvested amount.
     function test_totalAssets_notInflated_afterHarvestBeforeDone() external {
         uint256 depositAmount = 100 * DECIMALS;
         uint256 rewards = 10 * DECIMALS;
 
         _deposit(alice, depositAmount);
 
-        // Seed accounting: validator has `rewards` claimable, reconcile mirror.
+        // Seed accounting: validator has `rewards` claimable, write a fresh report.
         stakingManager.setClaimableRewards(rewards);
         vm.prank(operator);
         core.updateAccounting();
 
-        // Sanity: the mirror and live source agree at the top of the cycle.
-        IOllaCore.AccountingState memory mirrorPre = core.accountingState();
-        assertEq(mirrorPre.claimableRewards, rewards, "mirror claimable primed");
+        // Sanity: the live snapshot reflects the seeded claimable at cycle start.
+        IOllaCore.AccountingState memory snapshotPre = core.accountingState();
+        assertEq(snapshotPre.claimableRewards, rewards, "snapshot claimable primed");
         assertEq(stakingManager.getClaimableRewards(), rewards, "live claimable primed");
 
         uint256 totalAtPrime = core.totalAssets();
@@ -284,16 +283,18 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(vault.bufferedAssets(), depositAmount + rewards, "buffer reflects harvested rewards");
 
         // Harvest conserves value — it moves `rewards` from one bucket (claim) into
-        // another (buffer). Under pull reads, totalAssets must be INVARIANT across
-        // the harvest boundary. Under the cached mirror, the stale `claimableRewards`
-        // bucket keeps its pre-harvest value so totalAssets is inflated by `rewards`.
+        // another (buffer). totalAssets is therefore INVARIANT across the harvest
+        // boundary: the claimable bucket reads live-zero from the rollup while the
+        // buffer grew by `rewards`, so the sum is unchanged.
         uint256 totalAtPause = core.totalAssets();
         assertEq(totalAtPause, totalAtPrime, "totalAssets must be harvest-invariant, not inflated by double-count");
     }
 
-    /// FAILS_NOW: The composed read-through identity must hold in the mid-rebalance
-    /// window. Under the cached mirror the claimable mirror is stale, so the composed
-    /// sum differs from `totalAssets()`.
+    /// @notice `totalAssets()` must equal the composed read-through sum of the
+    ///         owning modules in the mid-rebalance window — the exact moment
+    ///         when module balances are in motion (claimable drained, buffer
+    ///         grown) and any stale per-field cache would diverge from the
+    ///         authoritative sources.
     function test_totalAssets_matchesLiveSourcesMidRebalance() external {
         uint256 depositAmount = 80 * DECIMALS;
         uint256 rewards = 12 * DECIMALS;
@@ -311,15 +312,17 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(core.totalAssets(), expected, "mid-rebalance totalAssets must equal live read-through");
     }
 
-    /// FAILS_NOW: Between rebalances, validator rewards accrue on the rollup but the
-    /// cached mirror is not refreshed. Pull reads would see them; the mirror does not.
+    /// @notice Validator rewards accrue on the rollup continuously between
+    ///         `updateAccounting` calls. `totalAssets()` must reflect that accrual
+    ///         immediately because the claimable bucket is read live from
+    ///         `stakingManager.getClaimableRewards()` on every call.
     function test_totalAssets_reflectsValidatorAccrual_betweenRebalances() external {
         uint256 depositAmount = 50 * DECIMALS;
         uint256 accrual = 3 * DECIMALS;
 
         _deposit(alice, depositAmount);
 
-        // Drive a clean rebalance to baseline the mirror.
+        // Drive a clean rebalance to establish a baseline totalAssets.
         vm.prank(operator);
         core.rebalance();
         uint256 totalAtBaseline = core.totalAssets();
@@ -329,16 +332,17 @@ contract OllaCoreCacheCoherenceTest is Test {
         vm.warp(block.timestamp + 7 days);
         stakingManager.addClaimable(accrual);
 
-        // Under pull, totalAssets reads live claimable → baseline + accrual.
-        // Under mirror, totalAssets uses stale mirror → unchanged from baseline.
+        // totalAssets reads claimable live from the staking manager, so the
+        // accrual is visible without any interim accounting call.
         assertEq(
             core.totalAssets(), totalAtBaseline + accrual, "totalAssets must reflect validator accrual between updates"
         );
     }
 
-    /// FAILS_NOW: `convertToShares` must use a fresh rate between rebalances.
-    /// With the mirror stale, depositors mint at the pre-accrual rate and receive
-    /// disproportionately many shares.
+    /// @notice `convertToShares` must price against the live totalAssets between
+    ///         rebalances so that fresh deposits mint at a rate that reflects
+    ///         validator accrual that has occurred since the last report —
+    ///         otherwise late depositors would be over-allocated shares.
     function test_convertToShares_usesFreshRate_betweenRebalances() external {
         uint256 depositAmount = 50 * DECIMALS;
         uint256 accrual = 3 * DECIMALS;
@@ -359,8 +363,9 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(core.convertToShares(testAssets), expectedShares, "convertToShares must use live totalAssets");
     }
 
-    /// FAILS_NOW: Symmetric redemption path — redeemers must also see the fresh rate.
-    /// With stale mirror, `convertToAssets` under-pays relative to true live backing.
+    /// @notice Symmetric redemption guard: `convertToAssets` must price against
+    ///         the live totalAssets so redeemers receive the full backing that
+    ///         has accrued since the last report, not the pre-accrual amount.
     function test_convertToAssets_usesFreshRate_betweenRebalances() external {
         uint256 depositAmount = 50 * DECIMALS;
         uint256 accrual = 3 * DECIMALS;
@@ -380,9 +385,11 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(core.convertToAssets(testShares), expectedAssets, "convertToAssets must use live totalAssets");
     }
 
-    /// FAILS_NOW: Slashing discovered via `refreshAttesterState` must be reflected
-    /// in `totalAssets` immediately, without needing a subsequent `updateAccounting`
-    /// call. The mirror holds the pre-slash `stakedPrincipal` until reconciled.
+    /// @notice Slashing discovered via `refreshAttesterState` must reach
+    ///         `totalAssets()` immediately, without waiting for a subsequent
+    ///         `updateAccounting` call. The staked-principal bucket is read
+    ///         live from `stakingManager.totalStaked()`, so a slashing delta
+    ///         applied on the manager propagates on the next pricing read.
     function test_totalAssets_reflectsRefreshAttesterState_immediately() external {
         uint256 depositAmount = 100 * DECIMALS;
         uint256 stakeAmount = 60 * DECIMALS;
@@ -390,7 +397,7 @@ contract OllaCoreCacheCoherenceTest is Test {
 
         _deposit(alice, depositAmount);
 
-        // Establish staked principal in both the mock and the mirror.
+        // Establish staked principal on the manager and write a report.
         stakingManager.setTotalStaked(stakeAmount);
         vm.prank(operator);
         core.updateAccounting();
@@ -404,16 +411,17 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(core.totalAssets(), expected, "totalAssets must reflect slashing before next updateAccounting");
     }
 
-    /// FAILS_NOW: Instant redemptions mid-rebalance-pause must pay at the live rate.
-    /// Under the stale mirror the rate is inflated by the post-harvest double-count,
-    /// so an instant redeemer is over-paid relative to the true backing.
+    /// @notice Instant redemptions priced mid-rebalance-pause must use the
+    ///         live rate so the payout reflects the true post-harvest backing.
+    ///         Guards against any pricing path that would inflate the rate by
+    ///         summing a stale claimable figure alongside the grown buffer.
     function test_instantRedeem_freshRate_duringMidRebalancePause() external {
         uint256 depositAmount = 200 * DECIMALS;
         uint256 rewards = 5 * DECIMALS;
 
         _deposit(alice, depositAmount);
 
-        // Prime the claimable mirror with `rewards` via updateAccounting.
+        // Seed `rewards` as claimable and write a report so the cycle starts clean.
         stakingManager.setClaimableRewards(rewards);
         vm.prank(operator);
         core.updateAccounting();
@@ -436,8 +444,10 @@ contract OllaCoreCacheCoherenceTest is Test {
         );
     }
 
-    /// FAILS_NOW: Honest depositors mid-rebalance-pause must mint at the live rate.
-    /// Under the stale mirror the rate is inflated and they are short-changed.
+    /// @notice Honest depositors who land mid-rebalance-pause must mint at the
+    ///         live rate so they receive the correct share of post-harvest
+    ///         backing — not an inflated rate derived from summing a stale
+    ///         claimable figure alongside the already-grown buffer.
     function test_deposit_freshRate_duringMidRebalancePause() external {
         uint256 depositAmount = 200 * DECIMALS;
         uint256 rewards = 5 * DECIMALS;
@@ -463,11 +473,11 @@ contract OllaCoreCacheCoherenceTest is Test {
         );
     }
 
-    /// FAILS_NOW: The `_withdrawalRate` consumed by `_finalizeWithdrawals` is the
-    /// rate visible at the moment of the call — mid-rebalance, post-Harvest. The
-    /// cached mirror inflates that rate by `rewards` because `claimableRewards` in
-    /// the mirror has not been drained to match the live source. Queued redemptions
-    /// finalized in that window are thus overpaid relative to true backing.
+    /// @notice `_finalizeWithdrawals` consumes `_withdrawalRate` at the exact
+    ///         moment the queue is settled — mid-rebalance, post-Harvest. That
+    ///         rate must equal the rate derived from live module state so
+    ///         queued redemptions settle against the same totalAssets the rest
+    ///         of the protocol sees in that window.
     function test_finalizeWithdrawals_freshRate_sameRebalanceTx() external {
         uint256 depositAmount = 300 * DECIMALS;
         uint256 rewards = 10 * DECIMALS;
@@ -500,13 +510,14 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(
             core.exposedWithdrawalRate(),
             liveGrossRate,
-            "withdrawalRate at FinalizeWithdrawals must reflect live sources, not stale mirror"
+            "withdrawalRate at FinalizeWithdrawals must reflect live module state"
         );
     }
 
-    /// FAILS_NOW: Immediately after `Harvest` runs alone, the live staking manager
-    /// reports zero claimable but the cached mirror does not — the mirror is stale.
-    /// Under pull reads, there is no mirror to go stale.
+    /// @notice Immediately after `Harvest` runs, `accountingState().claimableRewards`
+    ///         must equal the live staking-manager reading of zero — the exposed
+    ///         snapshot is assembled from live module reads and therefore cannot
+    ///         lag the authoritative source across a harvest boundary.
     function test_harvestRewards_drainsValidator_mirrorReflects() external {
         uint256 depositAmount = 50 * DECIMALS;
         uint256 rewards = 7 * DECIMALS;
@@ -517,8 +528,8 @@ contract OllaCoreCacheCoherenceTest is Test {
         vm.prank(operator);
         core.updateAccounting();
 
-        IOllaCore.AccountingState memory mirrorBefore = core.accountingState();
-        assertEq(mirrorBefore.claimableRewards, rewards, "mirror primed");
+        IOllaCore.AccountingState memory snapshotBefore = core.accountingState();
+        assertEq(snapshotBefore.claimableRewards, rewards, "snapshot claimable primed");
 
         vm.warp(block.timestamp + 1 hours);
         _pauseAfterHarvestAtFinalize(rewards);
@@ -526,24 +537,22 @@ contract OllaCoreCacheCoherenceTest is Test {
         // Post-harvest: live value is zero (rollup drained).
         assertEq(stakingManager.getClaimableRewards(), 0, "live claimable zero post-harvest");
 
-        // The mirror still holds the pre-harvest value — that is the bug.
-        // Under pull, this assertion would be strictly redundant because the mirror
-        // would not exist; the exposed-claimable bucket would be read from live state.
-        IOllaCore.AccountingState memory mirrorAfter = core.accountingState();
+        // The exposed snapshot is a live read, so the claimable bucket tracks
+        // the staking manager without any interim reconciliation call.
+        IOllaCore.AccountingState memory snapshotAfter = core.accountingState();
         assertEq(
-            mirrorAfter.claimableRewards,
+            snapshotAfter.claimableRewards,
             stakingManager.getClaimableRewards(),
             "exposed claimable bucket must equal live source"
         );
     }
 
     /*//////////////////////////////////////////////////////////////
-              REGRESSION GUARDS — MUST PASS NOW AND AFTER
+                      REPORT-SNAPSHOT REGRESSION GUARDS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice When the withdrawal queue is empty, `_withdrawalRate` reduces to
-    ///         `_exchangeRate`. This guards the H-02 fix from regressing under
-    ///         the pull-model refactor.
+    ///         `_exchangeRate`. Regression guard for the H-02 fix.
     function test_withdrawalRate_matchesExchangeRate_whenQueueEmpty() external {
         uint256 depositAmount = 40 * DECIMALS;
         _deposit(alice, depositAmount);
@@ -555,9 +564,10 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(core.exposedWithdrawalRate(), core.exchangeRate(), "withdrawalRate == exchangeRate when queue empty");
     }
 
-    /// @notice `_latestReport.totalAssets` should remain a stable snapshot across
-    ///         in-progress rebalance tx boundaries. The pull-model refactor must
-    ///         not accidentally mutate the report struct mid-rebalance.
+    /// @notice `_latestReport.totalAssets` must remain a stable snapshot across
+    ///         in-progress rebalance tx boundaries — the report struct is only
+    ///         rewritten by `_updateAccountingInternal` at cycle boundaries and
+    ///         must not mutate mid-rebalance.
     function test_rebalance_reportSnapshotStable_acrossTxBoundaries() external {
         uint256 depositAmount = 80 * DECIMALS;
         uint256 rewards = 5 * DECIMALS;
@@ -580,7 +590,7 @@ contract OllaCoreCacheCoherenceTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-          STRICT-PROPAGATION REVERT POLICY (PULL-MODEL, STAGE 4)
+                 STRICT-PROPAGATION REVERT POLICY
     //////////////////////////////////////////////////////////////*/
 
     /// @notice If the rollup read (dispatched via `stakingManager.getClaimableRewards`)

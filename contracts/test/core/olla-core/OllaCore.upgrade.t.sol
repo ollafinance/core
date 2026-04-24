@@ -188,10 +188,11 @@ contract OllaCoreUpgradeTest is Test {
         assertEq(requestId, 1, "request id starts at 1");
 
         // Drive non-zero module state so every live-read field in `AccountingState`
-        // exercises the pull path (StakingManager + RewardsAccumulator). Under
-        // Stage 3 the only field OllaCore still persists is `cumulativeRewards`;
-        // the rest are derived at read-time from the owning modules, so module
-        // state IS the accounting state from the caller's perspective.
+        // exercises the live-read path (StakingManager + RewardsAccumulator).
+        // `cumulativeRewards` is the only protocol-owned ledger persisted in
+        // `OllaCore` storage across upgrades; the remaining fields are derived
+        // at read-time from the owning modules, so module state IS the accounting
+        // state from the caller's perspective.
         stakingManager.mockSetCachedState(1 * DECIMALS, 4 * DECIMALS, 0); // slashingDelta, totalStaked, pendingUnstake
         stakingManager.mockSetClaimableRewards(3 * DECIMALS);
         deal(address(asset), address(rewardsAccumulator), 2 * DECIMALS);
