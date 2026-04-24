@@ -10,7 +10,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { GovernanceLib } from "src/core/libraries/GovernanceLib.sol";
@@ -34,7 +34,7 @@ contract OllaCore is
     AccessControlUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard,
+    ReentrancyGuardTransient,
     IOllaCore
 {
     using SafeERC20 for IERC20;
@@ -602,6 +602,10 @@ contract OllaCore is
         return shares.mulDiv(
             totalAssets() + _VIRTUAL_OFFSET, _modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, Math.Rounding.Ceil
         );
+    }
+
+    function renounceOwnership() public view override onlyOwner {
+        revert("renouncing ownership not allowed");
     }
 
     /// @inheritdoc IOllaCore

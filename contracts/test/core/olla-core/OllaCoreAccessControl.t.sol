@@ -128,6 +128,12 @@ contract OllaCoreAccessControlTest is Test {
         core.setTargetBufferedAssets(1);
     }
 
+    function test_RevertWhen_RenounceOwnership() external {
+        vm.expectRevert(bytes("renouncing ownership not allowed"));
+        vm.prank(governance);
+        core.renounceOwnership();
+    }
+
     /*//////////////////////////////////////////////////////////////
                          INVALID VALUE TESTS
     //////////////////////////////////////////////////////////////*/
