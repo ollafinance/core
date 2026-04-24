@@ -579,20 +579,93 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(reportAtPause.timestamp, reportAtBaseline.timestamp, "report timestamp stable at pause");
     }
 
-    /// @notice `totalAssets()` must remain a safe `view` call in every mid-cycle
-    ///         position. Today this holds trivially because nothing is queried
-    ///         from the rollup mock; under pull-model it will be the first
-    ///         external staticcall surface added to `totalAssets()`.
-    /// @dev Guards future pull-model behavior: if a revert-prone path is added
-    ///      in the pull refactor, the guard must be tightened to assert specific
-    ///      revert semantics rather than trivial success.
-    function test_totalAssets_staticcallSafe_whenRollupReverts() external {
+    /*//////////////////////////////////////////////////////////////
+          STRICT-PROPAGATION REVERT POLICY (PULL-MODEL, STAGE 4)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice If the rollup read (dispatched via `stakingManager.getClaimableRewards`)
+    ///         reverts, `totalAssets()` must revert — never silently return 0 or a stale
+    ///         value. Halting pricing-dependent operations during a dependency failure
+    ///         is the intended behavior under the strict-propagation policy.
+    function test_totalAssets_revertsCleanly_whenRollupReadFails() external {
         uint256 depositAmount = 10 * DECIMALS;
         _deposit(alice, depositAmount);
 
-        // Baseline: totalAssets must be callable.
-        uint256 total = core.totalAssets();
-        assertGe(total, depositAmount, "totalAssets reachable without side-effects");
+        // Baseline: totalAssets must be callable before injecting the fault.
+        core.totalAssets();
+
+        bytes memory revertReason = abi.encodeWithSignature("Error(string)", "rollup: getSequencerRewards failed");
+        vm.mockCallRevert(
+            address(stakingManager), abi.encodeWithSelector(IStakingManager.getClaimableRewards.selector), revertReason
+        );
+
+        vm.expectRevert(revertReason);
+        core.totalAssets();
+    }
+
+    /// @notice Same strict-propagation guarantee when `stakingManager.totalStaked()`
+    ///         reverts. Proves the policy is not specific to the rollup-dispatched
+    ///         read — every leg of `_liveAccountingState` is fail-loud.
+    function test_totalAssets_revertsCleanly_whenStakingManagerTotalStakedReverts() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _deposit(alice, depositAmount);
+
+        core.totalAssets();
+
+        bytes memory revertReason = abi.encodeWithSignature("Error(string)", "stakingManager: totalStaked failed");
+        vm.mockCallRevert(
+            address(stakingManager), abi.encodeWithSelector(IStakingManager.totalStaked.selector), revertReason
+        );
+
+        vm.expectRevert(revertReason);
+        core.totalAssets();
+    }
+
+    /// @notice Same strict-propagation guarantee when `rewardsAccumulator.balance()`
+    ///         reverts. Completes the 3-way coverage of external dependencies in
+    ///         `_liveAccountingState`.
+    function test_totalAssets_revertsCleanly_whenAccumulatorBalanceReverts() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _deposit(alice, depositAmount);
+
+        core.totalAssets();
+
+        bytes memory revertReason = abi.encodeWithSignature("Error(string)", "accumulator: balance failed");
+        vm.mockCallRevert(
+            address(rewardsAccumulator), abi.encodeWithSelector(IRewardsAccumulator.balance.selector), revertReason
+        );
+
+        vm.expectRevert(revertReason);
+        core.totalAssets();
+    }
+
+    /// @notice Governance must retain a pause path that does NOT transitively depend
+    ///         on the failing external read. Otherwise a rollup outage would lock the
+    ///         protocol in a DoS state with no recovery mechanism — the strict-
+    ///         propagation policy is only viable if pause remains reachable under
+    ///         dependency failure.
+    function test_pause_succeeds_duringExternalFailure() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _deposit(alice, depositAmount);
+
+        // Same fault injection as `test_totalAssets_revertsCleanly_whenRollupReadFails`.
+        bytes memory revertReason = abi.encodeWithSignature("Error(string)", "rollup: getSequencerRewards failed");
+        vm.mockCallRevert(
+            address(stakingManager), abi.encodeWithSelector(IStakingManager.getClaimableRewards.selector), revertReason
+        );
+
+        // Sanity: totalAssets is broken, confirming the fault is active.
+        vm.expectRevert(revertReason);
+        core.totalAssets();
+
+        // Governance must be able to pause both contracts without reading totalAssets.
+        vm.prank(governance);
+        core.pause();
+        assertTrue(core.paused(), "core must pause during external failure");
+
+        vm.prank(governance);
+        vault.pause();
+        assertTrue(vault.paused(), "vault must pause during external failure");
     }
 
     /// @notice Fee-share math must use the live `totalAssets` that

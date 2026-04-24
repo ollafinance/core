@@ -1034,6 +1034,12 @@ contract OllaCore is
     ///      derived relative to `_latestReport.rewardsSnapshot` so the snapshot remains meaningful to
     ///      indexers between accounting reports. Because all reads occur inside a single staticcall,
     ///      callers receive a snapshot consistent as of the containing block.
+    ///
+    ///      Failure policy: if any underlying external call reverts, the revert propagates --
+    ///      this is intentional (strict-propagation policy). Halting pricing-dependent
+    ///      operations during dependency failure is preferable to serving stale rates. The
+    ///      external `accountingState()` getter inherits this behavior; integrations that
+    ///      need best-effort snapshots should handle reverts at the call site.
     /// @return snapshot A freshly-assembled AccountingState populated from authoritative sources.
     function _liveAccountingState() internal view returns (IOllaCore.AccountingState memory snapshot) {
         IOllaCore.CoreModules memory modules = _modules;
