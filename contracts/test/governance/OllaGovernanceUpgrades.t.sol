@@ -10,8 +10,29 @@ import { OllaGovernanceSetup } from "./OllaGovernanceSetup.t.sol";
 
 /// @notice Minimal V2 stub for upgrade tests.
 contract OllaCoreV2Mock is OllaCore {
+    uint256 public reinitValue;
+
     function version() external pure returns (uint256) {
         return 2;
+    }
+
+    function initializeV2(uint256 value) external reinitializer(2) {
+        reinitValue = value;
+    }
+}
+
+contract SatelliteUpgradeTarget {
+    uint256 public initializedValue;
+
+    function upgradeToAndCall(address, bytes calldata data) external {
+        if (data.length > 0) {
+            (bool success,) = address(this).delegatecall(data);
+            require(success, "delegatecall failed");
+        }
+    }
+
+    function initializeV2(uint256 value) external {
+        initializedValue = value;
     }
 }
 
@@ -31,7 +52,7 @@ contract OllaGovernanceUpgradesTest is OllaGovernanceSetup {
 
     function test_UpgradeCore_ViaTimelock() external {
         OllaCoreV2Mock newImpl = new OllaCoreV2Mock();
-        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeCore, (address(newImpl)));
+        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeCore, (address(newImpl), bytes("")));
 
         _scheduleAndExecute(address(gov), data);
 
@@ -43,11 +64,11 @@ contract OllaGovernanceUpgradesTest is OllaGovernanceSetup {
         OllaCoreV2Mock newImpl = new OllaCoreV2Mock();
         vm.expectRevert(IOllaGovernance.OllaGovernance__OnlySelf.selector);
         vm.prank(admin);
-        gov.upgradeCore(address(newImpl));
+        gov.upgradeCore(address(newImpl), "");
     }
 
     function test_RevertWhen_UpgradeCore_ZeroImplementation() external {
-        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeCore, (address(0)));
+        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeCore, (address(0), bytes("")));
 
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(0), MIN_DELAY);
@@ -71,11 +92,23 @@ contract OllaGovernanceUpgradesTest is OllaGovernanceSetup {
 
         // Upgrade
         OllaCoreV2Mock newImpl = new OllaCoreV2Mock();
-        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeCore, (address(newImpl)));
+        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeCore, (address(newImpl), bytes("")));
         _scheduleAndExecute(address(gov), data);
 
         assertEq(core.totalAssets(), totalBefore, "total assets preserved");
         assertEq(OllaCoreV2Mock(address(core)).version(), 2, "v2 applied");
+    }
+
+    function test_UpgradeCore_ForwardsInitCalldata() external {
+        OllaCoreV2Mock newImpl = new OllaCoreV2Mock();
+        bytes memory initData = abi.encodeCall(OllaCoreV2Mock.initializeV2, (42));
+        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeCore, (address(newImpl), initData));
+
+        _scheduleAndExecute(address(gov), data);
+
+        OllaCoreV2Mock upgradedCore = OllaCoreV2Mock(address(core));
+        assertEq(upgradedCore.version(), 2, "core upgraded to v2");
+        assertEq(upgradedCore.reinitValue(), 42, "init calldata executed atomically");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -85,11 +118,11 @@ contract OllaGovernanceUpgradesTest is OllaGovernanceSetup {
     function test_RevertWhen_UpgradeSatellite_DirectCall() external {
         vm.expectRevert(IOllaGovernance.OllaGovernance__OnlySelf.selector);
         vm.prank(admin);
-        gov.upgradeSatellite(address(vault), makeAddr("impl"));
+        gov.upgradeSatellite(address(vault), makeAddr("impl"), "");
     }
 
     function test_RevertWhen_UpgradeSatellite_ZeroProxy() external {
-        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(0), makeAddr("impl")));
+        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(0), makeAddr("impl"), bytes("")));
 
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(0), MIN_DELAY);
@@ -101,7 +134,7 @@ contract OllaGovernanceUpgradesTest is OllaGovernanceSetup {
     }
 
     function test_RevertWhen_UpgradeSatellite_ZeroImplementation() external {
-        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(vault), address(0)));
+        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(vault), address(0), bytes("")));
 
         vm.prank(admin);
         gov.schedule(address(gov), 0, data, bytes32(0), bytes32(uint256(1)), MIN_DELAY);
@@ -110,6 +143,17 @@ contract OllaGovernanceUpgradesTest is OllaGovernanceSetup {
         vm.expectRevert();
         vm.prank(admin);
         gov.execute(address(gov), 0, data, bytes32(0), bytes32(uint256(1)));
+    }
+
+    function test_UpgradeSatellite_ForwardsInitCalldata() external {
+        SatelliteUpgradeTarget proxy = new SatelliteUpgradeTarget();
+        bytes memory initData = abi.encodeCall(SatelliteUpgradeTarget.initializeV2, (99));
+        bytes memory data =
+            abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(proxy), makeAddr("impl"), initData));
+
+        _scheduleAndExecute(address(gov), data);
+
+        assertEq(proxy.initializedValue(), 99, "satellite init calldata executed atomically");
     }
 
     /*//////////////////////////////////////////////////////////////

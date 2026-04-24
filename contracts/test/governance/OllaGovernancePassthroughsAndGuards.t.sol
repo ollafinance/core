@@ -119,7 +119,8 @@ contract OllaGovernancePassthroughsAndGuardsTest is OllaGovernanceSetup {
     function test_UpgradeSatellite_Vault_ViaTimelock() external {
         OllaVaultV2Mock newVaultImpl = new OllaVaultV2Mock();
 
-        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(vault), address(newVaultImpl)));
+        bytes memory data =
+            abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(vault), address(newVaultImpl), bytes("")));
         _scheduleAndExecute(address(gov), data);
 
         uint256 ver = OllaVaultV2Mock(address(vault)).version();
