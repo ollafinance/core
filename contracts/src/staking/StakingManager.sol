@@ -674,7 +674,15 @@ contract StakingManager is
                 }
                 _pendingClaimAmount += pendingExit;
                 _removeAttester(attester);
-            } else if (_isExitExitable(view_)) {
+            } else {
+                _reconcileExitingExitAmount(info, view_.exit.amount);
+
+                if (!_isExitExitable(view_)) {
+                    info.stakedAmount = newBalance;
+                    emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                    return;
+                }
+
                 // Exitable -- finalize the exit
                 uint256 exitAmount = view_.exit.amount;
                 uint256 pendingExit = info.pendingExitAmount;
@@ -685,12 +693,6 @@ contract StakingManager is
                 rollup.finalizeWithdraw(attester);
 
                 _pendingClaimAmount += exitAmount;
-
-                // Track slashing that occurred during the exit delay: the difference between
-                // what was snapshotted at exit initiation and what the rollup actually holds.
-                if (pendingExit > exitAmount) {
-                    _aggregateState.slashingDelta += (pendingExit - exitAmount);
-                }
 
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
                     _aggregateState.pendingUnstakeAmount -= pendingExit;
@@ -714,6 +716,28 @@ contract StakingManager is
     // slither-disable-end reentrancy-benign
     // slither-disable-end costly-loop
     // slither-disable-end calls-loop
+
+    // slither-disable-start pess-multiple-storage-read
+    /// @notice Reconciles a pending exit snapshot against the current rollup exit amount.
+    /// @dev Used while an attester remains in the Exiting state and the rollup exit record still
+    ///      exists, so slashes during the exit delay are reflected before finalization.
+    /// @param info The attester info storage reference.
+    /// @param exitAmount The current exit amount reported by the rollup.
+    function _reconcileExitingExitAmount(AttesterInfo storage info, uint256 exitAmount) internal {
+        uint256 pendingExit = info.pendingExitAmount;
+        if (pendingExit <= exitAmount) {
+            return;
+        }
+
+        uint256 decrease = pendingExit - exitAmount;
+        info.pendingExitAmount = SafeCast.toUint96(exitAmount);
+
+        uint256 pendingUnstakeAmount = _aggregateState.pendingUnstakeAmount;
+        _aggregateState.pendingUnstakeAmount = pendingUnstakeAmount > decrease ? pendingUnstakeAmount - decrease : 0;
+        _aggregateState.slashingDelta += decrease;
+    }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /// @notice Transfers assets from core and approves the rollup.
     /// @param rollupAddress The rollup address to approve.
