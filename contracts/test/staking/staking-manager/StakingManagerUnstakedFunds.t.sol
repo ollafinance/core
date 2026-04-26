@@ -249,7 +249,7 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         assertFalse(stakingManager.isUnstakePending(keys[0].attester), "attester should be inactive");
     }
 
-    function test_GetUnstakedFunds_SweepsPreExistingBalanceWhenNoPendingExits() external {
+    function test_GetUnstakedFunds_DoesNotSweepUnaccountedBalanceWhenNoPendingExits() external {
         _setupActiveAttester();
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
 
@@ -281,9 +281,11 @@ contract StakingManagerUnstakedFundsTest is StakingManagerBaseTest {
         vm.prank(core);
         (uint256 claimed,) = stakingManager.getUnstakedFunds();
 
-        assertEq(claimed, ACTIVATION_THRESHOLD, "should sweep pre-existing balance");
-        assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core should receive sweep");
-        assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should clear balance");
+        assertEq(claimed, 0, "should not sweep unaccounted balance");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore, "core should not receive unaccounted funds");
+        assertEq(
+            aztec.balanceOf(address(stakingManager)), ACTIVATION_THRESHOLD, "manager should retain unaccounted funds"
+        );
     }
 
     function test_GetUnstakedFunds_MixedFinalizePaths_SweepsAllFunds() external {

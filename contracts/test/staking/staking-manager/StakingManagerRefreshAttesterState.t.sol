@@ -118,9 +118,9 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         assertEq(receivedSecond, 0, "second call received should be 0 with no balance remaining");
     }
 
-    /// @notice Tokens sent directly to StakingManager (donations) are swept by getUnstakedFunds()
-    ///         as `received` but are NOT counted as `exitAmount`.
-    function test_GetUnstakedFunds_DonationSweptAsReceivedNotExitAmount() external {
+    /// @notice Tokens sent directly to StakingManager (donations) are not swept by getUnstakedFunds()
+    ///         unless they correspond to accounted exits or failed-entry refunds.
+    function test_GetUnstakedFunds_DonationNotSweptWithoutAccountedFunds() external {
         uint256 donationAmount = 50 ether;
 
         // Mint tokens to alice and have alice send them directly to StakingManager (donation)
@@ -132,14 +132,14 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        // getUnstakedFunds should sweep the donation as `received` but exitAmount should be 0
+        // getUnstakedFunds should not sweep unaccounted donations.
         vm.prank(core);
         (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
-        assertEq(received, donationAmount, "received should include donated tokens");
+        assertEq(received, 0, "received should exclude unaccounted donated tokens");
         assertEq(exitAmount, 0, "exitAmount should be 0 since no exits were finalized");
-        assertEq(aztec.balanceOf(core), coreBalanceBefore + donationAmount, "core should receive donated tokens");
-        assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should have zero balance after sweep");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore, "core should not receive donated tokens");
+        assertEq(aztec.balanceOf(address(stakingManager)), donationAmount, "manager should retain unaccounted donation");
     }
 
     /*//////////////////////////////////////////////////////////////
