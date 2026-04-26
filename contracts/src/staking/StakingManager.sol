@@ -518,16 +518,26 @@ contract StakingManager is
         returns (uint256 exitAmount)
     {
         AttesterView memory view_ = rollup.getAttesterView(attester);
-        exitAmount = view_.effectiveBalance;
 
-        // slither-disable-next-line reentrancy-no-eth
-        bool isInitiated = rollup.initiateWithdraw(attester, address(this));
-        if (!isInitiated) {
-            if (view_.exit.exists) {
-                _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
-                return 0;
+        if (!view_.exit.exists) {
+            exitAmount = view_.effectiveBalance;
+
+            // slither-disable-next-line reentrancy-no-eth
+            bool isInitiated = rollup.initiateWithdraw(attester, address(this));
+            if (!isInitiated) {
+                revert StakingManager__UnstakeFailed(attester);
             }
-            revert StakingManager__UnstakeFailed(attester);
+        } else {
+            exitAmount = view_.exit.amount;
+
+            if (!view_.exit.isRecipient) {
+                // slither-disable-next-line reentrancy-no-eth
+                bool isInitiated = rollup.initiateWithdraw(attester, address(this));
+                if (!isInitiated) {
+                    _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
+                    return 0;
+                }
+            }
         }
 
         _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
