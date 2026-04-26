@@ -528,6 +528,7 @@ contract StakingManager is
                 revert StakingManager__UnstakeFailed(attester);
             }
         } else {
+            // Existing exits may be zombie exits where the recoverable stake is in exit.amount
             exitAmount = view_.exit.amount;
 
             if (!view_.exit.isRecipient) {
