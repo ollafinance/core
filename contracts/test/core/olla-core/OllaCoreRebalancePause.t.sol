@@ -94,6 +94,10 @@ contract RevertingSafetyModule is ISafetyModule {
         minRateDropBps = minRateDropBps;
     }
 
+    function setRateHighWaterMark(uint256 rateHighWaterMark) external pure override {
+        rateHighWaterMark = rateHighWaterMark;
+    }
+
     function setMaxQueueRatioBps(uint256 maxQueueRatioBps) external pure override {
         maxQueueRatioBps = maxQueueRatioBps;
     }

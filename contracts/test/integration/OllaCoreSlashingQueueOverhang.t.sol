@@ -243,6 +243,49 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                    EXCHANGE RATE DURING QUEUED SLASH
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Pending withdrawal liabilities should be slash-adjusted for live exchange-rate pricing.
+    function test_ExchangeRateUsesSlashAdjustedPendingWithdrawals() external {
+        uint256 aliceDeposit = 50 * DECIMALS;
+        uint256 bobDeposit = 50 * DECIMALS;
+        _deposit(alice, aliceDeposit);
+        _deposit(bob, bobDeposit);
+
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+
+        uint256 totalDeposits = aliceDeposit + bobDeposit;
+        stakingManager.setStakeReturnAmount(totalDeposits);
+        stakingManager.setAllowStakeReturnExceeds(true);
+        stakingManager.setTotalStaked(totalDeposits);
+
+        vm.prank(operator);
+        core.rebalance();
+        assertEq(vault.bufferedAssets(), 0, "all assets should be staked");
+
+        uint256 aliceShares = stAztec.balanceOf(alice);
+        vm.prank(alice);
+        uint256 requestId = vault.requestRedeem(aliceShares, alice, alice);
+
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        assertEq(request.assetsExpected, aliceDeposit, "request locks pre-slash value");
+        assertEq(withdrawalQueue.totalPendingAssets(), aliceDeposit, "queue tracks pre-slash liability");
+        assertEq(withdrawalQueue.totalPendingShares(), aliceShares, "queue tracks burned shares");
+
+        // A slash occurs after Alice's request but before her withdrawal is finalized. The live
+        // exchange rate for Bob's remaining shares should match the gross withdrawal rate so both
+        // queued and non-queued shares absorb the slash pro-rata during this interim window.
+        stakingManager.setSlashingDelta(20 * DECIMALS);
+        core.updateAccounting();
+
+        uint256 withdrawalRateAfterSlash = core.withdrawalRate();
+        uint256 exchangeRateAfterSlash = core.exchangeRate();
+        assertEq(exchangeRateAfterSlash, withdrawalRateAfterSlash, "exchange rate should not double-discount pending");
+    }
+
+    /*//////////////////////////////////////////////////////////////
                         CLAIM AFTER ADJUSTMENT
     //////////////////////////////////////////////////////////////*/
 

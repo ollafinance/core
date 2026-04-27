@@ -232,6 +232,7 @@ contract MockSafetyModuleStub {
     function setDepositCap(uint256) external pure { }
     function setWithdrawalMinimum(uint256) external pure { }
     function setMinRateDropBps(uint256) external pure { }
+    function setRateHighWaterMark(uint256) external pure { }
     function setMaxQueueRatioBps(uint256) external pure { }
     function setMaxAccountingDelay(uint256) external pure { }
     function setLatestAccountingTimestamp(uint256) external pure { }

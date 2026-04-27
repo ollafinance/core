@@ -19,6 +19,7 @@ contract SafetyModuleTest is Test {
     event WithdrawalMinimumUpdated(uint256 minimum);
     event CircuitBreakerTriggered(ISafetyModule.BreakerReason reason);
     event RateDropLimitUpdated(uint256 minRateDropBps);
+    event RateHighWaterMarkUpdated(uint256 rateHighWaterMark);
     event QueueRatioLimitUpdated(uint256 maxQueueRatioBps);
     event AccountingDelayUpdated(uint256 maxAccountingDelay);
     event AccountingTimestampUpdated(uint256 latestAccountingTimestamp);
@@ -177,6 +178,16 @@ contract SafetyModuleTest is Test {
         assertEq(safetyModule.minRateDropBps(), 900, "min rate drop should update");
     }
 
+    function test_SetRateHighWaterMark_EmitsEvent() public {
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit RateHighWaterMarkUpdated(2e18);
+
+        vm.prank(admin);
+        safetyModule.setRateHighWaterMark(2e18);
+
+        assertEq(safetyModule.rateHighWaterMark(), 2e18, "rate high-water mark should update");
+    }
+
     function test_SetMaxQueueRatioBps_EmitsEvent() public {
         vm.expectEmit(false, false, false, true, address(safetyModule));
         emit QueueRatioLimitUpdated(7_500);
@@ -225,6 +236,27 @@ contract SafetyModuleTest is Test {
         safetyModule.checkRateDrop(1e18, 9e17);
 
         assertTrue(safetyModule.isPaused(), "rate-drop breach should pause");
+    }
+
+    function test_CheckRateDrop_TriggersOnCumulativeDropFromHighWaterMark() public {
+        vm.prank(admin);
+        safetyModule.setMinRateDropBps(500);
+
+        vm.prank(core);
+        safetyModule.checkRateDrop(1e18, 996e15);
+        assertFalse(safetyModule.isPaused(), "single-cycle drop below threshold should not pause");
+
+        vm.prank(core);
+        safetyModule.checkRateDrop(996e15, 992e15);
+        assertFalse(safetyModule.isPaused(), "second single-cycle drop below threshold should not pause");
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.RateDrop);
+
+        vm.prank(core);
+        safetyModule.checkRateDrop(992e15, 949e15);
+
+        assertTrue(safetyModule.isPaused(), "cumulative drop from high-water mark should pause");
     }
 
     function test_CheckQueueRatio_TriggersBreaker() public {

@@ -288,6 +288,12 @@ contract MockSafetyModule is ISafetyModule {
         _noop(minRateDropBps);
     }
 
+    /// @notice No-op high-water mark setter for tests.
+    /// @param rateHighWaterMark The new high-water mark.
+    function setRateHighWaterMark(uint256 rateHighWaterMark) external pure override {
+        _noop(rateHighWaterMark);
+    }
+
     /// @notice No-op queue ratio threshold setter for tests.
     /// @param maxQueueRatioBps The maximum queue ratio in basis points.
     function setMaxQueueRatioBps(uint256 maxQueueRatioBps) external pure override {
