@@ -2,6 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { Exit } from "src/staking/libraries/AztecTypes.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
@@ -276,6 +277,39 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         assertEq(unstaked, ACTIVATION_THRESHOLD * 2, "unstake should process remaining active attesters");
         assertEq(stakingManager.getPendingUnstakeCount(), 3, "all attesters should be exiting");
         assertEq(stakingManager.getActivatedAttesterCount(), 0, "no active attesters should remain");
+    }
+
+    function test_Unstake_UsesResidualExitAmountForZombieExit() external {
+        _setupActiveAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+        uint256 residualExitAmount = ACTIVATION_THRESHOLD - 25 ether;
+
+        rollup.setExternalExit(attester, residualExitAmount, block.timestamp + 1 days);
+
+        Exit memory exitBefore = rollup.getExit(attester);
+        assertTrue(exitBefore.exists, "exit should exist on rollup");
+        assertFalse(exitBefore.isRecipient, "exit should still be assigned to withdrawer");
+        assertEq(exitBefore.amount, residualExitAmount, "exit amount should be residual amount");
+        assertEq(rollup.getAttesterView(attester).effectiveBalance, 0, "effective balance should be zero");
+
+        vm.prank(core);
+        uint256 unstakedAmount = stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        Exit memory exitAfter = rollup.getExit(attester);
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+
+        assertEq(unstakedAmount, residualExitAmount, "unstake should return residual exit amount");
+        assertTrue(exitAfter.isRecipient, "exit should be claimed for staking manager");
+        assertEq(exitAfter.recipientOrWithdrawer, address(stakingManager), "staking manager should receive the exit");
+        assertTrue(stakingManager.isUnstakePending(attester), "attester should be exiting");
+        assertEq(state.pendingUnstakeAmount, residualExitAmount, "pending amount should track residual exit");
+        assertEq(
+            state.slashingDelta,
+            ACTIVATION_THRESHOLD - residualExitAmount,
+            "slashing delta should track unrecoverable stake"
+        );
+        assertEq(stakingManager.totalStaked(), residualExitAmount, "total staked should equal residual exit");
     }
 
     /*//////////////////////////////////////////////////////////////
