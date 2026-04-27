@@ -4,13 +4,11 @@
  * Properties verified:
  *   1. Deposit value passthrough -- shares returned == core.convertToShares(assets)
  *   2. Mint value passthrough -- assets taken == core.convertToAssetsCeil(shares)
- *   3. Instant redeem fee accounting -- fee stays in buffer, net payout = gross - fee
- *   4. Cumulative counter monotonicity -- cumulativeDeposits/Withdrawals/ExitFees only increase
- *   5. Buffered assets accounting -- deposit increases buffer, redeem decreases it
- *   6. Role gating -- CORE_ROLE functions revert for non-core callers
- *   7. Pause behavior -- user-facing functions revert when paused
- *   8. Instant redemption fee bounds -- fee BP never exceeds MAX
- *   9. No free shares -- deposit(0) reverts, mint(0) reverts
+ *   3. Cumulative counter monotonicity -- cumulativeDeposits/Withdrawals only increase
+ *   4. Buffered assets accounting -- deposit increases buffer
+ *   5. Role gating -- CORE_ROLE functions revert for non-core callers
+ *   6. Pause behavior -- user-facing functions revert when paused
+ *   7. No free shares -- deposit(0) reverts, mint(0) reverts
  *
  * Summarization note:
  *   Core pricing functions (convertToShares, convertToAssets, convertToAssetsCeil) are
@@ -19,7 +17,7 @@
  *   Consequence: "value passthrough" rules prove the vault faithfully uses Core's pricing
  *   without manipulation, but do NOT prove the pricing itself is correct (that is
  *   ExchangeRate.spec's job on OllaCore). Ghost axioms enforce the relationship between
- *   floor/ceil conversions so fee-accounting proofs are sound.
+ *   floor/ceil conversions.
  */
 
 using OllaVaultHarness as vault;
@@ -29,15 +27,12 @@ methods {
     function bufferedAssets() external returns (uint256) envfree;
     function cumulativeDeposits() external returns (uint256) envfree;
     function cumulativeWithdrawals() external returns (uint256) envfree;
-    function cumulativeExitFees() external returns (uint256) envfree;
     function cumulativeSlashingAdjustments() external returns (uint256) envfree;
-    function instantRedemptionFeeBP() external returns (uint256) envfree;
     function paused() external returns (bool) envfree;
     function core() external returns (address) envfree;
     function totalAssets() external returns (uint256);
     function pendingWithdrawalAssets() external returns (uint256);
     function pendingWithdrawalShares() external returns (uint256);
-    function availableForInstantRedemption() external returns (uint256);
 
     // Access control
     function hasRole(bytes32, address) external returns (bool) envfree;
@@ -47,9 +42,7 @@ methods {
     // Harness getters
     function getCumulativeDeposits() external returns (uint256) envfree;
     function getCumulativeWithdrawals() external returns (uint256) envfree;
-    function getCumulativeExitFees() external returns (uint256) envfree;
     function getCumulativeSlashingAdjustments() external returns (uint256) envfree;
-    function getInstantRedemptionFeeBP() external returns (uint256) envfree;
     function coreConvertToShares(uint256) external returns (uint256);
     function coreConvertToAssets(uint256) external returns (uint256);
     function coreConvertToAssetsCeil(uint256) external returns (uint256);
@@ -58,7 +51,6 @@ methods {
     function deposit(uint256, address, uint256) external returns (uint256);
     function deposit(uint256, address) external returns (uint256);
     function mint(uint256, address) external returns (uint256);
-    function instantRedeem(uint256, address, uint256) external returns (uint256);
     function requestRedeem(uint256, address, address) external returns (uint256);
     function claimRequestById(uint256) external returns (uint256);
     function redeem(uint256, address, address) external returns (uint256);
@@ -67,7 +59,6 @@ methods {
     function finalizeWithdrawals(uint256, uint256) external returns (uint256, uint256);
     function pause() external;
     function unpause() external;
-    function setInstantRedemptionFeeBP(uint256) external;
 
     // External contract summaries -- vault calls core for pricing and queue for pending.
     // PER_CALLEE_CONSTANT: same callee + same input -> same return within one rule.
@@ -114,7 +105,6 @@ methods {
 //////////////////////////////////////////////////////////////*/
 
 definition CVL_BP_DIVISOR()                     returns uint256 = 10000;
-definition CVL_MAX_INSTANT_REDEMPTION_FEE_BP()  returns uint256 = 2000;
 
 // Functions excluded from "for all f" rules (guarded by OZ initializer/upgrade)
 definition isInitOrUpgrade(method f) returns bool =
@@ -175,19 +165,6 @@ rule cumulativeWithdrawalsMonotonic(env e, method f, calldataarg args)
 
     assert getCumulativeWithdrawals() >= before,
         "cumulativeWithdrawals must never decrease";
-}
-
-/// @title Cumulative exit fees never decrease
-/// @notice cumulativeExitFees is only modified via += in _redeem.
-rule cumulativeExitFeesMonotonic(env e, method f, calldataarg args)
-    filtered { f -> !isInitOrUpgrade(f) && !crashesProver(f) }
-{
-    uint256 before = getCumulativeExitFees();
-
-    f(e, args);
-
-    assert getCumulativeExitFees() >= before,
-        "cumulativeExitFees must never decrease";
 }
 
 /// @title Cumulative slashing adjustments never decrease
@@ -282,46 +259,6 @@ rule zeroMintReverts(env e) {
 }
 
 /*//////////////////////////////////////////////////////////////
-                    REDEMPTION SAFETY
-//////////////////////////////////////////////////////////////*/
-
-/// @title Instant redeem payout is gross minus fee
-/// @notice _redeem computes: grossAssets = core.convertToAssets(shares),
-///         fee = grossAssets * feeBP / 10000, netAssets = grossAssets - fee.
-///         The vault returns netAssets. Fee stays in buffer.
-/// @dev Under PER_CALLEE_CONSTANT, convertToAssets returns some K. The rule proves
-///      the vault applies the fee formula correctly to K. Combined with the fee bound
-///      rule, this bounds the maximum extraction.
-rule instantRedeemFeeAccounting(env e) {
-    uint256 wdsBefore = getCumulativeWithdrawals();
-    uint256 feesBefore = getCumulativeExitFees();
-    uint256 bufferBefore = vault.bufferedAssets();
-
-    uint256 shares; address recipient; uint256 minAssets;
-    uint256 netAssetsReturned = instantRedeem@withrevert(e, shares, recipient, minAssets);
-    bool reverted = lastReverted;
-
-    // Only assert on successful calls
-    assert !reverted => getCumulativeWithdrawals() > wdsBefore,
-        "successful instant redeem must increase cumulativeWithdrawals";
-    assert !reverted => vault.bufferedAssets() < bufferBefore,
-        "successful instant redeem must decrease buffer";
-
-    mathint grossIncrease = getCumulativeWithdrawals() - wdsBefore;
-    mathint feeIncrease = getCumulativeExitFees() - feesBefore;
-
-    // grossAssets = netAssets + fee, recorded as cumulativeWithdrawals += grossAssets
-    // and cumulativeExitFees += fee. So grossIncrease >= feeIncrease.
-    assert !reverted => grossIncrease >= feeIncrease,
-        "gross withdrawal must be at least the fee";
-
-    // Buffer decreases by netAssets only (fee stays in buffer).
-    // Buffer decrease = grossIncrease - feeIncrease = netAssets.
-    assert !reverted => bufferBefore - vault.bufferedAssets() == grossIncrease - feeIncrease,
-        "buffer decrease must equal net payout (gross - fee)";
-}
-
-/*//////////////////////////////////////////////////////////////
                       ROLE GATING
 //////////////////////////////////////////////////////////////*/
 
@@ -369,18 +306,6 @@ rule depositRevertsWhenPaused(env e) {
         "deposit must revert when paused";
 }
 
-/// @title Instant redeem reverts when paused
-/// @notice When the vault is paused, instant redeem must revert.
-rule instantRedeemRevertsWhenPaused(env e) {
-    require paused();
-
-    uint256 shares; address recipient; uint256 minAssets;
-    instantRedeem@withrevert(e, shares, recipient, minAssets);
-
-    assert lastReverted,
-        "instant redeem must revert when paused";
-}
-
 /// @title Request redeem reverts when paused
 /// @notice When the vault is paused, requestRedeem must revert.
 rule requestRedeemRevertsWhenPaused(env e) {
@@ -391,34 +316,6 @@ rule requestRedeemRevertsWhenPaused(env e) {
 
     assert lastReverted,
         "requestRedeem must revert when paused";
-}
-
-/*//////////////////////////////////////////////////////////////
-                 INSTANT REDEMPTION FEE BOUNDS
-//////////////////////////////////////////////////////////////*/
-
-/// @title Instant redemption fee bounded after any call
-/// @notice No function can set instantRedemptionFeeBP above MAX_INSTANT_REDEMPTION_FEE_BP.
-rule instantRedemptionFeeBounded(env e, method f, calldataarg args)
-    filtered { f -> !isInitOrUpgrade(f) && !crashesProver(f) }
-{
-    require getInstantRedemptionFeeBP() <= CVL_MAX_INSTANT_REDEMPTION_FEE_BP();
-
-    f(e, args);
-
-    assert getInstantRedemptionFeeBP() <= CVL_MAX_INSTANT_REDEMPTION_FEE_BP(),
-        "instantRedemptionFeeBP must never exceed MAX_INSTANT_REDEMPTION_FEE_BP (2000)";
-}
-
-/// @title setInstantRedemptionFeeBP respects upper bound
-/// @notice Setting the fee above MAX reverts.
-rule setInstantRedemptionFeeRespectsMax(env e) {
-    uint256 newFee;
-
-    setInstantRedemptionFeeBP@withrevert(e, newFee);
-
-    assert !lastReverted => getInstantRedemptionFeeBP() <= CVL_MAX_INSTANT_REDEMPTION_FEE_BP(),
-        "successful setInstantRedemptionFeeBP must result in fee <= MAX";
 }
 
 /*//////////////////////////////////////////////////////////////

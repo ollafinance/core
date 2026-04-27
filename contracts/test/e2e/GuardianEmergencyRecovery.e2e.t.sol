@@ -270,11 +270,6 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         vault.requestRedeem(shares, alice, alice);
 
-        // instantRedeem reverts
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        vault.instantRedeem(shares, alice, 0);
-
         // Guardian unpauses vault
         vm.prank(address(gov));
         vault.unpause();

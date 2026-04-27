@@ -45,29 +45,6 @@ interface IOllaVault {
     /// @param used Used assets.
     event WithdrawalFinalized(uint256 available, uint256 used);
 
-    /// @notice Emitted when an instant redemption is completed.
-    /// @param owner The share owner.
-    /// @param recipient The address receiving the net assets.
-    /// @param shares The shares burned.
-    /// @param grossAssets The total assets before fee.
-    /// @param fee The fee deducted and sent to treasury.
-    /// @param netAssets The net assets transferred to the recipient.
-    /// @param exchangeRate The exchange rate used.
-    event InstantRedemption(
-        address indexed owner,
-        address indexed recipient,
-        uint256 shares,
-        uint256 grossAssets,
-        uint256 fee,
-        uint256 netAssets,
-        uint256 exchangeRate
-    );
-
-    /// @notice Emitted when the instant redemption fee is updated.
-    /// @param oldFeeBP The previous fee in basis points.
-    /// @param newFeeBP The new fee in basis points.
-    event InstantRedemptionFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
-
     /// @notice Emitted when the withdrawal queue gas threshold is updated.
     /// @param oldThreshold The previous gas threshold.
     /// @param newThreshold The new gas threshold.
@@ -133,12 +110,6 @@ interface IOllaVault {
 
     /// @notice Thrown when an amount is zero or otherwise invalid.
     error OllaVault__InvalidAmount();
-
-    /// @notice Thrown when a fee basis points value exceeds maximum.
-    error OllaVault__InvalidFeeBP(uint256 feeBP);
-
-    /// @notice Thrown when an instant redemption exceeds available liquidity.
-    error OllaVault__InsufficientLiquidity(uint256 requested, uint256 available);
 
     /// @notice Thrown when output is less than the caller's minimum.
     error OllaVault__SlippageExceeded(uint256 actual, uint256 minimum);
@@ -245,34 +216,6 @@ interface IOllaVault {
     /// @return assets The assets claimed for the request.
     function claimRequestById(uint256 requestId) external returns (uint256 assets);
 
-    /// @notice Instant redemption with fee.
-    /// @param shares The number of shares to redeem.
-    /// @param recipient The recipient of the net assets.
-    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
-    /// @return assetsAfterFee The net assets transferred to the recipient.
-    function instantRedeem(uint256 shares, address recipient, uint256 minAssetsOut)
-        external
-        returns (uint256 assetsAfterFee);
-
-    /// @notice Instant redemption with permit.
-    /// @param shares The number of shares to redeem.
-    /// @param recipient The recipient of the net assets.
-    /// @param minAssetsOut The minimum net assets the caller expects; set 0 to skip the check.
-    /// @param deadline The permit deadline timestamp.
-    /// @param v The permit signature v.
-    /// @param r The permit signature r.
-    /// @param s The permit signature s.
-    /// @return assetsAfterFee The net assets transferred to the recipient.
-    function instantRedeemWithPermit(
-        uint256 shares,
-        address recipient,
-        uint256 minAssetsOut,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external returns (uint256 assetsAfterFee);
-
     /*//////////////////////////////////////////////////////////////
                         ERC-4626/7575 SURFACE
     //////////////////////////////////////////////////////////////*/
@@ -359,10 +302,6 @@ interface IOllaVault {
     /*//////////////////////////////////////////////////////////////
                       GOVERNANCE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /// @notice Sets the instant redemption fee in basis points.
-    /// @param newFeeBP The new fee (0-2000).
-    function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
 
     /// @notice Reconciles buffered assets with the actual balance.
     /// @return delta The amount added to buffered assets.
@@ -493,10 +432,6 @@ interface IOllaVault {
     /// @return The cumulative slashing adjustments.
     function cumulativeSlashingAdjustments() external view returns (uint256);
 
-    /// @notice Returns cumulative instant redemption fees collected by the vault.
-    /// @return The cumulative exit fees.
-    function cumulativeExitFees() external view returns (uint256);
-
     /// @notice Returns the withdrawal queue module address.
     /// @return The withdrawal queue address.
     function withdrawalQueue() external view returns (address);
@@ -508,19 +443,6 @@ interface IOllaVault {
     /// @notice Returns the OllaCore address.
     /// @return The OllaCore address.
     function core() external view returns (address);
-
-    /// @notice Returns the instant redemption fee in basis points.
-    /// @return The instant redemption fee in basis points.
-    function instantRedemptionFeeBP() external view returns (uint256);
-
-    /// @notice Returns the maximum assets currently available for instant redemptions.
-    /// @return The maximum assets available for instant redemptions.
-    function availableForInstantRedemption() external view returns (uint256);
-
-    /// @notice Returns the net assets previewed for an instant redemption.
-    /// @param shares The share amount.
-    /// @return The net assets previewed.
-    function previewInstantRedeem(uint256 shares) external view returns (uint256);
 
     /// @notice Returns the recorded owner for a withdrawal request id.
     /// @param requestId The request id.

@@ -105,9 +105,6 @@ contract OllaCore is
     /// @notice Timestamp of the last completed rebalance cycle.
     uint48 public lastRebalanceTimestamp;
 
-    /// @notice Snapshot of cumulative exit fees at the last accounting report.
-    uint256 private _latestReportCumulativeExitFees;
-
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
@@ -631,10 +628,10 @@ contract OllaCore is
         // callers of this path are guarded by nonReentrant.
         safetyModuleRef.checkAccountingLiveness();
 
-        (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows, uint256 exitFeesThisPeriod) = _getFlowsSnapshot();
+        (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
         uint256 currentRewards = _cumulativeRewards + _modules.stakingManager.getClaimableRewards();
 
-        _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, exitFeesThisPeriod, currentRewards);
+        _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
         // slither-disable-end reentrancy-events
         // slither-disable-end reentrancy-benign
         // slither-disable-end reentrancy-no-eth
@@ -877,27 +874,23 @@ contract OllaCore is
     /// @param safetyModuleRef The SafetyModule instance for rate-drop and queue-ratio checks.
     /// @param flowsSnapshot The flow counters snapshot for the current accounting cycle.
     /// @param netFlows The signed net deposit/withdrawal flows since the last report.
-    /// @param exitFeesThisPeriod The instant-redemption fees collected since the last report.
     /// @param currentRewards The cumulative rewards value used for the report snapshot.
     function _computeAndFinalizeAccounting(
         ISafetyModule safetyModuleRef,
         IOllaCore.FlowCounters memory flowsSnapshot,
         int256 netFlows,
-        uint256 exitFeesThisPeriod,
         uint256 currentRewards
     ) internal {
         (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();
-        // Capture the live rewards/slashing deltas BEFORE `_updateReportingSnapshots` advances
-        // `_latestReport.rewardsSnapshot`, otherwise `AttestersStateRead` would emit a zero
-        // rewardsDelta (the snapshot will have caught up by the time the event fires).
-        uint256 preSnapshotRewardsDelta;
-        uint256 preSnapshotSlashingDelta;
+        // Emit AttestersStateRead BEFORE `_updateReportingSnapshots` advances
+        // `_latestReport.rewardsSnapshot`, otherwise rewardsDelta would be zero.
+        // `block.timestamp` matches `_latestReport.timestamp` set later in this call.
+        // slither-disable-next-line timestamp
         {
             IOllaCore.AccountingState memory attesterSnapshot = _liveAccountingState();
-            preSnapshotRewardsDelta = attesterSnapshot.rewardsDelta;
-            preSnapshotSlashingDelta = attesterSnapshot.slashingDelta;
+            emit AttestersStateRead(attesterSnapshot.rewardsDelta, attesterSnapshot.slashingDelta, block.timestamp);
         }
         // _computeAccountingOutputs calls trusted Vault and pays fees via trusted mint path.
         // slither-disable-next-line reentrancy-no-eth
@@ -909,42 +902,30 @@ contract OllaCore is
             uint256 treasuryShares,
             uint256 providerShares,
             uint256 rate
-        ) = _computeAccountingOutputs(oldTotalAssets, netFlows, pendingWithdrawals, exitFeesThisPeriod);
+        ) = _computeAccountingOutputs(oldTotalAssets, netFlows, pendingWithdrawals);
 
         // Trusted SafetyModule; may trigger circuit breaker but holds no funds.
         // slither-disable-next-line reentrancy-no-eth
         safetyModuleRef.checkQueueRatio(pendingWithdrawals, totalAssets());
         _validateRateDrop(safetyModuleRef, oldRate, rate);
         _updateReportingSnapshots(newTotalAssets, rate, grossRewards, netFlows, flowsSnapshot, currentRewards);
-        _latestReportCumulativeExitFees = vaultRef.cumulativeExitFees();
         _updateAccountingTimestamp(safetyModuleRef);
-        emit AttestersStateRead(preSnapshotRewardsDelta, preSnapshotSlashingDelta, _latestReport.timestamp);
         _emitAccountingReport(
             newTotalAssets, rate, grossRewards, netFlows, protocolFeeAssets, treasuryShares, providerShares
         );
     }
 
     /// @notice Derives totalAssets, gross rewards, protocol fees, and the new exchange rate.
-    /// @dev `grossRewards` excludes exit fees - they are redistribution to remaining holders,
-    ///      not new staking yield. Use `grossRewards` for yield/APR calculations.
-    ///      `totalAssets()` includes exit fee revenue implicitly via `_bufferedAssets`.
-    ///      Use `totalAssets()` for total protocol value / solvency checks.
     /// @param oldTotalAssets The previous totalAssets from the last report.
     /// @param netFlows The signed net deposit/withdrawal flows since the last report.
     /// @param pendingWithdrawals The current pending withdrawal asset amount.
-    /// @param exitFeesThisPeriod The instant-redemption fees collected since the last report.
     /// @return newTotalAssets The updated total assets value.
-    /// @return grossRewards The gross rewards earned this period (excludes exit fee revenue).
+    /// @return grossRewards The gross rewards earned this period.
     /// @return protocolFeeAssets The protocol fee amount in assets.
     /// @return treasuryShares The shares minted to treasury.
     /// @return providerShares The shares minted to the provider.
     /// @return rate The new exchange rate.
-    function _computeAccountingOutputs(
-        uint256 oldTotalAssets,
-        int256 netFlows,
-        uint256 pendingWithdrawals,
-        uint256 exitFeesThisPeriod
-    )
+    function _computeAccountingOutputs(uint256 oldTotalAssets, int256 netFlows, uint256 pendingWithdrawals)
         internal
         returns (
             uint256 newTotalAssets,
@@ -963,13 +944,6 @@ contract OllaCore is
         // slither-disable-next-line timestamp
         if (grossRewardsSigned < 0) {
             emit NegativeRewardsPeriod(grossRewardsSigned);
-        }
-        // Exclude exit fee revenue from rewards before computing protocol fees.
-        // Exit fees are a pure redistribution to remaining holders, not staking yield.
-        if (grossRewards > exitFeesThisPeriod) {
-            grossRewards -= exitFeesThisPeriod;
-        } else {
-            grossRewards = 0;
         }
         (protocolFeeAssets, treasuryShares, providerShares) = _payoutOllaProtocolFees(grossRewards);
         rate = _exchangeRate();
@@ -1140,12 +1114,7 @@ contract OllaCore is
     /// @notice Reads cumulative deposit/withdrawal counters from the Vault and computes net flows since last report.
     /// @return flowsSnapshot The current flow counters snapshot.
     /// @return netFlows The signed net deposit/withdrawal flows since the last report.
-    /// @return exitFeesThisPeriod The instant-redemption fees collected since the last report.
-    function _getFlowsSnapshot()
-        internal
-        view
-        returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows, uint256 exitFeesThisPeriod)
-    {
+    function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         flowsSnapshot = IOllaCore.FlowCounters({
             cumulativeDeposits: vaultRef.cumulativeDeposits(),
@@ -1156,11 +1125,7 @@ contract OllaCore is
             latestReportCumulativeSlashingAdjustments: _flowCounters.latestReportCumulativeSlashingAdjustments
         });
         (netFlows,,) = _computeNetFlows(flowsSnapshot);
-        uint256 currentCumulativeExitFees = vaultRef.cumulativeExitFees();
-        exitFeesThisPeriod = currentCumulativeExitFees > _latestReportCumulativeExitFees
-            ? currentCumulativeExitFees - _latestReportCumulativeExitFees
-            : 0;
-        return (flowsSnapshot, netFlows, exitFeesThisPeriod);
+        return (flowsSnapshot, netFlows);
     }
 
     /// @notice Returns the totalAssets and exchangeRate from the last accounting report.

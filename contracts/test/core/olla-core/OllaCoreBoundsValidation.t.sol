@@ -7,7 +7,6 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
-import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
@@ -20,7 +19,6 @@ contract OllaCoreBoundsValidationTest is Test {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event InstantRedemptionFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
     event RebalanceGasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
 
     /*//////////////////////////////////////////////////////////////
@@ -84,62 +82,6 @@ contract OllaCoreBoundsValidationTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                  INSTANT REDEMPTION FEE -- REVERT TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_SetInstantRedemptionFeeBP_ExceedsMax() external {
-        uint256 aboveMax = vault.MAX_INSTANT_REDEMPTION_FEE_BP() + 1;
-        vm.prank(governance);
-        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__InvalidFeeBP.selector, aboveMax));
-        vault.setInstantRedemptionFeeBP(aboveMax);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                  INSTANT REDEMPTION FEE -- BOUNDARY TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SetInstantRedemptionFeeBP_AllowsZero() external {
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(0);
-        assertEq(vault.instantRedemptionFeeBP(), 0, "instant redemption fee set to zero");
-    }
-
-    function test_SetInstantRedemptionFeeBP_AllowsMax() external {
-        uint256 maxFee = vault.MAX_INSTANT_REDEMPTION_FEE_BP();
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(maxFee);
-        assertEq(vault.instantRedemptionFeeBP(), maxFee, "instant redemption fee set to max");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                  INSTANT REDEMPTION FEE -- FUZZ TESTS
-    //////////////////////////////////////////////////////////////*/
-
-    function testFuzz_SetInstantRedemptionFeeBP_ValidRange(uint256 newFeeBP) external {
-        uint256 maxFee = vault.MAX_INSTANT_REDEMPTION_FEE_BP();
-        newFeeBP = bound(newFeeBP, 0, maxFee);
-
-        uint256 oldFeeBP = vault.instantRedemptionFeeBP();
-
-        vm.expectEmit(true, true, true, true, address(vault));
-        emit InstantRedemptionFeeUpdated(oldFeeBP, newFeeBP);
-
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(newFeeBP);
-
-        assertEq(vault.instantRedemptionFeeBP(), newFeeBP, "instant redemption fee fuzz");
-    }
-
-    function testFuzz_SetInstantRedemptionFeeBP_InvalidRange(uint256 newFeeBP) external {
-        uint256 maxFee = vault.MAX_INSTANT_REDEMPTION_FEE_BP();
-        newFeeBP = bound(newFeeBP, maxFee + 1, type(uint256).max);
-
-        vm.prank(governance);
-        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__InvalidFeeBP.selector, newFeeBP));
-        vault.setInstantRedemptionFeeBP(newFeeBP);
     }
 
     /*//////////////////////////////////////////////////////////////

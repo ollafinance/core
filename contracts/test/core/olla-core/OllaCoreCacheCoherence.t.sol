@@ -411,11 +411,12 @@ contract OllaCoreCacheCoherenceTest is Test {
         assertEq(core.totalAssets(), expected, "totalAssets must reflect slashing before next updateAccounting");
     }
 
-    /// @notice Instant redemptions priced mid-rebalance-pause must use the
-    ///         live rate so the payout reflects the true post-harvest backing.
-    ///         Guards against any pricing path that would inflate the rate by
-    ///         summing a stale claimable figure alongside the grown buffer.
-    function test_instantRedeem_freshRate_duringMidRebalancePause() external {
+    /// @notice `convertToAssets` priced mid-rebalance-pause must use the live
+    ///         rate so any consumer (withdrawal pricing, external view) reflects
+    ///         the true post-harvest backing. Guards against any pricing path
+    ///         that would inflate the rate by summing a stale claimable figure
+    ///         alongside the grown buffer.
+    function test_convertToAssets_freshRate_duringMidRebalancePause() external {
         uint256 depositAmount = 200 * DECIMALS;
         uint256 rewards = 5 * DECIMALS;
 
@@ -429,18 +430,18 @@ contract OllaCoreCacheCoherenceTest is Test {
         vm.warp(block.timestamp + 1 hours);
         _pauseAfterHarvestAtFinalize(rewards);
 
-        // Post-harvest live totals (what the redeemer's share should be priced on).
+        // Post-harvest live totals.
         uint256 liveTotal = _readThroughTotalAssets();
         uint256 supply = stAztec.totalSupply();
 
-        uint256 sharesToRedeem = 10 * DECIMALS;
-        uint256 grossAssetsExpectedLive = sharesToRedeem.mulDiv(liveTotal + 1e3, supply + 1e3, Math.Rounding.Floor);
+        uint256 sharesToConvert = 10 * DECIMALS;
+        uint256 grossAssetsExpectedLive = sharesToConvert.mulDiv(liveTotal + 1e3, supply + 1e3, Math.Rounding.Floor);
 
         // `convertToAssets` must match the live-priced payout (no inflation).
         assertEq(
-            core.convertToAssets(sharesToRedeem),
+            core.convertToAssets(sharesToConvert),
             grossAssetsExpectedLive,
-            "instant-redeem gross payout must use live totalAssets mid-rebalance"
+            "convertToAssets must use live totalAssets mid-rebalance"
         );
     }
 

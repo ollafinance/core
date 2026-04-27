@@ -69,7 +69,6 @@ methods {
     // counterexamples where cumulative counters appear to decrease.
     function _.cumulativeDeposits() external => PER_CALLEE_CONSTANT;
     function _.cumulativeWithdrawals() external => PER_CALLEE_CONSTANT;
-    function _.cumulativeExitFees() external => PER_CALLEE_CONSTANT;
     function _.cumulativeSlashingAdjustments() external => PER_CALLEE_CONSTANT;
     // RewardsAccumulator view -- called during rebalance accounting
     function _.balance() external => PER_CALLEE_CONSTANT;

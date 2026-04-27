@@ -402,7 +402,7 @@ contract MultiStepRebalanceE2E is E2EBaseWithRealStaking {
         //    So with ~1.1M total gas, Harvest completes but _hasGasForStep() fails
         //    at PullUnstaked because gasleft < 1M.
         vm.prank(operator);
-        try core.rebalance{ gas: 1_100_000 }() returns (uint256, uint256, uint256, uint256) {
+        try core.rebalance{ gas: 1_050_000 }() returns (uint256, uint256, uint256, uint256) {
             // If it returns, check if it was interrupted
             IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
             assertTrue(

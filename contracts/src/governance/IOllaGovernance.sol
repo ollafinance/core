@@ -142,10 +142,6 @@ interface IOllaGovernance {
                     OLLAVAULT PARAMETER PASSTHROUGHS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets the instant redemption fee on OllaVault.
-    /// @param newFeeBP The new fee (0-2000).
-    function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
-
     /// @notice Recovers stAztec from OllaVault.
     /// @param recipient The recipient of the recovered stAztec.
     /// @param amount The amount of stAztec to recover.
