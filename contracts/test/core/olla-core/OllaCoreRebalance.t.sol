@@ -46,9 +46,16 @@ contract InconsistentWithdrawalQueue is IWithdrawalQueue {
         return 0;
     }
 
-    function finalizeWithdrawals(uint256 available, uint256)
+    function finalizeWithdrawals(uint256 available, uint256, uint256)
         external
         override
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
+    {
+        return _finalizeWithdrawals(available);
+    }
+
+    function _finalizeWithdrawals(uint256 available)
+        internal
         returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
     {
         uint256 usedAssets = 1e18;
@@ -115,10 +122,18 @@ contract MismatchWithdrawalQueue is IWithdrawalQueue {
         return 0;
     }
 
-    function finalizeWithdrawals(uint256 available, uint256)
+    function finalizeWithdrawals(uint256 available, uint256, uint256)
         external
         pure
         override
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
+    {
+        return _finalizeWithdrawals(available);
+    }
+
+    function _finalizeWithdrawals(uint256 available)
+        internal
+        pure
         returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
     {
         uint256 usedAssets = 1e18;
@@ -1318,6 +1333,93 @@ contract OllaCoreRebalanceTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__StakeFailed.selector, stakeable + 1));
         vm.prank(operator);
         core.rebalance();
+    }
+
+    function test_Rebalance_StakeSurplus_ReclampsStaleStakeRemainingOnResume() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 initialStakeAmount = 40 * DECIMALS;
+        uint256 withdrawalShares = 60 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(initialStakeAmount);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfterPartialStake = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfterPartialStake.step),
+            uint256(IOllaCore.RebalanceStep.StakeSurplus),
+            "rebalance should pause in stake surplus"
+        );
+        assertEq(progressAfterPartialStake.stakeRemaining, 60 * DECIMALS, "stale stake remaining seeded");
+        assertEq(vault.bufferedAssets(), 60 * DECIMALS, "buffer left after partial stake");
+
+        uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
+        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        uint256 pendingBeforeResume = vault.pendingWithdrawalAssets();
+        uint256 safeStakeAfterRequest = vault.bufferedAssets() - pendingBeforeResume;
+
+        assertGt(request.assetsExpected, 0, "withdrawal request should need buffer");
+        assertLt(safeStakeAfterRequest, progressAfterPartialStake.stakeRemaining, "fresh safe surplus should be lower");
+
+        stakingManager.setStakeReturnAmount(safeStakeAfterRequest);
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.stake, (safeStakeAfterRequest)));
+
+        vm.prank(operator);
+        (,, uint256 stakedAmount,) = core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfterResume = core.rebalanceProgress();
+        assertEq(stakedAmount, safeStakeAfterRequest, "resume stakes only fresh safe surplus");
+        assertEq(uint256(progressAfterResume.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance completes");
+        assertEq(progressAfterResume.stakeRemaining, 0, "stake remaining clears");
+        assertGe(vault.bufferedAssets(), pendingBeforeResume, "buffer still covers pending withdrawals");
+    }
+
+    function test_Rebalance_FinalizeWithdrawals_DoesNotFinalizePostSnapshotRequest() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 withdrawalShares = 10 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(governance);
+        core.setTargetBufferedAssets(0);
+
+        uint256 firstRequestId = _requestWithdrawal(alice, withdrawalShares);
+
+        uint32 defaultThreshold = core.rebalanceGasThreshold();
+        _forceRebalanceGasThreshold(type(uint32).max);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfterPark = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfterPark.step),
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "rebalance should park before finalization"
+        );
+
+        uint256 secondRequestId = _requestWithdrawal(alice, withdrawalShares);
+
+        _forceRebalanceGasThreshold(defaultThreshold);
+        stakingManager.setStakeReturnAmount(0);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IWithdrawalQueue.WithdrawalRequest memory firstRequest = withdrawalQueue.getRequest(firstRequestId);
+        IWithdrawalQueue.WithdrawalRequest memory secondRequest = withdrawalQueue.getRequest(secondRequestId);
+
+        assertTrue(firstRequest.finalized, "snapshot request should finalize");
+        assertFalse(secondRequest.finalized, "post-snapshot request should remain pending");
     }
 
     /*//////////////////////////////////////////////////////////////

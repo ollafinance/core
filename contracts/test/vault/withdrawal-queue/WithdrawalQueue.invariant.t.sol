@@ -49,7 +49,7 @@ contract WithdrawalQueueHandler is Test {
     function finalizeWithdrawals(uint96 availableRaw) external {
         uint256 available = uint256(bound(availableRaw, 0, queue.totalPendingAssets()));
         vm.prank(vault);
-        queue.finalizeWithdrawals(available, type(uint256).max);
+        queue.finalizeWithdrawals(available, type(uint256).max, type(uint256).max);
     }
 
     function claimWithdrawal(uint256 idSeed) external {

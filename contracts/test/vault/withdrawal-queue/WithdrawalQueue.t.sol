@@ -113,7 +113,7 @@ contract WithdrawalQueueTest is Test {
         emit WithdrawalFinalized(1, 100);
 
         vm.prank(vault);
-        (uint256 used, uint256 finalizedCount,) = queue.finalizeWithdrawals(250, NO_SLASH_RATE);
+        (uint256 used, uint256 finalizedCount,) = queue.finalizeWithdrawals(250, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(used, 100, "finalization should only use available FIFO liquidity");
         assertEq(finalizedCount, 1, "finalization should report finalized request count");
@@ -140,7 +140,8 @@ contract WithdrawalQueueTest is Test {
         _request(carol, assetsExpected, assetsExpected, 1e18);
 
         vm.prank(vault);
-        (uint256 used, uint256 finalizedCount,) = queue.finalizeWithdrawals(assetsExpected * 2, NO_SLASH_RATE);
+        (uint256 used, uint256 finalizedCount,) =
+            queue.finalizeWithdrawals(assetsExpected * 2, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(used, finalizedCount * assetsExpected, "used should equal count times assetsExpected");
     }
@@ -168,7 +169,9 @@ contract WithdrawalQueueTest is Test {
             vm.revertToState(snapshotId);
             vm.prank(vault);
             (bool success, bytes memory data) = address(queue)
-            .call{ gas: gasOptions[i] }(abi.encodeCall(queue.finalizeWithdrawals, (available, NO_SLASH_RATE)));
+            .call{
+                gas: gasOptions[i]
+            }(abi.encodeCall(queue.finalizeWithdrawals, (available, NO_SLASH_RATE, type(uint256).max)));
 
             if (!success) {
                 continue;
@@ -188,7 +191,7 @@ contract WithdrawalQueueTest is Test {
         vm.revertToState(snapshotId);
         vm.prank(vault);
         (uint256 usedObserved, uint256 finalizedCountObserved,) =
-            queue.finalizeWithdrawals{ gas: selectedGas }(available, NO_SLASH_RATE);
+            queue.finalizeWithdrawals{ gas: selectedGas }(available, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(usedObserved, probedUsed, "used should match probe");
         assertEq(finalizedCountObserved, probedFinalizedCount, "finalized count should match probe");
@@ -203,7 +206,7 @@ contract WithdrawalQueueTest is Test {
         );
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(available, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(available, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(queue.nextPendingId(), totalRequests + 1, "next pending id reaches end");
         assertEq(queue.totalPendingAssets(), 0, "pending assets drained");
@@ -232,7 +235,7 @@ contract WithdrawalQueueTest is Test {
 
         vm.prank(vault);
         (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
-            queue.finalizeWithdrawals(assetsExpected, currentRate);
+            queue.finalizeWithdrawals(assetsExpected, currentRate, type(uint256).max);
 
         // Zero-payout request must NOT be counted in used/finalizedCount
         // to preserve the vault invariant (finalizedAmount == 0) == (finalizedCount == 0).
@@ -265,7 +268,8 @@ contract WithdrawalQueueTest is Test {
         uint256 currentRate = 1; // near-zero rate
 
         vm.prank(vault);
-        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(300, currentRate);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(300, currentRate, type(uint256).max);
 
         // Both requests adjust to zero, so both finalize via the zero-payout path.
         assertEq(used, 0, "no liquidity should be consumed");
@@ -297,7 +301,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 100, 100, 1e18);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(200, NO_SLASH_RATE, type(uint256).max);
 
         vm.prank(vault);
         queue.claimWithdrawal(1);
@@ -313,7 +317,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 150, 150, 1e18);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(200, NO_SLASH_RATE, type(uint256).max);
 
         vm.expectEmit(true, true, false, true, address(queue));
         emit WithdrawalClaimed(1, alice, 150);
@@ -335,7 +339,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 100, 100, 1e18);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(200, NO_SLASH_RATE, type(uint256).max);
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, attacker));
         vm.prank(attacker);
@@ -347,7 +351,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 100, 100, 1e18);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(200, NO_SLASH_RATE, type(uint256).max);
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, admin));
         vm.prank(admin);
@@ -359,7 +363,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 100, 100, 1e18);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(200, NO_SLASH_RATE, type(uint256).max);
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, alice));
         vm.prank(alice);
@@ -373,7 +377,7 @@ contract WithdrawalQueueTest is Test {
         _request(alice, 100, 100, 1e18);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(200, NO_SLASH_RATE, type(uint256).max);
 
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, caller));
         vm.prank(caller);
@@ -412,7 +416,8 @@ contract WithdrawalQueueTest is Test {
         }
 
         vm.prank(vault);
-        (uint256 used, uint256 finalizedCountObserved,) = queue.finalizeWithdrawals(available, NO_SLASH_RATE);
+        (uint256 used, uint256 finalizedCountObserved,) =
+            queue.finalizeWithdrawals(available, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(used, expectedUsed, "used assets should match FIFO fill");
         assertEq(finalizedCountObserved, finalizedCount, "finalized count should match FIFO fill");
@@ -453,7 +458,7 @@ contract WithdrawalQueueTest is Test {
 
         vm.prank(vault);
         (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
-            queue.finalizeWithdrawals(assetsExpected, currentRate);
+            queue.finalizeWithdrawals(assetsExpected, currentRate, type(uint256).max);
 
         assertEq(used, 80, "used should reflect adjusted payout");
         assertEq(finalizedCount, 1, "one request should be finalized");
@@ -481,7 +486,7 @@ contract WithdrawalQueueTest is Test {
 
         vm.prank(vault);
         (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
-            queue.finalizeWithdrawals(assetsExpected, currentRate);
+            queue.finalizeWithdrawals(assetsExpected, currentRate, type(uint256).max);
 
         // No adjustment should happen (tolerance: rate difference must be > 1)
         assertEq(totalAdjusted, 0, "no adjustment should occur for 1-wei difference");
@@ -505,7 +510,7 @@ contract WithdrawalQueueTest is Test {
         uint256 currentRate = lockedRate - 2;
 
         vm.prank(vault);
-        (,, uint256 totalAdjusted) = queue.finalizeWithdrawals(assetsExpected, currentRate);
+        (,, uint256 totalAdjusted) = queue.finalizeWithdrawals(assetsExpected, currentRate, type(uint256).max);
 
         // payout = shares * currentRate / 1e18 = 1e18 * (1e18 - 2) / 1e18 = 1e18 - 2
         uint256 expectedPayout = (shares * currentRate) / 1e18;
@@ -533,7 +538,8 @@ contract WithdrawalQueueTest is Test {
         uint256 currentRate = 0.5e18;
 
         vm.prank(vault);
-        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(600, currentRate);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(600, currentRate, type(uint256).max);
 
         // Each request adjusted: shares * 0.5e18 / 1e18 = shares / 2
         // alice: 50, bob: 100, carol: 150 => total used = 300, totalAdjusted = 300
@@ -563,7 +569,7 @@ contract WithdrawalQueueTest is Test {
 
         vm.prank(vault);
         (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
-            queue.finalizeWithdrawals(assetsExpected, currentRate);
+            queue.finalizeWithdrawals(assetsExpected, currentRate, type(uint256).max);
 
         // Zero-payout path: no liquidity consumed, not counted in finalizedCount
         assertEq(used, 0, "zero-payout should not consume liquidity");
@@ -589,7 +595,7 @@ contract WithdrawalQueueTest is Test {
 
         vm.prank(vault);
         (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
-            queue.finalizeWithdrawals(assetsExpected, currentRate);
+            queue.finalizeWithdrawals(assetsExpected, currentRate, type(uint256).max);
 
         assertEq(totalAdjusted, 0, "no adjustment when rate is higher");
         assertEq(used, assetsExpected, "full payout should be used");
@@ -603,7 +609,7 @@ contract WithdrawalQueueTest is Test {
         _request(bob, 50, 50, 1e18);
 
         vm.prank(vault);
-        (,, uint256 adjusted2) = queue.finalizeWithdrawals(50, lockedRate);
+        (,, uint256 adjusted2) = queue.finalizeWithdrawals(50, lockedRate, type(uint256).max);
         assertEq(adjusted2, 0, "no adjustment when rate equals locked rate");
     }
 
@@ -629,7 +635,7 @@ contract WithdrawalQueueTest is Test {
         emit WithdrawalAdjusted(1, assetsExpected, expectedPayout);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(assetsExpected, currentRate);
+        queue.finalizeWithdrawals(assetsExpected, currentRate, type(uint256).max);
 
         IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(1);
         assertEq(req.assetsExpected, expectedPayout, "assetsExpected should be adjusted to 700");
@@ -657,7 +663,7 @@ contract WithdrawalQueueTest is Test {
 
         // Only 100 available -- not enough for alice's 1_000
         vm.prank(vault);
-        (uint256 used, uint256 finalizedCount,) = queue.finalizeWithdrawals(100, NO_SLASH_RATE);
+        (uint256 used, uint256 finalizedCount,) = queue.finalizeWithdrawals(100, NO_SLASH_RATE, type(uint256).max);
 
         // FIFO means alice blocks everything
         assertEq(used, 0, "no assets should be used when head is too large");
@@ -679,7 +685,7 @@ contract WithdrawalQueueTest is Test {
 
         // Provide exactly enough for alice
         vm.prank(vault);
-        (uint256 used1, uint256 count1,) = queue.finalizeWithdrawals(500, NO_SLASH_RATE);
+        (uint256 used1, uint256 count1,) = queue.finalizeWithdrawals(500, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(used1, 500, "alice's request should consume exactly 500");
         assertEq(count1, 1, "one request finalized");
@@ -687,7 +693,7 @@ contract WithdrawalQueueTest is Test {
 
         // Now bob can be finalized
         vm.prank(vault);
-        (uint256 used2, uint256 count2,) = queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+        (uint256 used2, uint256 count2,) = queue.finalizeWithdrawals(200, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(used2, 100, "bob's request should consume exactly 100");
         assertEq(count2, 1, "one more request finalized");
@@ -708,7 +714,7 @@ contract WithdrawalQueueTest is Test {
 
         // 350 available: enough for alice (100) + bob (200), but not carol (150)
         vm.prank(vault);
-        (uint256 used, uint256 count,) = queue.finalizeWithdrawals(350, NO_SLASH_RATE);
+        (uint256 used, uint256 count,) = queue.finalizeWithdrawals(350, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(used, 300, "alice + bob = 300 used");
         assertEq(count, 2, "two requests finalized");

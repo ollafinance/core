@@ -354,74 +354,13 @@ contract OllaVault is
 
     // solhint-disable function-max-lines
     /// @inheritdoc IOllaVault
-    function finalizeWithdrawals(uint256 availableAssets, uint256 currentRate)
+    function finalizeWithdrawals(uint256 availableAssets, uint256 currentRate, uint256 maxRequestId)
         external
         override
         onlyRole(CORE_ROLE)
         returns (uint256 finalizedAmount, uint256 finalizedCount)
     {
-        // slither-disable-start reentrancy-events,reentrancy-no-eth,reentrancy-benign
-        // CORE_ROLE only; all external calls target trusted WithdrawalQueue.
-        // Zero-amount short circuit; not a timestamp concern.
-        // slither-disable-next-line timestamp,incorrect-equality
-        if (availableAssets == 0) return (0, 0);
-
-        IWithdrawalQueue queue = _modules.withdrawalQueue;
-        uint256 queued = queue.totalPendingAssets();
-        // No pending requests; not a timestamp concern.
-        // slither-disable-next-line timestamp,incorrect-equality
-        if (queued == 0) return (0, 0);
-
-        uint256 prevPending = queue.nextUnfinalized();
-        uint256 totalAdjusted;
-        (finalizedAmount, finalizedCount, totalAdjusted) = queue.finalizeWithdrawals(availableAssets, currentRate);
-
-        uint256 queuedAfter = queue.totalPendingAssets();
-        if (queued - queuedAfter != finalizedAmount + totalAdjusted) {
-            revert OllaVault__FinalizeAmountMismatch(queued - queuedAfter, finalizedAmount + totalAdjusted);
-        }
-
-        uint256 buffered = _bufferedAssets;
-        if (finalizedAmount > buffered) {
-            revert OllaVault__InsufficientBufferedAssets(finalizedAmount, buffered);
-        }
-
-        // Consistency invariant: both must be zero or both non-zero.
-        // slither-disable-next-line incorrect-equality
-        if ((finalizedAmount == 0) != (finalizedCount == 0)) {
-            revert OllaVault__FinalizeInconsistent(finalizedAmount, finalizedCount);
-        }
-
-        // Nothing finalized; short circuit.
-        // slither-disable-next-line incorrect-equality
-        if (finalizedAmount == 0 && totalAdjusted == 0) return (0, 0);
-
-        if (finalizedAmount > 0) {
-            _bufferedAssets = buffered - finalizedAmount;
-            _finalizedUnclaimedAssets += finalizedAmount;
-        }
-
-        // Track slashing adjustments separately to preserve cumulativeWithdrawals monotonicity.
-        if (totalAdjusted > 0) {
-            cumulativeSlashingAdjustments += totalAdjusted;
-        }
-
-        // Update per-controller claimable shares for O(1) maxRedeem.
-        // slither-disable-start calls-loop
-        // Bounded by finalizedCount; same requests the queue already processed.
-        uint256 newPending = queue.nextUnfinalized();
-        for (uint256 id = prevPending; id < newPending; ++id) {
-            IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(id);
-            if (req.finalized) {
-                _claimableShares[_requestOwners[id]] += req.shares;
-            }
-        }
-        // slither-disable-end calls-loop
-
-        // CORE_ROLE only; external call to trusted WithdrawalQueue.
-        emit WithdrawalFinalized(availableAssets, finalizedAmount);
-        return (finalizedAmount, finalizedCount);
-        // slither-disable-end reentrancy-events,reentrancy-no-eth,reentrancy-benign
+        return _finalizeWithdrawals(availableAssets, currentRate, maxRequestId);
     }
 
     // solhint-enable function-max-lines
@@ -607,6 +546,16 @@ contract OllaVault is
         return address(_modules.withdrawalQueue);
     }
 
+    /// @inheritdoc IOllaVault
+    function nextWithdrawalRequestId() external view override returns (uint256 requestId) {
+        return _modules.withdrawalQueue.nextRequestId();
+    }
+
+    /// @inheritdoc IOllaVault
+    function nextUnfinalizedWithdrawalRequestId() external view override returns (uint256 requestId) {
+        return _modules.withdrawalQueue.nextUnfinalized();
+    }
+
     /// @notice Returns the safety module address (reads canonical reference from Core).
     /// @return The safety module address.
     function safetyModule() external view override returns (address) {
@@ -716,6 +665,75 @@ contract OllaVault is
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    function _finalizeWithdrawals(uint256 availableAssets, uint256 currentRate, uint256 maxRequestId)
+        internal
+        returns (uint256 finalizedAmount, uint256 finalizedCount)
+    {
+        // slither-disable-start reentrancy-events,reentrancy-no-eth,reentrancy-benign
+        // CORE_ROLE only; all external calls target trusted WithdrawalQueue.
+        // Zero-amount short circuit; not a timestamp concern.
+        // slither-disable-next-line timestamp,incorrect-equality
+        if (availableAssets == 0) return (0, 0);
+
+        IWithdrawalQueue queue = _modules.withdrawalQueue;
+        uint256 queued = queue.totalPendingAssets();
+        // No pending requests; not a timestamp concern.
+        // slither-disable-next-line timestamp,incorrect-equality
+        if (queued == 0) return (0, 0);
+
+        uint256 prevPending = queue.nextUnfinalized();
+        uint256 totalAdjusted;
+        (finalizedAmount, finalizedCount, totalAdjusted) =
+            queue.finalizeWithdrawals(availableAssets, currentRate, maxRequestId);
+
+        uint256 queuedAfter = queue.totalPendingAssets();
+        if (queued - queuedAfter != finalizedAmount + totalAdjusted) {
+            revert OllaVault__FinalizeAmountMismatch(queued - queuedAfter, finalizedAmount + totalAdjusted);
+        }
+
+        uint256 buffered = _bufferedAssets;
+        if (finalizedAmount > buffered) {
+            revert OllaVault__InsufficientBufferedAssets(finalizedAmount, buffered);
+        }
+
+        // Consistency invariant: both must be zero or both non-zero.
+        // slither-disable-next-line incorrect-equality
+        if ((finalizedAmount == 0) != (finalizedCount == 0)) {
+            revert OllaVault__FinalizeInconsistent(finalizedAmount, finalizedCount);
+        }
+
+        // Nothing finalized; short circuit.
+        // slither-disable-next-line incorrect-equality
+        if (finalizedAmount == 0 && totalAdjusted == 0) return (0, 0);
+
+        if (finalizedAmount > 0) {
+            _bufferedAssets = buffered - finalizedAmount;
+            _finalizedUnclaimedAssets += finalizedAmount;
+        }
+
+        // Track slashing adjustments separately to preserve cumulativeWithdrawals monotonicity.
+        if (totalAdjusted > 0) {
+            cumulativeSlashingAdjustments += totalAdjusted;
+        }
+
+        // Update per-controller claimable shares for O(1) maxRedeem.
+        // slither-disable-start calls-loop
+        // Bounded by finalizedCount; same requests the queue already processed.
+        uint256 newPending = queue.nextUnfinalized();
+        for (uint256 id = prevPending; id < newPending; ++id) {
+            IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(id);
+            if (req.finalized) {
+                _claimableShares[_requestOwners[id]] += req.shares;
+            }
+        }
+        // slither-disable-end calls-loop
+
+        // CORE_ROLE only; external call to trusted WithdrawalQueue.
+        emit WithdrawalFinalized(availableAssets, finalizedAmount);
+        return (finalizedAmount, finalizedCount);
+        // slither-disable-end reentrancy-events,reentrancy-no-eth,reentrancy-benign
+    }
 
     /// @notice Validates deposit preconditions (safety module, cap) and computes shares.
     /// @param caller The depositor address.

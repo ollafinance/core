@@ -76,7 +76,8 @@ contract WithdrawalQueueSlashingTest is Test {
         vm.expectEmit(true, false, false, true, address(queue));
         emit WithdrawalFinalized(1, 80);
 
-        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(200, currentRate);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(200, currentRate, type(uint256).max);
 
         assertEq(used, 80, "used should reflect adjusted payout");
         assertEq(finalizedCount, 1, "one request should be finalized");
@@ -94,7 +95,8 @@ contract WithdrawalQueueSlashingTest is Test {
         address alice = makeAddr("alice");
         _request(alice, 100, 100, 1e18);
 
-        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(200, 1e18);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(200, 1e18, type(uint256).max);
 
         assertEq(used, 100, "used should be full amount");
         assertEq(finalizedCount, 1, "one request finalized");
@@ -118,7 +120,7 @@ contract WithdrawalQueueSlashingTest is Test {
         assertEq(queue.totalPendingShares(), 300, "initial pending shares should be 300");
 
         // Finalize first request only (150 < 200, so bob's request blocks)
-        queue.finalizeWithdrawals(150, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(150, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(queue.totalPendingShares(), 200, "pending shares should decrease by alice's shares");
         assertEq(queue.totalPendingAssets(), 200, "pending assets should track bob's remaining");
@@ -142,7 +144,7 @@ contract WithdrawalQueueSlashingTest is Test {
         address alice = makeAddr("alice");
         _request(alice, 100, 100, 1e18);
 
-        queue.finalizeWithdrawals(200, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(200, NO_SLASH_RATE, type(uint256).max);
 
         // First claim succeeds
         uint256 assets = queue.claimWithdrawal(1);
@@ -179,7 +181,9 @@ contract WithdrawalQueueSlashingTest is Test {
         for (uint256 i = 0; i < gasOptions.length; i++) {
             vm.revertToState(snapshotId);
             (bool success, bytes memory data) = address(queue)
-            .call{ gas: gasOptions[i] }(abi.encodeCall(queue.finalizeWithdrawals, (available, NO_SLASH_RATE)));
+            .call{
+                gas: gasOptions[i]
+            }(abi.encodeCall(queue.finalizeWithdrawals, (available, NO_SLASH_RATE, type(uint256).max)));
 
             if (!success) continue;
 
@@ -195,7 +199,7 @@ contract WithdrawalQueueSlashingTest is Test {
 
         vm.revertToState(snapshotId);
         (uint256 usedObserved, uint256 finalizedCountObserved,) =
-            queue.finalizeWithdrawals{ gas: selectedGas }(available, NO_SLASH_RATE);
+            queue.finalizeWithdrawals{ gas: selectedGas }(available, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(finalizedCountObserved, probedFinalized, "finalized count should match probe");
         assertGt(finalizedCountObserved, 0, "should finalize at least some requests");
@@ -218,7 +222,7 @@ contract WithdrawalQueueSlashingTest is Test {
         _request(bob, 50, 50, 1e18);
 
         // Only 150 available -- not enough for alice's 200
-        (uint256 used, uint256 finalizedCount,) = queue.finalizeWithdrawals(150, NO_SLASH_RATE);
+        (uint256 used, uint256 finalizedCount,) = queue.finalizeWithdrawals(150, NO_SLASH_RATE, type(uint256).max);
 
         assertEq(used, 0, "nothing should be finalized when head request is under-funded");
         assertEq(finalizedCount, 0, "no requests should be finalized");
@@ -239,7 +243,8 @@ contract WithdrawalQueueSlashingTest is Test {
         _request(alice, 100, 100, 1e18);
 
         // Rate dropped to 0 (total slash)
-        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(100, 0);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(100, 0, type(uint256).max);
 
         assertEq(used, 0, "zero-payout should not consume liquidity");
         assertEq(finalizedCount, 0, "zero-payout should not count as finalized");
@@ -266,7 +271,8 @@ contract WithdrawalQueueSlashingTest is Test {
         _request(bob, 50, 50, 0);
 
         // available = exactly bob's payout (50). Alice's zero-payout must NOT debit `available`.
-        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(50, 0);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(50, 0, type(uint256).max);
 
         assertEq(used, 50, "only bob's payout should be debited from available");
         assertEq(finalizedCount, 1, "only bob should count as finalized (alice is zero-payout)");
@@ -313,7 +319,8 @@ contract WithdrawalQueueSlashingTest is Test {
         // Record logs so we can assert that WithdrawalAdjusted was NOT emitted.
         vm.recordLogs();
 
-        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(100, currentRate);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(100, currentRate, type(uint256).max);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 adjustedTopic = keccak256("WithdrawalAdjusted(uint256,uint256,uint256)");
@@ -352,14 +359,15 @@ contract WithdrawalQueueSlashingTest is Test {
         _request(alice, 1000, 1000, 1e18);
 
         // First call: slashed rate + insufficient liquidity → break path.
-        queue.finalizeWithdrawals(100, 0.5e18);
+        queue.finalizeWithdrawals(100, 0.5e18, type(uint256).max);
 
         // Second call: rate recovered to the locked rate, plenty of liquidity.
         // No adjustment should trigger; alice should receive her full 1000.
         vm.expectEmit(true, false, false, true, address(queue));
         emit WithdrawalFinalized(1, 1000);
 
-        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) = queue.finalizeWithdrawals(1000, 1e18);
+        (uint256 used, uint256 finalizedCount, uint256 totalAdjusted) =
+            queue.finalizeWithdrawals(1000, 1e18, type(uint256).max);
 
         assertEq(used, 1000, "user must receive full original payout after rate recovery");
         assertEq(finalizedCount, 1, "request must be finalized on recovery call");

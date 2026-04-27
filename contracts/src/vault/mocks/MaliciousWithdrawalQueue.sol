@@ -129,7 +129,8 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
     /// @return used The assets used for finalization.
     /// @return finalizedCount The number of requests finalized.
     /// @return totalAdjusted Always 0 in mock.
-    function finalizeWithdrawals(uint256 available, uint256 currentRate)
+    /// @inheritdoc IWithdrawalQueue
+    function finalizeWithdrawals(uint256 available, uint256 currentRate, uint256 maxRequestId)
         external
         override
         returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
@@ -139,28 +140,9 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
             _reentryTarget.functionCall(_reentryCalldata);
         }
 
-        lastAvailable = available;
-        currentRate; // silence unused warning
-        if (available == 0 || totalPendingAssets == 0) {
-            return (0, 0, 0);
-        }
-
-        used = 0;
-        finalizedCount = 0;
-        uint256 id = nextPendingId;
-        for (; id < nextRequestId; ++id) {
-            WithdrawalRequest storage request = _requests[id];
-            if (request.finalized || request.assetsExpected == 0) continue;
-            if (used + request.assetsExpected > available) break;
-            request.finalized = true;
-            used += request.assetsExpected;
-            ++finalizedCount;
-        }
-        nextPendingId = uint64(id);
-        if (totalPendingAssets >= used) {
-            totalPendingAssets -= used;
-        }
-        return (used, finalizedCount, 0);
+        uint256 requestTail = nextRequestId;
+        uint256 upperBound = maxRequestId < requestTail ? maxRequestId : requestTail;
+        return _finalizeWithdrawals(available, currentRate, upperBound);
     }
 
     /// @notice Marks a request as claimed.
@@ -199,5 +181,33 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
     /// @return The gas threshold.
     function gasThreshold() external view override returns (uint32) {
         return _gasThresholdValue;
+    }
+
+    function _finalizeWithdrawals(uint256 available, uint256 currentRate, uint256 upperBound)
+        internal
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
+    {
+        lastAvailable = available;
+        currentRate; // silence unused warning
+        if (available == 0 || totalPendingAssets == 0) {
+            return (0, 0, 0);
+        }
+
+        used = 0;
+        finalizedCount = 0;
+        uint256 id = nextPendingId;
+        for (; id < upperBound; ++id) {
+            WithdrawalRequest storage request = _requests[id];
+            if (request.finalized || request.assetsExpected == 0) continue;
+            if (used + request.assetsExpected > available) break;
+            request.finalized = true;
+            used += request.assetsExpected;
+            ++finalizedCount;
+        }
+        nextPendingId = uint64(id);
+        if (totalPendingAssets >= used) {
+            totalPendingAssets -= used;
+        }
+        return (used, finalizedCount, 0);
     }
 }

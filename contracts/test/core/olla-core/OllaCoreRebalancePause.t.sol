@@ -824,7 +824,7 @@ contract OllaCoreRebalancePauseTest is Test {
 
         // Finalize request before entering partial rebalance
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max, type(uint256).max);
 
         _enterRebalanceInProgress();
 
@@ -847,7 +847,7 @@ contract OllaCoreRebalancePauseTest is Test {
 
         // Finalize requests before entering partial rebalance
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max, type(uint256).max);
 
         _enterRebalanceInProgress();
 
@@ -878,7 +878,7 @@ contract OllaCoreRebalancePauseTest is Test {
 
         // Finalize request before entering partial rebalance
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max, type(uint256).max);
 
         _enterRebalanceInProgress();
 
