@@ -2101,6 +2101,14 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     function stakingProviderRegistry() external pure override returns (IStakingProviderRegistry) {
         return IStakingProviderRegistry(address(0));
     }
+
+    function transitionRollup() external pure override returns (uint256 harvested) {
+        return 0;
+    }
+
+    function activeRollup() external pure override returns (address) {
+        return address(0);
+    }
 }
 
 contract OllaCoreRebalanceRewardsLiquidityTest is Test {

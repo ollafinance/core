@@ -162,6 +162,7 @@ contract StakingManagerUpgradeTest is Test {
         IStakingManager.ProviderConfig memory providerBefore = stakingManager.getProviderConfig();
         address assetBefore = address(stakingManager.stakingAsset());
         address rollupRegistryBefore = address(stakingManager.rollupRegistry());
+        address activeRollupBefore = stakingManager.activeRollup();
         address rewardsAccumulatorBefore = address(stakingManager.rewardsAccumulator());
         address coreBefore = stakingManager.core();
         address ownerBefore = mockCore.owner();
@@ -183,6 +184,7 @@ contract StakingManagerUpgradeTest is Test {
         assertEq(providerAfter.rewardsRecipient, providerBefore.rewardsRecipient, "rewards recipient preserved");
         assertEq(address(v2.stakingAsset()), assetBefore, "asset preserved");
         assertEq(address(v2.rollupRegistry()), rollupRegistryBefore, "rollup registry preserved");
+        assertEq(v2.activeRollup(), activeRollupBefore, "active rollup preserved");
         assertEq(address(v2.rewardsAccumulator()), rewardsAccumulatorBefore, "rewards vault preserved");
         assertEq(v2.core(), coreBefore, "core preserved");
         assertEq(mockCore.owner(), ownerBefore, "owner preserved");

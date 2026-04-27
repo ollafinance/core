@@ -236,4 +236,14 @@ contract MockStakingManager is IStakingManager {
 
     /// @notice No-op in mock.
     function purgeFailedQueueEntry(address) external pure override { }
+
+    /// @notice No-op in mock.
+    function transitionRollup() external pure override returns (uint256 harvested) {
+        return 0;
+    }
+
+    /// @inheritdoc IStakingManager
+    function activeRollup() external pure override returns (address) {
+        return address(0);
+    }
 }
