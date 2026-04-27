@@ -610,8 +610,10 @@ contract OllaCore is
     ///      (excluding exit fee redistribution), use `_latestReport.grossRewards`.
     function totalAssets() public view override returns (uint256) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
-        return
-            _computeTotalAssets(_liveAccountingState(), vaultRef.bufferedAssets(), vaultRef.pendingWithdrawalAssets());
+        IOllaCore.AccountingState memory buckets = _liveAccountingState();
+        uint256 bufferedAssets = vaultRef.bufferedAssets();
+        uint256 pendingAssets = _pricingPendingAssets(vaultRef, buckets, bufferedAssets);
+        return _computeTotalAssets(buckets, bufferedAssets, pendingAssets);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -1170,6 +1172,47 @@ contract OllaCore is
     function _exchangeRate() internal view returns (uint256) {
         return (totalAssets() + _VIRTUAL_OFFSET)
         .mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, Math.Rounding.Floor);
+    }
+
+    /// @notice Computes pending withdrawal assets to subtract for live share pricing.
+    /// @dev Uses the slash-adjusted gross-rate value and caps it at locked pending assets. This prevents
+    ///      double-discounting pending withdrawals after slashing while preserving raw queue liabilities
+    ///      until finalization.
+    /// @param vaultRef The vault reference.
+    /// @param buckets The live accounting state buckets.
+    /// @param bufferedAssets The current buffered assets.
+    /// @return The pending asset amount to subtract for pricing.
+    function _pricingPendingAssets(
+        IOllaVault vaultRef,
+        IOllaCore.AccountingState memory buckets,
+        uint256 bufferedAssets
+    ) internal view returns (uint256) {
+        uint256 pendingAssets = vaultRef.pendingWithdrawalAssets();
+        if (pendingAssets == 0) return 0;
+
+        uint256 pendingShares = vaultRef.pendingWithdrawalShares();
+        if (pendingShares == 0) return pendingAssets;
+
+        uint256 virtualOffset = _VIRTUAL_OFFSET;
+        uint256 grossAssets = _computeTotalAssets(buckets, bufferedAssets, 0);
+        uint256 liveSupply = _modules.stAztec.totalSupply();
+        uint256 currentRate = (grossAssets + virtualOffset)
+        .mulDiv(_EXCHANGE_RATE_SCALE, liveSupply + pendingShares + virtualOffset, Math.Rounding.Floor);
+
+        uint256 pricedLiveAssets =
+            currentRate.mulDiv(liveSupply + virtualOffset, _EXCHANGE_RATE_SCALE, Math.Rounding.Ceil);
+        // Pure arithmetic guard; no block timestamp dependency.
+        // slither-disable-next-line timestamp
+        if (pricedLiveAssets < virtualOffset + 1) return Math.min(grossAssets, pendingAssets);
+
+        pricedLiveAssets -= virtualOffset;
+        // Pure arithmetic guard; no block timestamp dependency.
+        // slither-disable-next-line timestamp
+        if (pricedLiveAssets > grossAssets - 1) return 0;
+
+        uint256 adjustedPendingAssets = grossAssets - pricedLiveAssets;
+
+        return Math.min(adjustedPendingAssets, pendingAssets);
     }
 
     /// @notice Computes the exchange rate for withdrawal queue finalization.
