@@ -1174,8 +1174,11 @@ contract OllaCore is
 
     /// @notice Computes the exchange rate for withdrawal queue finalization.
     /// @dev Uses gross total assets (before subtracting pending withdrawals) and gross total supply
-    ///      (including shares burned for pending requests). This ensures the rate reflects the true
-    ///      backing per share for adjustment after slashing, matching the rate stored at request time.
+    ///      (including shares burned for pending requests). Pending withdrawal shares remain in this
+    ///      gross supply until finalized, so they continue to share pro-rata in both slashing losses
+    ///      and accrued rewards. Rewards can therefore restore the current rate after a slash and
+    ///      reduce or eliminate the queue adjustment, but finalized payouts remain capped at each
+    ///      request's locked `assetsExpected`.
     /// @param vaultRef The vault reference.
     /// @return The withdrawal-safe exchange rate.
     function _withdrawalRate(IOllaVault vaultRef) internal view returns (uint256) {
