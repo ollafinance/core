@@ -1,115 +1,107 @@
 {
   "storage": [
     {
-      "astId": 6878,
+      "astId": 7057,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "_modules",
       "offset": 0,
       "slot": "0",
-      "type": "t_struct(CoreModules)10425_storage"
+      "type": "t_struct(CoreModules)10634_storage"
     },
     {
-      "astId": 6882,
+      "astId": 7060,
       "contract": "src/core/OllaCore.sol:OllaCore",
-      "label": "_accountingState",
+      "label": "_cumulativeRewards",
       "offset": 0,
       "slot": "6",
-      "type": "t_struct(AccountingState)10374_storage"
+      "type": "t_uint256"
     },
     {
-      "astId": 6885,
+      "astId": 7063,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "_flowCounters",
       "offset": 0,
-      "slot": "12",
-      "type": "t_struct(FlowCounters)10387_storage"
+      "slot": "7",
+      "type": "t_struct(FlowCounters)10596_storage"
     },
     {
-      "astId": 6888,
+      "astId": 7066,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "_latestReport",
       "offset": 0,
-      "slot": "18",
-      "type": "t_struct(LatestReport)10400_storage"
+      "slot": "13",
+      "type": "t_struct(LatestReport)10609_storage"
     },
     {
-      "astId": 6891,
+      "astId": 7069,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "_rebalanceProgress",
       "offset": 0,
-      "slot": "24",
-      "type": "t_struct(RebalanceProgress)10408_storage"
+      "slot": "19",
+      "type": "t_struct(RebalanceProgress)10617_storage"
     },
     {
-      "astId": 6894,
+      "astId": 7072,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "targetBufferedAssets",
       "offset": 0,
-      "slot": "27",
+      "slot": "22",
       "type": "t_uint256"
     },
     {
-      "astId": 6897,
+      "astId": 7075,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "_rebalanceIdleBuffer",
       "offset": 0,
-      "slot": "28",
+      "slot": "23",
       "type": "t_uint256"
     },
     {
-      "astId": 6900,
+      "astId": 7078,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "protocolFeeBP",
       "offset": 0,
-      "slot": "29",
+      "slot": "24",
       "type": "t_uint16"
     },
     {
-      "astId": 6903,
+      "astId": 7081,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "treasuryFeeSplitBP",
       "offset": 2,
-      "slot": "29",
+      "slot": "24",
       "type": "t_uint16"
     },
     {
-      "astId": 6906,
+      "astId": 7084,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "rebalanceGasThreshold",
       "offset": 4,
-      "slot": "29",
+      "slot": "24",
       "type": "t_uint32"
     },
     {
-      "astId": 6909,
+      "astId": 7087,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "rebalanceCooldown",
       "offset": 8,
-      "slot": "29",
+      "slot": "24",
       "type": "t_uint32"
     },
     {
-      "astId": 6912,
+      "astId": 7090,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "lastRebalanceTimestamp",
       "offset": 12,
-      "slot": "29",
+      "slot": "24",
       "type": "t_uint48"
     },
     {
-      "astId": 6915,
-      "contract": "src/core/OllaCore.sol:OllaCore",
-      "label": "_latestReportCumulativeExitFees",
-      "offset": 0,
-      "slot": "30",
-      "type": "t_uint256"
-    },
-    {
-      "astId": 6920,
+      "astId": 7095,
       "contract": "src/core/OllaCore.sol:OllaCore",
       "label": "__gap",
       "offset": 0,
-      "slot": "31",
+      "slot": "25",
       "type": "t_array(t_uint256)50_storage"
     }
   ],
@@ -130,22 +122,22 @@
       "label": "contract IERC20",
       "numberOfBytes": "20"
     },
-    "t_contract(IRewardsAccumulator)10958": {
+    "t_contract(IRewardsAccumulator)11174": {
       "encoding": "inplace",
       "label": "contract IRewardsAccumulator",
       "numberOfBytes": "20"
     },
-    "t_contract(IStAztec)12680": {
+    "t_contract(IStAztec)12802": {
       "encoding": "inplace",
       "label": "contract IStAztec",
       "numberOfBytes": "20"
     },
-    "t_contract(IStakingManager)11798": {
+    "t_contract(IStakingManager)12020": {
       "encoding": "inplace",
       "label": "contract IStakingManager",
       "numberOfBytes": "20"
     },
-    "t_enum(RebalanceStep)10361": {
+    "t_enum(RebalanceStep)10570": {
       "encoding": "inplace",
       "label": "enum IOllaCore.RebalanceStep",
       "numberOfBytes": "1"
@@ -155,68 +147,13 @@
       "label": "int256",
       "numberOfBytes": "32"
     },
-    "t_struct(AccountingState)10374_storage": {
-      "encoding": "inplace",
-      "label": "struct IOllaCore.AccountingState",
-      "numberOfBytes": "192",
-      "members": [
-        {
-          "astId": 10363,
-          "contract": "src/core/OllaCore.sol:OllaCore",
-          "label": "stakedPrincipal",
-          "offset": 0,
-          "slot": "0",
-          "type": "t_uint256"
-        },
-        {
-          "astId": 10365,
-          "contract": "src/core/OllaCore.sol:OllaCore",
-          "label": "rewardsAccumulatorBalance",
-          "offset": 0,
-          "slot": "1",
-          "type": "t_uint256"
-        },
-        {
-          "astId": 10367,
-          "contract": "src/core/OllaCore.sol:OllaCore",
-          "label": "claimableRewards",
-          "offset": 0,
-          "slot": "2",
-          "type": "t_uint256"
-        },
-        {
-          "astId": 10369,
-          "contract": "src/core/OllaCore.sol:OllaCore",
-          "label": "rewardsDelta",
-          "offset": 0,
-          "slot": "3",
-          "type": "t_uint256"
-        },
-        {
-          "astId": 10371,
-          "contract": "src/core/OllaCore.sol:OllaCore",
-          "label": "slashingDelta",
-          "offset": 0,
-          "slot": "4",
-          "type": "t_uint256"
-        },
-        {
-          "astId": 10373,
-          "contract": "src/core/OllaCore.sol:OllaCore",
-          "label": "cumulativeRewards",
-          "offset": 0,
-          "slot": "5",
-          "type": "t_uint256"
-        }
-      ]
-    },
-    "t_struct(CoreModules)10425_storage": {
+    "t_struct(CoreModules)10634_storage": {
       "encoding": "inplace",
       "label": "struct IOllaCore.CoreModules",
       "numberOfBytes": "192",
       "members": [
         {
-          "astId": 10411,
+          "astId": 10620,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "asset",
           "offset": 0,
@@ -224,7 +161,7 @@
           "type": "t_contract(IERC20)1019"
         },
         {
-          "astId": 10413,
+          "astId": 10622,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "vault",
           "offset": 0,
@@ -232,31 +169,31 @@
           "type": "t_address"
         },
         {
-          "astId": 10416,
+          "astId": 10625,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "stAztec",
           "offset": 0,
           "slot": "2",
-          "type": "t_contract(IStAztec)12680"
+          "type": "t_contract(IStAztec)12802"
         },
         {
-          "astId": 10419,
+          "astId": 10628,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "stakingManager",
           "offset": 0,
           "slot": "3",
-          "type": "t_contract(IStakingManager)11798"
+          "type": "t_contract(IStakingManager)12020"
         },
         {
-          "astId": 10422,
+          "astId": 10631,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "rewardsAccumulator",
           "offset": 0,
           "slot": "4",
-          "type": "t_contract(IRewardsAccumulator)10958"
+          "type": "t_contract(IRewardsAccumulator)11174"
         },
         {
-          "astId": 10424,
+          "astId": 10633,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "safetyModule",
           "offset": 0,
@@ -265,13 +202,13 @@
         }
       ]
     },
-    "t_struct(FlowCounters)10387_storage": {
+    "t_struct(FlowCounters)10596_storage": {
       "encoding": "inplace",
       "label": "struct IOllaCore.FlowCounters",
       "numberOfBytes": "192",
       "members": [
         {
-          "astId": 10376,
+          "astId": 10585,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "cumulativeDeposits",
           "offset": 0,
@@ -279,7 +216,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10378,
+          "astId": 10587,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "cumulativeWithdrawals",
           "offset": 0,
@@ -287,7 +224,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10380,
+          "astId": 10589,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "cumulativeSlashingAdjustments",
           "offset": 0,
@@ -295,7 +232,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10382,
+          "astId": 10591,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "latestReportCumulativeDeposits",
           "offset": 0,
@@ -303,7 +240,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10384,
+          "astId": 10593,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "latestReportCumulativeWithdrawals",
           "offset": 0,
@@ -311,7 +248,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10386,
+          "astId": 10595,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "latestReportCumulativeSlashingAdjustments",
           "offset": 0,
@@ -320,13 +257,13 @@
         }
       ]
     },
-    "t_struct(LatestReport)10400_storage": {
+    "t_struct(LatestReport)10609_storage": {
       "encoding": "inplace",
       "label": "struct IOllaCore.LatestReport",
       "numberOfBytes": "192",
       "members": [
         {
-          "astId": 10389,
+          "astId": 10598,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "totalAssets",
           "offset": 0,
@@ -334,7 +271,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10391,
+          "astId": 10600,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "exchangeRate",
           "offset": 0,
@@ -342,7 +279,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10393,
+          "astId": 10602,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "grossRewards",
           "offset": 0,
@@ -350,7 +287,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10395,
+          "astId": 10604,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "netFlows",
           "offset": 0,
@@ -358,7 +295,7 @@
           "type": "t_int256"
         },
         {
-          "astId": 10397,
+          "astId": 10606,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "rewardsSnapshot",
           "offset": 0,
@@ -366,7 +303,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10399,
+          "astId": 10608,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "timestamp",
           "offset": 0,
@@ -375,21 +312,21 @@
         }
       ]
     },
-    "t_struct(RebalanceProgress)10408_storage": {
+    "t_struct(RebalanceProgress)10617_storage": {
       "encoding": "inplace",
       "label": "struct IOllaCore.RebalanceProgress",
       "numberOfBytes": "96",
       "members": [
         {
-          "astId": 10403,
+          "astId": 10612,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "step",
           "offset": 0,
           "slot": "0",
-          "type": "t_enum(RebalanceStep)10361"
+          "type": "t_enum(RebalanceStep)10570"
         },
         {
-          "astId": 10405,
+          "astId": 10614,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "stakeRemaining",
           "offset": 0,
@@ -397,7 +334,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 10407,
+          "astId": 10616,
           "contract": "src/core/OllaCore.sol:OllaCore",
           "label": "unstakeRemaining",
           "offset": 0,
