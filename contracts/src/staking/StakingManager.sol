@@ -587,13 +587,8 @@ contract StakingManager is
 
         // Handle Queued attesters: check if the rollup has activated them.
         if (info.status == InternalAttesterStatus.Queued) {
-            if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
-                // Attester has been activated on the rollup -- promote to Active.
-                _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
-                emit AttesterStateRefreshed(attester, info.stakedAmount, view_.effectiveBalance);
-            }
-            // Still queued (NONE on rollup) -- nothing to reconcile yet.
-            return;
+            if (view_.status == Status.NONE) return;
+            _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
         }
 
         uint256 oldBalance = info.stakedAmount;
