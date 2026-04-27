@@ -114,7 +114,7 @@ contract OllaVaultGuardsTest is Test {
 
     function _finalizeAll(uint256 assets) internal {
         vm.prank(address(core));
-        vault.finalizeWithdrawals(assets, type(uint256).max);
+        vault.finalizeWithdrawals(assets, type(uint256).max, type(uint256).max);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -268,7 +268,7 @@ contract OllaVaultGuardsTest is Test {
 
     function test_FinalizeWithdrawals_ZeroAvailableAssets_ReturnsZero() external {
         vm.prank(address(core));
-        (uint256 amount, uint256 count) = vault.finalizeWithdrawals(0, type(uint256).max);
+        (uint256 amount, uint256 count) = vault.finalizeWithdrawals(0, type(uint256).max, type(uint256).max);
         assertEq(amount, 0, "finalized amount should be 0 for zero available");
         assertEq(count, 0, "finalized count should be 0 for zero available");
     }
@@ -276,7 +276,7 @@ contract OllaVaultGuardsTest is Test {
     function test_FinalizeWithdrawals_ZeroQueued_ReturnsZero() external {
         // No pending withdrawal requests exist
         vm.prank(address(core));
-        (uint256 amount, uint256 count) = vault.finalizeWithdrawals(10 * DECIMALS, type(uint256).max);
+        (uint256 amount, uint256 count) = vault.finalizeWithdrawals(10 * DECIMALS, type(uint256).max, type(uint256).max);
         assertEq(amount, 0, "finalized amount should be 0 when no queued requests");
         assertEq(count, 0, "finalized count should be 0 when no queued requests");
     }
@@ -298,7 +298,7 @@ contract OllaVaultGuardsTest is Test {
         // Since we requested 10 * DECIMALS worth but only have 1 wei buffered:
         vm.expectRevert();
         vm.prank(address(core));
-        vault.finalizeWithdrawals(10 * DECIMALS, type(uint256).max);
+        vault.finalizeWithdrawals(10 * DECIMALS, type(uint256).max, type(uint256).max);
     }
 
     /*//////////////////////////////////////////////////////////////

@@ -110,7 +110,7 @@ contract OllaVaultOperatorTest is Test {
 
     function _finalizeAll(uint256 assets) internal {
         vm.prank(address(core));
-        vault.finalizeWithdrawals(assets, type(uint256).max);
+        vault.finalizeWithdrawals(assets, type(uint256).max, type(uint256).max);
     }
 
     /*//////////////////////////////////////////////////////////////

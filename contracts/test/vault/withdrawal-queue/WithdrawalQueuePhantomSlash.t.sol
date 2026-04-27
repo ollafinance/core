@@ -199,7 +199,7 @@ contract WithdrawalQueuePhantomSlashTest is Test {
     function _finalize(uint256 availableAssets) internal returns (uint256 rateUsed) {
         rateUsed = core.exposedWithdrawalRate();
         vm.prank(address(core));
-        vault.finalizeWithdrawals(availableAssets, rateUsed);
+        vault.finalizeWithdrawals(availableAssets, rateUsed, type(uint256).max);
         return rateUsed;
     }
 

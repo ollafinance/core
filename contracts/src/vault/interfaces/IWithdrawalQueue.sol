@@ -102,14 +102,15 @@ interface IWithdrawalQueue {
         external
         returns (uint256 requestId);
 
-    /// @notice Finalizes withdrawals using available liquidity.
+    /// @notice Finalizes withdrawals using available liquidity up to, but not including, `maxRequestId`.
     /// @param available The available assets to finalize.
     /// @param currentRate The current exchange rate; used to adjust payouts after slashing.
     ///        Pass 0 to skip adjustment (e.g., from mocks).
+    /// @param maxRequestId The exclusive request id upper bound for this finalization pass.
     /// @return used The assets used for finalization.
     /// @return finalizedCount The number of requests finalized.
     /// @return totalAdjusted The total reduction applied to requests due to slashing.
-    function finalizeWithdrawals(uint256 available, uint256 currentRate)
+    function finalizeWithdrawals(uint256 available, uint256 currentRate, uint256 maxRequestId)
         external
         returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted);
 

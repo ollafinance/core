@@ -105,11 +105,14 @@ contract OllaCore is
     /// @notice Timestamp of the last completed rebalance cycle.
     uint48 public lastRebalanceTimestamp;
 
+    /// @notice Exclusive withdrawal request id upper bound for the active rebalance cycle.
+    uint256 private _rebalanceWithdrawalSnapshotEndId;
+
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -340,6 +343,7 @@ contract OllaCore is
                 return (0, 0, 0, currentBuffer);
             }
             _rebalanceIdleBuffer = 0;
+            _rebalanceWithdrawalSnapshotEndId = 0;
             progress.step = IOllaCore.RebalanceStep.Harvest;
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
@@ -364,14 +368,20 @@ contract OllaCore is
 
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals) {
+            uint256 withdrawalSnapshotEndId = _rebalanceWithdrawalSnapshotEndId;
+            // slither-disable-next-line incorrect-equality
+            if (withdrawalSnapshotEndId == 0) {
+                withdrawalSnapshotEndId = vaultRef.nextWithdrawalRequestId();
+                _rebalanceWithdrawalSnapshotEndId = withdrawalSnapshotEndId;
+            }
             if (!_hasGasForStep()) {
                 _rebalanceProgress = progress;
                 return (rewardsDelta, 0, 0, vaultRef.bufferedAssets());
             }
-            finalizedAmount = _finalizeWithdrawals();
-            uint256 pending = vaultRef.pendingWithdrawalAssets();
+            finalizedAmount = _finalizeWithdrawals(withdrawalSnapshotEndId);
+            uint256 nextUnfinalized = vaultRef.nextUnfinalizedWithdrawalRequestId();
             // slither-disable-next-line incorrect-equality,timestamp
-            if (pending == 0 || vaultRef.bufferedAssets() == 0 || finalizedAmount == 0) {
+            if (nextUnfinalized >= withdrawalSnapshotEndId || vaultRef.bufferedAssets() == 0 || finalizedAmount == 0) {
                 progress.step = IOllaCore.RebalanceStep.InitiateUnstake;
             } else {
                 _rebalanceProgress = progress;
@@ -417,14 +427,18 @@ contract OllaCore is
 
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
+            (uint256 requiredBuffer,) = _computeRequiredBuffer();
+            uint256 freshStakeRemaining = _computeStakeRemaining(requiredBuffer);
             // slither-disable-next-line incorrect-equality,timestamp
             if (progress.stakeRemaining == 0) {
-                (uint256 requiredBuffer,) = _computeRequiredBuffer();
-                progress.stakeRemaining = _computeStakeRemaining(requiredBuffer);
-                // slither-disable-next-line incorrect-equality,timestamp
-                if (progress.stakeRemaining == 0) {
-                    progress.step = IOllaCore.RebalanceStep.Done;
-                }
+                progress.stakeRemaining = freshStakeRemaining;
+            } else if (progress.stakeRemaining > freshStakeRemaining) {
+                progress.stakeRemaining = freshStakeRemaining;
+            }
+
+            // slither-disable-next-line incorrect-equality,timestamp
+            if (progress.stakeRemaining == 0) {
+                progress.step = IOllaCore.RebalanceStep.Done;
             } else if (!_modules.stakingManager.canStake(progress.stakeRemaining)) {
                 // Resuming a partial stake but no keys or amount below threshold.
                 progress.stakeRemaining = 0;
@@ -459,6 +473,7 @@ contract OllaCore is
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
+            _rebalanceWithdrawalSnapshotEndId = 0;
             // slither-disable-next-line incorrect-equality,timestamp
             if (stakedAmount == 0 && finalizedAmount == 0 && rewardsDelta == 0) {
                 _rebalanceIdleBuffer = vaultRef.bufferedAssets();
@@ -714,8 +729,9 @@ contract OllaCore is
     }
 
     /// @notice Instructs the Vault to finalize pending withdrawal requests using available buffered assets.
+    /// @param maxRequestId The exclusive request id upper bound for this finalization pass.
     /// @return finalizedAmount The total assets used for finalization.
-    function _finalizeWithdrawals() internal returns (uint256 finalizedAmount) {
+    function _finalizeWithdrawals(uint256 maxRequestId) internal returns (uint256 finalizedAmount) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         uint256 available = vaultRef.bufferedAssets();
 
@@ -737,7 +753,8 @@ contract OllaCore is
         uint256 finalizedCount;
         // Trusted Vault; finalizes pending withdrawal queue entries.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
-        (finalizedAmount, finalizedCount) = vaultRef.finalizeWithdrawals(available, _withdrawalRate(vaultRef));
+        (finalizedAmount, finalizedCount) =
+            vaultRef.finalizeWithdrawals(available, _withdrawalRate(vaultRef), maxRequestId);
 
         emit WithdrawalFinalized(available, finalizedAmount);
         return finalizedAmount;

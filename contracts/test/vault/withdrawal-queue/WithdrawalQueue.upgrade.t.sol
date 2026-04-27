@@ -123,7 +123,7 @@ contract WithdrawalQueueUpgradeTest is Test {
         uint256 bobId = _request(bob, 20, bobAssets, 1.1e18);
 
         vm.prank(vault);
-        queue.finalizeWithdrawals(aliceAssets, type(uint256).max);
+        queue.finalizeWithdrawals(aliceAssets, type(uint256).max, type(uint256).max);
 
         address vaultBefore = queue.vault();
         uint256 nextRequestIdBefore = queue.nextRequestId();

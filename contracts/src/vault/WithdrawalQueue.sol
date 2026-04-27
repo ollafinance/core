@@ -182,15 +182,74 @@ contract WithdrawalQueue is
     ///      payout exceeds the remaining `available` liquidity. When `currentRate > 0`, each request's
     ///      payout is adjusted to `shares * min(currentRate, lockedRate) / 1e18`, so slashing losses
     ///      are shared proportionally and the queue cannot permanently block.
-    function finalizeWithdrawals(uint256 available, uint256 currentRate)
+    function finalizeWithdrawals(uint256 available, uint256 currentRate, uint256 maxRequestId)
         external
         override
         onlyVault
         nonReentrant
         returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
     {
+        uint256 requestTail = nextRequestId;
+        uint256 upperBound = maxRequestId < requestTail ? maxRequestId : requestTail;
+        return _finalizeWithdrawals(available, currentRate, upperBound);
+    }
+
+    // slither-disable-end pess-multiple-storage-read
+
+    // slither-disable-start pess-multiple-storage-read
+    // Reads and mutates a single request struct; multiple field accesses are required.
+    /// @inheritdoc IWithdrawalQueue
+    function claimWithdrawal(uint256 id) external override onlyVault nonReentrant returns (uint256 assetsExpected) {
+        WithdrawalRequest storage request = _requests[id];
+        if (request.recipient == address(0)) {
+            revert WithdrawalQueue__InvalidRequest(id);
+        }
+        if (!request.finalized) {
+            revert WithdrawalQueue__NotFinalized(id);
+        }
+        assetsExpected = request.assetsExpected;
+        emit WithdrawalClaimed(id, request.recipient, assetsExpected);
+        delete _requests[id];
+        return assetsExpected;
+    }
+
+    // slither-disable-end pess-multiple-storage-read
+
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @inheritdoc IWithdrawalQueue
+    function getRequest(uint256 id) external view override returns (WithdrawalRequest memory request) {
+        request = _requests[id];
+        if (request.recipient == address(0)) {
+            revert WithdrawalQueue__InvalidRequest(id);
+        }
+        return request;
+    }
+
+    /// @inheritdoc IWithdrawalQueue
+    function nextUnfinalized() external view override returns (uint256 requestId) {
+        return nextPendingId;
+    }
+
+    /// @inheritdoc IWithdrawalQueue
+    function gasThreshold() external view override returns (uint32) {
+        return _gasThreshold;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    // slither-disable-start pess-multiple-storage-read
+    // FIFO finalization intentionally reads sequential request storage entries.
+    // Each iteration reads a different `_requests[currentId]`, so caching is not applicable.
+    function _finalizeWithdrawals(uint256 available, uint256 currentRate, uint256 upperBound)
+        internal
+        returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
+    {
         uint256 currentId = nextPendingId;
-        uint256 upperBound = nextRequestId;
         uint256 pendingAssets = totalPendingAssets;
         uint256 pendingShares_ = totalPendingShares;
 
@@ -257,52 +316,6 @@ contract WithdrawalQueue is
     }
 
     // slither-disable-end pess-multiple-storage-read
-
-    // slither-disable-start pess-multiple-storage-read
-    // Reads and mutates a single request struct; multiple field accesses are required.
-    /// @inheritdoc IWithdrawalQueue
-    function claimWithdrawal(uint256 id) external override onlyVault nonReentrant returns (uint256 assetsExpected) {
-        WithdrawalRequest storage request = _requests[id];
-        if (request.recipient == address(0)) {
-            revert WithdrawalQueue__InvalidRequest(id);
-        }
-        if (!request.finalized) {
-            revert WithdrawalQueue__NotFinalized(id);
-        }
-        assetsExpected = request.assetsExpected;
-        emit WithdrawalClaimed(id, request.recipient, assetsExpected);
-        delete _requests[id];
-        return assetsExpected;
-    }
-
-    // slither-disable-end pess-multiple-storage-read
-
-    /*//////////////////////////////////////////////////////////////
-                           EXTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @inheritdoc IWithdrawalQueue
-    function getRequest(uint256 id) external view override returns (WithdrawalRequest memory request) {
-        request = _requests[id];
-        if (request.recipient == address(0)) {
-            revert WithdrawalQueue__InvalidRequest(id);
-        }
-        return request;
-    }
-
-    /// @inheritdoc IWithdrawalQueue
-    function nextUnfinalized() external view override returns (uint256 requestId) {
-        return nextPendingId;
-    }
-
-    /// @inheritdoc IWithdrawalQueue
-    function gasThreshold() external view override returns (uint32) {
-        return _gasThreshold;
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                           INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
 
     /// @notice Authorizes a UUPS upgrade; requires DEFAULT_ADMIN_ROLE and governance authority match.
     /// @param newImplementation The address of the new implementation contract.

@@ -52,7 +52,7 @@ contract WithdrawalQueueGuardsTest is Test {
     function test_RevertWhen_NonVaultCallsFinalizeWithdrawals() external {
         vm.expectRevert(abi.encodeWithSelector(IWithdrawalQueue.WithdrawalQueue__UnauthorizedVault.selector, alice));
         vm.prank(alice);
-        queue.finalizeWithdrawals(1 ether, NO_SLASH_RATE);
+        queue.finalizeWithdrawals(1 ether, NO_SLASH_RATE, type(uint256).max);
     }
 
     function test_RevertWhen_NonVaultCallsClaimWithdrawal() external {

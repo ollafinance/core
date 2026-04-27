@@ -273,12 +273,13 @@ interface IOllaVault {
     /// @param amount The amount of unstaked assets received.
     function receiveUnstaked(uint256 amount) external;
 
-    /// @notice Finalizes pending withdrawal requests using available liquidity.
+    /// @notice Finalizes pending withdrawal requests up to, but not including, `maxRequestId`.
     /// @param availableAssets Max assets to use for finalization.
     /// @param currentRate The current exchange rate for slashing adjustment.
+    /// @param maxRequestId The exclusive request id upper bound for this finalization pass.
     /// @return finalizedAmount Actual assets used.
     /// @return finalizedCount Number of requests finalized.
-    function finalizeWithdrawals(uint256 availableAssets, uint256 currentRate)
+    function finalizeWithdrawals(uint256 availableAssets, uint256 currentRate, uint256 maxRequestId)
         external
         returns (uint256 finalizedAmount, uint256 finalizedCount);
 
@@ -435,6 +436,14 @@ interface IOllaVault {
     /// @notice Returns the withdrawal queue module address.
     /// @return The withdrawal queue address.
     function withdrawalQueue() external view returns (address);
+
+    /// @notice Returns the next withdrawal request id that will be assigned by the queue.
+    /// @return requestId The next withdrawal request id.
+    function nextWithdrawalRequestId() external view returns (uint256 requestId);
+
+    /// @notice Returns the next withdrawal request id that has not yet been finalized.
+    /// @return requestId The next unfinalized withdrawal request id.
+    function nextUnfinalizedWithdrawalRequestId() external view returns (uint256 requestId);
 
     /// @notice Returns the safety module address (reads canonical reference from Core).
     /// @return The safety module address.
