@@ -104,6 +104,10 @@ interface IStakingManager {
     /// @param newBalance The new balance from rollup.
     event AttesterStateRefreshed(address indexed attester, uint256 indexed oldBalance, uint256 indexed newBalance);
 
+    /// @notice Emitted when every known attester has been refreshed at least once in an epoch.
+    /// @param timestamp The timestamp of the completed full refresh.
+    event FullAttesterRefreshCompleted(uint256 indexed timestamp);
+
     /// @notice Emitted when a failed queue entry is purged by governance.
     /// @param attester The purged attester address.
     /// @param recoveredAmount The stake amount removed from stakedAmount accounting.
@@ -257,6 +261,10 @@ interface IStakingManager {
     /// @notice Returns the number of active attesters.
     /// @return The count of active attesters.
     function getActivatedAttesterCount() external view returns (uint256);
+
+    /// @notice Returns the latest timestamp when all known attesters were refreshed.
+    /// @return The latest full refresh timestamp.
+    function latestFullAttesterRefreshTimestamp() external view returns (uint256);
 
     /// @notice Returns the number of exiting attesters.
     /// @return The count of exiting attesters.

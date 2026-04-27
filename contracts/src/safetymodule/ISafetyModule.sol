@@ -86,8 +86,9 @@ interface ISafetyModule {
     /// @param total The current total assets.
     function checkQueueRatio(uint256 queued, uint256 total) external;
 
-    /// @notice Checks whether accounting activity is stale.
-    function checkAccountingLiveness() external;
+    /// @notice Checks whether accounting and attester-refresh activity are stale.
+    /// @param latestAttesterRefreshTimestamp The latest timestamp when all known attesters were refreshed.
+    function checkAccountingLiveness(uint256 latestAttesterRefreshTimestamp) external;
 
     /*//////////////////////////////////////////////////////////////
                       PROVIDER ADMIN FUNCTIONS

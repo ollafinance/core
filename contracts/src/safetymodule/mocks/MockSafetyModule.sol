@@ -185,7 +185,7 @@ contract MockSafetyModule is ISafetyModule {
     }
 
     /// @notice Accounting liveness check with optional enforcement for tests.
-    function checkAccountingLiveness() external override {
+    function checkAccountingLiveness(uint256) external override {
         ++checkAccountingLivenessCallCount;
 
         if (mockMaxAccountingDelay > 0 && mockLatestAccountingTimestamp > 0) {

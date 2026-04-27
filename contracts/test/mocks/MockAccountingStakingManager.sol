@@ -275,6 +275,10 @@ contract MockAccountingStakingManager is IStakingManager {
         return activatedAttesterCount;
     }
 
+    function latestFullAttesterRefreshTimestamp() external pure override returns (uint256) {
+        return 0;
+    }
+
     function getPendingUnstakeCount() external view override returns (uint256) {
         return pendingUnstakeCount;
     }

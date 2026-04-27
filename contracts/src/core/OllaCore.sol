@@ -318,7 +318,7 @@ contract OllaCore is
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         // SafetyModule is a trusted protocol contract; call is guarded by nonReentrant.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign,reentrancy-events
-        safetyModuleRef.checkAccountingLiveness();
+        safetyModuleRef.checkAccountingLiveness(_modules.stakingManager.latestFullAttesterRefreshTimestamp());
         IOllaCore.RebalanceProgress memory progress = _rebalanceProgress;
 
         // slither-disable-next-line incorrect-equality
@@ -626,7 +626,7 @@ contract OllaCore is
         // slither-disable-start reentrancy-events
         // All external calls target trusted protocol contracts (SafetyModule, Vault, StakingManager);
         // callers of this path are guarded by nonReentrant.
-        safetyModuleRef.checkAccountingLiveness();
+        safetyModuleRef.checkAccountingLiveness(_modules.stakingManager.latestFullAttesterRefreshTimestamp());
 
         (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
         uint256 currentRewards = _cumulativeRewards + _modules.stakingManager.getClaimableRewards();

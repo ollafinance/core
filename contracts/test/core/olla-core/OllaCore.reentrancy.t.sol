@@ -113,6 +113,10 @@ contract MockHarvestStakingManager is IStakingManager {
         return 0;
     }
 
+    function latestFullAttesterRefreshTimestamp() external pure override returns (uint256) {
+        return 0;
+    }
+
     function getPendingUnstakeCount() external pure override returns (uint256) {
         return 0;
     }

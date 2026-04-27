@@ -209,6 +209,11 @@ contract MockStakingManager is IStakingManager {
         return _claimableRewards;
     }
 
+    /// @inheritdoc IStakingManager
+    function latestFullAttesterRefreshTimestamp() external pure override returns (uint256) {
+        return 0;
+    }
+
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL PURE FUNCTIONS
     //////////////////////////////////////////////////////////////*/

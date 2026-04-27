@@ -463,6 +463,23 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         assertEq(stateAfter.slashingDelta, slashLoss, "slashingDelta should track the slash loss");
     }
 
+    function test_RefreshAttesterState_FullRefreshTimestampUpdatesAfterAllKnownAttesters() external {
+        _setupMultipleStakedAttesters(2);
+
+        address[] memory firstAttester = _attesterAddresses(1);
+        stakingManager.refreshAttesterState(firstAttester);
+        assertEq(stakingManager.latestFullAttesterRefreshTimestamp(), 0, "partial refresh should not update timestamp");
+
+        vm.warp(block.timestamp + 1 hours);
+        address[] memory secondAttester = new address[](1);
+        secondAttester[0] = address(uint160(2));
+        stakingManager.refreshAttesterState(secondAttester);
+
+        assertEq(
+            stakingManager.latestFullAttesterRefreshTimestamp(), block.timestamp, "full refresh should update timestamp"
+        );
+    }
+
     /// @notice After a partial slash, a second refresh with no further rollup changes should be
     ///         a no-op (cached balance matches rollup, delta is zero).
     function test_RefreshAttesterState_PartialSlash_SecondRefreshIsNoOp() external {

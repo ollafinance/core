@@ -71,7 +71,7 @@ contract MaliciousSafetyModule is IMaliciousSafetyModule, ISafetyModule {
     }
 
     /// @notice Attempts re-entry when called, then acts as no-op.
-    function checkAccountingLiveness() external override {
+    function checkAccountingLiveness(uint256) external override {
         if (_reenterOnCheckAccountingLiveness) {
             _reenterOnCheckAccountingLiveness = false;
             _reentryTarget.functionCall(_reentryCalldata);

@@ -71,7 +71,7 @@ contract RevertingSafetyModule is ISafetyModule {
         total = total;
     }
 
-    function checkAccountingLiveness() external override {
+    function checkAccountingLiveness(uint256) external override {
         _checkCount++;
         if (_revertAfter != 0 && _checkCount >= _revertAfter) {
             revert("ACCOUNTING_LIVENESS_REVERT");

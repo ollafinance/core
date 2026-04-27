@@ -1761,7 +1761,7 @@ contract RevertingSafetyModule is ISafetyModule {
 
     function checkQueueRatio(uint256, uint256) external pure override { }
 
-    function checkAccountingLiveness() external view override {
+    function checkAccountingLiveness(uint256) external view override {
         if (stale) {
             revert AccountingStale();
         }
@@ -1971,6 +1971,10 @@ contract UnstakeRevertingStakingManager is IStakingManager {
     }
 
     function getActivatedAttesterCount() external pure override returns (uint256) {
+        return 0;
+    }
+
+    function latestFullAttesterRefreshTimestamp() external pure override returns (uint256) {
         return 0;
     }
 

@@ -555,7 +555,7 @@ contract OllaCoreAccountingTest is Test {
         uint256 oldRate = 1e18;
         uint256 expectedRate = core.exchangeRate();
         uint256 expectedTotalAssets = core.totalAssets();
-        vm.expectCall(address(safetyModule), abi.encodeCall(ISafetyModule.checkAccountingLiveness, ()));
+        vm.expectCall(address(safetyModule), abi.encodeCall(ISafetyModule.checkAccountingLiveness, (uint256(0))));
         vm.expectCall(
             address(safetyModule), abi.encodeCall(ISafetyModule.checkQueueRatio, (assetsExpected, expectedTotalAssets))
         );

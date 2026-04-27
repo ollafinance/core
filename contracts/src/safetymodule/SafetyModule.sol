@@ -193,15 +193,20 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
-    function checkAccountingLiveness() external override onlyCoreOrVault {
-        // Liveness check: compare current time against last accounting update.
+    function checkAccountingLiveness(uint256 latestAttesterRefreshTimestamp) external override onlyCoreOrVault {
+        uint256 latestTimestamp = lastAccountingTimestamp;
+        if (latestAttesterRefreshTimestamp < latestTimestamp) {
+            latestTimestamp = latestAttesterRefreshTimestamp;
+        }
+
+        // Liveness check: compare current time against accounting and attester refreshes.
         // slither-disable-next-line timestamp
         // solhint-disable-next-line gas-strict-inequalities
-        if (block.timestamp <= lastAccountingTimestamp) {
+        if (block.timestamp <= latestTimestamp) {
             return;
         }
 
-        uint256 elapsed = block.timestamp - lastAccountingTimestamp;
+        uint256 elapsed = block.timestamp - latestTimestamp;
         // Staleness detection; triggers circuit breaker if accounting is overdue.
         // slither-disable-next-line timestamp
         if (elapsed > maxAccountingDelay) {

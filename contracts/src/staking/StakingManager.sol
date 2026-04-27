@@ -87,11 +87,18 @@ contract StakingManager is
     /// @dev Tracks purged failed-entry refunds that can be swept without double-counting principal.
     uint256 private _pendingRefundAmount;
 
+    /// @dev Attester refresh epoch bookkeeping for liveness checks.
+    mapping(address attester => uint256 epoch) private _attesterRefreshEpoch;
+
+    uint64 private _refreshEpoch;
+    uint64 private _refreshedInEpoch;
+    uint48 private _latestFullAttesterRefreshTimestamp;
+
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[45] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -275,7 +282,9 @@ contract StakingManager is
     function refreshAttesterState(address[] calldata attesters) external override nonReentrant {
         (, IAztecRollup rollup) = _getRollup();
         for (uint256 i = 0; i < attesters.length; ++i) {
-            _refreshSingleAttester(rollup, attesters[i]);
+            if (_refreshSingleAttester(rollup, attesters[i])) {
+                _markAttesterRefreshed(attesters[i]);
+            }
         }
     }
 
@@ -381,6 +390,11 @@ contract StakingManager is
     /// @inheritdoc IStakingManager
     function getActivatedAttesterCount() external view override returns (uint256) {
         return _activeCount;
+    }
+
+    /// @inheritdoc IStakingManager
+    function latestFullAttesterRefreshTimestamp() external view override returns (uint256) {
+        return _latestFullAttesterRefreshTimestamp;
     }
 
     /// @inheritdoc IStakingManager
@@ -599,9 +613,9 @@ contract StakingManager is
     // slither-disable-start reentrancy-no-eth
     // slither-disable-start pess-multiple-storage-read
     // slither-disable-next-line cyclomatic-complexity
-    function _refreshSingleAttester(IAztecRollup canonicalRollup, address attester) internal {
+    function _refreshSingleAttester(IAztecRollup canonicalRollup, address attester) internal returns (bool refreshed) {
         AttesterInfo storage info = _attesterMap[attester];
-        if (info.attester == address(0)) return; // Unknown attester -- skip silently
+        if (info.attester == address(0)) return false; // Unknown attester -- skip silently
 
         // Exiting attesters must be queried on the rollup where their exit was initiated,
         // because exit state is local to each rollup instance and does not migrate on upgrade.
@@ -614,7 +628,7 @@ contract StakingManager is
 
         // Handle Queued attesters: check if the rollup has activated them.
         if (info.status == InternalAttesterStatus.Queued) {
-            if (view_.status == Status.NONE) return;
+            if (view_.status == Status.NONE) return true;
             _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
         }
 
@@ -663,7 +677,7 @@ contract StakingManager is
             _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
             _removeAttester(attester);
             emit AttesterStateRefreshed(attester, oldBalance, newBalance);
-            return;
+            return true;
         }
 
         // Handle Exiting attesters
@@ -702,7 +716,7 @@ contract StakingManager is
                 if (!_isExitExitable(view_)) {
                     info.stakedAmount = newBalance;
                     emit AttesterStateRefreshed(attester, oldBalance, newBalance);
-                    return;
+                    return true;
                 }
 
                 // Exitable -- finalize the exit
@@ -724,13 +738,43 @@ contract StakingManager is
 
                 // Attester removed -- skip balance update below
                 emit AttesterStateRefreshed(attester, oldBalance, newBalance);
-                return;
+                return true;
             }
         }
 
         // Update cached balance for delta tracking
         info.stakedAmount = newBalance;
         emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+        return true;
+    }
+
+    /// @notice Tracks whether the current refresh epoch has covered every known attester.
+    /// @param attester The attester refreshed from rollup state.
+    function _markAttesterRefreshed(address attester) internal {
+        uint256 attesterCount = _attesterCount;
+        if (attesterCount == 0) {
+            _latestFullAttesterRefreshTimestamp = SafeCast.toUint48(block.timestamp);
+            emit FullAttesterRefreshCompleted(block.timestamp);
+            return;
+        }
+
+        uint256 epoch = _refreshEpoch;
+        if (epoch == 0) {
+            epoch = 1;
+            _refreshEpoch = 1;
+        }
+        if (_attesterRefreshEpoch[attester] == epoch) {
+            return;
+        }
+
+        _attesterRefreshEpoch[attester] = epoch;
+        uint256 refreshedCount = ++_refreshedInEpoch;
+        if (refreshedCount >= attesterCount) {
+            _latestFullAttesterRefreshTimestamp = SafeCast.toUint48(block.timestamp);
+            emit FullAttesterRefreshCompleted(block.timestamp);
+            _refreshEpoch = SafeCast.toUint64(epoch + 1);
+            _refreshedInEpoch = 0;
+        }
     }
 
     // slither-disable-end pess-multiple-storage-read

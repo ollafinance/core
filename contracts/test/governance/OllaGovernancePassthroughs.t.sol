@@ -224,7 +224,7 @@ contract MockSafetyModuleStub {
     function checkWithdrawalMinimum(uint256) external pure { }
     function checkRateDrop(uint256, uint256) external pure { }
     function checkQueueRatio(uint256, uint256) external pure { }
-    function checkAccountingLiveness() external pure { }
+    function checkAccountingLiveness(uint256) external pure { }
     function setDepositCap(uint256) external pure { }
     function setWithdrawalMinimum(uint256) external pure { }
     function setMinRateDropBps(uint256) external pure { }

@@ -245,7 +245,7 @@ contract SafetyModuleTest is Test {
         emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.AccountingStale);
 
         vm.prank(core);
-        safetyModule.checkAccountingLiveness();
+        safetyModule.checkAccountingLiveness(block.timestamp);
 
         assertTrue(safetyModule.isPaused(), "stale accounting should pause");
     }
@@ -439,9 +439,25 @@ contract SafetyModuleTest is Test {
         emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.AccountingStale);
 
         vm.prank(core);
-        safetyModule.checkAccountingLiveness();
+        safetyModule.checkAccountingLiveness(block.timestamp);
 
         assertTrue(safetyModule.isPaused(), "1 day + 1s elapsed should pause");
+    }
+
+    /// @notice Accounting liveness also uses the latest full attester-refresh timestamp.
+    function test_CheckAccountingLiveness_AttesterRefreshStale_Pauses() public {
+        vm.warp(block.timestamp + 2 days);
+
+        vm.prank(core);
+        safetyModule.setLatestAccountingTimestamp(block.timestamp);
+
+        vm.expectEmit(false, false, false, true, address(safetyModule));
+        emit CircuitBreakerTriggered(ISafetyModule.BreakerReason.AccountingStale);
+
+        vm.prank(core);
+        safetyModule.checkAccountingLiveness(1);
+
+        assertTrue(safetyModule.isPaused(), "stale attester refresh should pause");
     }
 
     /// @notice Exactly 1 day elapsed does NOT trigger the breaker (<= threshold with strict >).
@@ -450,7 +466,7 @@ contract SafetyModuleTest is Test {
         vm.warp(block.timestamp + 1 days);
 
         vm.prank(core);
-        safetyModule.checkAccountingLiveness();
+        safetyModule.checkAccountingLiveness(block.timestamp);
 
         assertFalse(safetyModule.isPaused(), "exactly 1 day elapsed should not pause");
     }

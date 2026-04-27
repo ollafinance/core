@@ -85,7 +85,7 @@ contract ReconcileSafetyModule is ISafetyModule {
         _noop(queued + total);
     }
 
-    function checkAccountingLiveness() external pure override {
+    function checkAccountingLiveness(uint256) external pure override {
         _noop(0);
     }
 
