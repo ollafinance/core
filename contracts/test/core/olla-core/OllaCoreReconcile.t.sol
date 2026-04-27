@@ -105,6 +105,10 @@ contract ReconcileSafetyModule is ISafetyModule {
         _noop(minRateDropBps);
     }
 
+    function setRateHighWaterMark(uint256 rateHighWaterMark) external pure override {
+        _noop(rateHighWaterMark);
+    }
+
     function setMaxQueueRatioBps(uint256 maxQueueRatioBps) external pure override {
         _noop(maxQueueRatioBps);
     }

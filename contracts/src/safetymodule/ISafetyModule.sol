@@ -43,6 +43,10 @@ interface ISafetyModule {
     /// @param minRateDropBps The new rate-drop threshold in basis points.
     event RateDropLimitUpdated(uint256 minRateDropBps);
 
+    /// @notice Emitted when the cumulative rate-drop high-water mark is updated.
+    /// @param rateHighWaterMark The new rate high-water mark.
+    event RateHighWaterMarkUpdated(uint256 rateHighWaterMark);
+
     /// @notice Emitted when the queue ratio threshold is updated.
     /// @param maxQueueRatioBps The new queue ratio threshold in basis points.
     event QueueRatioLimitUpdated(uint256 maxQueueRatioBps);
@@ -104,6 +108,10 @@ interface ISafetyModule {
     /// @notice Updates the rate-drop threshold.
     /// @param minRateDropBps The new rate-drop threshold in basis points.
     function setMinRateDropBps(uint256 minRateDropBps) external;
+
+    /// @notice Resets the cumulative rate-drop high-water mark after governance review.
+    /// @param rateHighWaterMark The new high-water mark.
+    function setRateHighWaterMark(uint256 rateHighWaterMark) external;
 
     /// @notice Updates the queue ratio threshold.
     /// @param maxQueueRatioBps The new queue ratio threshold in basis points.

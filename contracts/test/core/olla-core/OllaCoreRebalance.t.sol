@@ -1773,6 +1773,8 @@ contract RevertingSafetyModule is ISafetyModule {
 
     function setMinRateDropBps(uint256) external pure override { }
 
+    function setRateHighWaterMark(uint256) external pure override { }
+
     function setMaxQueueRatioBps(uint256) external pure override { }
 
     function setMaxAccountingDelay(uint256) external pure override { }
