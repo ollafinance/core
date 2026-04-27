@@ -110,6 +110,56 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
         SLASH REDUCES EXIT AMOUNT DURING EXIT DELAY
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Slash during exit delay: exit.amount reduced in-place. A refresh before the exit
+    ///         becomes exitable must immediately reconcile pendingUnstakeAmount and slashingDelta.
+    function test_SlashDuringExitDelay_RefreshBeforeExitable_ReconcilesPendingUnstakeAmount() external {
+        _setupActiveAttester();
+        address[] memory attesters = _attesterAddresses(1);
+
+        // 1. Unstake — exit with delay.
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.StakingState memory stateAfterUnstake = stakingManager.getStakingState();
+        assertEq(stateAfterUnstake.pendingUnstakeAmount, ACTIVATION_THRESHOLD, "pending = threshold");
+        assertEq(stakingManager.totalStaked(), ACTIVATION_THRESHOLD, "total staked includes pending exit");
+
+        // 2. Slash during delay: reduce exit amount from 100 to 60 while the exit is still
+        //    non-exitable. The rollup keeps the exit record, but mutates exit.amount in place.
+        uint256 reducedAmount = 60 ether;
+        uint256 expectedSlash = ACTIVATION_THRESHOLD - reducedAmount;
+        rollup.reduceExitAmount(attesters[0], reducedAmount);
+
+        Exit memory exitOnRollup = rollup.getExit(attesters[0]);
+        assertTrue(exitOnRollup.exists, "exit should still exist");
+        assertGt(Timestamp.unwrap(exitOnRollup.exitableAt), block.timestamp, "exit should not be exitable yet");
+        assertEq(exitOnRollup.amount, reducedAmount, "exit amount should be reduced on rollup");
+
+        // 3. Refresh before the exit is exitable. The regression is that current code does
+        //    nothing in this intermediate state, leaving totalStaked inflated at 100 ether.
+        stakingManager.refreshAttesterState(attesters);
+
+        IStakingManager.StakingState memory stateAfterRefresh = stakingManager.getStakingState();
+        assertEq(stateAfterRefresh.pendingUnstakeAmount, reducedAmount, "pending unstake should track reduced exit");
+        assertEq(stateAfterRefresh.slashingDelta, expectedSlash, "slashingDelta should record exit-delay slash");
+        assertEq(stakingManager.totalStaked(), reducedAmount, "totalStaked should not overstate slashed pending exit");
+        assertTrue(stakingManager.isUnstakePending(attesters[0]), "attester should remain Exiting");
+
+        // 4. Later finalization should not double-count the slash. This also proves the fix
+        //    updates the attester's pendingExitAmount snapshot when it reconciles the slash.
+        vm.warp(block.timestamp + EXIT_DELAY + 1);
+        stakingManager.refreshAttesterState(attesters);
+
+        IStakingManager.StakingState memory stateAfterFinalize = stakingManager.getStakingState();
+        assertEq(stateAfterFinalize.pendingUnstakeAmount, 0, "pending unstake cleared after finalization");
+        assertEq(stateAfterFinalize.slashingDelta, expectedSlash, "slash should not be double counted");
+
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
+        assertEq(received, reducedAmount, "received should equal reduced exit amount");
+        assertEq(exitAmount, reducedAmount, "exitAmount should equal reduced exit amount");
+    }
+
     /// @notice Slash during exit delay: exit.amount reduced in-place. Refresh before finalization
     ///         reads the correct reduced amount. This is the "happy path" where the keeper
     ///         calls refreshAttesterState promptly.
@@ -366,8 +416,10 @@ contract StakingManagerExitDelaySlashTest is StakingManagerBaseTest {
         stakingManager.refreshAttesterState(attesters);
 
         IStakingManager.StakingState memory stateAfterRefresh = stakingManager.getStakingState();
-        // Active slash (30 ether) should be in slashingDelta
-        assertEq(stateAfterRefresh.slashingDelta, 30 ether, "active slash tracked in slashingDelta");
+        // Both the active slash (30 ether) and the pre-exitable exit slash (20 ether)
+        // should be reflected immediately on refresh.
+        assertEq(stateAfterRefresh.slashingDelta, 50 ether, "active and exiting slashes tracked in slashingDelta");
+        assertEq(stateAfterRefresh.pendingUnstakeAmount, 80 ether, "pending unstake reconciled before finalization");
 
         // 5. Warp past delay and finalize exit
         vm.warp(block.timestamp + EXIT_DELAY + 1);
