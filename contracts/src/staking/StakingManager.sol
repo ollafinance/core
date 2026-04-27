@@ -84,11 +84,14 @@ contract StakingManager is
     /// @dev Enumerable set of active attester addresses for internal iteration (unstake).
     EnumerableSet.AddressSet private _activeAttesterSet;
 
+    /// @dev Tracks purged failed-entry refunds that can be swept without double-counting principal.
+    uint256 private _pendingRefundAmount;
+
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[49] private __gap;
+    uint256[48] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -232,13 +235,18 @@ contract StakingManager is
     function getUnstakedFunds() external override onlyCore nonReentrant returns (uint256 received, uint256 exitAmount) {
         exitAmount = _pendingClaimAmount;
         _pendingClaimAmount = 0;
+        uint256 refundAmount = _pendingRefundAmount;
+        _pendingRefundAmount = 0;
 
         uint256 balance = stakingAsset.balanceOf(address(this));
-        if (balance > 0) {
-            stakingAsset.safeTransfer(core, balance);
-            emit UnstakedFundsClaimed(balance);
+        uint256 accountedAmount = exitAmount + refundAmount;
+        uint256 transferAmount = balance < accountedAmount ? balance : accountedAmount;
+
+        if (transferAmount > 0) {
+            stakingAsset.safeTransfer(core, transferAmount);
+            emit UnstakedFundsClaimed(transferAmount);
         }
-        received = balance;
+        received = transferAmount;
         return (received, exitAmount);
     }
 
@@ -303,13 +311,10 @@ contract StakingManager is
             }
         }
 
-        // Correct the accounting: remove the attester's cached stake from the aggregate
+        // Correct the accounting: reclassify cached stake from queued principal to sweepable refund.
         uint256 cachedStake = info.stakedAmount;
-        if (_aggregateState.stakedAmount >= cachedStake) {
-            _aggregateState.stakedAmount -= cachedStake;
-        } else {
-            _aggregateState.stakedAmount = 0;
-        }
+        _removeStakedAmount(cachedStake);
+        _pendingRefundAmount += cachedStake;
 
         // Transition to Exiting then remove (reuses existing cleanup path)
         _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
@@ -350,7 +355,7 @@ contract StakingManager is
 
     /// @inheritdoc IStakingManager
     function hasFinalizedUnstakes() external view override returns (bool) {
-        return _pendingClaimAmount > 0;
+        return _pendingClaimAmount > 0 || _pendingRefundAmount > 0;
     }
 
     /// @inheritdoc IStakingManager
@@ -364,7 +369,8 @@ contract StakingManager is
 
     /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
-        return _aggregateState.stakedAmount + _aggregateState.pendingUnstakeAmount + _pendingClaimAmount;
+        return _aggregateState.stakedAmount + _aggregateState.pendingUnstakeAmount + _pendingClaimAmount
+            + _pendingRefundAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -501,6 +507,16 @@ contract StakingManager is
         ++_attesterCount;
         _setAttesterStatus(attester, info, InternalAttesterStatus.Queued);
         _aggregateState.stakedAmount += stakedAmount;
+    }
+
+    /// @notice Removes principal from aggregate staked amount with saturation.
+    /// @param amount The amount to remove.
+    function _removeStakedAmount(uint256 amount) internal {
+        if (_aggregateState.stakedAmount >= amount) {
+            _aggregateState.stakedAmount -= amount;
+        } else {
+            _aggregateState.stakedAmount = 0;
+        }
     }
 
     // slither-disable-end pess-multiple-storage-read
