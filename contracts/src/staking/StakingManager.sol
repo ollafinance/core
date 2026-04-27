@@ -213,6 +213,7 @@ contract StakingManager is
         for (uint256 i = length; i > 0;) {
             --i;
             if (unstakedAmount >= amount) break;
+            if (gasleft() < _gasThreshold) break;
 
             address attester = _activeAttesterSet.at(i);
             AttesterInfo storage info = _attesterMap[attester];

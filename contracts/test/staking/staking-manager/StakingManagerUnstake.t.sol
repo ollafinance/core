@@ -185,6 +185,24 @@ contract StakingManagerUnstakeTest is StakingManagerBaseTest {
         assertGt(stakingManager.getPendingUnstakeCount(), 0, "pending unstakes should increase");
     }
 
+    /// @notice Unstake must respect the gas threshold before processing another active attester.
+    function test_Unstake_GasThresholdStopsBeforeProcessingWhenBelowThreshold() external {
+        uint256 attesterCount = 3;
+        _setupMultipleActiveAttesters(attesterCount);
+
+        uint256 requested = ACTIVATION_THRESHOLD * attesterCount;
+
+        vm.prank(core);
+        stakingManager.setGasThreshold(2_000_000);
+
+        vm.prank(core);
+        uint256 unstakedAmount = stakingManager.unstake{ gas: 1_000_000 }(requested);
+
+        assertEq(unstakedAmount, 0, "unstake should stop before processing below threshold");
+        assertEq(stakingManager.getActivatedAttesterCount(), attesterCount, "all attesters should remain active");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "no pending unstakes should be created");
+    }
+
     function test_Unstake_Bounded_ResumesAcrossCalls() external {
         uint256 attesterCount = 5;
         _setupMultipleActiveAttesters(attesterCount);
