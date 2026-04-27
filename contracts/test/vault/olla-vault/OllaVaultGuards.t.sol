@@ -237,6 +237,15 @@ contract OllaVaultGuardsTest is Test {
         vault.mint(10 * DECIMALS, alice);
     }
 
+    function test_RequestRedeem_RevertsWhenSafetyModulePaused() external {
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
+        safetyModule.pause();
+
+        vm.expectRevert(IOllaVault.OllaVault__SafetyModulePaused.selector);
+        vm.prank(alice);
+        vault.requestRedeem(shares, alice, alice);
+    }
+
     /*//////////////////////////////////////////////////////////////
               REQUEST REDEEM / TRANSFER TO CORE / FINALIZE
     //////////////////////////////////////////////////////////////*/

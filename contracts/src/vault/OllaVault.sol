@@ -783,6 +783,8 @@ contract OllaVault is
 
         VaultModules memory modules = _modules;
         IOllaCore coreRef = IOllaCore(modules.core);
+        ISafetyModule sm = ISafetyModule(coreRef.safetyModule());
+        if (sm.isPaused()) revert OllaVault__SafetyModulePaused();
 
         // Lock the request in the same gross per-share-backing frame used at finalization.
         // Pending withdrawal shares stay in gross supply until finalized, so queued shares
@@ -791,7 +793,7 @@ contract OllaVault is
         // reduced or skipped, but payout remains capped at the request-time assetsExpected.
         uint256 rate = coreRef.withdrawalRate();
         assetsExpected = coreRef.convertToAssetsGross(shares);
-        ISafetyModule(_safetyModule()).checkWithdrawalMinimum(shares);
+        sm.checkWithdrawalMinimum(shares);
         uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
 
         _requestOwners[expectedRequestId] = controller;
