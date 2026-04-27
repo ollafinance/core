@@ -65,6 +65,10 @@ contract ReconcileSafetyModule is ISafetyModule {
         return _paused;
     }
 
+    function isDepositPaused() external view override returns (bool pausedState) {
+        return _paused;
+    }
+
     function CORE() external view override returns (address) {
         return CORE_ADDRESS;
     }

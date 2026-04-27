@@ -212,6 +212,7 @@ contract OllaVaultGuardsTest is Test {
 
     function test_RevertWhen_Mint_SafetyModulePaused() external {
         safetyModule.pause();
+        safetyModule.mockSetDepositPaused(true);
 
         asset.mint(alice, 100 * DECIMALS);
         vm.prank(alice);
@@ -220,6 +221,16 @@ contract OllaVaultGuardsTest is Test {
         vm.expectRevert(IOllaVault.OllaVault__SafetyModulePaused.selector);
         vm.prank(alice);
         vault.mint(10 * DECIMALS, alice);
+    }
+
+    function test_Deposit_AllowedWhenSafetyModulePauseIsQueueRatioOnly() external {
+        uint256 sharesBefore = stAztec.balanceOf(alice);
+        safetyModule.pause();
+
+        uint256 mintedShares = _performDeposit(alice, 10 * DECIMALS);
+
+        assertGt(mintedShares, 0, "queue-ratio pause should allow recovery deposits");
+        assertEq(stAztec.balanceOf(alice), sharesBefore + mintedShares, "deposit should mint shares");
     }
 
     function test_RevertWhen_Mint_DepositCapExceeded() external {
@@ -354,6 +365,7 @@ contract OllaVaultGuardsTest is Test {
 
     function test_MaxMint_SafetyModulePaused_ReturnsZero() external {
         safetyModule.pause();
+        safetyModule.mockSetDepositPaused(true);
         assertEq(vault.maxMint(alice), 0, "maxMint should return 0 when safety module is paused");
     }
 

@@ -79,6 +79,9 @@ contract SafetyModule is AccessControl, ISafetyModule {
     /// @notice Last accounting update timestamp.
     uint48 public lastAccountingTimestamp;
 
+    /// @notice The breaker reason that most recently paused the module.
+    ISafetyModule.BreakerReason public lastBreakerReason;
+
     /*//////////////////////////////////////////////////////////////
                                  MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -305,6 +308,11 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
+    function isDepositPaused() external view override returns (bool pausedState) {
+        return paused && lastBreakerReason != ISafetyModule.BreakerReason.QueueRatio;
+    }
+
+    /// @inheritdoc ISafetyModule
     function checkDepositAllowed(uint256 deposit, uint256 total)
         external
         view
@@ -332,6 +340,7 @@ contract SafetyModule is AccessControl, ISafetyModule {
     /// @notice Pauses the module and emits the circuit breaker event if not already paused.
     /// @param reason The breaker reason to emit.
     function _triggerBreaker(ISafetyModule.BreakerReason reason) internal {
+        lastBreakerReason = reason;
         if (!paused) {
             paused = true;
             emit CircuitBreakerTriggered(reason);

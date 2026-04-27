@@ -1749,6 +1749,10 @@ contract RevertingSafetyModule is ISafetyModule {
         return false;
     }
 
+    function isDepositPaused() external pure override returns (bool) {
+        return false;
+    }
+
     function CORE() external view override returns (address) {
         return CORE_ADDRESS;
     }

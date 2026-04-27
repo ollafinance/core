@@ -454,4 +454,12 @@ contract SafetyModuleTest is Test {
 
         assertFalse(safetyModule.isPaused(), "exactly 1 day elapsed should not pause");
     }
+
+    function test_IsDepositPaused_FalseForQueueRatioPause() public {
+        vm.prank(core);
+        safetyModule.checkQueueRatio(700, 300);
+
+        assertTrue(safetyModule.isPaused(), "module should be paused");
+        assertFalse(safetyModule.isDepositPaused(), "queue-ratio pause should not block deposits");
+    }
 }
