@@ -1,15 +1,15 @@
 {
   "storage": [
     {
-      "astId": 5240,
+      "astId": 5428,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "_modules",
       "offset": 0,
       "slot": "0",
-      "type": "t_struct(VaultModules)8190_storage"
+      "type": "t_struct(VaultModules)7976_storage"
     },
     {
-      "astId": 5243,
+      "astId": 5431,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "_bufferedAssets",
       "offset": 0,
@@ -17,7 +17,7 @@
       "type": "t_uint256"
     },
     {
-      "astId": 5246,
+      "astId": 5434,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "_finalizedUnclaimedAssets",
       "offset": 0,
@@ -25,7 +25,7 @@
       "type": "t_uint256"
     },
     {
-      "astId": 5251,
+      "astId": 5439,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "_requestOwners",
       "offset": 0,
@@ -33,7 +33,7 @@
       "type": "t_mapping(t_uint256,t_address)"
     },
     {
-      "astId": 5256,
+      "astId": 5444,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "_ownerRequestIds",
       "offset": 0,
@@ -41,7 +41,7 @@
       "type": "t_mapping(t_address,t_array(t_uint256)dyn_storage)"
     },
     {
-      "astId": 5260,
+      "astId": 5448,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "_ownerRequestIndex",
       "offset": 0,
@@ -49,7 +49,7 @@
       "type": "t_mapping(t_uint256,t_uint256)"
     },
     {
-      "astId": 5267,
+      "astId": 5455,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "_operators",
       "offset": 0,
@@ -57,59 +57,43 @@
       "type": "t_mapping(t_address,t_mapping(t_address,t_bool))"
     },
     {
-      "astId": 5270,
+      "astId": 5458,
       "contract": "src/vault/OllaVault.sol:OllaVault",
-      "label": "instantRedemptionFeeBP",
+      "label": "cumulativeDeposits",
       "offset": 0,
       "slot": "10",
       "type": "t_uint256"
     },
     {
-      "astId": 5273,
+      "astId": 5461,
       "contract": "src/vault/OllaVault.sol:OllaVault",
-      "label": "cumulativeDeposits",
+      "label": "cumulativeWithdrawals",
       "offset": 0,
       "slot": "11",
       "type": "t_uint256"
     },
     {
-      "astId": 5276,
+      "astId": 5464,
       "contract": "src/vault/OllaVault.sol:OllaVault",
-      "label": "cumulativeWithdrawals",
+      "label": "cumulativeSlashingAdjustments",
       "offset": 0,
       "slot": "12",
       "type": "t_uint256"
     },
     {
-      "astId": 5279,
-      "contract": "src/vault/OllaVault.sol:OllaVault",
-      "label": "cumulativeExitFees",
-      "offset": 0,
-      "slot": "13",
-      "type": "t_uint256"
-    },
-    {
-      "astId": 5282,
-      "contract": "src/vault/OllaVault.sol:OllaVault",
-      "label": "cumulativeSlashingAdjustments",
-      "offset": 0,
-      "slot": "14",
-      "type": "t_uint256"
-    },
-    {
-      "astId": 5287,
+      "astId": 5469,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "_claimableShares",
       "offset": 0,
-      "slot": "15",
+      "slot": "13",
       "type": "t_mapping(t_address,t_uint256)"
     },
     {
-      "astId": 5292,
+      "astId": 5474,
       "contract": "src/vault/OllaVault.sol:OllaVault",
       "label": "__gap",
       "offset": 0,
-      "slot": "16",
+      "slot": "14",
       "type": "t_array(t_uint256)50_storage"
     }
   ],
@@ -141,12 +125,12 @@
       "label": "contract IERC20",
       "numberOfBytes": "20"
     },
-    "t_contract(IStAztec)8927": {
+    "t_contract(IStAztec)8613": {
       "encoding": "inplace",
       "label": "contract IStAztec",
       "numberOfBytes": "20"
     },
-    "t_contract(IWithdrawalQueue)9120": {
+    "t_contract(IWithdrawalQueue)8806": {
       "encoding": "inplace",
       "label": "contract IWithdrawalQueue",
       "numberOfBytes": "20"
@@ -193,13 +177,13 @@
       "numberOfBytes": "32",
       "value": "t_uint256"
     },
-    "t_struct(VaultModules)8190_storage": {
+    "t_struct(VaultModules)7976_storage": {
       "encoding": "inplace",
       "label": "struct IOllaVault.VaultModules",
       "numberOfBytes": "128",
       "members": [
         {
-          "astId": 8181,
+          "astId": 7967,
           "contract": "src/vault/OllaVault.sol:OllaVault",
           "label": "asset",
           "offset": 0,
@@ -207,23 +191,23 @@
           "type": "t_contract(IERC20)1019"
         },
         {
-          "astId": 8184,
+          "astId": 7970,
           "contract": "src/vault/OllaVault.sol:OllaVault",
           "label": "stAztec",
           "offset": 0,
           "slot": "1",
-          "type": "t_contract(IStAztec)8927"
+          "type": "t_contract(IStAztec)8613"
         },
         {
-          "astId": 8187,
+          "astId": 7973,
           "contract": "src/vault/OllaVault.sol:OllaVault",
           "label": "withdrawalQueue",
           "offset": 0,
           "slot": "2",
-          "type": "t_contract(IWithdrawalQueue)9120"
+          "type": "t_contract(IWithdrawalQueue)8806"
         },
         {
-          "astId": 8189,
+          "astId": 7975,
           "contract": "src/vault/OllaVault.sol:OllaVault",
           "label": "core",
           "offset": 0,
