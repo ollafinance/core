@@ -378,10 +378,11 @@ interface IOllaCore {
 
     /// @notice Returns the withdrawal-queue settlement rate in 18-decimal fixed-point units.
     /// @dev Uses gross total assets (before subtracting pending withdrawals) and gross total supply
-    ///      (including shares burned for pending requests). This is the rate used both when
-    ///      locking a redemption request (`OllaVault._executeRedeemRequest`) and when finalizing
-    ///      it (`OllaCore.rebalance` -> `WithdrawalQueue.finalizeWithdrawals`), so the slashing-
-    ///      adjustment gate compares like-for-like quantities and only fires on real slashing.
+    ///      (including shares burned for pending requests). Pending withdrawal shares remain in this
+    ///      gross supply until finalized, so they continue to share pro-rata in both slashing losses
+    ///      and accrued rewards. Rewards can therefore restore the current rate after a slash and
+    ///      reduce or eliminate the queue adjustment, but finalized payouts remain capped at each
+    ///      request's locked `assetsExpected`.
     /// @return The withdrawal-queue settlement rate in 18-decimal fixed-point units.
     function withdrawalRate() external view returns (uint256);
 

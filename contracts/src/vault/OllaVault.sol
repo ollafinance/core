@@ -784,9 +784,11 @@ contract OllaVault is
         VaultModules memory modules = _modules;
         IOllaCore coreRef = IOllaCore(modules.core);
 
-        // Settlement rate and assetsExpected are both computed in the gross per-share-backing
-        // frame, so `request.rate` stored here matches `currentRate` at finalize -- the slashing-
-        // adjustment gate compares like-for-like quantities and only fires on real slashing.
+        // Lock the request in the same gross per-share-backing frame used at finalization.
+        // Pending withdrawal shares stay in gross supply until finalized, so queued shares
+        // continue to participate pro-rata in both slashing losses and accrued rewards.
+        // If rewards restore the gross rate after a slash, the queue adjustment may be
+        // reduced or skipped, but payout remains capped at the request-time assetsExpected.
         uint256 rate = coreRef.withdrawalRate();
         assetsExpected = coreRef.convertToAssetsGross(shares);
         ISafetyModule(_safetyModule()).checkWithdrawalMinimum(shares);
