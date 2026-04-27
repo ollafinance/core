@@ -143,6 +143,10 @@ interface ISafetyModule {
     /// @return pausedState True if paused.
     function isPaused() external view returns (bool pausedState);
 
+    /// @notice Returns whether deposits should be blocked by the current safety pause.
+    /// @return pausedState True if deposits should be blocked.
+    function isDepositPaused() external view returns (bool pausedState);
+
     /// @notice Checks whether a deposit is allowed under the cap.
     /// @param deposit The incoming deposit amount.
     /// @param total The current total assets.

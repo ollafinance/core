@@ -217,6 +217,10 @@ contract MockSafetyModuleStub {
         return false;
     }
 
+    function isDepositPaused() external pure returns (bool) {
+        return false;
+    }
+
     function checkDepositAllowed(uint256, uint256) external pure returns (bool) {
         return true;
     }

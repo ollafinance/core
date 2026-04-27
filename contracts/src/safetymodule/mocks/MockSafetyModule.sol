@@ -32,6 +32,9 @@ contract MockSafetyModule is ISafetyModule {
 
     bool internal _paused;
 
+    /// @notice Tracks whether the current pause should still allow deposits.
+    bool public mockDepositPaused;
+
     /*//////////////////////////////////////////////////////////////
                         CONFIGURABLE THRESHOLDS
     //////////////////////////////////////////////////////////////*/
@@ -126,6 +129,12 @@ contract MockSafetyModule is ISafetyModule {
         mockWithdrawalMinimumShares = minimum;
     }
 
+    /// @notice Sets whether a mock pause blocks deposits.
+    /// @param value True to block deposits while paused.
+    function mockSetDepositPaused(bool value) external {
+        mockDepositPaused = value;
+    }
+
     // solhint-enable comprehensive-interface
 
     /*//////////////////////////////////////////////////////////////
@@ -204,6 +213,12 @@ contract MockSafetyModule is ISafetyModule {
     /// @return pausedState True if paused.
     function isPaused() external view override returns (bool pausedState) {
         return _paused;
+    }
+
+    /// @notice Returns whether deposits should be blocked by the mock pause.
+    /// @return pausedState True when deposits should be blocked.
+    function isDepositPaused() external view override returns (bool pausedState) {
+        return _paused && mockDepositPaused;
     }
 
     // solhint-disable func-name-mixedcase

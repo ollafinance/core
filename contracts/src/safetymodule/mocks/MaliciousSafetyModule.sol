@@ -88,6 +88,12 @@ contract MaliciousSafetyModule is IMaliciousSafetyModule, ISafetyModule {
         return _paused;
     }
 
+    /// @notice Returns whether deposits should be blocked by the mock pause.
+    /// @return pausedState True if paused.
+    function isDepositPaused() external view override returns (bool pausedState) {
+        return _paused;
+    }
+
     // solhint-disable func-name-mixedcase
     /// @notice Returns the core address.
     /// @return The core contract address.

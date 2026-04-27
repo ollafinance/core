@@ -247,7 +247,7 @@ contract OllaVault is
         if (shares == 0) revert OllaVault__InvalidAmount();
 
         ISafetyModule sm = ISafetyModule(_safetyModule());
-        if (sm.isPaused()) revert OllaVault__SafetyModulePaused();
+        if (sm.isDepositPaused()) revert OllaVault__SafetyModulePaused();
         _syncBufferedWithBalance();
 
         IOllaCore coreRef = IOllaCore(_modules.core);
@@ -499,7 +499,7 @@ contract OllaVault is
     function maxDeposit(address) external view override returns (uint256) {
         if (paused()) return 0;
         ISafetyModule sm = ISafetyModule(_safetyModule());
-        if (sm.isPaused()) return 0;
+        if (sm.isDepositPaused()) return 0;
         uint256 cap = sm.depositCap();
         uint256 current = totalAssets();
         if (current >= cap) return 0;
@@ -512,7 +512,7 @@ contract OllaVault is
     function maxMint(address) external view override returns (uint256) {
         if (paused()) return 0;
         ISafetyModule sm = ISafetyModule(_safetyModule());
-        if (sm.isPaused()) return 0;
+        if (sm.isDepositPaused()) return 0;
         uint256 cap = sm.depositCap();
         uint256 current = totalAssets();
         if (current >= cap) return 0;
@@ -727,7 +727,7 @@ contract OllaVault is
         if (assets == 0) revert OllaVault__InvalidAmount();
 
         ISafetyModule sm = ISafetyModule(_safetyModule());
-        if (sm.isPaused()) revert OllaVault__SafetyModulePaused();
+        if (sm.isDepositPaused()) revert OllaVault__SafetyModulePaused();
         _syncBufferedWithBalance();
 
         IOllaCore coreRef = IOllaCore(_modules.core);

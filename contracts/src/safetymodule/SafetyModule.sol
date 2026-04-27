@@ -79,6 +79,9 @@ contract SafetyModule is AccessControl, ISafetyModule {
     /// @notice Last accounting update timestamp.
     uint48 public lastAccountingTimestamp;
 
+    /// @notice The breaker reason that most recently paused the module.
+    ISafetyModule.BreakerReason public lastBreakerReason;
+
     /// @notice Latest high-water mark used for cumulative rate-drop checks.
     uint256 public rateHighWaterMark;
 
@@ -186,14 +189,6 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
         if (nextRate < highWaterMark) {
             _checkRateDrop(highWaterMark, nextRate);
-        }
-    }
-
-    function _checkRateDrop(uint256 referenceRate, uint256 nextRate) internal {
-        uint256 dropBps = (referenceRate - nextRate) * BPS_DENOMINATOR / referenceRate;
-        // solhint-disable-next-line gas-strict-inequalities
-        if (dropBps >= minRateDropBps) {
-            _triggerBreaker(ISafetyModule.BreakerReason.RateDrop);
         }
     }
 
@@ -333,6 +328,11 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
+    function isDepositPaused() external view override returns (bool pausedState) {
+        return paused && lastBreakerReason != ISafetyModule.BreakerReason.QueueRatio;
+    }
+
+    /// @inheritdoc ISafetyModule
     function checkDepositAllowed(uint256 deposit, uint256 total)
         external
         view
@@ -357,9 +357,18 @@ contract SafetyModule is AccessControl, ISafetyModule {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    function _checkRateDrop(uint256 referenceRate, uint256 nextRate) internal {
+        uint256 dropBps = (referenceRate - nextRate) * BPS_DENOMINATOR / referenceRate;
+        // solhint-disable-next-line gas-strict-inequalities
+        if (dropBps >= minRateDropBps) {
+            _triggerBreaker(ISafetyModule.BreakerReason.RateDrop);
+        }
+    }
+
     /// @notice Pauses the module and emits the circuit breaker event if not already paused.
     /// @param reason The breaker reason to emit.
     function _triggerBreaker(ISafetyModule.BreakerReason reason) internal {
+        lastBreakerReason = reason;
         if (!paused) {
             paused = true;
             emit CircuitBreakerTriggered(reason);
