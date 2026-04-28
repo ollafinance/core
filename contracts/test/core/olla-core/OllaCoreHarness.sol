@@ -13,7 +13,7 @@ contract OllaCoreHarness is OllaCore {
     function exposedComputeNetFlows(IOllaCore.FlowCounters memory flows)
         external
         pure
-        returns (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
+        returns (int256 netFlows, uint256 netDeposits, int256 netWithdrawals)
     {
         return _computeNetFlows(flows);
     }

@@ -195,10 +195,10 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 0
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         assertEq(netDeposits, 7 * DECIMALS, "net deposits");
-        assertEq(netWithdrawals, 3 * DECIMALS, "net withdrawals");
+        assertEq(netWithdrawals, int256(3 * DECIMALS), "net withdrawals");
         assertEq(netFlows, int256(4 * DECIMALS), "net flows");
     }
 
@@ -213,17 +213,19 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 1 * DECIMALS
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         // netDeposits = 12 - 5 = 7
         assertEq(netDeposits, 7 * DECIMALS, "net deposits with adjustments");
         // rawNetWithdrawals = 10 - 2 = 8, adjustmentDelta = 3 - 1 = 2, netWithdrawals = 8 - 2 = 6
-        assertEq(netWithdrawals, 6 * DECIMALS, "net withdrawals reduced by slashing adjustment delta");
+        assertEq(netWithdrawals, int256(6 * DECIMALS), "net withdrawals reduced by slashing adjustment delta");
         // netFlows = 7 - 6 = 1
         assertEq(netFlows, int256(1 * DECIMALS), "net flows with slashing adjustments");
     }
 
-    /// @notice When slashing adjustment delta exceeds raw netWithdrawals, netWithdrawals floors at zero.
+    /// @notice When slashing adjustment delta exceeds raw netWithdrawals, signed netWithdrawals
+    ///         goes negative -- preserving the excess as a positive contribution to netFlows
+    ///         instead of dropping it via the previous unsigned clamp.
     function test_ComputeNetFlows_SlashingAdjustmentExceedsWithdrawals() external view {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: 10 * DECIMALS,
@@ -234,14 +236,14 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 0
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         // netDeposits = 10 - 5 = 5
         assertEq(netDeposits, 5 * DECIMALS, "net deposits");
-        // rawNetWithdrawals = 5 - 2 = 3, adjustmentDelta = 4 - 0 = 4, 3 < 4 → floor at 0
-        assertEq(netWithdrawals, 0, "net withdrawals floored at zero when adjustment exceeds raw");
-        // netFlows = 5 - 0 = 5
-        assertEq(netFlows, int256(5 * DECIMALS), "net flows when withdrawals floored");
+        // rawNetWithdrawals = 5 - 2 = 3, adjustmentDelta = 4 - 0 = 4, signed = 3 - 4 = -1
+        assertEq(netWithdrawals, -int256(1 * DECIMALS), "net withdrawals negative when adjustment exceeds raw");
+        // netFlows = 5 - (-1) = 6 -- excess slashing flows through, no phantom rewards downstream
+        assertEq(netFlows, int256(6 * DECIMALS), "net flows preserves excess slashing adjustment");
     }
 
     /// @notice When slashing adjustment delta equals raw netWithdrawals exactly, netWithdrawals is zero.
@@ -255,12 +257,12 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 0
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         // netDeposits = 10 - 5 = 5
         assertEq(netDeposits, 5 * DECIMALS, "net deposits");
         // rawNetWithdrawals = 5 - 2 = 3, adjustmentDelta = 3 - 0 = 3, 3 == 3 → exactly zero
-        assertEq(netWithdrawals, 0, "net withdrawals exactly zero when adjustment equals raw");
+        assertEq(netWithdrawals, int256(0), "net withdrawals exactly zero when adjustment equals raw");
         // netFlows = 5 - 0 = 5
         assertEq(netFlows, int256(5 * DECIMALS), "net flows when withdrawals exactly cancelled");
     }
@@ -296,6 +298,65 @@ contract OllaCoreAccountingTest is Test {
 
         assertEq(grossRewards, 0, "gross rewards clamped to zero");
         assertEq(grossRewardsSigned, -int256(15 * DECIMALS), "gross rewards signed negative");
+    }
+
+    /// @notice When slashing adjustments exceed withdrawals, the period's totalAssets growth is
+    ///         fully explained by netDeposits + the excess slashing impact, so gross rewards must
+    ///         remain zero. The clamp-to-zero pattern in `_computeNetFlows` violates this and
+    ///         silently drops the excess, producing phantom rewards.
+    function test_ComputeGrossRewards_NoPhantomRewardsWhenSlashingExceedsWithdrawals() external view {
+        uint256 netDeposits = 5 * DECIMALS;
+        uint256 rawNetWithdrawals = 3 * DECIMALS;
+        uint256 adjustmentsSinceReport = 4 * DECIMALS;
+        uint256 oldTotalAssets = 100 * DECIMALS;
+        uint256 newTotalAssets = 106 * DECIMALS;
+
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
+            cumulativeDeposits: netDeposits,
+            cumulativeWithdrawals: rawNetWithdrawals,
+            cumulativeSlashingAdjustments: adjustmentsSinceReport,
+            latestReportCumulativeDeposits: 0,
+            latestReportCumulativeWithdrawals: 0,
+            latestReportCumulativeSlashingAdjustments: 0
+        });
+
+        (int256 netFlows,,) = core.exposedComputeNetFlows(flows);
+        (uint256 grossRewards, int256 grossRewardsSigned) =
+            core.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+
+        // changeInAssets (+6e18) = netDeposits (+5e18) + droppedExcess (+1e18). No real yield.
+        assertEq(grossRewards, 0, "slashing-adjustment excess must not inflate gross rewards");
+        assertEq(grossRewardsSigned, 0, "signed gross rewards reflect zero true yield");
+    }
+
+    /// @notice Phantom rewards from the slashing-adjustment clamp must not produce protocol fees.
+    function test_CalculateProtocolFees_NoExcessFeesWhenSlashingExceedsWithdrawals() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 netDeposits = 5 * DECIMALS;
+        uint256 rawNetWithdrawals = 3 * DECIMALS;
+        uint256 adjustmentsSinceReport = 4 * DECIMALS;
+        uint256 oldTotalAssets = 100 * DECIMALS;
+        uint256 newTotalAssets = 106 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
+            cumulativeDeposits: netDeposits,
+            cumulativeWithdrawals: rawNetWithdrawals,
+            cumulativeSlashingAdjustments: adjustmentsSinceReport,
+            latestReportCumulativeDeposits: 0,
+            latestReportCumulativeWithdrawals: 0,
+            latestReportCumulativeSlashingAdjustments: 0
+        });
+
+        (int256 netFlows,,) = core.exposedComputeNetFlows(flows);
+        (uint256 grossRewards,) = core.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
+            core.exposedCalculateProtocolFees(grossRewards);
+
+        assertEq(feeAssets, 0, "no fees when no real rewards accrued");
+        assertEq(treasuryShares, 0, "no treasury shares from phantom rewards");
+        assertEq(providerShares, 0, "no provider shares from phantom rewards");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -672,16 +733,17 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 0
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         uint256 expectedNetDeposits =
             cumulativeDeposits > latestReportCumulativeDeposits
             ? cumulativeDeposits - latestReportCumulativeDeposits
             : 0;
-        uint256 expectedNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals
+        uint256 expectedRawNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals
             ? cumulativeWithdrawals - latestReportCumulativeWithdrawals
             : 0;
-        int256 expectedNetFlows = int256(expectedNetDeposits) - int256(expectedNetWithdrawals);
+        int256 expectedNetWithdrawals = int256(expectedRawNetWithdrawals);
+        int256 expectedNetFlows = int256(expectedNetDeposits) - expectedNetWithdrawals;
 
         assertEq(netDeposits, expectedNetDeposits, "net deposits fuzz");
         assertEq(netWithdrawals, expectedNetWithdrawals, "net withdrawals fuzz");
@@ -706,7 +768,7 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: latestReportCumulativeSlashingAdj
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         uint256 expectedNetDeposits =
             cumulativeDeposits > latestReportCumulativeDeposits
@@ -718,8 +780,9 @@ contract OllaCoreAccountingTest is Test {
         uint256 adjustmentDelta = cumulativeSlashingAdj > latestReportCumulativeSlashingAdj
             ? cumulativeSlashingAdj - latestReportCumulativeSlashingAdj
             : 0;
-        uint256 expectedNetWithdrawals = rawNetWithdrawals > adjustmentDelta ? rawNetWithdrawals - adjustmentDelta : 0;
-        int256 expectedNetFlows = int256(expectedNetDeposits) - int256(expectedNetWithdrawals);
+        // Signed: excess slashing adjustment becomes negative netWithdrawals (no clamp).
+        int256 expectedNetWithdrawals = int256(rawNetWithdrawals) - int256(adjustmentDelta);
+        int256 expectedNetFlows = int256(expectedNetDeposits) - expectedNetWithdrawals;
 
         assertEq(netDeposits, expectedNetDeposits, "net deposits fuzz with adj");
         assertEq(netWithdrawals, expectedNetWithdrawals, "net withdrawals fuzz with adj");
@@ -860,7 +923,7 @@ contract OllaCoreAccountingTest is Test {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // All assets in buffer, nothing staked — slashing doesn't affect buffered assets
+        // All assets in buffer, nothing staked -- slashing doesn't affect buffered assets
         stakingManager.setTotalStaked(0);
         stakingManager.setSlashingDelta(5 * DECIMALS);
 
@@ -1002,7 +1065,7 @@ contract OllaCoreAccountingTest is Test {
         stakingManager.setSlashingDelta(30 * DECIMALS);
         assertEq(stakingManager.totalStaked(), 70 * DECIMALS);
 
-        // setTotalStaked directly overrides — caller is responsible for consistency
+        // setTotalStaked directly overrides -- caller is responsible for consistency
         stakingManager.setTotalStaked(200 * DECIMALS);
         assertEq(stakingManager.totalStaked(), 200 * DECIMALS, "setTotalStaked should override");
     }
