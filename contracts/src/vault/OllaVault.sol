@@ -399,11 +399,13 @@ contract OllaVault is
         override
         onlyRole(CORE_ROLE)
     {
+        // slither-disable-start reentrancy-events
         // CORE_ROLE only; stAztec.mint() is a trusted internal token.
         IStAztec stAztecRef = _modules.stAztec;
         if (treasuryShares > 0) stAztecRef.mint(treasury, treasuryShares);
         if (providerShares > 0) stAztecRef.mint(provider, providerShares);
         emit FeesMinted(treasuryShares, providerShares);
+        // slither-disable-end reentrancy-events
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -508,6 +510,8 @@ contract OllaVault is
         return _operators[controller][operator];
     }
 
+    // slither-disable-start pess-multiple-storage-read
+    // Reads a single request struct; multiple field accesses on the same _requests slot are required.
     /// @notice Returns pending (unfinalized) shares for a request (ERC-7540).
     /// @param requestId The withdrawal request id.
     /// @param controller The controller address.
@@ -539,6 +543,8 @@ contract OllaVault is
         if (request.finalized) return request.shares;
         return 0;
     }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /*//////////////////////////////////////////////////////////////
                            VIEW FUNCTIONS
@@ -672,6 +678,9 @@ contract OllaVault is
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable function-max-lines
+    // slither-disable-start cyclomatic-complexity,pess-multiple-storage-read
+    // FIFO finalization intentionally reads sequential request storage entries; complexity reflects
+    // the slashing-adjustment / liquidity / event-emit branches inherent to the loop body.
     /// @notice Finalizes pending withdrawal requests up to, but not including, `maxRequestId`.
     /// @dev Single self-contained loop. Per-controller `_claimableShares` is updated inline as
     ///      each request transitions to finalized, removing the previous outer loop in the vault
@@ -795,6 +804,7 @@ contract OllaVault is
         return (finalizedAmount, finalizedCount);
     }
 
+    // slither-disable-end cyclomatic-complexity,pess-multiple-storage-read
     // solhint-enable function-max-lines
 
     /// @notice Validates deposit preconditions (safety module, cap) and computes shares.
@@ -869,14 +879,11 @@ contract OllaVault is
         assetsExpected = coreRef.convertToAssetsGross(shares);
         ISafetyModule(_safetyModule()).checkWithdrawalMinimum(shares);
 
-        // Permit paths pull shares to vault via safeTransferFrom before calling this function,
-        // so burn from vault's balance. Non-permit paths burn directly from the share owner.
-        modules.stAztec.burn(sharesPulledToVault ? address(this) : shareOwner, shares);
-
+        // Effects: persist the request and aggregate counters before any external call. CEI keeps
+        // the contract in a consistent state if the trusted stAztec.burn ever transitions to a
+        // hookful implementation; today it cannot reenter due to nonReentrant on the entrypoints.
         requestId = _nextRequestId;
-        unchecked {
-            _nextRequestId = uint64(requestId + 1);
-        }
+        _nextRequestId = SafeCast.toUint64(requestId + 1);
 
         _requests[requestId] =
             WithdrawalRequest({ finalized: false, shares: shares, assetsExpected: assetsExpected, rate: rate });
@@ -889,10 +896,17 @@ contract OllaVault is
         pendingWithdrawalShares += shares;
         cumulativeWithdrawals += assetsExpected;
 
+        // Interactions: burn happens after state is settled.
+        // Permit paths pull shares to vault via safeTransferFrom before calling this function,
+        // so burn from vault's balance. Non-permit paths burn directly from the share owner.
+        modules.stAztec.burn(sharesPulledToVault ? address(this) : shareOwner, shares);
+
         emit WithdrawalRequested(requestId, controller, shares, assetsExpected, rate);
         return (requestId, assetsExpected);
     }
 
+    // slither-disable-start pess-multiple-storage-read
+    // Single request struct accessed for multiple fields then deleted; caching is not applicable.
     /// @dev Claims a withdrawal request. If receiverOverride is address(0), uses the request's owner.
     ///      Storage is deleted on success, so a second claim of the same id falls through the
     ///      `requestOwnerAddr == address(0)` check and reverts with `OllaVault__RequestNotFound`.
@@ -918,6 +932,8 @@ contract OllaVault is
         emit WithdrawalClaimed(requestId, receiver, assets);
         return assets;
     }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /// @notice Removes a request from the owner's tracked array using swap-and-pop.
     /// @param requestOwnerAddr The owner of the request.
