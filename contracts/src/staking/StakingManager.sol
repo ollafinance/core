@@ -98,7 +98,7 @@ contract StakingManager is
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[46] private __gap;
+    uint256[45] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -349,8 +349,8 @@ contract StakingManager is
             revert StakingManager__NotFailedQueueEntry(attester);
         }
 
-        // Query the rollup — the attester must be NONE (never activated or queue flush failed)
-        (, IAztecRollup rollup) = _getRollup();
+        // Query the rollup where the deposit was queued. Canonical may have changed before flush.
+        IAztecRollup rollup = IAztecRollup(info.queueRollup);
         AttesterView memory view_ = rollup.getAttesterView(attester);
         if (view_.status != Status.NONE || view_.exit.exists || view_.effectiveBalance > 0) {
             revert StakingManager__NotFailedQueueEntry(attester);
@@ -573,12 +573,21 @@ contract StakingManager is
     /// @param attester The attester address.
     /// @param stakedAmount The amount staked for this attester.
     function _setQueued(address attester, uint256 stakedAmount) internal {
+        _setQueued(attester, stakedAmount, rollupRegistry.getCanonicalRollup());
+    }
+
+    /// @notice Marks an attester as queued in the registry and updates running state.
+    /// @param attester The attester address.
+    /// @param stakedAmount The amount staked for this attester.
+    /// @param queueRollup The rollup where the deposit was submitted.
+    function _setQueued(address attester, uint256 stakedAmount, address queueRollup) internal {
         AttesterInfo storage info = _attesterMap[attester];
         if (info.attester != address(0)) {
             revert StakingManager__AttesterAlreadyActive(attester);
         }
         info.attester = attester;
         info.stakedAmount = stakedAmount;
+        info.queueRollup = queueRollup;
         ++_attesterCount;
         _setAttesterStatus(attester, info, InternalAttesterStatus.Queued);
         _aggregateState.stakedAmount += stakedAmount;
@@ -678,11 +687,13 @@ contract StakingManager is
         AttesterInfo storage info = _attesterMap[attester];
         if (info.attester == address(0)) return; // Unknown attester -- skip silently
 
-        // Exiting attesters must be queried on the rollup where their exit was initiated,
-        // because exit state is local to each rollup instance and does not migrate on upgrade.
-        IAztecRollup rollup = (info.status == InternalAttesterStatus.Exiting && info.exitRollup != address(0))
-            ? IAztecRollup(info.exitRollup)
-            : canonicalRollup;
+        // Exiting/queued attesters must be queried on the rollup where that local state lives.
+        IAztecRollup rollup = canonicalRollup;
+        if (info.status == InternalAttesterStatus.Exiting && info.exitRollup != address(0)) {
+            rollup = IAztecRollup(info.exitRollup);
+        } else if (info.status == InternalAttesterStatus.Queued && info.queueRollup != address(0)) {
+            rollup = IAztecRollup(info.queueRollup);
+        }
 
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
@@ -690,6 +701,7 @@ contract StakingManager is
         // Handle Queued attesters: check if the rollup has activated them.
         if (info.status == InternalAttesterStatus.Queued) {
             if (view_.status == Status.NONE) return;
+            info.queueRollup = address(0);
             _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
         }
 
@@ -862,7 +874,7 @@ contract StakingManager is
                 break;
             }
             KeyStore memory keyStore = stakingProviderRegistry.getAttesterKeystore();
-            _setQueued(keyStore.attester, activationThresholdValue);
+            _setQueued(keyStore.attester, activationThresholdValue, address(rollup));
             emit StakedWithProvider(keyStore.attester, activationThresholdValue);
             // External call is safe:
             // - Caller has nonReentrant modifier

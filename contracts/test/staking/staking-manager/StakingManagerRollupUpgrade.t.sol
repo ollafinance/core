@@ -240,10 +240,8 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
                 ROLLUP UPGRADE -- QUEUED ATTESTER
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice A Queued attester that was deposited on rollup A becomes effectively orphaned
-    ///         when the registry upgrades to rollup B (where the attester is NONE).
-    ///         refreshAttesterState should leave the attester as Queued (not crash or remove it).
-    ///         purgeFailedQueueEntry would be needed to clean it up.
+    /// @notice A Queued attester deposited on rollup A should continue to be checked on rollup A
+    ///         after the canonical rollup changes, so it can still be promoted after A flushes.
     function test_RefreshAttesterState_QueuedAttester_SurvivesRollupUpgrade() external {
         // Stake 1 attester on rollup A (Queued)
         _setupStakedAttester();
@@ -254,14 +252,41 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         // Deploy new rollup, update registry to point to it
         rollupRegistry.setCanonicalRollup(address(rollupB));
 
-        // On the new rollup, getAttesterView returns NONE (attester doesn't exist there)
-        // refreshAttesterState: attester is Queued, rollup shows NONE -> stays Queued
+        // Refresh after upgrade reads rollup A, where the mock deposit exists, and promotes to Active.
         stakingManager.refreshAttesterState(_attesterAddresses(1));
 
-        // Attester remains Queued, counts unchanged
-        assertEq(stakingManager.getActivatedAttesterCount(), 0, "still queued after rollup upgrade");
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "queued attester promoted from original rollup");
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stateAfter.stakedAmount, stateBefore.stakedAmount, "stakedAmount unchanged");
+    }
+
+    function test_RevertWhen_PurgeFailedQueueEntry_QueuedOnOldRollupAfterUpgrade() external {
+        _setupStakedAttester();
+        address attester = _attesterAddresses(1)[0];
+
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, 0, address(0));
+        rollup.addToEntryQueue(attester);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__NotFailedQueueEntry.selector, attester));
+        stakingManager.purgeFailedQueueEntry(attester);
+    }
+
+    function test_PurgeFailedQueueEntry_UsesOldRollupAfterQueueCleared() external {
+        _setupStakedAttester();
+        address attester = _attesterAddresses(1)[0];
+
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, 0, address(0));
+        rollup.addToEntryQueue(attester);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        rollup.clearEntryQueue();
+        stakingManager.purgeFailedQueueEntry(attester);
+
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(state.stakedAmount, 0, "old-rollup failed queue entry purged");
     }
 
     /*//////////////////////////////////////////////////////////////
