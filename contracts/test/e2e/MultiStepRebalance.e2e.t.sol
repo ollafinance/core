@@ -3,7 +3,6 @@ pragma solidity ^0.8.27;
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { E2EBaseWithRealStaking } from "./E2EBaseWithRealStaking.sol";
 
 /// @title MultiStepRebalanceE2E

@@ -15,9 +15,6 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -271,7 +268,6 @@ contract OllaCoreInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreAccountingHandler internal handler;
@@ -295,7 +291,6 @@ contract OllaCoreInvariantTest is Test {
         address governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        withdrawalQueue = new MockWithdrawalQueue();
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
@@ -310,7 +305,7 @@ contract OllaCoreInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -465,7 +460,6 @@ contract OllaCoreDepositInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     OllaCoreDepositHandler internal handler;
 
@@ -487,7 +481,6 @@ contract OllaCoreDepositInvariantTest is Test {
         address governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        withdrawalQueue = new MockWithdrawalQueue();
         MockRewardsAccumulator rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         core.initialize(
@@ -500,7 +493,7 @@ contract OllaCoreDepositInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -540,7 +533,6 @@ contract OllaCoreLifecycleHandler is Test {
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsAccumulator public rewardsAccumulator;
-    WithdrawalQueue public withdrawalQueue;
     address public operator;
 
     address[] public actors;
@@ -573,7 +565,6 @@ contract OllaCoreLifecycleHandler is Test {
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsAccumulator _rewardsAccumulator,
-        WithdrawalQueue _withdrawalQueue,
         address _operator
     ) {
         asset = _asset;
@@ -582,7 +573,6 @@ contract OllaCoreLifecycleHandler is Test {
         stAztec = _stAztec;
         stakingManager = _stakingManager;
         rewardsAccumulator = _rewardsAccumulator;
-        withdrawalQueue = _withdrawalQueue;
         operator = _operator;
 
         ghost_rebalanceMonotonic = true;
@@ -682,7 +672,7 @@ contract OllaCoreLifecycleHandler is Test {
         _finalizedRequestIds[idx] = _finalizedRequestIds[_finalizedRequestIds.length - 1];
         _finalizedRequestIds.pop();
 
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         uint256 assetsExpected = request.assetsExpected;
 
         vault.claimRequestById(requestId);
@@ -715,8 +705,8 @@ contract OllaCoreLifecycleHandler is Test {
         uint256 i = 0;
         while (i < length) {
             uint256 reqId = _pendingRequestIds[i];
-            try withdrawalQueue.getRequest(reqId) returns (IWithdrawalQueue.WithdrawalRequest memory req) {
-                if (req.finalized && !req.claimed) {
+            try vault.getWithdrawalRequest(reqId) returns (IOllaVault.WithdrawalRequest memory req) {
+                if (req.finalized) {
                     _finalizedRequestIds.push(reqId);
                     _pendingRequestIds[i] = _pendingRequestIds[length - 1];
                     _pendingRequestIds.pop();
@@ -743,7 +733,6 @@ contract OllaCoreLifecycleInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreLifecycleHandler internal handler;
@@ -772,17 +761,11 @@ contract OllaCoreLifecycleInvariantTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setUnstakedToken(asset);
         address providerRewardsRecipient = makeAddr("lifecycle_providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
-
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         core.initialize(
             asset,
@@ -794,7 +777,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -802,9 +785,8 @@ contract OllaCoreLifecycleInvariantTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        handler = new OllaCoreLifecycleHandler(
-            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator
-        );
+        handler =
+            new OllaCoreLifecycleHandler(asset, core, vault, stAztec, stakingManager, rewardsAccumulator, operator);
 
         targetContract(address(handler));
     }
@@ -833,7 +815,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_FinalizedUnclaimedAssetsLeqBalance() external view {
-        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(30))));
+        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(4))));
         assertLe(finalizedUnclaimed, asset.balanceOf(address(vault)), "finalized unclaimed <= balance");
     }
 
@@ -879,7 +861,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsAccumulator public rewardsAccumulator;
-    WithdrawalQueue public withdrawalQueue;
     address public operator;
     address public governance;
 
@@ -932,7 +913,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsAccumulator _rewardsAccumulator,
-        WithdrawalQueue _withdrawalQueue,
         address _operator,
         address _governance
     ) {
@@ -942,7 +922,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
         stAztec = _stAztec;
         stakingManager = _stakingManager;
         rewardsAccumulator = _rewardsAccumulator;
-        withdrawalQueue = _withdrawalQueue;
         operator = _operator;
         governance = _governance;
 
@@ -1158,8 +1137,8 @@ contract OllaCoreProtocolPropertyHandler is Test {
         uint256 i = 0;
         while (i < length) {
             uint256 reqId = _pendingRequestIds[i];
-            try withdrawalQueue.getRequest(reqId) returns (IWithdrawalQueue.WithdrawalRequest memory req) {
-                if (req.finalized && !req.claimed) {
+            try vault.getWithdrawalRequest(reqId) returns (IOllaVault.WithdrawalRequest memory req) {
+                if (req.finalized) {
                     _finalizedRequestIds.push(reqId);
                     _pendingRequestIds[i] = _pendingRequestIds[length - 1];
                     _pendingRequestIds.pop();
@@ -1207,7 +1186,6 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreProtocolPropertyHandler internal handler;
@@ -1236,17 +1214,11 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setUnstakedToken(asset);
         address providerRewardsRecipient = makeAddr("protprop_providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
-
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         core.initialize(
             asset,
@@ -1258,7 +1230,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -1267,7 +1239,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         vault.unpause();
 
         handler = new OllaCoreProtocolPropertyHandler(
-            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator, governance
+            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, operator, governance
         );
 
         targetContract(address(handler));
@@ -1280,7 +1252,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     /// @notice asset.balanceOf(vault) >= bufferedAssets + _finalizedUnclaimedAssets
     function invariant_VaultSolvency() external view {
         IOllaCore.AccountingState memory accounting = core.accountingState();
-        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(30))));
+        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(4))));
         uint256 vaultBalance = asset.balanceOf(address(vault));
 
         assertGe(
@@ -1466,7 +1438,6 @@ contract OllaCoreCacheCoherenceHandler is Test {
     StAztec public stAztec;
     MockCacheCoherentStakingManager public stakingManager;
     MockRewardsAccumulator public rewardsAccumulator;
-    WithdrawalQueue public withdrawalQueue;
     address public operator;
     address public governance;
 
@@ -1479,7 +1450,6 @@ contract OllaCoreCacheCoherenceHandler is Test {
         StAztec _stAztec,
         MockCacheCoherentStakingManager _stakingManager,
         MockRewardsAccumulator _rewardsAccumulator,
-        WithdrawalQueue _withdrawalQueue,
         address _operator,
         address _governance
     ) {
@@ -1489,7 +1459,6 @@ contract OllaCoreCacheCoherenceHandler is Test {
         stAztec = _stAztec;
         stakingManager = _stakingManager;
         rewardsAccumulator = _rewardsAccumulator;
-        withdrawalQueue = _withdrawalQueue;
         operator = _operator;
         governance = _governance;
 
@@ -1589,7 +1558,6 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockCacheCoherentStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreCacheCoherenceHandler internal handler;
@@ -1621,17 +1589,11 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setUnstakedToken(asset);
         address providerRewardsRecipient = makeAddr("cc_providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
-
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         core.initialize(
             asset,
@@ -1643,7 +1605,7 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -1652,7 +1614,7 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
         vault.unpause();
 
         handler = new OllaCoreCacheCoherenceHandler(
-            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator, governance
+            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, operator, governance
         );
 
         targetContract(address(handler));

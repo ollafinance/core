@@ -15,11 +15,9 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MaliciousRewardsAccumulator } from "src/core/mocks/MaliciousRewardsAccumulator.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MaliciousSafetyModule } from "src/safetymodule/mocks/MaliciousSafetyModule.sol";
 import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
-import { MaliciousWithdrawalQueue } from "src/vault/mocks/MaliciousWithdrawalQueue.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
@@ -142,7 +140,6 @@ contract OllaCoreReentrancyTest is Test {
     MockStakingManager internal stakingManager;
     uint256 internal protocolFeeBP;
     uint256 internal treasuryFeeSplitBP;
-    MaliciousWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     address internal governance;
     MockRewardsAccumulator internal rewardsAccumulator;
@@ -171,7 +168,6 @@ contract OllaCoreReentrancyTest is Test {
         stakingManager = new MockStakingManager();
         rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(asset)), address(core));
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
-        withdrawalQueue = new MaliciousWithdrawalQueue();
 
         protocolFeeBP = 500;
         treasuryFeeSplitBP = 5_000;
@@ -186,7 +182,7 @@ contract OllaCoreReentrancyTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -194,7 +190,6 @@ contract OllaCoreReentrancyTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         alice = makeAddr("alice");
         bob = makeAddr("bob");
@@ -252,89 +247,9 @@ contract OllaCoreReentrancyTest is Test {
         vault.deposit(assets, alice, 0);
     }
 
-    /*//////////////////////////////////////////////////////////////
-                            REQUEST REDEEM
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_RequestRedeem_ReenteredFromQueue() external {
-        _deposit(alice, 10 * DECIMALS);
-
-        uint256 shares = 2 * DECIMALS;
-        withdrawalQueue.setReentry(
-            address(vault), abi.encodeWithSignature("requestRedeem(uint256,address,address)", shares, bob, alice)
-        );
-        withdrawalQueue.setReenterOnRequest(true);
-
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        vm.prank(alice);
-        vault.requestRedeem(shares, bob, alice);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                              CLAIM REQUEST
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_ClaimRequestById_ReenteredFromQueue() external {
-        _deposit(alice, 10 * DECIMALS);
-
-        uint256 shares = 2 * DECIMALS;
-        vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, bob, alice);
-
-        // Finalize the request so the claim path reaches the queue callback
-        vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max, type(uint256).max);
-
-        withdrawalQueue.setReentry(address(vault), abi.encodeCall(vault.claimRequestById, (requestId)));
-        withdrawalQueue.setReenterOnClaim(true);
-
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        vm.prank(bob);
-        vault.claimRequestById(requestId);
-    }
-
-    function test_ClaimRequestById_ReentrySeesRequestCleared() external {
-        _deposit(alice, 10 * DECIMALS);
-
-        uint256 shares = 2 * DECIMALS;
-        vm.prank(alice);
-        uint256 requestId = vault.requestRedeem(shares, bob, alice);
-
-        // Finalize the request so the claim path reaches the queue callback
-        vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max, type(uint256).max);
-
-        withdrawalQueue.setReentry(address(this), abi.encodeCall(this.assertRequestCleared, (bob, requestId)));
-        withdrawalQueue.setReenterOnClaim(true);
-
-        vm.prank(bob);
-        vault.claimRequestById(requestId);
-    }
-
-    function assertRequestCleared(address controller, uint256 requestId) external view {
-        uint256[] memory activeRequests = vault.activeRequestIds(controller);
-        require(activeRequests.length == 0, "request still active");
-        require(vault.requestOwner(requestId) == address(0), "request owner not cleared");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                               REBALANCE
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_Rebalance_ReenteredFromQueueFinalize() external {
-        _deposit(alice, 10 * DECIMALS);
-
-        uint256 shares = 2 * DECIMALS;
-        vm.prank(alice);
-        vault.requestRedeem(shares, bob, alice);
-
-        withdrawalQueue.setReentry(address(core), abi.encodeCall(core.rebalance, ()));
-        withdrawalQueue.setReenterOnFinalize(true);
-
-        vm.expectRevert();
-        vm.prank(governance);
-        core.rebalance();
-    }
+    // Queue-based reentrancy tests (request/claim/rebalance) were removed when WithdrawalQueue
+    // was folded into OllaVault: the merged paths make no external CALL with untrusted control
+    // flow, so there is no entrypoint left for the queue-mock reentry hooks to fire from.
 }
 
 contract OllaCoreHarvestReentrancyTest is Test {
@@ -355,7 +270,6 @@ contract OllaCoreHarvestReentrancyTest is Test {
     MockHarvestStakingManager internal stakingManager;
     uint256 internal protocolFeeBP;
     uint256 internal treasuryFeeSplitBP;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MaliciousRewardsAccumulator internal rewardsAccumulator;
     address internal governance;
@@ -381,7 +295,6 @@ contract OllaCoreHarvestReentrancyTest is Test {
         stakingManager = new MockHarvestStakingManager();
         rewardsAccumulator = new MaliciousRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         // Configure staking manager to mint rewards directly to rewards vault
         stakingManager.setRewardsToken(IERC20(address(asset)));
@@ -400,7 +313,7 @@ contract OllaCoreHarvestReentrancyTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -461,7 +374,6 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
     MaliciousSafetyModule internal safetyModule;
-    MockWithdrawalQueue internal withdrawalQueue;
     address internal governance;
     MockRewardsAccumulator internal rewardsAccumulator;
     address internal alice;
@@ -486,7 +398,6 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         stakingManager = new MockStakingManager();
         rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(asset)), address(core));
         safetyModule = new MaliciousSafetyModule(address(implementation), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         core.initialize(
             asset,
@@ -498,7 +409,7 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));

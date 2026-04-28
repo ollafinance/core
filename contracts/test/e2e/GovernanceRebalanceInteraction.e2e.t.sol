@@ -10,7 +10,6 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
@@ -47,7 +46,6 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
     OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
-    WithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     MockAccountingStakingManager internal stakingManager;
     MockRewardsAccumulator internal rewardsAccumulator;
@@ -111,12 +109,6 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
             7 days // maxAccountingDelay — generous to avoid liveness triggers during governance warps
         );
 
-        // ---- Deploy WithdrawalQueue (proxy) ----
-        WithdrawalQueue queueImpl = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), address(gov), 180_000);
-
         // ---- Configure mock staking manager ----
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
@@ -136,7 +128,7 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
         );
 
         // ---- Initialize OllaVault ----
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
+        vault.initialize(asset, stAztec, address(core), address(gov));
 
         // ---- Wire contracts ----
         vm.prank(address(gov));

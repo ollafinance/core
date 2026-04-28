@@ -18,7 +18,6 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 
 contract OllaCoreUpgradeMock is OllaCore {
     /*//////////////////////////////////////////////////////////////
@@ -67,7 +66,6 @@ contract OllaCoreUpgradeTest is Test {
     address internal governance;
     address internal alice;
     address internal bob;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -93,7 +91,6 @@ contract OllaCoreUpgradeTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
 
         protocolFeeBP = 500;
         treasuryFeeSplitBP = 5_000;
@@ -108,7 +105,7 @@ contract OllaCoreUpgradeTest is Test {
             rewardsAccumulator,
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
