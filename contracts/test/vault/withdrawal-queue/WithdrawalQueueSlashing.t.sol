@@ -38,12 +38,18 @@ contract WithdrawalQueueSlashingTest is Test {
     function setUp() public {
         admin = makeAddr("admin");
 
-        // Deploy real WithdrawalQueue behind UUPS proxy with this test contract as vault
+        // Deploy real WithdrawalQueue behind UUPS proxy with this test contract as vault.
+        // The test contract itself implements onWithdrawalFinalized below so the queue's
+        // per-request callback is satisfied.
         WithdrawalQueue implementation = new WithdrawalQueue();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         queue = WithdrawalQueue(address(proxy));
         queue.initialize(address(this), admin, 50_000);
     }
+
+    /// @notice No-op IFinalizationCallback hook so the real queue's callback succeeds when
+    ///         the test contract is registered as the vault.
+    function onWithdrawalFinalized(uint256, uint256) external { }
 
     /*//////////////////////////////////////////////////////////////
                                 HELPERS

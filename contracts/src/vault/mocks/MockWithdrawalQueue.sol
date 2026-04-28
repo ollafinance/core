@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
+import { IFinalizationCallback } from "src/vault/interfaces/IFinalizationCallback.sol";
 import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 /// @title MockWithdrawalQueue
@@ -97,6 +98,12 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
         override
         returns (uint256 used, uint256 finalizedCount, uint256 totalAdjusted)
     {
+        // Lazy-init: most test fixtures wire the OllaVault to point at this mock without
+        // also calling `initialize` here. Adopt the caller (the vault) on first finalize so
+        // the per-request callback can fire and `_claimableShares` stays consistent.
+        if (vault == address(0)) {
+            vault = msg.sender;
+        }
         uint256 requestTail = nextRequestId;
         uint256 upperBound = maxRequestId < requestTail ? maxRequestId : requestTail;
         return _finalizeWithdrawals(available, currentRate, upperBound);
@@ -164,6 +171,12 @@ contract MockWithdrawalQueue is IWithdrawalQueue {
             request.finalized = true;
             used += request.assetsExpected;
             ++finalizedCount;
+            // Defensive: many tests construct MockWithdrawalQueue without calling initialize,
+            // leaving `vault == address(0)`. Skip the callback in that case to preserve the
+            // pre-fold test pattern; production WithdrawalQueue has no such fallback.
+            if (vault != address(0)) {
+                IFinalizationCallback(vault).onWithdrawalFinalized(id, request.shares);
+            }
         }
         nextPendingId = uint64(id);
         if (totalPendingAssets >= used) {

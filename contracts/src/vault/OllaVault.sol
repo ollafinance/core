@@ -16,6 +16,7 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
+import { IFinalizationCallback } from "src/vault/interfaces/IFinalizationCallback.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
 import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
@@ -32,7 +33,8 @@ contract OllaVault is
     PausableUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuardTransient,
-    IOllaVault
+    IOllaVault,
+    IFinalizationCallback
 {
     using SafeERC20 for IERC20;
 
@@ -365,6 +367,17 @@ contract OllaVault is
 
     // solhint-enable function-max-lines
 
+    /// @inheritdoc IFinalizationCallback
+    /// @dev Called by the trusted WithdrawalQueue inside its finalization loop. Folding the
+    ///      per-controller claimable update into the queue's loop removes the previous outer
+    ///      loop in the vault that shared a gas budget with the queue's inner loop.
+    function onWithdrawalFinalized(uint256 requestId, uint256 shares) external override {
+        if (msg.sender != address(_modules.withdrawalQueue)) {
+            revert OllaVault__Unauthorized();
+        }
+        _claimableShares[_requestOwners[requestId]] += shares;
+    }
+
     /// @inheritdoc IOllaVault
     function mintFees(address treasury, uint256 treasuryShares, address provider, uint256 providerShares)
         external
@@ -682,7 +695,6 @@ contract OllaVault is
         // slither-disable-next-line timestamp,incorrect-equality
         if (queued == 0) return (0, 0);
 
-        uint256 prevPending = queue.nextUnfinalized();
         uint256 totalAdjusted;
         (finalizedAmount, finalizedCount, totalAdjusted) =
             queue.finalizeWithdrawals(availableAssets, currentRate, maxRequestId);
@@ -717,17 +729,8 @@ contract OllaVault is
             cumulativeSlashingAdjustments += totalAdjusted;
         }
 
-        // Update per-controller claimable shares for O(1) maxRedeem.
-        // slither-disable-start calls-loop
-        // Bounded by finalizedCount; same requests the queue already processed.
-        uint256 newPending = queue.nextUnfinalized();
-        for (uint256 id = prevPending; id < newPending; ++id) {
-            IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(id);
-            if (req.finalized) {
-                _claimableShares[_requestOwners[id]] += req.shares;
-            }
-        }
-        // slither-disable-end calls-loop
+        // Per-controller claimable shares are updated inline by the queue via
+        // onWithdrawalFinalized; no outer loop required here.
 
         // CORE_ROLE only; external call to trusted WithdrawalQueue.
         emit WithdrawalFinalized(availableAssets, finalizedAmount);

@@ -17,4 +17,8 @@ contract MockOllaCoreGovernance {
     function setOwner(address owner_) external {
         owner = owner_;
     }
+
+    /// @notice No-op IFinalizationCallback hook so this mock can stand in as the vault for
+    ///         WithdrawalQueue tests that exercise the per-request finalization callback.
+    function onWithdrawalFinalized(uint256, uint256) external { }
 }

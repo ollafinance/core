@@ -7,6 +7,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
+import { MockFinalizationCallback } from "src/vault/mocks/MockFinalizationCallback.sol";
 
 contract WithdrawalQueueGuardsTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -29,7 +30,10 @@ contract WithdrawalQueueGuardsTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function setUp() external {
-        vault = makeAddr("vault");
+        // Real WithdrawalQueue invokes vault.onWithdrawalFinalized per finalize, so the
+        // configured `vault` must be a contract implementing IFinalizationCallback.
+        vault = address(new MockFinalizationCallback());
+        vm.label(vault, "vault");
         admin = makeAddr("admin");
         alice = makeAddr("alice");
 

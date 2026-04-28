@@ -2,6 +2,7 @@
 pragma solidity 0.8.27;
 
 import { Address } from "@oz/utils/Address.sol";
+import { IFinalizationCallback } from "src/vault/interfaces/IFinalizationCallback.sol";
 import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { IMaliciousWithdrawalQueue } from "src/vault/mocks/IMaliciousWithdrawalQueue.sol";
 
@@ -140,6 +141,12 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
             _reentryTarget.functionCall(_reentryCalldata);
         }
 
+        // Lazy-init: tests may wire this mock as the queue without calling initialize. Adopt
+        // the caller (the vault) on first finalize so the per-request callback can fire.
+        if (vault == address(0)) {
+            vault = msg.sender;
+        }
+
         uint256 requestTail = nextRequestId;
         uint256 upperBound = maxRequestId < requestTail ? maxRequestId : requestTail;
         return _finalizeWithdrawals(available, currentRate, upperBound);
@@ -203,6 +210,11 @@ contract MaliciousWithdrawalQueue is IMaliciousWithdrawalQueue, IWithdrawalQueue
             request.finalized = true;
             used += request.assetsExpected;
             ++finalizedCount;
+            // Defensive: tests may construct without calling initialize, leaving vault == address(0).
+            // Skip in that case; production WithdrawalQueue requires the callback to fire.
+            if (vault != address(0)) {
+                IFinalizationCallback(vault).onWithdrawalFinalized(id, request.shares);
+            }
         }
         nextPendingId = uint64(id);
         if (totalPendingAssets >= used) {

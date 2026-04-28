@@ -6,6 +6,7 @@ import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
+import { IFinalizationCallback } from "src/vault/interfaces/IFinalizationCallback.sol";
 import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 /// @title WithdrawalQueue
@@ -288,6 +289,9 @@ contract WithdrawalQueue is
                     pendingShares_ -= request.shares;
                     request.finalized = true;
                     emit WithdrawalFinalized(currentId, 0);
+                    // Trusted, immutable vault; gated to onlyQueue on the receiving side.
+                    // slither-disable-next-line calls-loop,reentrancy-no-eth,reentrancy-benign
+                    IFinalizationCallback(vault).onWithdrawalFinalized(currentId, request.shares);
                     ++currentId;
                     continue;
                 }
@@ -304,6 +308,9 @@ contract WithdrawalQueue is
                 request.finalized = true;
                 ++finalizedCount;
                 emit WithdrawalFinalized(currentId, assetsExpected);
+                // Trusted, immutable vault; gated to onlyQueue on the receiving side.
+                // slither-disable-next-line calls-loop,reentrancy-no-eth,reentrancy-benign
+                IFinalizationCallback(vault).onWithdrawalFinalized(currentId, request.shares);
             }
 
             ++currentId;
