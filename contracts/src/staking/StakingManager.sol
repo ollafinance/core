@@ -11,7 +11,11 @@ import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol
 import { EnumerableSet } from "@oz/utils/structs/EnumerableSet.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
-import { IStakingManager, IStakingManagerRewardRollupInitializer } from "src/staking/interfaces/IStakingManager.sol";
+import {
+    IStakingManager,
+    IStakingManagerRewardRollupAdmin,
+    IStakingManagerRewardRollupInitializer
+} from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 
@@ -27,7 +31,8 @@ contract StakingManager is
     UUPSUpgradeable,
     ReentrancyGuardTransient,
     IStakingManager,
-    IStakingManagerRewardRollupInitializer
+    IStakingManagerRewardRollupInitializer,
+    IStakingManagerRewardRollupAdmin
 {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -182,7 +187,7 @@ contract StakingManager is
         _trackRewardRollup(rollupRegistry.getCanonicalRollup());
     }
 
-    /// @notice Initializes reward rollup tracking after an implementation upgrade.
+    /// @inheritdoc IStakingManagerRewardRollupInitializer
     function initializeRewardRollups() external override reinitializer(2) onlyRole(DEFAULT_ADMIN_ROLE) {
         _trackRewardRollup(rollupRegistry.getCanonicalRollup());
     }
@@ -282,13 +287,7 @@ contract StakingManager is
                 claimSucceeded = true;
                 harvested += claimed;
                 emit RewardsHarvestedFromRollup(rollupAddress, claimed);
-
-                try IAztecRollup(rollupAddress)
-                    .getSequencerRewards(address(rewardsAccumulator)) returns (uint256 remaining) {
-                    removeRollup = rollupAddress != canonicalRollup && remaining == 0;
-                } catch (bytes memory reason) {
-                    emit RewardRollupRewardReadFailed(rollupAddress, reason);
-                }
+                removeRollup = rollupAddress != canonicalRollup;
             } catch (bytes memory reason) {
                 emit RewardsHarvestFailed(reason);
             }
@@ -305,6 +304,23 @@ contract StakingManager is
             emit RewardsHarvested(harvested);
         }
         return harvested;
+    }
+
+    /// @inheritdoc IStakingManagerRewardRollupAdmin
+    function removeDrainedRewardRollup(address rollup) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (!_isRewardRollup[rollup]) {
+            revert StakingManager__RewardRollupNotTracked(rollup);
+        }
+        if (rollup == rollupRegistry.getCanonicalRollup()) {
+            revert StakingManager__CannotRemoveCanonicalRewardRollup(rollup);
+        }
+
+        uint256 rewards = IAztecRollup(rollup).getSequencerRewards(address(rewardsAccumulator));
+        if (rewards != 0) {
+            revert StakingManager__RewardRollupHasPendingRewards(rollup, rewards);
+        }
+
+        _removeRewardRollup(rollup);
     }
 
     // slither-disable-end reentrancy-no-eth
@@ -913,6 +929,20 @@ contract StakingManager is
         // slither-disable-next-line costly-loop
         delete _isRewardRollup[rollupAddress];
         emit RewardRollupRemoved(rollupAddress);
+    }
+
+    /// @notice Removes a tracked reward rollup by address.
+    /// @param rollupAddress The rollup address to remove.
+    function _removeRewardRollup(address rollupAddress) internal {
+        address[] storage rewardRollups = _rewardRollups;
+        uint256 length = rewardRollups.length;
+        for (uint256 i; i < length; ++i) {
+            if (rewardRollups[i] == rollupAddress) {
+                _removeRewardRollupAt(i);
+                return;
+            }
+        }
+        revert StakingManager__RewardRollupNotTracked(rollupAddress);
     }
 
     /// @notice Returns true if an exit is present and exitable.

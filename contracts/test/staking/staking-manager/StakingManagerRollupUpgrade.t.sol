@@ -2,6 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
@@ -393,19 +394,23 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(claimable, secondCanonicalRewards, "previous canonical should stay tracked after harvest sync");
     }
 
-    function test_HarvestRewards_RemovesLegacyRollupOnlyAfterRewardsZero() external {
+    function test_HarvestRewards_RemovesLegacyRollupAfterSuccessfulClaim() external {
+        uint256 legacyRewards = 7 ether;
+        _setRollupRewards(rollup, legacyRewards);
         rollupRegistry.setCanonicalRollup(address(rollupB));
 
         vm.prank(core);
-        stakingManager.harvestRewards();
+        uint256 harvested = stakingManager.harvestRewards();
 
-        _setRollupRewards(rollup, 7 ether);
+        assertEq(harvested, legacyRewards, "legacy rewards should be harvested");
+
+        _setRollupRewards(rollup, 5 ether);
         rollupRegistry.setCanonicalRollup(address(rollupC));
 
         vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, 0, "drained legacy rollup should have been pruned");
+        assertEq(claimable, 0, "successfully claimed legacy rollup should have been pruned");
     }
 
     function test_HarvestRewards_KeepsLegacyRollupWhenClaimFails() external {
@@ -428,25 +433,81 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(claimable, legacyRewards, "failed legacy claim should remain tracked");
     }
 
-    function test_HarvestRewards_KeepsLegacyRollupWhenPostClaimRewardQueryFails() external {
-        uint256 legacyRewards = 7 ether;
-        _setRollupRewards(rollup, legacyRewards);
+    function test_RemoveDrainedRewardRollup_RemovesLegacyRollupWithZeroRewards() external {
         rollupRegistry.setCanonicalRollup(address(rollupB));
-        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), true);
 
-        vm.prank(core);
-        uint256 harvested = stakingManager.harvestRewards();
+        vm.prank(defaultAdmin);
+        stakingManager.removeDrainedRewardRollup(address(rollup));
 
-        assertEq(harvested, legacyRewards, "claim should still succeed");
-
-        rollupRegistry.setCanonicalRollup(address(rollupC));
-        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), false);
         _setRollupRewards(rollup, 5 ether);
+        rollupRegistry.setCanonicalRollup(address(rollupC));
 
         vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, 5 ether, "legacy rollup should remain after failed post-claim read");
+        assertEq(claimable, 0, "governance-removed legacy rollup should not be tracked");
+    }
+
+    function test_RevertWhen_RemoveDrainedRewardRollup_HasPendingRewards() external {
+        uint256 legacyRewards = 7 ether;
+        _setRollupRewards(rollup, legacyRewards);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStakingManager.StakingManager__RewardRollupHasPendingRewards.selector, address(rollup), legacyRewards
+            )
+        );
+        vm.prank(defaultAdmin);
+        stakingManager.removeDrainedRewardRollup(address(rollup));
+    }
+
+    function test_RevertWhen_RemoveDrainedRewardRollup_CanonicalRollup() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStakingManager.StakingManager__CannotRemoveCanonicalRewardRollup.selector, address(rollup)
+            )
+        );
+        vm.prank(defaultAdmin);
+        stakingManager.removeDrainedRewardRollup(address(rollup));
+    }
+
+    function test_RevertWhen_RemoveDrainedRewardRollup_NotTracked() external {
+        vm.expectRevert(
+            abi.encodeWithSelector(IStakingManager.StakingManager__RewardRollupNotTracked.selector, address(rollupB))
+        );
+        vm.prank(defaultAdmin);
+        stakingManager.removeDrainedRewardRollup(address(rollupB));
+    }
+
+    function test_RevertWhen_RemoveDrainedRewardRollup_NonAdmin() external {
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, alice, stakingManager.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(alice);
+        stakingManager.removeDrainedRewardRollup(address(rollup));
+    }
+
+    function test_RemoveDrainedRewardRollup_KeepsRollupWhenRewardQueryFails() external {
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), true);
+
+        vm.expectRevert();
+        vm.prank(defaultAdmin);
+        stakingManager.removeDrainedRewardRollup(address(rollup));
+
+        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), false);
+        _setRollupRewards(rollup, 5 ether);
+        rollupRegistry.setCanonicalRollup(address(rollupC));
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, 5 ether, "failed cleanup read should leave legacy rollup tracked");
     }
 
     function test_HarvestRewards_NeverRemovesCurrentCanonicalRollupWhenZeroRewards() external {

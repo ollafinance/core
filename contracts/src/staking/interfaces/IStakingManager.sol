@@ -102,11 +102,6 @@ interface IStakingManager {
     /// @param rollup The removed rollup address.
     event RewardRollupRemoved(address indexed rollup);
 
-    /// @notice Emitted when a state-changing reward read from a rollup fails.
-    /// @param rollup The rollup that failed the read.
-    /// @param reason The low-level revert reason.
-    event RewardRollupRewardReadFailed(address indexed rollup, bytes reason);
-
     /// @notice Emitted when rewards are harvested from a specific rollup.
     /// @param rollup The rollup harvested from.
     /// @param amount The amount harvested.
@@ -166,6 +161,15 @@ interface IStakingManager {
 
     /// @notice Thrown when purgeFailedQueueEntry is called for an attester that is not a failed queue entry.
     error StakingManager__NotFailedQueueEntry(address attester);
+
+    /// @notice Thrown when a reward rollup is not tracked.
+    error StakingManager__RewardRollupNotTracked(address rollup);
+
+    /// @notice Thrown when attempting to remove the current canonical reward rollup.
+    error StakingManager__CannotRemoveCanonicalRewardRollup(address rollup);
+
+    /// @notice Thrown when attempting to remove a reward rollup that still has pending rewards.
+    error StakingManager__RewardRollupHasPendingRewards(address rollup, uint256 rewards);
 
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
@@ -304,4 +308,12 @@ interface IStakingManager {
 interface IStakingManagerRewardRollupInitializer {
     /// @notice Initializes reward rollup tracking after an implementation upgrade.
     function initializeRewardRollups() external;
+}
+
+/// @title IStakingManagerRewardRollupAdmin
+/// @notice Governance surface for reward rollup tracking cleanup.
+interface IStakingManagerRewardRollupAdmin {
+    /// @notice Removes a tracked non-canonical reward rollup after confirming it has no pending rewards.
+    /// @param rollup The rollup address to remove.
+    function removeDrainedRewardRollup(address rollup) external;
 }
