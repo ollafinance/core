@@ -404,11 +404,8 @@ contract StakingManager is
             if (rollupAddress == canonicalRollup) {
                 includedCanonical = true;
             }
-            try IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator)) returns (uint256 rewards) {
-                claimableRewards += rewards;
-            } catch {
-                continue;
-            }
+            unclaimedRewards =  IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator)) 
+            claimableRewards += unclaimedRewards
         }
 
         if (!includedCanonical) {
