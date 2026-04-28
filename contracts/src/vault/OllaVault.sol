@@ -196,10 +196,9 @@ contract OllaVault is
         // Pull shares to vault via transferFrom, consuming the permit-set allowance.
         // slither-disable-next-line reentrancy-benign
         IERC20(address(stAztecRef)).safeTransferFrom(msg.sender, address(this), shares);
-        uint256 assets;
-        (requestId, assets) = _executeRedeemRequest(msg.sender, controller, controller, shares, true);
+        (requestId,) = _executeRedeemRequest(msg.sender, controller, controller, shares, true);
 
-        emit RedeemRequest(controller, msg.sender, requestId, msg.sender, assets);
+        emit RedeemRequest(controller, msg.sender, requestId, msg.sender, shares);
         return requestId;
     }
 
@@ -314,10 +313,9 @@ contract OllaVault is
         }
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
 
-        uint256 assets;
-        (requestId, assets) = _executeRedeemRequest(owner, controller, controller, shares, false);
+        (requestId,) = _executeRedeemRequest(owner, controller, controller, shares, false);
 
-        emit RedeemRequest(controller, owner, requestId, msg.sender, assets);
+        emit RedeemRequest(controller, owner, requestId, msg.sender, shares);
         return requestId;
     }
 

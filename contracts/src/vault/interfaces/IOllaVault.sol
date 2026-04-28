@@ -61,9 +61,9 @@ interface IOllaVault {
     /// @param owner The source of the shares.
     /// @param requestId The withdrawal request id.
     /// @param sender The address that submitted the request.
-    /// @param assets The expected assets at request time.
+    /// @param shares The amount of shares being redeemed (per ERC-7540).
     event RedeemRequest(
-        address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 assets
+        address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 shares
     );
 
     /// @notice Emitted when buffered assets are reconciled with the actual balance.
