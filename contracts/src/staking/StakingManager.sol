@@ -404,11 +404,14 @@ contract StakingManager is
             if (rollupAddress == canonicalRollup) {
                 includedCanonical = true;
             }
+            if (!IAztecRollup(rollupAddress).isRewardsClaimable()) {
+                continue;
+            }
             uint256 unclaimedRewards = IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator));
             claimableRewards += unclaimedRewards;
         }
 
-        if (!includedCanonical) {
+        if (!includedCanonical && IAztecRollup(canonicalRollup).isRewardsClaimable()) {
             claimableRewards += IAztecRollup(canonicalRollup).getSequencerRewards(address(rewardsAccumulator));
         }
 

@@ -5,6 +5,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
@@ -348,17 +349,44 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(claimable, legacyRewards + canonicalRewards, "legacy plus canonical rewards should be summed");
     }
 
-    function test_GetClaimableRewards_SkipsRevertingLegacyRollup() external {
+    function test_GetClaimableRewards_SkipsRewardsWhenRollupNotClaimable() external {
+        uint256 legacyRewards = 7 ether;
         uint256 canonicalRewards = 11 ether;
-        _setRollupRewards(rollup, 7 ether);
-        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), true);
+        _setRollupRewards(rollup, legacyRewards);
+        rollup.setRewardsClaimable(false);
         rollupRegistry.setCanonicalRollup(address(rollupB));
         _setRollupRewards(rollupB, canonicalRewards);
 
         vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, canonicalRewards, "reverting legacy rollup should be skipped");
+        assertEq(claimable, canonicalRewards, "non-claimable legacy rewards should be skipped");
+    }
+
+    function test_GetClaimableRewards_SkipsUntrackedCanonicalWhenNotClaimable() external {
+        uint256 legacyRewards = 7 ether;
+        uint256 canonicalRewards = 11 ether;
+        _setRollupRewards(rollup, legacyRewards);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, canonicalRewards);
+        rollupB.setRewardsClaimable(false);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, legacyRewards, "non-claimable untracked canonical rewards should be skipped");
+    }
+
+    function test_RevertWhen_GetClaimableRewards_LegacyRewardReadReverts() external {
+        uint256 canonicalRewards = 11 ether;
+        _setRollupRewards(rollup, 7 ether);
+        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), true);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, canonicalRewards);
+
+        vm.expectRevert(IMockAztecRollup.MockAztecRollup__ClaimFailed.selector);
+        vm.prank(core);
+        stakingManager.getClaimableRewards();
     }
 
     function test_HarvestRewards_ClaimsFromLegacyAndCanonicalRollups() external {
