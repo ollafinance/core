@@ -303,13 +303,6 @@ interface IStakingManager {
     function stakingProviderRegistry() external view returns (IStakingProviderRegistry);
 }
 
-/// @title IStakingManagerRewardRollupInitializer
-/// @notice Upgrade initializer surface for reward rollup tracking.
-interface IStakingManagerRewardRollupInitializer {
-    /// @notice Initializes reward rollup tracking after an implementation upgrade.
-    function initializeRewardRollups() external;
-}
-
 /// @title IStakingManagerRewardRollupAdmin
 /// @notice Governance surface for reward rollup tracking cleanup.
 interface IStakingManagerRewardRollupAdmin {

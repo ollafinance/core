@@ -11,11 +11,7 @@ import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol
 import { EnumerableSet } from "@oz/utils/structs/EnumerableSet.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
-import {
-    IStakingManager,
-    IStakingManagerRewardRollupAdmin,
-    IStakingManagerRewardRollupInitializer
-} from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingManager, IStakingManagerRewardRollupAdmin } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 
@@ -31,7 +27,6 @@ contract StakingManager is
     UUPSUpgradeable,
     ReentrancyGuardTransient,
     IStakingManager,
-    IStakingManagerRewardRollupInitializer,
     IStakingManagerRewardRollupAdmin
 {
     using SafeERC20 for IERC20;
@@ -184,11 +179,6 @@ contract StakingManager is
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
 
-        _trackRewardRollup(rollupRegistry.getCanonicalRollup());
-    }
-
-    /// @inheritdoc IStakingManagerRewardRollupInitializer
-    function initializeRewardRollups() external override reinitializer(2) onlyRole(DEFAULT_ADMIN_ROLE) {
         _trackRewardRollup(rollupRegistry.getCanonicalRollup());
     }
 
