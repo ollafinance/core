@@ -277,7 +277,8 @@ contract StakingManager is
                 claimSucceeded = true;
                 harvested += claimed;
                 emit RewardsHarvestedFromRollup(rollupAddress, claimed);
-                removeRollup = rollupAddress != canonicalRollup;
+                uint256 remaining = IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator));
+                removeRollup = rollupAddress != canonicalRollup && remaining == 0;
             } catch (bytes memory reason) {
                 emit RewardsHarvestFailed(reason);
             }
@@ -411,12 +412,7 @@ contract StakingManager is
         }
 
         if (!includedCanonical) {
-            try IAztecRollup(canonicalRollup)
-                .getSequencerRewards(address(rewardsAccumulator)) returns (uint256 rewards) {
-                claimableRewards += rewards;
-            } catch {
-                return claimableRewards;
-            }
+            claimableRewards += IAztecRollup(canonicalRollup).getSequencerRewards(address(rewardsAccumulator));
         }
 
         return claimableRewards;
