@@ -168,6 +168,7 @@ contract OllaVaultViewsTest is Test {
     /// @notice maxDeposit returns zero when safety module is paused.
     function test_MaxDeposit_ReturnsZeroWhenSafetyModulePaused() external {
         safetyModule.pause();
+        safetyModule.mockSetDepositPaused(true);
 
         assertEq(vault.maxDeposit(alice), 0, "maxDeposit zero when SM paused");
     }

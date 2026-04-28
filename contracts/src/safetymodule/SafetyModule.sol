@@ -184,10 +184,12 @@ contract SafetyModule is AccessControl, ISafetyModule {
         }
 
         if (nextRate < oldRate) {
-            _checkRateDrop(oldRate, nextRate);
+            if (_checkRateDrop(oldRate, nextRate)) {
+                return;
+            }
         }
 
-        if (nextRate < highWaterMark) {
+        if (nextRate <= oldRate && nextRate < highWaterMark) {
             _checkRateDrop(highWaterMark, nextRate);
         }
     }
@@ -357,12 +359,20 @@ contract SafetyModule is AccessControl, ISafetyModule {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function _checkRateDrop(uint256 referenceRate, uint256 nextRate) internal {
+    function _checkRateDrop(uint256 referenceRate, uint256 nextRate) internal returns (bool triggered) {
         uint256 dropBps = (referenceRate - nextRate) * BPS_DENOMINATOR / referenceRate;
         // solhint-disable-next-line gas-strict-inequalities
         if (dropBps >= minRateDropBps) {
+            bool pausedBefore = paused;
+            ISafetyModule.BreakerReason reasonBefore = lastBreakerReason;
             _triggerBreaker(ISafetyModule.BreakerReason.RateDrop);
+            if (!pausedBefore || reasonBefore != ISafetyModule.BreakerReason.QueueRatio) {
+                rateHighWaterMark = nextRate;
+                emit RateHighWaterMarkUpdated(nextRate);
+            }
+            return true;
         }
+        return false;
     }
 
     /// @notice Pauses the module and emits the circuit breaker event if not already paused.
