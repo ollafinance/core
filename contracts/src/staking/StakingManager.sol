@@ -696,7 +696,10 @@ contract StakingManager is
                     _aggregateState.pendingUnstakeAmount = 0;
                 }
                 _pendingClaimAmount += pendingExit;
+
                 _removeAttester(attester);
+                emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                return;
             } else {
                 _reconcileExitingExitAmount(info, view_.exit.amount);
 
