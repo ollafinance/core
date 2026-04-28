@@ -735,13 +735,16 @@ contract OllaVault is
                     }
                 }
 
-                // Slashing reduced payout to zero; finalize without consuming liquidity
-                // so the queue advances and the (finalizedAmount == 0) == (finalizedCount == 0)
-                // invariant is preserved.
+                // Slashing reduced payout to zero; finalize without consuming liquidity but
+                // count the request — `finalizedCount` is the count of finalized requests,
+                // which includes zero-payout slashes. (Audit L-27: previously the count was
+                // not incremented here and the post-loop bidirectional invariant relied on
+                // that omission; both have been corrected.)
                 if (assetsExpected == 0) {
                     pendingShares_ -= request.shares;
                     request.finalized = true;
                     _claimableShares[_requestOwners[currentId]] += request.shares;
+                    ++finalizedCount;
                     emit WithdrawalRequestFinalized(currentId, 0);
                     ++currentId;
                     continue;
@@ -780,15 +783,19 @@ contract OllaVault is
             revert OllaVault__InsufficientBufferedAssets(finalizedAmount, buffered);
         }
 
-        // Consistency invariant: both must be zero or both non-zero.
+        // Consistency invariant: any liquidity consumed must correspond to at least one finalized
+        // request. The reverse is not true after L-27: a batch of all-slashed-to-zero requests
+        // legitimately finalizes with count > 0 and amount == 0.
         // slither-disable-next-line incorrect-equality
-        if ((finalizedAmount == 0) != (finalizedCount == 0)) {
+        if (finalizedAmount > 0 && finalizedCount == 0) {
             revert OllaVault__FinalizeInconsistent(finalizedAmount, finalizedCount);
         }
 
-        // Nothing finalized; short circuit before mutating buffered/cumulative state.
+        // Nothing materially happened (no liquidity moved, no slashing adjustment); short circuit
+        // before mutating buffered/cumulative state. We may still have advanced `_nextPendingId`
+        // and finalized zero-payout slashes — those writes were already committed above.
         // slither-disable-next-line incorrect-equality
-        if (finalizedAmount == 0 && totalAdjusted == 0) return (0, 0);
+        if (finalizedAmount == 0 && totalAdjusted == 0) return (0, finalizedCount);
 
         if (finalizedAmount > 0) {
             _bufferedAssets = buffered - finalizedAmount;
