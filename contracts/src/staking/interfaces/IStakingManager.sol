@@ -94,6 +94,24 @@ interface IStakingManager {
     /// @param reason The low-level revert reason.
     event RewardsHarvestFailed(bytes reason);
 
+    /// @notice Emitted when a rollup is added to sequencer reward tracking.
+    /// @param rollup The tracked rollup address.
+    event RewardRollupTracked(address indexed rollup);
+
+    /// @notice Emitted when a drained legacy rollup is removed from sequencer reward tracking.
+    /// @param rollup The removed rollup address.
+    event RewardRollupRemoved(address indexed rollup);
+
+    /// @notice Emitted when a state-changing reward read from a rollup fails.
+    /// @param rollup The rollup that failed the read.
+    /// @param reason The low-level revert reason.
+    event RewardRollupRewardReadFailed(address indexed rollup, bytes reason);
+
+    /// @notice Emitted when rewards are harvested from a specific rollup.
+    /// @param rollup The rollup harvested from.
+    /// @param amount The amount harvested.
+    event RewardsHarvestedFromRollup(address indexed rollup, uint256 amount);
+
     /// @notice Emitted when an attester is removed from the registry.
     /// @param attester The removed attester address.
     event AttesterRemoved(address indexed attester);
@@ -279,4 +297,11 @@ interface IStakingManager {
     /// @notice Returns the staking provider registry address.
     /// @return The staking provider registry contract.
     function stakingProviderRegistry() external view returns (IStakingProviderRegistry);
+}
+
+/// @title IStakingManagerRewardRollupInitializer
+/// @notice Upgrade initializer surface for reward rollup tracking.
+interface IStakingManagerRewardRollupInitializer {
+    /// @notice Initializes reward rollup tracking after an implementation upgrade.
+    function initializeRewardRollups() external;
 }

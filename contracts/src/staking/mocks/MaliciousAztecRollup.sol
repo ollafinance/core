@@ -52,6 +52,9 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @notice Whether claiming should fail for a sequencer/coinbase.
     mapping(address sequencer => bool shouldFail) public override claimShouldFail;
 
+    /// @notice Whether getSequencerRewards should fail for a sequencer/coinbase.
+    mapping(address sequencer => bool shouldFail) public override getRewardsShouldFail;
+
     /// @notice Rewards accrued per second when `tick` is called.
     uint256 public rewardRatePerSecond;
     /// @notice Last timestamp used for reward accrual.
@@ -322,6 +325,11 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
+    function setGetRewardsShouldFail(address _sequencer, bool _shouldFail) external override {
+        getRewardsShouldFail[_sequencer] = _shouldFail;
+    }
+
+    /// @inheritdoc IMockAztecRollup
     function setExitRecipient(address _attester, address _recipient) external override {
         if (_exits[_attester].exists) {
             _exits[_attester].recipientOrWithdrawer = _recipient;
@@ -396,6 +404,9 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @param _sequencer The sequencer address.
     /// @return The pending reward amount.
     function getSequencerRewards(address _sequencer) external view override returns (uint256) {
+        if (getRewardsShouldFail[_sequencer]) {
+            revert MockAztecRollup__ClaimFailed();
+        }
         return pendingRewards[_sequencer];
     }
 

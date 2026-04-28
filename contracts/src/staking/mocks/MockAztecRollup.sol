@@ -52,6 +52,8 @@ contract MockAztecRollup is IMockAztecRollup {
     mapping(address sequencer => uint256 rewards) public pendingRewards;
     /// @inheritdoc IMockAztecRollup
     mapping(address sequencer => bool shouldFail) public claimShouldFail;
+    /// @inheritdoc IMockAztecRollup
+    mapping(address sequencer => bool shouldFail) public getRewardsShouldFail;
 
     /// @notice Rewards accrued per second when `tick` is called.
     uint256 public rewardRatePerSecond;
@@ -285,6 +287,11 @@ contract MockAztecRollup is IMockAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
+    function setGetRewardsShouldFail(address _sequencer, bool _shouldFail) external override {
+        getRewardsShouldFail[_sequencer] = _shouldFail;
+    }
+
+    /// @inheritdoc IMockAztecRollup
     function setStake(address _attester, uint256 _amount, address _withdrawer) external override {
         stakes[_attester] = _amount;
         withdrawers[_attester] = _withdrawer;
@@ -360,6 +367,9 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function getSequencerRewards(address _sequencer) external view override returns (uint256) {
+        if (getRewardsShouldFail[_sequencer]) {
+            revert MockAztecRollup__ClaimFailed();
+        }
         return pendingRewards[_sequencer];
     }
 

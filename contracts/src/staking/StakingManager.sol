@@ -11,7 +11,7 @@ import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol
 import { EnumerableSet } from "@oz/utils/structs/EnumerableSet.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingManager, IStakingManagerRewardRollupInitializer } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 
@@ -26,7 +26,8 @@ contract StakingManager is
     AccessControlUpgradeable,
     UUPSUpgradeable,
     ReentrancyGuardTransient,
-    IStakingManager
+    IStakingManager,
+    IStakingManagerRewardRollupInitializer
 {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -87,11 +88,17 @@ contract StakingManager is
     /// @dev Tracks purged failed-entry refunds that can be swept without double-counting principal.
     uint256 private _pendingRefundAmount;
 
+    /// @dev Rollups still relevant for sequencer reward reads and harvesting.
+    address[] private _rewardRollups;
+
+    /// @dev Membership guard for _rewardRollups.
+    mapping(address rollup => bool tracked) private _isRewardRollup;
+
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[48] private __gap;
+    uint256[46] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -171,6 +178,13 @@ contract StakingManager is
         governanceUpgradeAuthority = defaultAdmin_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
+
+        _trackRewardRollup(rollupRegistry.getCanonicalRollup());
+    }
+
+    /// @notice Initializes reward rollup tracking after an implementation upgrade.
+    function initializeRewardRollups() external override reinitializer(2) onlyRole(DEFAULT_ADMIN_ROLE) {
+        _trackRewardRollup(rollupRegistry.getCanonicalRollup());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -251,18 +265,51 @@ contract StakingManager is
         return (received, exitAmount);
     }
 
+    // slither-disable-start calls-loop
+    // slither-disable-start costly-loop
+    // slither-disable-start reentrancy-no-eth
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyCore nonReentrant returns (uint256 harvested) {
-        (, IAztecRollup rollup) = _getRollup();
-        try rollup.claimSequencerRewards(rewardsAccumulator) returns (uint256 claimed) {
-            harvested = claimed;
-        } catch (bytes memory reason) {
-            emit RewardsHarvestFailed(reason);
-            return 0;
+        address canonicalRollup = _ensureCanonicalRewardRollup();
+        bool claimSucceeded = false;
+        uint256 length = _rewardRollups.length;
+
+        for (uint256 i; i < length;) {
+            address rollupAddress = _rewardRollups[i];
+            bool removeRollup = false;
+
+            try IAztecRollup(rollupAddress).claimSequencerRewards(rewardsAccumulator) returns (uint256 claimed) {
+                claimSucceeded = true;
+                harvested += claimed;
+                emit RewardsHarvestedFromRollup(rollupAddress, claimed);
+
+                try IAztecRollup(rollupAddress)
+                    .getSequencerRewards(address(rewardsAccumulator)) returns (uint256 remaining) {
+                    removeRollup = rollupAddress != canonicalRollup && remaining == 0;
+                } catch (bytes memory reason) {
+                    emit RewardRollupRewardReadFailed(rollupAddress, reason);
+                }
+            } catch (bytes memory reason) {
+                emit RewardsHarvestFailed(reason);
+            }
+
+            if (removeRollup) {
+                _removeRewardRollupAt(i);
+                --length;
+            } else {
+                ++i;
+            }
         }
-        emit RewardsHarvested(harvested);
+
+        if (claimSucceeded) {
+            emit RewardsHarvested(harvested);
+        }
         return harvested;
     }
+
+    // slither-disable-end reentrancy-no-eth
+    // slither-disable-end costly-loop
+    // slither-disable-end calls-loop
 
     /*//////////////////////////////////////////////////////////////
                         PERMISSIONLESS FUNCTIONS
@@ -339,9 +386,34 @@ contract StakingManager is
     /// @notice Internal helper to get the claimable rewards.
     /// @dev Internal helper to get the claimable rewards.
     /// @return claimableRewards The total rewards claimable to rewards recipient.
+    // slither-disable-next-line calls-loop
     function getClaimableRewards() external view override onlyCore returns (uint256 claimableRewards) {
-        (, IAztecRollup rollup) = _getRollup();
-        return rollup.getSequencerRewards(address(rewardsAccumulator));
+        address canonicalRollup = rollupRegistry.getCanonicalRollup();
+        bool includedCanonical = false;
+        uint256 length = _rewardRollups.length;
+
+        for (uint256 i; i < length; ++i) {
+            address rollupAddress = _rewardRollups[i];
+            if (rollupAddress == canonicalRollup) {
+                includedCanonical = true;
+            }
+            try IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator)) returns (uint256 rewards) {
+                claimableRewards += rewards;
+            } catch {
+                continue;
+            }
+        }
+
+        if (!includedCanonical) {
+            try IAztecRollup(canonicalRollup)
+                .getSequencerRewards(address(rewardsAccumulator)) returns (uint256 rewards) {
+                claimableRewards += rewards;
+            } catch {
+                return claimableRewards;
+            }
+        }
+
+        return claimableRewards;
     }
 
     /// @inheritdoc IStakingManager
@@ -809,6 +881,39 @@ contract StakingManager is
 
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
+
+    /// @notice Ensures the current canonical rollup is persisted for reward tracking.
+    /// @return canonicalRollup The current canonical rollup address.
+    function _ensureCanonicalRewardRollup() internal returns (address canonicalRollup) {
+        canonicalRollup = rollupRegistry.getCanonicalRollup();
+        _trackRewardRollup(canonicalRollup);
+        return canonicalRollup;
+    }
+
+    /// @notice Adds a rollup to reward tracking if absent.
+    /// @param rollupAddress The rollup address to track.
+    function _trackRewardRollup(address rollupAddress) internal {
+        if (_isRewardRollup[rollupAddress]) return;
+        _isRewardRollup[rollupAddress] = true;
+        _rewardRollups.push(rollupAddress);
+        emit RewardRollupTracked(rollupAddress);
+    }
+
+    /// @notice Removes a tracked reward rollup by index.
+    /// @param index The index to remove.
+    // slither-disable-next-line pess-multiple-storage-read
+    function _removeRewardRollupAt(uint256 index) internal {
+        address[] storage rewardRollups = _rewardRollups;
+        address rollupAddress = rewardRollups[index];
+        uint256 lastIndex = rewardRollups.length - 1;
+        if (index != lastIndex) {
+            rewardRollups[index] = rewardRollups[lastIndex];
+        }
+        rewardRollups.pop();
+        // slither-disable-next-line costly-loop
+        delete _isRewardRollup[rollupAddress];
+        emit RewardRollupRemoved(rollupAddress);
+    }
 
     /// @notice Returns true if an exit is present and exitable.
     /// @param view_ The attester view data.

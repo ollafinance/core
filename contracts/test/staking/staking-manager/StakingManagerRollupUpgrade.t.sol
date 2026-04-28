@@ -12,11 +12,18 @@ import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 /// @notice Tests that exiting attesters survive a rollup upgrade without phantom credits or stranded funds.
 contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
     MockAztecRollup internal rollupB;
+    MockAztecRollup internal rollupC;
 
     function setUp() public override {
         super.setUp();
         // Deploy a second rollup instance to simulate an upgrade
         rollupB = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
+        rollupC = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
+    }
+
+    function _setRollupRewards(MockAztecRollup targetRollup, uint256 amount) internal {
+        aztec.mint(address(targetRollup), amount);
+        targetRollup.setRewards(address(rewardsAccumulator), amount);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -299,5 +306,161 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match finalized amount");
         assertEq(received, ACTIVATION_THRESHOLD, "received should match transferred tokens");
         assertEq(aztec.balanceOf(core), coreBalanceBefore + ACTIVATION_THRESHOLD, "core gets the funds");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    ROLLUP UPGRADE -- LEGACY REWARDS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_GetClaimableRewards_IncludesStoredLegacyRollupAfterCanonicalChanges() external {
+        uint256 legacyRewards = 7 ether;
+        _setRollupRewards(rollup, legacyRewards);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, legacyRewards, "legacy rollup rewards should remain claimable");
+    }
+
+    function test_GetClaimableRewards_IncludesNewCanonicalBeforePersisted() external {
+        uint256 canonicalRewards = 11 ether;
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, canonicalRewards);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, canonicalRewards, "new canonical rewards should be read before sync");
+    }
+
+    function test_GetClaimableRewards_SumsLegacyAndCanonicalRewards() external {
+        uint256 legacyRewards = 7 ether;
+        uint256 canonicalRewards = 11 ether;
+        _setRollupRewards(rollup, legacyRewards);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, canonicalRewards);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, legacyRewards + canonicalRewards, "legacy plus canonical rewards should be summed");
+    }
+
+    function test_GetClaimableRewards_SkipsRevertingLegacyRollup() external {
+        uint256 canonicalRewards = 11 ether;
+        _setRollupRewards(rollup, 7 ether);
+        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), true);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, canonicalRewards);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, canonicalRewards, "reverting legacy rollup should be skipped");
+    }
+
+    function test_HarvestRewards_ClaimsFromLegacyAndCanonicalRollups() external {
+        uint256 legacyRewards = 7 ether;
+        uint256 canonicalRewards = 11 ether;
+        _setRollupRewards(rollup, legacyRewards);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, canonicalRewards);
+
+        vm.prank(core);
+        uint256 harvested = stakingManager.harvestRewards();
+
+        assertEq(harvested, legacyRewards + canonicalRewards, "should harvest all tracked rollup rewards");
+        assertEq(rollup.getSequencerRewards(address(rewardsAccumulator)), 0, "legacy rewards drained");
+        assertEq(rollupB.getSequencerRewards(address(rewardsAccumulator)), 0, "canonical rewards drained");
+    }
+
+    function test_HarvestRewards_TracksNewCanonicalRollupInStorage() external {
+        uint256 firstCanonicalRewards = 11 ether;
+        uint256 secondCanonicalRewards = 13 ether;
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, firstCanonicalRewards);
+
+        vm.prank(core);
+        stakingManager.harvestRewards();
+
+        rollupRegistry.setCanonicalRollup(address(rollupC));
+        _setRollupRewards(rollupB, secondCanonicalRewards);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, secondCanonicalRewards, "previous canonical should stay tracked after harvest sync");
+    }
+
+    function test_HarvestRewards_RemovesLegacyRollupOnlyAfterRewardsZero() external {
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.prank(core);
+        stakingManager.harvestRewards();
+
+        _setRollupRewards(rollup, 7 ether);
+        rollupRegistry.setCanonicalRollup(address(rollupC));
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, 0, "drained legacy rollup should have been pruned");
+    }
+
+    function test_HarvestRewards_KeepsLegacyRollupWhenClaimFails() external {
+        uint256 legacyRewards = 7 ether;
+        _setRollupRewards(rollup, legacyRewards);
+        rollup.setClaimShouldFail(address(rewardsAccumulator), true);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.prank(core);
+        uint256 harvested = stakingManager.harvestRewards();
+
+        assertEq(harvested, 0, "failed claim should not harvest");
+
+        rollupRegistry.setCanonicalRollup(address(rollupC));
+        rollup.setClaimShouldFail(address(rewardsAccumulator), false);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, legacyRewards, "failed legacy claim should remain tracked");
+    }
+
+    function test_HarvestRewards_KeepsLegacyRollupWhenPostClaimRewardQueryFails() external {
+        uint256 legacyRewards = 7 ether;
+        _setRollupRewards(rollup, legacyRewards);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), true);
+
+        vm.prank(core);
+        uint256 harvested = stakingManager.harvestRewards();
+
+        assertEq(harvested, legacyRewards, "claim should still succeed");
+
+        rollupRegistry.setCanonicalRollup(address(rollupC));
+        rollup.setGetRewardsShouldFail(address(rewardsAccumulator), false);
+        _setRollupRewards(rollup, 5 ether);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, 5 ether, "legacy rollup should remain after failed post-claim read");
+    }
+
+    function test_HarvestRewards_NeverRemovesCurrentCanonicalRollupWhenZeroRewards() external {
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.prank(core);
+        stakingManager.harvestRewards();
+
+        rollupRegistry.setCanonicalRollup(address(rollupC));
+        _setRollupRewards(rollupB, 11 ether);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, 11 ether, "zero-reward canonical should remain tracked after later upgrade");
     }
 }
