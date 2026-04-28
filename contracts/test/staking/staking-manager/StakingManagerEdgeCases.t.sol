@@ -4,10 +4,13 @@ pragma solidity >=0.8.27 <0.9.0;
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
+import { StdStorage, stdStorage } from "@forge-std/StdStorage.sol";
 
 /// @title StakingManagerEdgeCasesTest
 /// @notice Tests covering untested branches and functions in StakingManager.sol.
 contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
+    using stdStorage for StdStorage;
+
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -16,12 +19,11 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
     ///      The actual mapping key is keccak256(abi.encode(attester, ROLLUP_STAKES_MAPPING_SLOT)).
     uint256 internal constant ROLLUP_STAKES_MAPPING_SLOT = 1;
 
-    /// @dev Storage slot for StakingManager._aggregateState.stakedAmount (proxy slot 10).
-    ///      Layout: slot 9 = slashingDelta, slot 10 = stakedAmount, slot 11 = pendingUnstakeAmount.
-    uint256 internal constant STAKING_MANAGER_STAKED_AMOUNT_SLOT = 10;
+    /// @dev Offset from StakingManager._aggregateState.slashingDelta to stakedAmount.
+    uint256 internal constant STAKING_STATE_STAKED_AMOUNT_OFFSET = 1;
 
-    /// @dev Storage slot for StakingManager._aggregateState.pendingUnstakeAmount (proxy slot 11).
-    uint256 internal constant STAKING_MANAGER_PENDING_UNSTAKE_SLOT = 11;
+    /// @dev Offset from StakingManager._aggregateState.slashingDelta to pendingUnstakeAmount.
+    uint256 internal constant STAKING_STATE_PENDING_UNSTAKE_OFFSET = 2;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -289,7 +291,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         _setupActiveAttester();
 
         // Corrupt stakedAmount to 1 wei -- much less than ACTIVATION_THRESHOLD
-        vm.store(address(stakingManager), bytes32(STAKING_MANAGER_STAKED_AMOUNT_SLOT), bytes32(uint256(1)));
+        vm.store(address(stakingManager), _stakingStateSlot(STAKING_STATE_STAKED_AMOUNT_OFFSET), bytes32(uint256(1)));
 
         // Verify corruption
         IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
@@ -322,7 +324,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "should have 1 exiting attester");
 
         // Corrupt pendingUnstakeAmount to 1 wei
-        vm.store(address(stakingManager), bytes32(STAKING_MANAGER_PENDING_UNSTAKE_SLOT), bytes32(uint256(1)));
+        vm.store(address(stakingManager), _stakingStateSlot(STAKING_STATE_PENDING_UNSTAKE_OFFSET), bytes32(uint256(1)));
 
         IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
         assertEq(corrupted.pendingUnstakeAmount, 1, "corrupted pendingUnstakeAmount should be 1");
@@ -350,7 +352,7 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "should have 1 exiting attester");
 
         // Corrupt pendingUnstakeAmount to 1 wei
-        vm.store(address(stakingManager), bytes32(STAKING_MANAGER_PENDING_UNSTAKE_SLOT), bytes32(uint256(1)));
+        vm.store(address(stakingManager), _stakingStateSlot(STAKING_STATE_PENDING_UNSTAKE_OFFSET), bytes32(uint256(1)));
 
         IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
         assertEq(corrupted.pendingUnstakeAmount, 1, "corrupted pendingUnstakeAmount should be 1");
@@ -631,5 +633,11 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         // stakedAmount should remain the same (promotion does not change stakedAmount)
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stateAfter.stakedAmount, ACTIVATION_THRESHOLD * count, "stakedAmount unchanged after promotion");
+    }
+
+    function _stakingStateSlot(uint256 offset) internal returns (bytes32) {
+        return bytes32(
+            stdstore.target(address(stakingManager)).sig(stakingManager.getStakingState.selector).find() + offset
+        );
     }
 }

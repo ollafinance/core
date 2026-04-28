@@ -189,6 +189,11 @@ contract CircuitBreakerCascadesE2ETest is Test {
         vault.deposit(amount, depositor, 0);
     }
 
+    function _assertDepositAllowed(address depositor, uint256 amount) internal returns (uint256 shares) {
+        shares = _performDeposit(depositor, amount);
+        assertGt(shares, 0, "deposit should mint shares");
+    }
+
     /*//////////////////////////////////////////////////////////////
         TEST 3A: RATE DROP DURING REBALANCE PAUSES PROTOCOL
     //////////////////////////////////////////////////////////////*/
@@ -287,8 +292,8 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // --- Verify paused ---
         assertTrue(safetyModule.isPaused(), "should be paused after queue ratio breach");
 
-        // --- Verify deposit blocked ---
-        _assertDepositBlocked(bob, 10 * DECIMALS);
+        // Queue-ratio pauses keep deposits open so incoming liquidity can help clear withdrawals.
+        _assertDepositAllowed(bob, 10 * DECIMALS);
 
         // --- Recovery: guardian unpause ---
         vm.prank(guardian);
@@ -347,6 +352,9 @@ contract CircuitBreakerCascadesE2ETest is Test {
         _assertDepositBlocked(bob, 10 * DECIMALS);
 
         // --- Recovery: guardian unpause ---
+        IOllaCore.LatestReport memory staleReport = core.latestReport();
+        vm.prank(admin);
+        safetyModule.setRateHighWaterMark(staleReport.exchangeRate);
         vm.prank(guardian);
         safetyModule.unpause();
         assertFalse(safetyModule.isPaused(), "should be unpaused");
@@ -402,27 +410,27 @@ contract CircuitBreakerCascadesE2ETest is Test {
         _fullRebalance();
 
         assertTrue(safetyModule.isPaused(), "should be paused after first breaker (queue ratio)");
-        _assertDepositBlocked(bob, 10 * DECIMALS);
+        _assertDepositAllowed(bob, 10 * DECIMALS);
 
         // --- Guardian unpause after first breaker ---
         vm.prank(guardian);
         safetyModule.unpause();
         assertFalse(safetyModule.isPaused(), "should be unpaused after first recovery");
 
-        // --- Second rebalance triggers breaker again ---
-        // Keep slashingDelta at 10 (must be monotonically non-decreasing).
+        // The first pass still completed accounting after pausing, so the rate drop
+        // is already reflected in the latest report. A follow-up rebalance should not
+        // emit a second rate-drop event for the same accounting move.
+        vm.prank(admin);
+        safetyModule.setMaxQueueRatioBps(9_000);
 
         _warpPastCooldown();
         _fullRebalance();
+        assertFalse(safetyModule.isPaused(), "should not double-pause for the same rate drop");
 
-        assertTrue(safetyModule.isPaused(), "should be paused after second breaker");
-        _assertDepositBlocked(bob, 10 * DECIMALS);
-
-        // --- Final recovery: admin raises queue ratio threshold, guardian unpauses ---
+        // --- Final recovery: admin allows the new lower rate as the high-water mark, guardian unpauses ---
+        IOllaCore.LatestReport memory droppedReport = core.latestReport();
         vm.prank(admin);
-        safetyModule.setMaxQueueRatioBps(9_000);
-        vm.prank(guardian);
-        safetyModule.unpause();
+        safetyModule.setRateHighWaterMark(droppedReport.exchangeRate);
 
         // --- Protocol fully functional: verify all operations ---
         uint256 bobShares = _performDeposit(bob, 50 * DECIMALS);
@@ -499,7 +507,10 @@ contract CircuitBreakerCascadesE2ETest is Test {
         vm.prank(guardian);
         safetyModule.unpause();
 
-        // slashingDelta is cumulative — keep it at 2e18 (cannot decrease)
+        // slashingDelta is cumulative. Accept the lower rate as the new high-water mark
+        // so recovery does not immediately retrigger the cumulative rate-drop breaker.
+        vm.prank(admin);
+        safetyModule.setRateHighWaterMark(report.exchangeRate);
         _warpPastCooldown();
         _fullRebalance();
 
