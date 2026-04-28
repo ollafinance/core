@@ -1329,7 +1329,7 @@ contract OllaCore is
     function _computeNetFlows(IOllaCore.FlowCounters memory flows)
         internal
         pure
-        returns (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
+        returns (int256 netFlows, uint256 netDeposits, int256 netWithdrawals)
     {
         // Cumulative counter comparison; not a timestamp concern.
         // slither-disable-next-line timestamp
@@ -1338,17 +1338,21 @@ contract OllaCore is
             : 0;
         // Cumulative counter comparison; not a timestamp concern.
         // slither-disable-next-line timestamp
-        netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
+        uint256 rawWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
             ? flows.cumulativeWithdrawals - flows.latestReportCumulativeWithdrawals
             : 0;
-        // Subtract slashing adjustments that occurred since last report.
+        // Cumulative counter comparison; not a timestamp concern.
         // slither-disable-next-line timestamp
         uint256 adjustmentsSinceReport = flows.cumulativeSlashingAdjustments
                 > flows.latestReportCumulativeSlashingAdjustments
             ? flows.cumulativeSlashingAdjustments - flows.latestReportCumulativeSlashingAdjustments
             : 0;
-        netWithdrawals = netWithdrawals > adjustmentsSinceReport ? netWithdrawals - adjustmentsSinceReport : 0;
-        netFlows = SafeCast.toInt256(netDeposits) - SafeCast.toInt256(netWithdrawals);
+        // Signed effective withdrawals: when slashing adjustments exceed user withdrawals in a
+        // period, the excess flows through as negative netWithdrawals (positive contribution to
+        // netFlows) instead of being silently dropped via an unsigned clamp. The clamp would
+        // inflate gross rewards by exactly the dropped magnitude.
+        netWithdrawals = SafeCast.toInt256(rawWithdrawals) - SafeCast.toInt256(adjustmentsSinceReport);
+        netFlows = SafeCast.toInt256(netDeposits) - netWithdrawals;
         return (netFlows, netDeposits, netWithdrawals);
     }
 
