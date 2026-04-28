@@ -4,6 +4,7 @@ pragma solidity >=0.8.27 <0.9.0;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
@@ -23,7 +24,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
                     ROLLUP UPGRADE -- ACTIVE ROLLUP REWARDS
     //////////////////////////////////////////////////////////////*/
 
-    function test_GetClaimableRewards_ReadsOldActiveRollupAfterCanonicalChanges() external {
+    function test_GetClaimableRewards_ReadsOldRewardsRollupAfterCanonicalChanges() external {
         uint256 oldRewards = 11 ether;
         uint256 newRewards = 7 ether;
         rollup.setRewards(address(rewardsAccumulator), oldRewards);
@@ -33,11 +34,11 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, oldRewards, "claimable rewards should follow active rollup");
-        assertEq(stakingManager.activeRollup(), address(rollup), "active rollup should remain old rollup");
+        assertEq(claimable, oldRewards, "claimable rewards should follow rewards rollup");
+        assertEq(stakingManager.rewardsRollup(), address(rollup), "rewards rollup should remain old rollup");
     }
 
-    function test_HarvestRewards_ClaimsOldActiveRollupAfterCanonicalChanges() external {
+    function test_HarvestRewards_ClaimsOldRewardsRollupAfterCanonicalChanges() external {
         uint256 oldRewards = 11 ether;
         uint256 newRewards = 7 ether;
         rollup.setRewards(address(rewardsAccumulator), oldRewards);
@@ -47,22 +48,22 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         vm.prank(core);
         uint256 harvested = stakingManager.harvestRewards();
 
-        assertEq(harvested, oldRewards, "should harvest old active rollup rewards");
+        assertEq(harvested, oldRewards, "should harvest old rewards rollup rewards");
         assertEq(rollup.getSequencerRewards(address(rewardsAccumulator)), 0, "old rewards should be drained");
         assertEq(rollupB.getSequencerRewards(address(rewardsAccumulator)), newRewards, "new rewards untouched");
     }
 
-    function test_TransitionRollup_ClaimsOldRewardsAndUpdatesActiveRollup() external {
+    function test_TransitionRollup_ClaimsOldRewardsAndUpdatesRewardsRollup() external {
         uint256 oldRewards = 11 ether;
         rollup.setRewards(address(rewardsAccumulator), oldRewards);
         rollupRegistry.setCanonicalRollup(address(rollupB));
 
         vm.expectEmit(true, true, false, true, address(stakingManager));
-        emit ActiveRollupUpdated(address(rollup), address(rollupB), oldRewards);
+        emit RewardsRollupUpdated(address(rollup), address(rollupB), oldRewards);
         uint256 harvested = stakingManager.transitionRollup();
 
         assertEq(harvested, oldRewards, "should return harvested rewards");
-        assertEq(stakingManager.activeRollup(), address(rollupB), "active rollup should update");
+        assertEq(stakingManager.rewardsRollup(), address(rollupB), "rewards rollup should update");
         assertEq(rollup.getSequencerRewards(address(rewardsAccumulator)), 0, "old rewards should be drained");
     }
 
@@ -71,89 +72,23 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         stakingManager.transitionRollup();
     }
 
-    function test_RevertWhen_TransitionRollup_OldRewardClaimFails() external {
-        rollup.setRewards(address(rewardsAccumulator), 11 ether);
+    function test_TransitionRollup_UpdatesRewardsRollupWhenOldRewardClaimFails() external {
+        uint256 oldRewards = 11 ether;
+        rollup.setRewards(address(rewardsAccumulator), oldRewards);
         rollup.setClaimShouldFail(address(rewardsAccumulator), true);
         rollupRegistry.setCanonicalRollup(address(rollupB));
 
-        vm.expectRevert();
-        stakingManager.transitionRollup();
+        vm.expectEmit(false, false, false, true, address(stakingManager));
+        emit RewardsHarvestFailed(abi.encodeWithSelector(IMockAztecRollup.MockAztecRollup__ClaimFailed.selector));
+        uint256 harvested = stakingManager.transitionRollup();
 
-        assertEq(stakingManager.activeRollup(), address(rollup), "active rollup should not update");
+        assertEq(harvested, 0, "failed claim should harvest zero");
+        assertEq(stakingManager.rewardsRollup(), address(rollupB), "rewards rollup should still update");
+        assertEq(rollup.getSequencerRewards(address(rewardsAccumulator)), oldRewards, "old rewards remain recoverable");
     }
 
-    function test_RevertWhen_Stake_RollupTransitionPending() external {
-        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
-        vm.prank(providerAdmin);
-        stakingProviderRegistry.addKeysToProvider(keys);
-        aztec.mint(core, ACTIVATION_THRESHOLD);
+    function test_StakeRefreshAndUnstakeUseCanonicalRollupBeforeRewardsTransition() external {
         rollupRegistry.setCanonicalRollup(address(rollupB));
-
-        vm.startPrank(core);
-        aztec.approve(address(stakingManager), ACTIVATION_THRESHOLD);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingManager.StakingManager__RollupTransitionPending.selector, address(rollup), address(rollupB)
-            )
-        );
-        stakingManager.stake(ACTIVATION_THRESHOLD);
-        vm.stopPrank();
-    }
-
-    function test_RevertWhen_Unstake_RollupTransitionPending() external {
-        _setupActiveAttester();
-        rollupRegistry.setCanonicalRollup(address(rollupB));
-
-        vm.prank(core);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingManager.StakingManager__RollupTransitionPending.selector, address(rollup), address(rollupB)
-            )
-        );
-        stakingManager.unstake(ACTIVATION_THRESHOLD);
-    }
-
-    function test_RevertWhen_RefreshAttesterState_GeneralPath_RollupTransitionPending() external {
-        _setupActiveAttester();
-        rollupRegistry.setCanonicalRollup(address(rollupB));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingManager.StakingManager__RollupTransitionPending.selector, address(rollup), address(rollupB)
-            )
-        );
-        stakingManager.refreshAttesterState(_attesterAddresses(1));
-    }
-
-    function test_RevertWhen_PurgeFailedQueueEntry_RollupTransitionPending() external {
-        _setupStakedAttester();
-        address attester = _attesterAddresses(1)[0];
-        rollup.clearAttester(attester);
-        rollup.setStake(attester, 0, address(0));
-        rollupRegistry.setCanonicalRollup(address(rollupB));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingManager.StakingManager__RollupTransitionPending.selector, address(rollup), address(rollupB)
-            )
-        );
-        stakingManager.purgeFailedQueueEntry(attester);
-    }
-
-    function test_RevertWhen_CanStake_RollupTransitionPending() external {
-        rollupRegistry.setCanonicalRollup(address(rollupB));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingManager.StakingManager__RollupTransitionPending.selector, address(rollup), address(rollupB)
-            )
-        );
-        stakingManager.canStake(ACTIVATION_THRESHOLD);
-    }
-
-    function test_AfterTransition_StakeRefreshAndUnstakeUseNewRollup() external {
-        rollupRegistry.setCanonicalRollup(address(rollupB));
-        stakingManager.transitionRollup();
 
         IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
         vm.prank(providerAdmin);
@@ -172,6 +107,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         vm.prank(core);
         stakingManager.unstake(ACTIVATION_THRESHOLD);
         assertEq(rollupB.getExit(keys[0].attester).amount, ACTIVATION_THRESHOLD, "unstake should use new rollup");
+        assertEq(stakingManager.rewardsRollup(), address(rollup), "rewards rollup transition is independent");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -282,15 +218,6 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         aztec.mint(address(rollupB), ACTIVATION_THRESHOLD);
         rollupB.setStake(activeAttester, ACTIVATION_THRESHOLD, address(stakingManager));
         rollupRegistry.setCanonicalRollup(address(rollupB));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingManager.StakingManager__RollupTransitionPending.selector, address(rollup), address(rollupB)
-            )
-        );
-        stakingManager.refreshAttesterState(_attesterAddresses(2));
-
-        stakingManager.transitionRollup();
 
         // Refresh both attesters
         stakingManager.refreshAttesterState(_attesterAddresses(2));
@@ -408,15 +335,6 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
 
         // Deploy new rollup, update registry to point to it
         rollupRegistry.setCanonicalRollup(address(rollupB));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IStakingManager.StakingManager__RollupTransitionPending.selector, address(rollup), address(rollupB)
-            )
-        );
-        stakingManager.refreshAttesterState(_attesterAddresses(1));
-
-        stakingManager.transitionRollup();
 
         // On the new rollup, getAttesterView returns NONE (attester doesn't exist there)
         // refreshAttesterState: attester is Queued, rollup shows NONE -> stays Queued

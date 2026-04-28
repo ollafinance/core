@@ -109,11 +109,11 @@ interface IStakingManager {
     /// @param recoveredAmount The stake amount removed from stakedAmount accounting.
     event FailedQueueEntryPurged(address indexed attester, uint256 indexed recoveredAmount);
 
-    /// @notice Emitted when the active rollup is advanced after draining old rewards.
-    /// @param oldRollup The previously active rollup.
+    /// @notice Emitted when the reward rollup is advanced.
+    /// @param oldRollup The previous reward rollup.
     /// @param newRollup The new canonical rollup.
-    /// @param harvested The rewards harvested from the old rollup during transition.
-    event ActiveRollupUpdated(address indexed oldRollup, address indexed newRollup, uint256 harvested);
+    /// @param harvested The rewards harvested from the old reward rollup during transition.
+    event RewardsRollupUpdated(address indexed oldRollup, address indexed newRollup, uint256 harvested);
 
     /*//////////////////////////////////////////////////////////////
                                    ERRORS
@@ -155,14 +155,8 @@ interface IStakingManager {
     /// @notice Thrown when purgeFailedQueueEntry is called for an attester that is not a failed queue entry.
     error StakingManager__NotFailedQueueEntry(address attester);
 
-    /// @notice Thrown when a rollup-dependent operation is attempted before transition completes.
-    error StakingManager__RollupTransitionPending(address activeRollup, address canonicalRollup);
-
     /// @notice Thrown when there is no canonical rollup change to transition to.
     error StakingManager__NoRollupTransition();
-
-    /// @notice Thrown when old-rollup rewards remain after transition harvest.
-    error StakingManager__OldRollupRewardsStillClaimable(address oldRollup, uint256 claimableRewards);
 
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
@@ -234,8 +228,8 @@ interface IStakingManager {
     /// @param attester The attester address to purge.
     function purgeFailedQueueEntry(address attester) external;
 
-    /// @notice Drains rewards from the old active rollup and advances to the canonical rollup.
-    /// @return harvested The rewards harvested from the old active rollup.
+    /// @notice Best-effort drains rewards from the old reward rollup and advances to the canonical rollup.
+    /// @return harvested The rewards harvested from the old reward rollup.
     function transitionRollup() external returns (uint256 harvested);
 
     /*//////////////////////////////////////////////////////////////
@@ -299,7 +293,7 @@ interface IStakingManager {
     /// @return The staking provider registry contract.
     function stakingProviderRegistry() external view returns (IStakingProviderRegistry);
 
-    /// @notice Returns the active rollup used for rewards and active staking operations.
-    /// @return The active rollup address.
-    function activeRollup() external view returns (address);
+    /// @notice Returns the rollup used for reward accounting and harvesting.
+    /// @return The reward rollup address.
+    function rewardsRollup() external view returns (address);
 }

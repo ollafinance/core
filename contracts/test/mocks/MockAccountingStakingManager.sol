@@ -287,7 +287,7 @@ contract MockAccountingStakingManager is IStakingManager {
         return 0;
     }
 
-    function activeRollup() external pure override returns (address) {
+    function rewardsRollup() external pure override returns (address) {
         return address(0);
     }
 

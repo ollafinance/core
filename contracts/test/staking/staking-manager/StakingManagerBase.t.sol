@@ -55,7 +55,7 @@ abstract contract StakingManagerBaseTest is Test {
     event RewardsHarvestFailed(bytes reason);
     event QueueDripped(address indexed attester);
     event AttesterRemoved(address indexed attester);
-    event ActiveRollupUpdated(address indexed oldRollup, address indexed newRollup, uint256 harvested);
+    event RewardsRollupUpdated(address indexed oldRollup, address indexed newRollup, uint256 harvested);
 
     /*//////////////////////////////////////////////////////////////
                                  SETUP

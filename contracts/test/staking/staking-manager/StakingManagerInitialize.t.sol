@@ -18,7 +18,7 @@ contract StakingManagerInitializeTest is StakingManagerBaseTest {
     function test_Initialize_SetsConfig() external view {
         assertEq(address(stakingManager.stakingAsset()), address(aztec));
         assertEq(address(stakingManager.rollupRegistry()), address(rollupRegistry));
-        assertEq(stakingManager.activeRollup(), address(rollup));
+        assertEq(stakingManager.rewardsRollup(), address(rollup));
         assertEq(address(stakingManager.rewardsAccumulator()), address(rewardsAccumulator));
         assertEq(stakingManager.core(), core);
     }
