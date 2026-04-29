@@ -10,13 +10,11 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
@@ -138,7 +136,6 @@ contract OllaCoreRebalancePauseTest is Test {
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
@@ -171,15 +168,13 @@ contract OllaCoreRebalancePauseTest is Test {
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
         guardian = makeAddr("guardian");
-        withdrawalQueue = new MockWithdrawalQueue();
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -263,7 +258,6 @@ contract OllaCoreRebalancePauseTest is Test {
             OllaVault newVault,
             MockAccountingStakingManager newStakingManager,
             MockAztec newAsset,
-            MockWithdrawalQueue newWithdrawalQueue,
             MockRewardsAccumulator newRewardsAccumulator
         )
     {
@@ -282,8 +276,6 @@ contract OllaCoreRebalancePauseTest is Test {
         newStakingManager = new MockAccountingStakingManager();
         StAztec newStAztec = new StAztec(address(newVault));
         newRewardsAccumulator = new MockRewardsAccumulator(newAsset, address(newCore));
-        newWithdrawalQueue = new MockWithdrawalQueue();
-        newWithdrawalQueue.initialize(address(newVault), governance, 180_000);
 
         newStakingManager.setRewardsToken(newAsset);
         newStakingManager.setRewardsAccumulator(address(newRewardsAccumulator));
@@ -292,7 +284,7 @@ contract OllaCoreRebalancePauseTest is Test {
             newAsset, newStAztec, newStakingManager, 0, 5_000, governance, newRewardsAccumulator, safetyModuleAddress
         );
 
-        newVault.initialize(newAsset, newStAztec, address(newWithdrawalQueue), address(newCore), governance);
+        newVault.initialize(newAsset, newStAztec, address(newCore), governance);
 
         vm.prank(governance);
         newCore.setVault(address(newVault));
@@ -362,7 +354,7 @@ contract OllaCoreRebalancePauseTest is Test {
 
         _enterRebalanceInProgress();
 
-        stdstore.target(address(withdrawalQueue)).sig("totalPendingAssets()").checked_write(uint256(0));
+        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(uint256(0));
         stakingManager.setStakeReturnAmount(0);
         stakingManager.setActivatedAttesterCount(1);
 
@@ -516,7 +508,7 @@ contract OllaCoreRebalancePauseTest is Test {
             OllaCore revertingCore,
             OllaVault revertingVault,
             MockAccountingStakingManager revertingStakingManager,
-            MockAztec revertingAsset,,
+            MockAztec revertingAsset,
         ) = _deployWithSafetyModule(address(revertingModule));
 
         revertingAsset.mint(alice, 7 * DECIMALS);
@@ -873,7 +865,7 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(3 * DECIMALS, bob, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         uint256 assetsExpected = request.assetsExpected;
 
         // Finalize request before entering partial rebalance

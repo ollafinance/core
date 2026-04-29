@@ -3,11 +3,10 @@ pragma solidity 0.8.27;
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 /// @title IOllaVault
 /// @notice Interface for the user-facing ERC-7540/ERC-7575/ERC-4626 vault.
-/// @dev Holds assets, mints/burns stAztec, manages withdrawal requests,
+/// @dev Holds assets, mints/burns stAztec, manages withdrawal requests in-place,
 ///      and delegates pricing to OllaCore via cross-contract view calls.
 /// @author Olla Core contributors
 interface IOllaVault {
@@ -18,8 +17,21 @@ interface IOllaVault {
     struct VaultModules {
         IERC20 asset;
         IStAztec stAztec;
-        IWithdrawalQueue withdrawalQueue;
         address core;
+    }
+
+    /// @notice Per-request withdrawal state stored in-vault.
+    /// @dev `recipient` was previously a separate field; it is now expressed via the
+    ///      controller/owner mapping (`requestOwner(id)`) and used as the default
+    ///      claim receiver when no override is supplied. `claimed` was retired
+    ///      together with the dedicated `AlreadyClaimed` revert: storage is deleted
+    ///      on claim, so a "claimed" request is observably the same as a non-existent
+    ///      one (zero owner, missing struct).
+    struct WithdrawalRequest {
+        bool finalized;
+        uint256 shares;
+        uint256 assetsExpected;
+        uint256 rate;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -34,21 +46,37 @@ interface IOllaVault {
     /// @param shares The shares minted.
     event Deposit(address indexed caller, address indexed recipient, uint256 assets, uint256 shares);
 
-    /// @notice Emitted when a withdrawal is claimed via queue.
+    /// @notice Emitted when a withdrawal request is enqueued.
+    /// @param id The request id.
+    /// @param controller The request controller (also the default claim receiver).
+    /// @param shares The shares burned for the request.
+    /// @param assetsExpected The assets expected when finalized.
+    /// @param rate The exchange rate locked at request time.
+    event WithdrawalRequested(
+        uint256 indexed id, address indexed controller, uint256 shares, uint256 assetsExpected, uint256 rate
+    );
+
+    /// @notice Emitted when a single withdrawal request transitions to finalized.
+    /// @param id The request id.
+    /// @param assets The assets allocated for this finalized request (post-adjustment).
+    event WithdrawalRequestFinalized(uint256 indexed id, uint256 assets);
+
+    /// @notice Emitted when a withdrawal request's payout is adjusted due to slashing.
+    /// @param id The request id.
+    /// @param originalAmount The original assets expected at request time.
+    /// @param adjustedAmount The adjusted payout after applying the post-slash rate.
+    event WithdrawalAdjusted(uint256 indexed id, uint256 originalAmount, uint256 adjustedAmount);
+
+    /// @notice Emitted when a withdrawal is claimed.
     /// @param requestId Withdrawal request id.
     /// @param recipient Recipient address.
     /// @param assets Assets claimed.
     event WithdrawalClaimed(uint256 requestId, address recipient, uint256 assets);
 
-    /// @notice Emitted when withdrawals are finalized.
-    /// @param available Available assets.
-    /// @param used Used assets.
+    /// @notice Emitted when a finalize batch completes.
+    /// @param available Available assets passed in.
+    /// @param used Assets consumed by the batch.
     event WithdrawalFinalized(uint256 available, uint256 used);
-
-    /// @notice Emitted when the withdrawal queue gas threshold is updated.
-    /// @param oldThreshold The previous gas threshold.
-    /// @param newThreshold The new gas threshold.
-    event QueueGasThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
 
     /// @notice Emitted when an operator is set or removed for a controller (ERC-7540).
     /// @param controller The address of the controller.
@@ -99,9 +127,6 @@ interface IOllaVault {
     /// @notice Thrown when a zero address is provided.
     error OllaVault__ZeroAddress(string param);
 
-    /// @notice Thrown when queue request ids are inconsistent.
-    error OllaVault__UnexpectedRequestId(uint256 expected, uint256 actual);
-
     /// @notice Thrown when a deposit exceeds the configured cap.
     error OllaVault__DepositCapExceeded(uint256 assets, uint256 totalAssets);
 
@@ -129,14 +154,8 @@ interface IOllaVault {
     /// @notice Thrown when buffered assets do not match the vault balance.
     error OllaVault__BufferedBalanceMismatch(uint256 expected, uint256 actual);
 
-    /// @notice Thrown when claimed assets don't match expected.
-    error OllaVault__ClaimAssetsMismatch(uint256 requestId, uint256 expected, uint256 actual);
-
     /// @notice Thrown when vault has insufficient buffer for a transfer.
     error OllaVault__InsufficientBuffer(uint256 requested, uint256 available);
-
-    /// @notice Thrown when previewed and finalized amounts mismatch.
-    error OllaVault__FinalizeAmountMismatch(uint256 previewed, uint256 finalized);
 
     /// @notice Thrown when finalized amounts are inconsistent with count.
     error OllaVault__FinalizeInconsistent(uint256 finalizedAmount, uint256 finalizedCount);
@@ -157,16 +176,9 @@ interface IOllaVault {
     /// @notice Initializes the vault.
     /// @param asset_ The underlying Aztec asset.
     /// @param stAztec_ The stAztec share token.
-    /// @param withdrawalQueue_ The withdrawal queue module address.
     /// @param core_ The OllaCore contract address (for pricing and safetyModule).
     /// @param governanceContract_ The OllaGovernance contract address (set as owner).
-    function initialize(
-        IERC20 asset_,
-        IStAztec stAztec_,
-        address withdrawalQueue_,
-        address core_,
-        address governanceContract_
-    ) external;
+    function initialize(IERC20 asset_, IStAztec stAztec_, address core_, address governanceContract_) external;
 
     /// @notice Deposits assets and mints stAztec shares (Olla-native with slippage).
     /// @param assets The amount of assets to deposit.
@@ -274,6 +286,9 @@ interface IOllaVault {
     function receiveUnstaked(uint256 amount) external;
 
     /// @notice Finalizes pending withdrawal requests up to, but not including, `maxRequestId`.
+    /// @dev The loop is bounded only by `maxRequestId`. The previous `gasleft()` heuristic is gone:
+    ///      with finalization fully internal there is no longer a cross-contract loop sharing a gas
+    ///      budget, and `maxRequestId` is the caller-controlled explicit batch cap.
     /// @param availableAssets Max assets to use for finalization.
     /// @param currentRate The current exchange rate for slashing adjustment.
     /// @param maxRequestId The exclusive request id upper bound for this finalization pass.
@@ -307,10 +322,6 @@ interface IOllaVault {
     /// @notice Reconciles buffered assets with the actual balance.
     /// @return delta The amount added to buffered assets.
     function reconcileBufferedAssets() external returns (uint256 delta);
-
-    /// @notice Updates the gas threshold used by the withdrawal queue's finalization loop.
-    /// @param threshold New gas threshold (must be > 0 and <= MAX_GAS_THRESHOLD).
-    function setQueueGasThreshold(uint256 threshold) external;
 
     /// @notice Recovers stAztec sent directly to the vault.
     /// @param recipient The recipient of the recovered stAztec (defaults to governance if zero).
@@ -433,17 +444,18 @@ interface IOllaVault {
     /// @return The cumulative slashing adjustments.
     function cumulativeSlashingAdjustments() external view returns (uint256);
 
-    /// @notice Returns the withdrawal queue module address.
-    /// @return The withdrawal queue address.
-    function withdrawalQueue() external view returns (address);
-
-    /// @notice Returns the next withdrawal request id that will be assigned by the queue.
+    /// @notice Returns the next withdrawal request id that will be assigned.
     /// @return requestId The next withdrawal request id.
     function nextWithdrawalRequestId() external view returns (uint256 requestId);
 
     /// @notice Returns the next withdrawal request id that has not yet been finalized.
     /// @return requestId The next unfinalized withdrawal request id.
     function nextUnfinalizedWithdrawalRequestId() external view returns (uint256 requestId);
+
+    /// @notice Returns the full state of a withdrawal request.
+    /// @param requestId The withdrawal request id.
+    /// @return request The request struct.
+    function getWithdrawalRequest(uint256 requestId) external view returns (WithdrawalRequest memory request);
 
     /// @notice Returns the safety module address (reads canonical reference from Core).
     /// @return The safety module address.

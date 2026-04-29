@@ -13,7 +13,6 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -38,7 +37,6 @@ contract OllaCoreRebalanceFuzzHandler is Test {
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsAccumulator public rewardsAccumulator;
-    MockWithdrawalQueue public withdrawalQueue;
     address public operator;
     address public governance;
 
@@ -66,7 +64,6 @@ contract OllaCoreRebalanceFuzzHandler is Test {
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsAccumulator _rewardsAccumulator,
-        MockWithdrawalQueue _withdrawalQueue,
         address _operator,
         address _governance
     ) {
@@ -76,7 +73,6 @@ contract OllaCoreRebalanceFuzzHandler is Test {
         stAztec = _stAztec;
         stakingManager = _stakingManager;
         rewardsAccumulator = _rewardsAccumulator;
-        withdrawalQueue = _withdrawalQueue;
         operator = _operator;
         governance = _governance;
 
@@ -180,7 +176,6 @@ contract OllaCoreRebalanceFuzzTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreRebalanceFuzzHandler internal handler;
@@ -207,7 +202,6 @@ contract OllaCoreRebalanceFuzzTest is Test {
         governance = address(new MockOllaGovernance());
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        withdrawalQueue = new MockWithdrawalQueue();
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
@@ -227,7 +221,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
             address(safetyModule)
         );
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -241,7 +235,7 @@ contract OllaCoreRebalanceFuzzTest is Test {
         operator = makeAddr("operator");
 
         handler = new OllaCoreRebalanceFuzzHandler(
-            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator, governance
+            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, operator, governance
         );
 
         targetContract(address(handler));

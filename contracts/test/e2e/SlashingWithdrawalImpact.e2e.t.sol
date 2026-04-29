@@ -6,7 +6,6 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { E2EBaseWithRealStaking } from "./E2EBaseWithRealStaking.sol";
 
 /// @title SlashingWithdrawalImpactE2E
@@ -160,7 +159,7 @@ contract SlashingWithdrawalImpactE2E is E2EBaseWithRealStaking {
 
         // 3. Request redeem of all shares
         uint256 requestId = _requestRedeem(alice, shares);
-        IWithdrawalQueue.WithdrawalRequest memory reqBefore = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqBefore = vault.getWithdrawalRequest(requestId);
         assertEq(reqBefore.assetsExpected, depositAmount, "Request should expect full deposit back");
 
         // 4. Slash attester1 by 50%
@@ -196,7 +195,7 @@ contract SlashingWithdrawalImpactE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 7. Withdrawal must be finalized after rebalance cycles
-        IWithdrawalQueue.WithdrawalRequest memory reqAfter = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqAfter = vault.getWithdrawalRequest(requestId);
         assertTrue(reqAfter.finalized, "Withdrawal request must be finalized after rebalance");
 
         // 8. Claim the withdrawal
@@ -258,8 +257,8 @@ contract SlashingWithdrawalImpactE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 7. Check withdrawal adjustments
-        IWithdrawalQueue.WithdrawalRequest memory reqA = withdrawalQueue.getRequest(requestIdA);
-        IWithdrawalQueue.WithdrawalRequest memory reqB = withdrawalQueue.getRequest(requestIdB);
+        IOllaVault.WithdrawalRequest memory reqA = vault.getWithdrawalRequest(requestIdA);
+        IOllaVault.WithdrawalRequest memory reqB = vault.getWithdrawalRequest(requestIdB);
 
         // Both requests must be finalized
         assertTrue(reqA.finalized, "Alice's withdrawal request must be finalized after rebalance");
@@ -274,7 +273,7 @@ contract SlashingWithdrawalImpactE2E is E2EBaseWithRealStaking {
         );
 
         // Verify queue accounting is consistent
-        uint256 pendingAssets = withdrawalQueue.totalPendingAssets();
+        uint256 pendingAssets = vault.pendingWithdrawalAssets();
         // All requests should be finalized, pending should be zero
         assertEq(pendingAssets, 0, "All pending assets should be cleared after finalization");
     }

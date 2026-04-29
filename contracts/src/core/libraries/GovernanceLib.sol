@@ -37,7 +37,6 @@ library GovernanceLib {
     }
 
     /// @notice Propagates gas threshold to staking manager.
-    /// @dev WithdrawalQueue gas threshold is set separately by governance via DEFAULT_ADMIN_ROLE.
     /// @param modules The CoreModules storage reference.
     /// @param newThreshold The new gas threshold.
     function propagateGasThreshold(IOllaCore.CoreModules storage modules, uint256 newThreshold) external {

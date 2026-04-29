@@ -15,7 +15,6 @@ import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MaliciousAztec } from "src/staking/mocks/MaliciousAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
@@ -40,7 +39,6 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
     ERC1967Proxy internal vaultProxy;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
@@ -66,7 +64,6 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         stakingManager = new MockStakingManager();
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(implementation), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         alice = makeAddr("alice");
     }
@@ -87,7 +84,7 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -95,8 +92,6 @@ contract OllaCoreReentrancyGuardProxyTest is Test {
         core.unpause();
         vm.prank(governance);
         vault.unpause();
-
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
     }
 
     /*//////////////////////////////////////////////////////////////

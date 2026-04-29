@@ -71,7 +71,6 @@ contract PrintGovernanceRoles is BaseScript {
         address stakingManagerProxy = _tryReadDeployment(env, "StakingManagerProxy");
         address stakingProviderRegistryProxy = _tryReadDeployment(env, "StakingProviderRegistryProxy");
         address rewardsAccumulatorProxy = _tryReadDeployment(env, "RewardsAccumulatorProxy");
-        address withdrawalQueueProxy = _tryReadDeployment(env, "WithdrawalQueueProxy");
         address safetyModule = _tryReadDeployment(env, "SafetyModule");
 
         _logCandidate("deployment.deployer", deployer, gov, proposerRole, executorRole, cancellerRole, defaultAdminRole);
@@ -126,15 +125,6 @@ contract PrintGovernanceRoles is BaseScript {
         _logCandidate(
             "address.RewardsAccumulatorProxy",
             rewardsAccumulatorProxy,
-            gov,
-            proposerRole,
-            executorRole,
-            cancellerRole,
-            defaultAdminRole
-        );
-        _logCandidate(
-            "address.WithdrawalQueueProxy",
-            withdrawalQueueProxy,
             gov,
             proposerRole,
             executorRole,

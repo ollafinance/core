@@ -6,7 +6,6 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { RewardsAccumulator } from "src/core/RewardsAccumulator.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -32,7 +31,6 @@ contract OllaCoreRebalanceRealStakingManager is Test {
     StAztec internal stAztec;
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
-    WithdrawalQueue internal withdrawalQueue;
     RewardsAccumulator internal rewardsAccumulator;
     SafetyModule internal safetyModule;
     MockAztecRollup internal mockRollup;
@@ -58,10 +56,6 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         stAztec = new StAztec(address(vault));
 
         // Deploy WithdrawalQueue
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         // Deploy RewardsAccumulator
         RewardsAccumulator rewardsImplementation = new RewardsAccumulator();
@@ -110,7 +104,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         // Initialize OllaVault
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));

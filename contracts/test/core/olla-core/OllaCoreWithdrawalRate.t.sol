@@ -10,7 +10,6 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -40,7 +39,6 @@ contract OllaCoreWithdrawalRateTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -71,7 +69,6 @@ contract OllaCoreWithdrawalRateTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
@@ -80,7 +77,7 @@ contract OllaCoreWithdrawalRateTest is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -168,7 +165,7 @@ contract OllaCoreWithdrawalRateTest is Test {
 
         // Since there are no staking operations and buffer covers the request,
         // verify the finalization happened (check that the request was processed)
-        uint256 nextPending = withdrawalQueue.nextPendingId();
+        uint256 nextPending = uint64(vault.nextUnfinalizedWithdrawalRequestId());
         assertGt(nextPending, 1, "Withdrawal should have been finalized during rebalance");
 
         // The rate passed to finalizeWithdrawals should equal exposedWithdrawalRate

@@ -17,7 +17,6 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
@@ -49,7 +48,6 @@ contract OllaCoreInitTest is Test {
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
@@ -75,14 +73,13 @@ contract OllaCoreInitTest is Test {
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -105,7 +102,6 @@ contract OllaCoreInitTest is Test {
         assertEq(core.stAztec(), address(stAztec), "stAztec set");
         assertEq(core.stakingManager(), address(stakingManager), "staking manager set");
         assertEq(core.owner(), governance, "owner set");
-        assertEq(vault.withdrawalQueue(), address(withdrawalQueue), "withdrawal queue set");
         assertEq(core.rewardsAccumulator(), address(rewardsAccumulator), "rewards vault set");
         assertEq(core.safetyModule(), address(safetyModule), "safety module set");
         assertEq(core.targetBufferedAssets(), 0, "target buffered assets init");

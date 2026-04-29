@@ -15,7 +15,6 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 
 contract ReconcileSafetyModule is ISafetyModule {
@@ -184,7 +183,6 @@ contract OllaCoreReconcileTest is Test {
     MockAccountingStakingManager internal stakingManager;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
-    MockWithdrawalQueue internal withdrawalQueue;
     address internal governance;
     address internal operator;
     address internal alice;
@@ -210,11 +208,10 @@ contract OllaCoreReconcileTest is Test {
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
         operator = makeAddr("operator");
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));

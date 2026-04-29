@@ -45,7 +45,6 @@ contract LocalConfig is ConfigHelper {
             guardian: deployer,
             timelockMinDelay: timelockDuration,
             // Satellite addresses - populated during deployment
-            withdrawalQueue: deployer,
             rewardsAccumulator: deployer,
             safetyModule: deployer
         });
