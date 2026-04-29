@@ -656,7 +656,11 @@ contract OllaCore is
         safetyModuleRef.checkAccountingLiveness();
 
         (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
-        uint256 currentRewards = _cumulativeRewards + _modules.stakingManager.getClaimableRewards();
+        // Include the unrecorded RewardsAccumulator balance: out-of-band `claimSequencerRewards`
+        // calls move rollup-side rewards into the accumulator without updating `_cumulativeRewards`,
+        // so omitting this term would understate the snapshot until the next harvest.
+        uint256 currentRewards =
+            _cumulativeRewards + _modules.stakingManager.getClaimableRewards() + _getRewardsAccumulatorBalance();
 
         _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
         // slither-disable-end reentrancy-events
@@ -1051,16 +1055,20 @@ contract OllaCore is
         IOllaCore.CoreModules memory modules = _modules;
         uint256 cumulativeRewards = _cumulativeRewards;
         uint256 claimableRewards = modules.stakingManager.getClaimableRewards();
+        uint256 rewardsAccumulatorBalance = modules.rewardsAccumulator.balance();
 
         uint256 latestReportRewards = _latestReport.rewardsSnapshot;
-        uint256 currentRewards = cumulativeRewards + claimableRewards;
+        // See `_updateAccountingInternal`: include unrecorded RewardsAccumulator balance so the
+        // delta does not collapse when an out-of-band `claimSequencerRewards` call shifts rewards
+        // from `claimableRewards` into the accumulator.
+        uint256 currentRewards = cumulativeRewards + claimableRewards + rewardsAccumulatorBalance;
         // Positive-delta guard; signed comparison is not a timestamp concern.
         // slither-disable-next-line timestamp
         uint256 rewardsDelta = currentRewards > latestReportRewards ? currentRewards - latestReportRewards : 0;
 
         snapshot = IOllaCore.AccountingState({
             stakedPrincipal: modules.stakingManager.totalStaked(),
-            rewardsAccumulatorBalance: modules.rewardsAccumulator.balance(),
+            rewardsAccumulatorBalance: rewardsAccumulatorBalance,
             claimableRewards: claimableRewards,
             rewardsDelta: rewardsDelta,
             slashingDelta: modules.stakingManager.getSlashingDelta(),
