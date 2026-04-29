@@ -64,6 +64,38 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match the finalized amount");
     }
 
+    /// @notice refreshAttesterState() must not call rollup.finalizeWithdraw until the
+    ///         corresponding governance withdrawal has unlocked.
+    function test_RefreshAttesterState_SkipsFinalizationUntilGovernanceWithdrawalUnlocks() external {
+        _setupActiveAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+        uint256 unlocksAt = block.timestamp + 30 days;
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        aztecGovernance.setWithdrawal(0, ACTIVATION_THRESHOLD, unlocksAt, address(rollup), false);
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertTrue(stakingManager.isUnstakePending(attester), "attester should stay exiting while governance locked");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "pending count should remain");
+        assertEq(stakingManager.pendingUnstakes(), ACTIVATION_THRESHOLD, "pending amount should remain");
+        assertFalse(stakingManager.hasFinalizedUnstakes(), "nothing should be finalized yet");
+
+        vm.warp(unlocksAt);
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertFalse(stakingManager.isUnstakePending(attester), "attester should finalize once governance unlocks");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending count should clear");
+
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
+        assertEq(received, ACTIVATION_THRESHOLD, "funds should be received after unlock");
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exit amount should be claimable after unlock");
+    }
+
     /// @notice Multiple calls to refreshAttesterState() accumulate _pendingClaimAmount
     ///         until getUnstakedFunds() drains it.
     function test_RefreshAttesterState_AccumulatesAcrossMultipleCalls() external {
@@ -586,6 +618,7 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         MaliciousAztecRollup maliciousRollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         MockAztecRollupRegistry maliciousRegistry =
             new MockAztecRollupRegistry(address(maliciousRollup), IERC20(address(aztec)));
+        maliciousRegistry.setGovernance(address(aztecGovernance));
         MockRewardsAccumulator maliciousRewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy a fresh StakingManager wired to the malicious rollup
