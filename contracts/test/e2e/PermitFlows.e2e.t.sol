@@ -10,8 +10,6 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
@@ -44,7 +42,6 @@ contract PermitFlowsE2ETest is Test {
     OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
-    WithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     MockAccountingStakingManager internal stakingManager;
     MockRewardsAccumulator internal rewardsAccumulator;
@@ -116,12 +113,6 @@ contract PermitFlowsE2ETest is Test {
         vm.prank(admin);
         safetyModule.setWithdrawalMinimum(0);
 
-        // ---- Deploy WithdrawalQueue (proxy) ----
-        WithdrawalQueue queueImpl = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), address(gov), 180_000);
-
         // ---- Configure mock staking manager ----
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
@@ -141,7 +132,7 @@ contract PermitFlowsE2ETest is Test {
         );
 
         // ---- Initialize OllaVault ----
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
+        vault.initialize(asset, stAztec, address(core), address(gov));
 
         // ---- Wire contracts ----
         vm.prank(address(gov));
@@ -362,7 +353,7 @@ contract PermitFlowsE2ETest is Test {
         assertEq(stAztec.allowance(alice, address(vault)), 0, "stAztec allowance consumed by transferFrom");
 
         // Verify withdrawal request was created
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertEq(req.shares, 50 * DECIMALS, "request should be for 50e18 shares");
         assertFalse(req.finalized, "request should not be finalized yet");
     }

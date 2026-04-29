@@ -56,7 +56,6 @@ contract MainnetConfig is ConfigHelper {
             guardian: vm.envAddress("GUARDIAN"),
             timelockMinDelay: timelockDuration,
             // Satellite addresses - populated during deployment
-            withdrawalQueue: deployer,
             rewardsAccumulator: deployer,
             safetyModule: deployer
         });

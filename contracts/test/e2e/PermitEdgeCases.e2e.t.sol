@@ -10,8 +10,6 @@ import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
@@ -43,7 +41,6 @@ contract PermitEdgeCasesE2E is Test {
     OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
-    WithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     MockAccountingStakingManager internal stakingManager;
     MockRewardsAccumulator internal rewardsAccumulator;
@@ -115,12 +112,6 @@ contract PermitEdgeCasesE2E is Test {
         vm.prank(admin);
         safetyModule.setWithdrawalMinimum(0);
 
-        // ---- Deploy WithdrawalQueue (proxy) ----
-        WithdrawalQueue queueImpl = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), address(gov), 180_000);
-
         // ---- Configure mock staking manager ----
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
@@ -140,7 +131,7 @@ contract PermitEdgeCasesE2E is Test {
         );
 
         // ---- Initialize OllaVault ----
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
+        vault.initialize(asset, stAztec, address(core), address(gov));
 
         // ---- Wire contracts ----
         vm.prank(address(gov));
@@ -274,7 +265,7 @@ contract PermitEdgeCasesE2E is Test {
         assertEq(stAztec.balanceOf(alice), 50 * DECIMALS, "alice should have 50e18 shares remaining");
         assertEq(stAztec.allowance(alice, address(vault)), 0, "allowance consumed by transferFrom");
 
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertEq(req.shares, 50 * DECIMALS, "request for correct share amount");
         assertFalse(req.finalized, "request not yet finalized");
     }
@@ -363,7 +354,7 @@ contract PermitEdgeCasesE2E is Test {
         assertGt(requestId, 0, "redeem request created by operator");
         assertEq(stAztec.balanceOf(alice), 50 * DECIMALS, "alice shares burned by operator request");
 
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertEq(req.shares, 50 * DECIMALS, "request for 50e18 shares");
         assertFalse(req.finalized, "request not finalized");
     }

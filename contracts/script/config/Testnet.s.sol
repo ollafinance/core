@@ -54,7 +54,6 @@ contract TestnetConfig is ConfigHelper {
             guardian: vm.envOr("GUARDIAN", deployer),
             timelockMinDelay: timelockDuration,
             // Satellite addresses - populated during deployment
-            withdrawalQueue: deployer,
             rewardsAccumulator: deployer,
             safetyModule: deployer
         });

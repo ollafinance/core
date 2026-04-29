@@ -11,8 +11,7 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract OllaCoreSlashingQueueOverhangTest is Test {
     uint256 internal constant DECIMALS = 1e18;
@@ -22,7 +21,6 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
@@ -51,19 +49,12 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation),
-            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
-        );
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setUnstakedToken(asset);
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.startPrank(governance);
         core.setVault(address(vault));
@@ -111,11 +102,11 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         vm.prank(bob);
         uint256 bobRequestId = vault.requestRedeem(10 * DECIMALS, bob, bob);
 
-        IWithdrawalQueue.WithdrawalRequest memory aliceRequest = withdrawalQueue.getRequest(aliceRequestId);
-        IWithdrawalQueue.WithdrawalRequest memory bobRequest = withdrawalQueue.getRequest(bobRequestId);
+        IOllaVault.WithdrawalRequest memory aliceRequest = vault.getWithdrawalRequest(aliceRequestId);
+        IOllaVault.WithdrawalRequest memory bobRequest = vault.getWithdrawalRequest(bobRequestId);
         assertEq(aliceRequest.assetsExpected, aliceDeposit, "alice request locks pre-slash value");
         assertEq(bobRequest.assetsExpected, 10 * DECIMALS, "bob request uses same stale rate");
-        assertEq(withdrawalQueue.totalPendingAssets(), 70 * DECIMALS, "queue tracks both requests");
+        assertEq(vault.pendingWithdrawalAssets(), 70 * DECIMALS, "queue tracks both requests");
 
         // Realized slash after requests are already locked in the queue.
         // setSlashingDelta mirrors real StakingManager: it reduces totalStakedAmount by 50e18
@@ -135,8 +126,8 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         core.rebalance();
 
         // With the fix, both requests finalize at the post-slash rate.
-        aliceRequest = withdrawalQueue.getRequest(aliceRequestId);
-        bobRequest = withdrawalQueue.getRequest(bobRequestId);
+        aliceRequest = vault.getWithdrawalRequest(aliceRequestId);
+        bobRequest = vault.getWithdrawalRequest(bobRequestId);
         assertTrue(aliceRequest.finalized, "alice request finalizes after adjustment");
         assertTrue(bobRequest.finalized, "bob request finalizes after adjustment");
 
@@ -145,7 +136,7 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         // Virtual offset (1e3) introduces sub-wei rounding in the withdrawal rate.
         assertApproxEqAbs(aliceRequest.assetsExpected, 30 * DECIMALS, 1e3, "alice payout adjusted to post-slash rate");
         assertApproxEqAbs(bobRequest.assetsExpected, 5 * DECIMALS, 1e3, "bob payout adjusted to post-slash rate");
-        assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue fully drained");
+        assertEq(vault.pendingWithdrawalAssets(), 0, "queue fully drained");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -172,9 +163,9 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(aliceShares, alice, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assertEq(request.assetsExpected, depositAmount, "request locks full pre-slash value");
-        assertEq(withdrawalQueue.totalPendingAssets(), depositAmount, "queue tracks locked liability");
+        assertEq(vault.pendingWithdrawalAssets(), depositAmount, "queue tracks locked liability");
 
         // 1-token slash after request.
         // totalStaked stays at original pre-slash principal -- slashingDelta tracks the loss.
@@ -193,11 +184,11 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         core.rebalance();
 
         // Request finalizes at the post-slash rate.
-        request = withdrawalQueue.getRequest(requestId);
+        request = vault.getWithdrawalRequest(requestId);
         assertTrue(request.finalized, "request finalizes after adjustment");
         // 100 shares * (99/100 rate) = 99e18 payout
         assertEq(request.assetsExpected, 99 * DECIMALS, "payout adjusted to 99 (post-slash)");
-        assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue fully drained");
+        assertEq(vault.pendingWithdrawalAssets(), 0, "queue fully drained");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -223,7 +214,7 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(aliceShares, alice, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assertEq(request.assetsExpected, depositAmount, "request at deposit rate");
 
         // Unstake all assets (no slashing).
@@ -236,10 +227,10 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         vm.prank(operator);
         core.rebalance();
 
-        request = withdrawalQueue.getRequest(requestId);
+        request = vault.getWithdrawalRequest(requestId);
         assertTrue(request.finalized, "request finalizes normally");
         assertEq(request.assetsExpected, depositAmount, "no adjustment when no slashing");
-        assertEq(withdrawalQueue.totalPendingAssets(), 0, "queue fully drained");
+        assertEq(vault.pendingWithdrawalAssets(), 0, "queue fully drained");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -269,10 +260,10 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(aliceShares, alice, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assertEq(request.assetsExpected, aliceDeposit, "request locks pre-slash value");
-        assertEq(withdrawalQueue.totalPendingAssets(), aliceDeposit, "queue tracks pre-slash liability");
-        assertEq(withdrawalQueue.totalPendingShares(), aliceShares, "queue tracks burned shares");
+        assertEq(vault.pendingWithdrawalAssets(), aliceDeposit, "queue tracks pre-slash liability");
+        assertEq(vault.pendingWithdrawalShares(), aliceShares, "queue tracks burned shares");
 
         // A slash occurs after Alice's request but before her withdrawal is finalized. The live
         // exchange rate for Bob's remaining shares should match the gross withdrawal rate so both
@@ -324,7 +315,7 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         core.rebalance();
 
         // Verify request finalized at adjusted amount.
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assertTrue(request.finalized, "request finalized");
         assertEq(request.assetsExpected, 90 * DECIMALS, "adjusted to 90% of original");
 

@@ -227,11 +227,6 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
         IOllaVault(IOllaCore(core).vault()).reconcileBufferedAssets();
     }
 
-    /// @inheritdoc IOllaGovernance
-    function setQueueGasThreshold(uint256 threshold) external override onlySelf {
-        IOllaVault(IOllaCore(core).vault()).setQueueGasThreshold(threshold);
-    }
-
     /*//////////////////////////////////////////////////////////////
                    SAFETY MODULE PARAMETER PASSTHROUGHS
     //////////////////////////////////////////////////////////////*/
