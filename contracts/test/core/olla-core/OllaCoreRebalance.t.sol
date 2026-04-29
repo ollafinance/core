@@ -622,6 +622,7 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setStakeReturnAmount(0);
         stakingManager.setUnstakedToken(asset);
         stakingManager.setUnstakedAmount(unstakedAmount);
+        stakingManager.setGasBurnTarget(90_000);
         asset.mint(address(stakingManager), unstakedAmount);
 
         uint256 expectedBuffer = vault.bufferedAssets() + unstakedAmount;
@@ -629,11 +630,8 @@ contract OllaCoreRebalanceTest is Test {
         vm.prank(governance);
         core.setTargetBufferedAssets(expectedBuffer);
 
-        uint32 defaultThreshold = core.rebalanceGasThreshold();
-        _forceRebalanceGasThreshold(type(uint32).max);
-
         vm.prank(operator);
-        core.rebalance();
+        core.rebalance{ gas: 400_000 }();
 
         IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(
@@ -641,8 +639,6 @@ contract OllaCoreRebalanceTest is Test {
             uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
             "rebalance should pause after pull unstaked under low gas"
         );
-
-        _forceRebalanceGasThreshold(defaultThreshold);
 
         vm.prank(operator);
         core.rebalance();

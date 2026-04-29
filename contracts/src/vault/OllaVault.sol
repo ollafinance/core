@@ -59,10 +59,10 @@ contract OllaVault is
     uint256 private constant _RATE_SCALE = 1e18;
 
     /// @notice Gas safety net for the finalization loop.
-    /// @dev Leaves enough gas for post-loop vault bookkeeping after the queue was folded into the
-    ///      vault. Callers should still bound their batch via `maxRequestId` for predictable
-    ///      rebalance pacing.
-    uint256 private constant _FINALIZE_GAS_THRESHOLD = 120_000;
+    /// @dev With the queue folded into the vault there is no longer a cross-contract loop sharing
+    ///      a gas budget, so this threshold is purely a defensive cap on per-call work. Callers
+    ///      should still bound their batch via `maxRequestId` for predictable rebalance pacing.
+    uint256 private constant _FINALIZE_GAS_THRESHOLD = 50_000;
 
     /*//////////////////////////////////////////////////////////////
                                   STATE
