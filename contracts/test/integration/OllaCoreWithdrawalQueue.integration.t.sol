@@ -372,6 +372,10 @@ contract RealisticStakingManager is IStakingManager {
         return _hasFinalizedUnstakes;
     }
 
+    function claimableUnstakedFunds() external view override returns (uint256) {
+        return _hasFinalizedUnstakes ? pendingUnstakeAmount : 0;
+    }
+
     function getStakingState() external view override returns (StakingState memory) {
         return
             StakingState({

@@ -1097,6 +1097,17 @@ contract OllaCore is
     }
 
     /// @notice Calculates how much more needs to be unstaked to meet the required buffer, net of pending unstakes.
+    /// @notice Computes the buffer required to cover pending withdrawals plus the target buffer.
+    /// @return requiredBuffer The total buffer needed.
+    /// @return pendingWithdrawals The current pending withdrawal asset amount.
+    function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {
+        pendingWithdrawals = IOllaVault(_modules.vault).pendingWithdrawalAssets();
+        uint256 targetBuffered = targetBufferedAssets;
+        requiredBuffer = pendingWithdrawals + targetBuffered;
+        return (requiredBuffer, pendingWithdrawals);
+    }
+
+    /// @notice Calculates how much more needs to be unstaked to meet the required buffer, net of incoming funds.
     /// @param requiredBuffer The total buffer needed to cover withdrawals and target.
     /// @return remaining The additional amount to unstake.
     function _computeUnstakeRemaining(uint256 requiredBuffer) internal view returns (uint256 remaining) {

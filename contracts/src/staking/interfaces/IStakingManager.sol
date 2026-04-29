@@ -273,6 +273,10 @@ interface IStakingManager {
     /// @return True if there are funds sitting in StakingManager after rollup finalization.
     function hasFinalizedUnstakes() external view returns (bool);
 
+    /// @notice Returns finalized unstake/refund funds ready to be claimed via getUnstakedFunds().
+    /// @return amount The amount sitting in StakingManager after rollup finalization.
+    function claimableUnstakedFunds() external view returns (uint256 amount);
+
     /// @notice Returns the provider configuration.
     /// @dev Delegates to the StakingProviderRegistry.
     /// @return The provider config struct.

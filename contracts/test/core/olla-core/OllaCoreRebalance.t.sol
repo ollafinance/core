@@ -541,6 +541,88 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - pendingUnstakes, "unstake reduced by pending");
     }
 
+    function test_Rebalance_Unstake_ClaimableUnstakedFundsReduceInitiation() external {
+        uint256 pendingAssets = 30 * DECIMALS;
+        uint256 claimableUnstakedFunds = 12 * DECIMALS;
+
+        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(pendingAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+        stakingManager.setClaimableUnstakedFunds(claimableUnstakedFunds);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(
+            stakingManager.lastUnstakeAmount(),
+            pendingAssets - claimableUnstakedFunds,
+            "unstake reduced by claimable funds"
+        );
+    }
+
+    function test_Rebalance_ResumeInitiateUnstake_CountsNewClaimableFunds() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 pendingUnstakesBefore = 60 * DECIMALS;
+        uint256 newlyClaimable = 20 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        uint256 numRequests = 50;
+        for (uint256 i = 0; i < numRequests; i++) {
+            _requestWithdrawal(alice, 1 * DECIMALS);
+        }
+
+        vm.prank(governance);
+        core.setTargetBufferedAssets(200 * DECIMALS);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(pendingUnstakesBefore);
+        stakingManager.setClaimableUnstakedFunds(0);
+
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+
+        for (uint256 gasLimit = 200_000; gasLimit <= 2_000_000; gasLimit += 5_000) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
+            if (!success) {
+                continue;
+            }
+
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.InitiateUnstake && progress.unstakeRemaining > 0) {
+                selectedGas = gasLimit;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend for initiate-unstake stop");
+
+        vm.revertToState(snapshotId);
+        vm.prank(operator);
+        core.rebalance{ gas: selectedGas }();
+
+        IOllaCore.RebalanceProgress memory progressAfterPause = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfterPause.step),
+            uint256(IOllaCore.RebalanceStep.InitiateUnstake),
+            "rebalance should pause at initiate unstake"
+        );
+        uint256 expectedUnstake = progressAfterPause.unstakeRemaining;
+
+        stakingManager.setPendingUnstakes(pendingUnstakesBefore - newlyClaimable);
+        stakingManager.setClaimableUnstakedFunds(newlyClaimable);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(stakingManager.lastUnstakeAmount(), expectedUnstake, "claimable funds should prevent over-unstake");
+    }
+
     function test_Rebalance_Unstake_NoUnitRounding() external {
         uint256 pendingAssets = 210 * DECIMALS;
 
@@ -1661,6 +1743,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
         pending = value;
     }
 
+    function setClaimableUnstakedFunds(uint256) external pure { }
+
     function setWithdrawableUnstakes(uint256 value) external {
         _exitableUnstakes = value != 0;
     }
@@ -1730,6 +1814,10 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function hasFinalizedUnstakes() external view override returns (bool) {
         return _exitableUnstakes;
+    }
+
+    function claimableUnstakedFunds() external pure override returns (uint256) {
+        return 0;
     }
 
     function getProviderConfig() external view override returns (ProviderConfig memory) {
