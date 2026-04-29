@@ -188,7 +188,8 @@ contract OllaCoreRebalanceIdleGuard is Test {
         assertEq(bufferedBefore, 2 * DECIMALS, "setup: 2 AZTEC buffered");
 
         // Simulate out-of-band rewards arriving to the rewards vault.
-        uint256 newRewards = 1 * DECIMALS;
+        // Must exceed REWARDS_ACCUMULATOR_DUST_THRESHOLD (10_000 AZTEC) to bypass the idle fast-path.
+        uint256 newRewards = 10_001 * DECIMALS;
         asset.mint(address(rewardsAccumulator), newRewards);
         assertEq(rewardsAccumulator.balance(), newRewards, "rewards vault funded");
 
@@ -249,6 +250,66 @@ contract OllaCoreRebalanceIdleGuard is Test {
         assertEq(
             totalRebalancedEvents, 0, "rebalance should not trigger unnecessary cycles - idle buffer guard should work"
         );
+    }
+
+    /// @notice Rebalance ignores RewardsAccumulator balances at or below the hardcoded dust
+    ///         threshold: the idle fast-path is preserved (no Rebalanced event, no cooldown
+    ///         consumption, dust stays in the accumulator), while balances above the threshold
+    ///         still trigger a productive cycle.
+    function test_RebalanceIgnoresDustBelowAccumulatorThreshold() external {
+        _performDeposit(alice, 200_002 * DECIMALS);
+
+        // Drive the protocol to an idle Done state with a stable 2 AZTEC buffer.
+        stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
+        stakingManager.setAllowStakeReturnExceeds(true);
+        vm.prank(operator);
+        core.rebalance();
+
+        stakingManager.setStakeReturnAmount(0);
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
+
+        uint256 dustThreshold = core.REWARDS_ACCUMULATOR_DUST_THRESHOLD();
+        assertEq(dustThreshold, 10_000 * DECIMALS, "sanity: dust threshold is 10,000 AZTEC");
+
+        uint256 bufferedBefore = vault.bufferedAssets();
+        uint48 lastTimestampBefore = core.lastRebalanceTimestamp();
+
+        // Donate exactly the threshold to the accumulator: this is still "dust".
+        asset.mint(address(rewardsAccumulator), dustThreshold);
+        assertEq(rewardsAccumulator.balance(), dustThreshold, "setup: dust deposited");
+
+        // Advance past the cooldown so the only thing that could trigger work is the dust.
+        vm.warp(block.timestamp + 1 hours);
+
+        bytes32 rebalancedSig = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+
+        // --- Dust at threshold: idle fast-path must hold. ---
+        vm.recordLogs();
+        vm.prank(operator);
+        core.rebalance();
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 rebalancedCount = 0;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == rebalancedSig) rebalancedCount++;
+        }
+        assertEq(rebalancedCount, 0, "dust donation should not trigger a rebalance cycle");
+        assertEq(vault.bufferedAssets(), bufferedBefore, "buffer should be unchanged");
+        assertEq(rewardsAccumulator.balance(), dustThreshold, "dust should remain in accumulator");
+        assertEq(core.lastRebalanceTimestamp(), lastTimestampBefore, "cooldown should not be consumed");
+
+        // --- One wei above threshold: a productive cycle must run. ---
+        asset.mint(address(rewardsAccumulator), 1);
+        assertEq(rewardsAccumulator.balance(), dustThreshold + 1, "setup: balance just above threshold");
+
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(rewardsAccumulator.balance(), 0, "above-threshold balance should be pulled");
+        assertEq(vault.bufferedAssets(), bufferedBefore + dustThreshold + 1, "rewards should reach the buffer");
     }
 
     /// @notice Ensures claimable rollup rewards allow rebalance to start a new cycle
