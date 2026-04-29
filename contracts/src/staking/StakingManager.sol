@@ -40,6 +40,12 @@ contract StakingManager is
     /// @notice Maximum allowed gas threshold (30 million).
     uint256 private constant _MAX_GAS_THRESHOLD = 30_000_000;
 
+    /// @notice Event field value for aggregate stakedAmount underflow clamps.
+    bytes32 private constant _AGGREGATE_FIELD_STAKED_AMOUNT = keccak256("stakedAmount");
+
+    /// @notice Event field value for aggregate pendingUnstakeAmount underflow clamps.
+    bytes32 private constant _AGGREGATE_FIELD_PENDING_UNSTAKE_AMOUNT = keccak256("pendingUnstakeAmount");
+
     /*//////////////////////////////////////////////////////////////
                                     STATE
     //////////////////////////////////////////////////////////////*/
@@ -369,7 +375,7 @@ contract StakingManager is
 
         // Correct the accounting: reclassify cached stake from queued principal to sweepable refund.
         uint256 cachedStake = info.stakedAmount;
-        _removeStakedAmount(cachedStake);
+        _removeStakedAmount(attester, cachedStake);
         _pendingRefundAmount += cachedStake;
 
         // Transition to Exiting then remove (reuses existing cleanup path)
@@ -593,12 +599,40 @@ contract StakingManager is
     }
 
     /// @notice Removes principal from aggregate staked amount with saturation.
+    /// @param attester The attester whose reconciliation is removing the amount.
     /// @param amount The amount to remove.
-    function _removeStakedAmount(uint256 amount) internal {
-        if (_aggregateState.stakedAmount >= amount) {
-            _aggregateState.stakedAmount -= amount;
+    function _removeStakedAmount(address attester, uint256 amount) internal {
+        _decreaseAggregateField(attester, _AGGREGATE_FIELD_STAKED_AMOUNT, amount);
+    }
+
+    /// @notice Removes principal from aggregate pending unstake amount with saturation.
+    /// @param attester The attester whose reconciliation is removing the amount.
+    /// @param amount The amount to remove.
+    function _removePendingUnstakeAmount(address attester, uint256 amount) internal {
+        _decreaseAggregateField(attester, _AGGREGATE_FIELD_PENDING_UNSTAKE_AMOUNT, amount);
+    }
+
+    /// @notice Decreases an aggregate state field, emitting when saturation masks an underflow.
+    /// @param attester The attester whose reconciliation is removing the amount.
+    /// @param field The aggregate state field to decrement.
+    /// @param amount The amount to remove.
+    function _decreaseAggregateField(address attester, bytes32 field, uint256 amount) internal {
+        if (field == _AGGREGATE_FIELD_STAKED_AMOUNT) {
+            uint256 currentAmount = _aggregateState.stakedAmount;
+            if (currentAmount >= amount) {
+                _aggregateState.stakedAmount = currentAmount - amount;
+            } else {
+                emit AggregateStateUnderflowClamped(attester, field, currentAmount, amount);
+                _aggregateState.stakedAmount = 0;
+            }
         } else {
-            _aggregateState.stakedAmount = 0;
+            uint256 currentAmount = _aggregateState.pendingUnstakeAmount;
+            if (currentAmount >= amount) {
+                _aggregateState.pendingUnstakeAmount = currentAmount - amount;
+            } else {
+                emit AggregateStateUnderflowClamped(attester, field, currentAmount, amount);
+                _aggregateState.pendingUnstakeAmount = 0;
+            }
         }
     }
 
@@ -648,11 +682,7 @@ contract StakingManager is
 
         // Update running state: subtract the full cached balance (not just the exit amount)
         // to avoid leaving a phantom when the attester was slashed before unstaking.
-        if (_aggregateState.stakedAmount >= cachedStake) {
-            _aggregateState.stakedAmount -= cachedStake;
-        } else {
-            _aggregateState.stakedAmount = 0;
-        }
+        _removeStakedAmount(attester, cachedStake);
         _aggregateState.pendingUnstakeAmount += exitAmount;
 
         // Record the slashing gap so OllaCore's accounting sees it.
@@ -712,11 +742,7 @@ contract StakingManager is
             _aggregateState.stakedAmount += (newBalance - oldBalance);
         } else if (newBalance < oldBalance) {
             uint256 decrease = oldBalance - newBalance;
-            if (_aggregateState.stakedAmount >= decrease) {
-                _aggregateState.stakedAmount -= decrease;
-            } else {
-                _aggregateState.stakedAmount = 0;
-            }
+            _removeStakedAmount(attester, decrease);
 
             // Detect slashing: balance decreased but no exit initiated
             if (info.status == InternalAttesterStatus.Active && !view_.exit.exists) {
@@ -775,18 +801,14 @@ contract StakingManager is
                 //     captures exit-delay slashes in slashingDelta, so this externally-finalized
                 //     edge case is the only remaining gap.
                 uint256 pendingExit = info.pendingExitAmount;
-                if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
-                    _aggregateState.pendingUnstakeAmount -= pendingExit;
-                } else {
-                    _aggregateState.pendingUnstakeAmount = 0;
-                }
+                _removePendingUnstakeAmount(attester, pendingExit);
                 _pendingClaimAmount += pendingExit;
 
                 _removeAttester(attester);
                 emit AttesterStateRefreshed(attester, oldBalance, newBalance);
                 return;
             } else {
-                _reconcileExitingExitAmount(info, view_.exit.amount);
+                _reconcileExitingExitAmount(attester, info, view_.exit.amount);
 
                 if (!_isExitFinalizable(view_)) {
                     info.stakedAmount = newBalance;
@@ -810,11 +832,7 @@ contract StakingManager is
                 emit UnstakeFinalized(attester, exitAmount);
                 _pendingClaimAmount += exitAmount;
 
-                if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
-                    _aggregateState.pendingUnstakeAmount -= pendingExit;
-                } else {
-                    _aggregateState.pendingUnstakeAmount = 0;
-                }
+                _removePendingUnstakeAmount(attester, pendingExit);
 
                 // Attester removed -- skip balance update below
                 emit AttesterStateRefreshed(attester, oldBalance, newBalance);
@@ -837,9 +855,10 @@ contract StakingManager is
     /// @notice Reconciles a pending exit snapshot against the current rollup exit amount.
     /// @dev Used while an attester remains in the Exiting state and the rollup exit record still
     ///      exists, so slashes during the exit delay are reflected before finalization.
+    /// @param attester The attester being reconciled.
     /// @param info The attester info storage reference.
     /// @param exitAmount The current exit amount reported by the rollup.
-    function _reconcileExitingExitAmount(AttesterInfo storage info, uint256 exitAmount) internal {
+    function _reconcileExitingExitAmount(address attester, AttesterInfo storage info, uint256 exitAmount) internal {
         uint256 pendingExit = info.pendingExitAmount;
         if (pendingExit <= exitAmount) {
             return;
@@ -848,8 +867,7 @@ contract StakingManager is
         uint256 decrease = pendingExit - exitAmount;
         info.pendingExitAmount = SafeCast.toUint96(exitAmount);
 
-        uint256 pendingUnstakeAmount = _aggregateState.pendingUnstakeAmount;
-        _aggregateState.pendingUnstakeAmount = pendingUnstakeAmount > decrease ? pendingUnstakeAmount - decrease : 0;
+        _removePendingUnstakeAmount(attester, decrease);
         _aggregateState.slashingDelta += decrease;
     }
 

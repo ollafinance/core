@@ -23,11 +23,17 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
     /// @dev Storage slot for StakingManager._aggregateState.pendingUnstakeAmount (proxy slot 11).
     uint256 internal constant STAKING_MANAGER_PENDING_UNSTAKE_SLOT = 11;
 
+    bytes32 internal constant AGGREGATE_FIELD_STAKED_AMOUNT = keccak256("stakedAmount");
+    bytes32 internal constant AGGREGATE_FIELD_PENDING_UNSTAKE_AMOUNT = keccak256("pendingUnstakeAmount");
+
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
     event AttesterStateRefreshed(address indexed attester, uint256 oldBalance, uint256 newBalance);
+    event AggregateStateUnderflowClamped(
+        address indexed attester, bytes32 indexed field, uint256 currentAmount, uint256 requestedDecrease
+    );
 
     /*//////////////////////////////////////////////////////////////
                   _setAttesterStatus SAME-STATUS GUARD
@@ -300,7 +306,10 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         bytes32 rollupSlot = keccak256(abi.encode(attester, ROLLUP_STAKES_MAPPING_SLOT));
         vm.store(address(rollup), rollupSlot, bytes32(uint256(0)));
 
-        // Refresh should saturate to 0 rather than underflow
+        vm.expectEmit(true, true, false, true, address(stakingManager));
+        emit AggregateStateUnderflowClamped(attester, AGGREGATE_FIELD_STAKED_AMOUNT, 1, ACTIVATION_THRESHOLD);
+
+        // Refresh should saturate to 0 rather than underflow, and emit a diagnostic event.
         address[] memory attesters = _attesterAddresses(1);
         stakingManager.refreshAttesterState(attesters);
 
@@ -330,7 +339,10 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         // Externally finalize the exit on rollup (clears exit record)
         rollup.finalizeWithdraw(attester);
 
-        // Refresh should detect externally-finalized exit, and saturate pendingUnstake to 0
+        vm.expectEmit(true, true, false, true, address(stakingManager));
+        emit AggregateStateUnderflowClamped(attester, AGGREGATE_FIELD_PENDING_UNSTAKE_AMOUNT, 1, ACTIVATION_THRESHOLD);
+
+        // Refresh should detect externally-finalized exit, saturate pendingUnstake to 0, and emit diagnostics.
         address[] memory attesters = _attesterAddresses(1);
         stakingManager.refreshAttesterState(attesters);
 
@@ -355,14 +367,43 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory corrupted = stakingManager.getStakingState();
         assertEq(corrupted.pendingUnstakeAmount, 1, "corrupted pendingUnstakeAmount should be 1");
 
-        // The exit is already exitable (mock sets exitableAt = block.timestamp by default)
-        // Refresh should finalize the exit and saturate pendingUnstake to 0
+        address attester = address(uint160(1));
+
+        vm.expectEmit(true, true, false, true, address(stakingManager));
+        emit AggregateStateUnderflowClamped(attester, AGGREGATE_FIELD_PENDING_UNSTAKE_AMOUNT, 1, ACTIVATION_THRESHOLD);
+
+        // The exit is already exitable (mock sets exitableAt = block.timestamp by default).
+        // Refresh should finalize the exit, saturate pendingUnstake to 0, and emit diagnostics.
         address[] memory attesters = _attesterAddresses(1);
         stakingManager.refreshAttesterState(attesters);
 
         IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
         assertEq(stateAfter.pendingUnstakeAmount, 0, "pendingUnstakeAmount should saturate to 0");
         assertEq(stakingManager.getPendingUnstakeCount(), 0, "exiting count should be 0 after finalization");
+    }
+
+    /// @notice Reconciliation of exit-delay slashing emits diagnostics if the pending aggregate is desynced.
+    function test_RefreshAttesterState_PendingUnstakeAmountSaturatesToZero_ExitDelaySlashReconcile() external {
+        _setupActiveAttester();
+        address attester = address(uint160(1));
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        uint256 slashedExitAmount = ACTIVATION_THRESHOLD - 10 ether;
+        rollup.setExternalExit(attester, slashedExitAmount, block.timestamp + 1 days);
+
+        vm.store(address(stakingManager), bytes32(STAKING_MANAGER_PENDING_UNSTAKE_SLOT), bytes32(uint256(1)));
+
+        vm.expectEmit(true, true, false, true, address(stakingManager));
+        emit AggregateStateUnderflowClamped(attester, AGGREGATE_FIELD_PENDING_UNSTAKE_AMOUNT, 1, 10 ether);
+
+        address[] memory attesters = _attesterAddresses(1);
+        stakingManager.refreshAttesterState(attesters);
+
+        IStakingManager.StakingState memory stateAfter = stakingManager.getStakingState();
+        assertEq(stateAfter.pendingUnstakeAmount, 0, "pendingUnstakeAmount should saturate to 0");
+        assertEq(stateAfter.slashingDelta, 10 ether, "slashingDelta should track the exit-delay slash");
     }
 
     /*//////////////////////////////////////////////////////////////

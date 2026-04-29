@@ -124,8 +124,17 @@ interface IStakingManager {
     /// @param recoveredAmount The stake amount removed from stakedAmount accounting.
     event FailedQueueEntryPurged(address indexed attester, uint256 indexed recoveredAmount);
 
+    /// @notice Emitted when aggregate accounting is clamped after an underflow would occur.
+    /// @param attester The attester being reconciled when the underflow was detected.
+    /// @param field The aggregate state field that was clamped.
+    /// @param currentAmount The aggregate amount before clamping.
+    /// @param requestedDecrease The requested decrement that exceeded currentAmount.
+    event AggregateStateUnderflowClamped(
+        address indexed attester, bytes32 indexed field, uint256 currentAmount, uint256 requestedDecrease
+    );
+
     /*//////////////////////////////////////////////////////////////
-                                   ERRORS
+                                    ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when an address is zero.
