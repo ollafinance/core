@@ -1096,17 +1096,6 @@ contract OllaCore is
         return false;
     }
 
-    /// @notice Calculates how much more needs to be unstaked to meet the required buffer, net of pending unstakes.
-    /// @notice Computes the buffer required to cover pending withdrawals plus the target buffer.
-    /// @return requiredBuffer The total buffer needed.
-    /// @return pendingWithdrawals The current pending withdrawal asset amount.
-    function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {
-        pendingWithdrawals = IOllaVault(_modules.vault).pendingWithdrawalAssets();
-        uint256 targetBuffered = targetBufferedAssets;
-        requiredBuffer = pendingWithdrawals + targetBuffered;
-        return (requiredBuffer, pendingWithdrawals);
-    }
-
     /// @notice Calculates how much more needs to be unstaked to meet the required buffer, net of incoming funds.
     /// @param requiredBuffer The total buffer needed to cover withdrawals and target.
     /// @return remaining The additional amount to unstake.
@@ -1116,11 +1105,12 @@ contract OllaCore is
         // slither-disable-next-line timestamp
         if (requiredBuffer < currentBuffer) return 0;
         uint256 amountToUnstake = requiredBuffer - currentBuffer;
-        uint256 pendingUnstakes = _modules.stakingManager.pendingUnstakes();
+        uint256 pendingIncoming =
+            _modules.stakingManager.pendingUnstakes() + _modules.stakingManager.claimableUnstakedFunds();
         // Pending unstakes already cover the deficit; not a timestamp concern.
         // slither-disable-next-line timestamp
-        if (pendingUnstakes > amountToUnstake) return 0;
-        remaining = amountToUnstake - pendingUnstakes;
+        if (pendingIncoming > amountToUnstake) return 0;
+        remaining = amountToUnstake - pendingIncoming;
         return remaining;
     }
 

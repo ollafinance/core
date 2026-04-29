@@ -563,64 +563,46 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     function test_Rebalance_ResumeInitiateUnstake_CountsNewClaimableFunds() external {
-        uint256 depositAmount = 100 * DECIMALS;
+        uint256 bufferAmount = 100 * DECIMALS;
+        uint256 pendingAssets = 180 * DECIMALS;
         uint256 pendingUnstakesBefore = 60 * DECIMALS;
         uint256 newlyClaimable = 20 * DECIMALS;
 
-        _performDeposit(alice, depositAmount);
-
-        uint256 numRequests = 50;
-        for (uint256 i = 0; i < numRequests; i++) {
-            _requestWithdrawal(alice, 1 * DECIMALS);
-        }
-
+        asset.mint(address(vault), bufferAmount);
         vm.prank(governance);
-        core.setTargetBufferedAssets(200 * DECIMALS);
+        vault.reconcileBufferedAssets();
+
+        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(pendingAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
         stakingManager.setPendingUnstakes(pendingUnstakesBefore);
         stakingManager.setClaimableUnstakedFunds(0);
 
-        uint256 snapshotId = vm.snapshotState();
-        uint256 selectedGas;
-
-        for (uint256 gasLimit = 200_000; gasLimit <= 2_000_000; gasLimit += 5_000) {
-            vm.revertToState(snapshotId);
-            vm.prank(operator);
-            (bool success,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
-            if (!success) {
-                continue;
-            }
-
-            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-            if (progress.step == IOllaCore.RebalanceStep.InitiateUnstake && progress.unstakeRemaining > 0) {
-                selectedGas = gasLimit;
-                break;
-            }
-        }
-
-        assertGt(selectedGas, 0, "should find gas stipend for initiate-unstake stop");
-
-        vm.revertToState(snapshotId);
+        uint32 defaultThreshold = core.rebalanceGasThreshold();
+        _forceRebalanceGasThreshold(type(uint32).max);
         vm.prank(operator);
-        core.rebalance{ gas: selectedGas }();
+        core.rebalance();
 
         IOllaCore.RebalanceProgress memory progressAfterPause = core.rebalanceProgress();
         assertEq(
             uint256(progressAfterPause.step),
-            uint256(IOllaCore.RebalanceStep.InitiateUnstake),
-            "rebalance should pause at initiate unstake"
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "rebalance should pause after pull unstaked"
         );
-        uint256 expectedUnstake = progressAfterPause.unstakeRemaining;
 
         stakingManager.setPendingUnstakes(pendingUnstakesBefore - newlyClaimable);
         stakingManager.setClaimableUnstakedFunds(newlyClaimable);
 
+        _forceRebalanceGasThreshold(defaultThreshold);
         vm.prank(operator);
         core.rebalance();
 
-        assertEq(stakingManager.lastUnstakeAmount(), expectedUnstake, "claimable funds should prevent over-unstake");
+        assertEq(
+            stakingManager.lastUnstakeAmount(),
+            pendingAssets - bufferAmount - pendingUnstakesBefore,
+            "claimable funds should prevent over-unstake"
+        );
     }
 
     function test_Rebalance_Unstake_NoUnitRounding() external {
