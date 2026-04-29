@@ -6,7 +6,9 @@ import { IAztecRewardDistributor } from "src/staking/interfaces/IAztecRewardDist
 
 /// @title MockAztecRewardDistributor
 /// @notice Mock implementation of the Aztec RewardDistributor for testing.
+/// @author Olla Core contributors
 contract MockAztecRewardDistributor is IAztecRewardDistributor {
+    /// @notice The ERC20 asset distributed as Aztec rewards.
     IERC20 public immutable override ASSET;
 
     constructor(IERC20 asset_) {

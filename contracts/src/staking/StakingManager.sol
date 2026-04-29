@@ -795,7 +795,10 @@ contract StakingManager is
 
                 // slither-disable-next-line calls-loop
                 try rollup.finalizeWithdraw(attester) { }
-                catch {
+                catch (bytes memory reason) {
+                    if (bytes4(reason) == ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector) {
+                        revert ReentrancyGuardTransient.ReentrancyGuardReentrantCall();
+                    }
                     info.stakedAmount = newBalance;
                     emit AttesterStateRefreshed(attester, oldBalance, newBalance);
                     return;
