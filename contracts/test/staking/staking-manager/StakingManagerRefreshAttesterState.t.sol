@@ -584,7 +584,8 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     function test_RevertWhen_RefreshAttesterState_Reentrancy() external {
         // Deploy a malicious rollup that re-enters during finalizeWithdraw
         MaliciousAztecRollup maliciousRollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
-        MockAztecRollupRegistry maliciousRegistry = new MockAztecRollupRegistry(address(maliciousRollup));
+        MockAztecRollupRegistry maliciousRegistry =
+            new MockAztecRollupRegistry(address(maliciousRollup), IERC20(address(aztec)));
         MockRewardsAccumulator maliciousRewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy a fresh StakingManager wired to the malicious rollup
@@ -640,11 +641,12 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     /// @notice Reads AttesterInfo storage directly via vm.load.
     /// @dev    The mapping `_attesterMap` lives at slot 8 in StakingManager's storage layout
     ///         (verified via `forge inspect StakingManager storageLayout`). Each `AttesterInfo`
-    ///         struct (per Solidity packing rules) occupies 4 slots:
+    ///         struct (per Solidity packing rules) occupies 5 slots:
     ///             slot+0: attester (lower 160 bits)
     ///             slot+1: stakedAmount (full 256 bits)
-    ///             slot+2: exitRollup (lower 160 bits) || pendingExitAmount (upper 96 bits)
-    ///             slot+3: status (uint8 enum at byte 0)
+    ///             slot+2: queueRollup (lower 160 bits)
+    ///             slot+3: exitRollup (lower 160 bits) || pendingExitAmount (upper 96 bits)
+    ///             slot+4: status (uint8 enum at byte 0)
     ///         exitRollup (20B) + pendingExitAmount (12B) pack into a single 32B slot;
     ///         status starts a new slot because the previous one has no remaining room.
     function _readAttesterInfoSlots(address attester)
@@ -661,10 +663,10 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         bytes32 baseSlot = keccak256(abi.encode(attester, uint256(8)));
         attesterField = address(uint160(uint256(vm.load(address(stakingManager), baseSlot))));
         stakedAmount = uint256(vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 1)));
-        bytes32 packedSlot2 = vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 2));
-        exitRollup = address(uint160(uint256(packedSlot2)));
-        pendingExitAmount = uint96(uint256(packedSlot2) >> 160);
-        bytes32 statusSlot = vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 3));
+        bytes32 packedSlot3 = vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 3));
+        exitRollup = address(uint160(uint256(packedSlot3)));
+        pendingExitAmount = uint96(uint256(packedSlot3) >> 160);
+        bytes32 statusSlot = vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 4));
         status = uint8(uint256(statusSlot));
     }
 

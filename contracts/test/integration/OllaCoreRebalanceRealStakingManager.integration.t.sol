@@ -65,7 +65,7 @@ contract OllaCoreRebalanceRealStakingManager is Test {
 
         // Deploy Mock Rollup and Registry
         mockRollup = new MockAztecRollup(IERC20(asset), 0);
-        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup));
+        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup), IERC20(asset));
 
         // Deploy StakingProviderRegistry (before StakingManager)
         StakingProviderRegistry registryImplementation = new StakingProviderRegistry();

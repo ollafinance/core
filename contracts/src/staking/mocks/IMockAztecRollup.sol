@@ -140,6 +140,15 @@ interface IMockAztecRollup {
     /// @param shouldFail Whether the claim should revert.
     function setClaimShouldFail(address coinbase, bool shouldFail) external;
 
+    /// @notice Sets whether getSequencerRewards should fail for a coinbase/attester (test helper).
+    /// @param coinbase The coinbase/attester address.
+    /// @param shouldFail Whether the read should revert.
+    function setGetRewardsShouldFail(address coinbase, bool shouldFail) external;
+
+    /// @notice Sets whether rewards can be claimed (test helper).
+    /// @param claimable Whether rewards are claimable.
+    function setRewardsClaimable(bool claimable) external;
+
     /// @notice Sets the exit recipient for an attester (test helper).
     /// @param attester The attester address.
     /// @param recipient The recipient address.
@@ -221,6 +230,11 @@ interface IMockAztecRollup {
     /// @return Whether claim should fail.
     function claimShouldFail(address coinbase) external view returns (bool);
 
+    /// @notice Returns whether reward reads should fail for a coinbase/attester.
+    /// @param coinbase The coinbase/attester address.
+    /// @return Whether reward reads should fail.
+    function getRewardsShouldFail(address coinbase) external view returns (bool);
+
     /// @notice Returns the staking asset address.
     /// @return The IERC20 staking asset.
     function STAKING_ASSET() external view returns (IERC20);
@@ -262,6 +276,10 @@ interface IMockAztecRollup {
     /// @param sequencer The sequencer address.
     /// @return The sequencer rewards amount.
     function getSequencerRewards(address sequencer) external view returns (uint256);
+
+    /// @notice Returns whether rewards are currently claimable.
+    /// @return Whether rewards are claimable.
+    function isRewardsClaimable() external view returns (bool);
 
     /// @notice Returns the full attester view for an attester.
     /// @param attester The attester address.
