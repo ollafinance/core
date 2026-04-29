@@ -39,6 +39,14 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public stakeReturnAmount;
     bool public useStakeReturnAmount;
     bool public allowStakeReturnExceeds;
+    /// @notice Optional total-stake cap across all `stake()` calls; 0 = unlimited.
+    /// @dev When set, `stake()` caps each call so the cumulative amount staked since
+    ///      `setMaxTotalStake` was called never exceeds `maxTotalStake`, and `canStake()`
+    ///      reports false once the budget is exhausted. Counts independently from
+    ///      `totalStakedAmount` (the oracle value) so this knob composes with tests that
+    ///      prime `totalStakedAmount` via `setTotalStaked()`.
+    uint256 public maxTotalStake;
+    uint256 public stakedSinceCapSet;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -138,6 +146,11 @@ contract MockAccountingStakingManager is IStakingManager {
         allowStakeReturnExceeds = allow;
     }
 
+    function setMaxTotalStake(uint256 max) external {
+        maxTotalStake = max;
+        stakedSinceCapSet = 0;
+    }
+
     /*//////////////////////////////////////////////////////////////
                           CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -150,6 +163,13 @@ contract MockAccountingStakingManager is IStakingManager {
             actualAmount = stakeReturnAmount;
             if (!allowStakeReturnExceeds && actualAmount > amount) {
                 actualAmount = amount;
+            }
+        }
+        // Cap at the remaining total-stake budget when one is configured.
+        if (maxTotalStake != 0) {
+            uint256 remainingBudget = maxTotalStake > stakedSinceCapSet ? maxTotalStake - stakedSinceCapSet : 0;
+            if (actualAmount > remainingBudget) {
+                actualAmount = remainingBudget;
             }
         }
         if (actualAmount == 0) {
@@ -165,6 +185,9 @@ contract MockAccountingStakingManager is IStakingManager {
         }
         if (transferAmount != 0) {
             token.safeTransferFrom(msg.sender, address(this), transferAmount);
+        }
+        if (maxTotalStake != 0) {
+            stakedSinceCapSet += actualAmount;
         }
         return actualAmount;
     }
@@ -259,6 +282,7 @@ contract MockAccountingStakingManager is IStakingManager {
     }
 
     function canStake(uint256) external view override returns (bool) {
+        if (maxTotalStake != 0 && stakedSinceCapSet >= maxTotalStake) return false;
         if (useStakeReturnAmount) return stakeReturnAmount > 0;
         return true;
     }

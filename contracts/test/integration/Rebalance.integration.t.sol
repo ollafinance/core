@@ -264,7 +264,10 @@ contract RebalanceIntegrationTest is Test {
 
         _mockZeroHarvest();
         _mockZeroUnstaked();
+        // Cap the mock's cumulative stake at 120 across all calls (the test runs across
+        // multiple resumed rebalance() calls, so a per-call return amount is not enough).
         stakingManager.setStakeReturnAmount(120 * DECIMALS);
+        stakingManager.setMaxTotalStake(120 * DECIMALS);
         stakingManager.setTotalStaked(120 * DECIMALS);
 
         uint256 snapshotId = vm.snapshotState();
@@ -308,8 +311,8 @@ contract RebalanceIntegrationTest is Test {
         assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete");
 
         IOllaCore.AccountingState memory accounting = core.accountingState();
-        // Stakeable post-finalize = deposit(200) - withdrawal(60) = 140; mock stakes 120;
-        // residual buffer = 140 - 120 = 20.
+        // Stakeable post-finalize = deposit(200) - withdrawal(60) = 140; mock caps total
+        // stake at 120 via setMaxTotalStake; residual buffer = 140 - 120 = 20.
         assertEq(vault.pendingWithdrawalAssets(), 0, "withdrawal queue should be empty");
         assertEq(vault.bufferedAssets(), 20 * DECIMALS, "buffer should match residual after rebalance");
         assertEq(accounting.stakedPrincipal, 120 * DECIMALS, "staked principal should match stake total");
