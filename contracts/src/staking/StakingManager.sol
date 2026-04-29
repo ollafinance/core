@@ -759,7 +759,7 @@ contract StakingManager is
 
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
-        bool zombieExitClaimed;
+        bool zombieExitClaimed = false;
 
         // Handle Queued attesters: check if the rollup has activated them.
         if (info.status == InternalAttesterStatus.Queued) {
