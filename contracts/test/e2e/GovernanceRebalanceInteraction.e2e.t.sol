@@ -390,7 +390,7 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
         // With 90/10 split: treasuryDelta should be ~9x providerDelta (allow 1 wei rounding)
         assertApproxEqAbs(treasuryDelta, providerDelta * 9, 1, "cycle2: treasury should get ~9x provider shares");
 
-        // Total fee shares per cycle should match expected protocol fee (10% of rewards in shares)
+        // Total fee shares are minted from the configured fee assets using pre-mint share pricing.
         uint256 totalFeeSharesCycle2 = treasuryDelta + providerDelta;
         assertGt(totalFeeSharesCycle2, 0, "cycle2: total fee shares should be > 0");
     }

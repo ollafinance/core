@@ -260,6 +260,80 @@ contract OllaCoreProtocolFeesTest is Test {
         assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider minted (from zero)");
     }
 
+    function test_SetProtocolFeeBP_SettlesAccruedRewardsAtOldFeeRate() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 rewards = 20 * DECIMALS;
+        uint256 newFeeBP = 1_000;
+
+        _performDeposit(alice, depositAmount);
+        stakingManager.setClaimableRewards(rewards);
+
+        uint256 oldSupply = stAztec.totalSupply();
+        uint256 expectedTotalAssets = depositAmount + rewards;
+        uint256 protocolFeeAssets = rewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 rateBeforeFees = (expectedTotalAssets + 1e3).mulDiv(DECIMALS, oldSupply + 1e3, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeFees, Math.Rounding.Floor);
+        uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
+        uint256 providerShares = protocolSharesTotal - treasuryShares;
+
+        vm.prank(governance);
+        core.setProtocolFeeBP(newFeeBP);
+
+        IOllaCore.LatestReport memory reportAfterSet = core.latestReport();
+        assertEq(core.protocolFeeBP(), newFeeBP, "protocol fee updated");
+        assertEq(reportAfterSet.grossRewards, rewards, "rewards settled before fee change");
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury paid at old fee rate");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider paid at old fee rate");
+        assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "only old-rate fee shares minted");
+
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfterUpdate = core.latestReport();
+        assertEq(reportAfterUpdate.grossRewards, 0, "no retroactive rewards left for new fee rate");
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury unchanged after follow-up update");
+        assertEq(
+            stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider unchanged after follow-up update"
+        );
+    }
+
+    function test_SetTreasuryFeeSplitBP_SettlesAccruedRewardsAtOldSplit() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 rewards = 20 * DECIMALS;
+        uint256 newSplitBP = 9_000;
+
+        _performDeposit(alice, depositAmount);
+        stakingManager.setClaimableRewards(rewards);
+
+        uint256 oldSupply = stAztec.totalSupply();
+        uint256 expectedTotalAssets = depositAmount + rewards;
+        uint256 protocolFeeAssets = rewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 rateBeforeFees = (expectedTotalAssets + 1e3).mulDiv(DECIMALS, oldSupply + 1e3, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeFees, Math.Rounding.Floor);
+        uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
+        uint256 providerShares = protocolSharesTotal - treasuryShares;
+
+        vm.prank(governance);
+        core.setTreasuryFeeSplitBP(newSplitBP);
+
+        IOllaCore.LatestReport memory reportAfterSet = core.latestReport();
+        assertEq(core.treasuryFeeSplitBP(), newSplitBP, "treasury split updated");
+        assertEq(reportAfterSet.grossRewards, rewards, "rewards settled before split change");
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury paid at old split");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider paid at old split");
+        assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "fee shares minted once");
+
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfterUpdate = core.latestReport();
+        assertEq(reportAfterUpdate.grossRewards, 0, "no retroactive rewards left for new split");
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury unchanged after follow-up update");
+        assertEq(
+            stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider unchanged after follow-up update"
+        );
+    }
+
     function test_UpdateAccounting_NetFlowsNegative_NoPhantomFees() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
