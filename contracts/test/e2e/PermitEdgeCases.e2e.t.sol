@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20Errors } from "@oz/interfaces/draft-IERC6093.sol";
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
@@ -355,15 +356,18 @@ contract PermitEdgeCasesE2E is Test {
         6G: OPERATOR REDEMPTION — UNAUTHORIZED
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Non-approved operator cannot requestRedeem on behalf of another user.
+    /// @notice Caller without operator approval or share allowance cannot requestRedeem on behalf of another user.
     function test_OperatorRedemption_Unauthorized() external {
         _performDeposit(alice, 100 * DECIMALS);
 
-        // Bob is NOT approved as operator
+        // Bob is NOT approved as operator and has no share allowance
         assertFalse(vault.isOperator(alice, bob), "bob should not be alice's operator");
+        assertEq(stAztec.allowance(alice, address(vault)), 0, "no share allowance");
 
         vm.prank(bob);
-        vm.expectRevert(IOllaVault.OllaVault__Unauthorized.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), 0, 50 * DECIMALS)
+        );
         vault.requestRedeem(50 * DECIMALS, alice, alice);
 
         assertEq(stAztec.balanceOf(alice), 100 * DECIMALS, "alice shares unchanged");
@@ -464,7 +468,7 @@ contract PermitEdgeCasesE2E is Test {
         6K: OPERATOR — REVOKE AND VERIFY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Operator approval can be revoked, blocking subsequent requests.
+    /// @notice Operator approval can be revoked, blocking subsequent requests when no share allowance exists.
     function test_OperatorRevoke_BlocksSubsequentRequests() external {
         _performDeposit(alice, 100 * DECIMALS);
 
@@ -474,10 +478,13 @@ contract PermitEdgeCasesE2E is Test {
         vm.prank(alice);
         vault.setOperator(bob, false);
         assertFalse(vault.isOperator(alice, bob), "bob should no longer be operator");
+        assertEq(stAztec.allowance(alice, address(vault)), 0, "no share allowance");
 
         // Bob's request should now fail
         vm.prank(bob);
-        vm.expectRevert(IOllaVault.OllaVault__Unauthorized.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), 0, 50 * DECIMALS)
+        );
         vault.requestRedeem(50 * DECIMALS, alice, alice);
 
         assertEq(stAztec.balanceOf(alice), 100 * DECIMALS, "alice shares unchanged");

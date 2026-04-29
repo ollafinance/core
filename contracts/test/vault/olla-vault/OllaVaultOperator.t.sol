@@ -5,6 +5,7 @@ import { Test } from "@forge-std/Test.sol";
 
 import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20Errors } from "@oz/interfaces/draft-IERC6093.sol";
 
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
@@ -217,13 +218,75 @@ contract OllaVaultOperatorTest is Test {
         assertEq(assets, depositAmount, "assets claimed");
     }
 
-    /// @notice Non-operator reverts on requestRedeem.
-    function test_RevertWhen_Unauthorized_RequestRedeem() external {
+    /// @notice Caller with ERC-20 allowance over shares can requestRedeem on behalf of owner.
+    function test_Allowance_CanRequestRedeemOnBehalf() external {
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
+
+        vm.prank(alice);
+        stAztec.approve(address(vault), shares);
+
+        vm.prank(bob);
+        uint256 requestId = vault.requestRedeem(shares, alice, alice);
+
+        assertGt(requestId, 0, "request created");
+        assertEq(stAztec.balanceOf(alice), 0, "shares burned from alice");
+        assertEq(stAztec.balanceOf(address(vault)), 0, "shares burned from vault transit");
+    }
+
+    /// @notice ERC-20 allowance is consumed when used for authorization.
+    function test_Allowance_ConsumesShareAllowance() external {
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
+
+        vm.prank(alice);
+        stAztec.approve(address(vault), shares);
+        assertEq(stAztec.allowance(alice, address(vault)), shares, "allowance set");
+
+        vm.prank(bob);
+        vault.requestRedeem(shares, alice, alice);
+
+        assertEq(stAztec.allowance(alice, address(vault)), 0, "allowance consumed");
+    }
+
+    /// @notice Operator path does not touch the ERC-20 share allowance.
+    function test_Allowance_OperatorPathDoesNotConsumeAllowance() external {
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
+
+        vm.prank(alice);
+        stAztec.approve(address(vault), shares);
+
+        vm.prank(alice);
+        vault.setOperator(bob, true);
+
+        vm.prank(bob);
+        vault.requestRedeem(shares, alice, alice);
+
+        assertEq(stAztec.allowance(alice, address(vault)), shares, "allowance untouched");
+    }
+
+    /// @notice requestRedeem reverts when caller has neither operator approval nor sufficient allowance.
+    function test_RevertWhen_RequestRedeem_NoOperatorOrAllowance() external {
         _performDeposit(alice, 10 * DECIMALS);
 
-        vm.expectRevert(IOllaVault.OllaVault__Unauthorized.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), 0, 10 * DECIMALS)
+        );
         vm.prank(bob);
         vault.requestRedeem(10 * DECIMALS, alice, alice);
+    }
+
+    /// @notice requestRedeem reverts when caller's allowance is below the requested shares.
+    function test_RevertWhen_RequestRedeem_AllowanceBelowShares() external {
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
+        uint256 partialAllowance = shares - 1;
+
+        vm.prank(alice);
+        stAztec.approve(address(vault), partialAllowance);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), partialAllowance, shares)
+        );
+        vm.prank(bob);
+        vault.requestRedeem(shares, alice, alice);
     }
 
     /// @notice Non-operator reverts on claimRequestById.

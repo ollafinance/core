@@ -337,12 +337,17 @@ contract OllaVault is
         whenNotPaused
         returns (uint256 requestId)
     {
-        if (msg.sender != owner && !_operators[owner][msg.sender]) {
-            revert OllaVault__Unauthorized();
-        }
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
 
-        (requestId,) = _executeRedeemRequest(owner, controller, shares, false);
+        bool sharesPulledToVault;
+        if (msg.sender != owner && !_operators[owner][msg.sender]) {
+            // ERC-7540: ERC-20 share allowance is also a valid authorization path.
+            // safeTransferFrom reverts on insufficient allowance.
+            IERC20(address(_modules.stAztec)).safeTransferFrom(owner, address(this), shares);
+            sharesPulledToVault = true;
+        }
+
+        (requestId,) = _executeRedeemRequest(owner, controller, shares, sharesPulledToVault);
 
         emit RedeemRequest(controller, owner, requestId, msg.sender, shares);
         return requestId;
