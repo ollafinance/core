@@ -105,9 +105,6 @@ contract RebalanceNoKeysIntegrationTest is Test {
         vm.prank(user);
         vault.deposit(depositAmount, user, 0);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
         vm.warp(block.timestamp + 1 hours);
 

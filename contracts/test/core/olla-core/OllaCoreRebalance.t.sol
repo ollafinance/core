@@ -209,110 +209,6 @@ contract OllaCoreRebalanceTest is Test {
                                REBALANCE
     //////////////////////////////////////////////////////////////*/
 
-    function test_Rebalance_HarvestsRewardsAndUpdatesCumulativeRewards() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        uint256 rewardAmount = 5 * DECIMALS;
-        stakingManager.setHarvestedRewards(rewardAmount);
-
-        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
-
-        // Expected buffer after rebalance includes rewards pulled from rewards vault
-        uint256 expectedBuffer = vault.bufferedAssets() + rewardAmount;
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(expectedBuffer);
-
-        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
-        vm.expectEmit(true, true, true, true, address(core));
-        emit RewardsDelta(rewardAmount);
-        vm.expectEmit(true, true, true, true, address(core));
-        emit Rebalanced(rewardAmount, 0, 0, expectedBuffer);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
-        assertEq(
-            accountingAfter.cumulativeRewards,
-            accountingBefore.cumulativeRewards + rewardAmount,
-            "cumulative rewards updated"
-        );
-    }
-
-    function test_Rebalance_ZeroRewardsEmitsAndDoesNotUpdateCumulativeRewards() external {
-        uint256 depositAmount = 8 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        uint256 firstReward = 3 * DECIMALS;
-        stakingManager.setHarvestedRewards(firstReward);
-        vm.prank(operator);
-        core.rebalance();
-
-        // Advance past cooldown so a new rebalance cycle can start
-        vm.warp(block.timestamp + 1 hours);
-
-        uint256 expectedBuffer = vault.bufferedAssets();
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(expectedBuffer);
-
-        stakingManager.setHarvestedRewards(0);
-
-        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
-
-        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
-        vm.expectEmit(true, true, true, true, address(core));
-        emit RewardsDelta(0);
-        vm.expectEmit(true, true, true, true, address(core));
-        emit Rebalanced(0, 0, 0, expectedBuffer);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
-        assertEq(accountingAfter.cumulativeRewards, accountingBefore.cumulativeRewards, "cumulative rewards unchanged");
-    }
-
-    function test_Rebalance_PullUnstakedFunds_IncreasesBuffer() external {
-        uint256 unstakedAmount = 5 * DECIMALS;
-
-        // Deposit and stake first so that stakedPrincipal >= exitAmount
-        // (the mock returns exitAmount = receivedAmount, and the core code
-        // decrements stakedPrincipal by exitAmount).
-        _performDeposit(alice, unstakedAmount);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-        stakingManager.setStakeReturnAmount(unstakedAmount);
-        stakingManager.setTotalStaked(unstakedAmount);
-        vm.prank(operator);
-        core.rebalance();
-
-        // Advance past cooldown so a new rebalance cycle can start
-        vm.warp(block.timestamp + 1 hours);
-
-        // Now configure unstaked funds for the next rebalance
-        stakingManager.setUnstakedToken(asset);
-        stakingManager.setUnstakedAmount(unstakedAmount);
-        asset.mint(address(stakingManager), unstakedAmount);
-        stakingManager.setStakeReturnAmount(0);
-
-        uint256 expectedBuffer = vault.bufferedAssets() + unstakedAmount;
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(expectedBuffer);
-
-        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.getUnstakedFunds, ()));
-        vm.expectEmit(true, true, true, true, address(core));
-        emit UnstakedFundsClaimed(unstakedAmount);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        assertEq(vault.bufferedAssets(), expectedBuffer, "buffered assets increased");
-    }
-
     function test_Rebalance_PullUnstakedFunds_NoOp() external {
         stakingManager.setUnstakedToken(asset);
         stakingManager.setUnstakedAmount(0);
@@ -324,82 +220,6 @@ contract OllaCoreRebalanceTest is Test {
         core.rebalance();
 
         assertEq(vault.bufferedAssets(), bufferBefore, "buffered assets unchanged");
-    }
-
-    function test_Rebalance_PullUnstakedFunds_CapsExitAmountToStakedPrincipal() external {
-        uint256 stakedAmount = 5 * DECIMALS;
-        uint256 unstakedAmount = 8 * DECIMALS; // exitAmount > stakedPrincipal
-
-        // Deposit and stake to establish stakedPrincipal
-        _performDeposit(alice, stakedAmount);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-        stakingManager.setStakeReturnAmount(stakedAmount);
-        stakingManager.setTotalStaked(stakedAmount);
-        vm.prank(operator);
-        core.rebalance();
-
-        assertEq(core.accountingState().stakedPrincipal, stakedAmount, "stakedPrincipal after stake");
-
-        // Advance past cooldown
-        vm.warp(block.timestamp + 1 hours);
-
-        // Configure unstaked funds where exitAmount > stakedPrincipal.
-        // This simulates a scenario where the rollup returns more than tracked
-        // (e.g. rollup upgrade or accounting drift after slashing).
-        stakingManager.setUnstakedToken(asset);
-        stakingManager.setUnstakedAmount(unstakedAmount);
-        stakingManager.setUnstakedExitAmountOverride(unstakedAmount);
-        asset.mint(address(stakingManager), unstakedAmount);
-        stakingManager.setStakeReturnAmount(0);
-        // After exits, nothing remains staked on the rollup
-        stakingManager.setTotalStaked(0);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(unstakedAmount);
-
-        // Without the cap, this would revert with arithmetic underflow
-        // because exitAmount (8e18) > stakedPrincipal (5e18).
-        vm.prank(operator);
-        core.rebalance();
-
-        // _updateAccountingInternal runs at end and resets stakedPrincipal
-        // from totalStaked() (now 0). The key assertion is that we didn't revert.
-        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
-        assertEq(accountingAfter.stakedPrincipal, 0, "stakedPrincipal zeroed");
-    }
-
-    function test_Rebalance_FinalizeWithdrawals_ConsumesBuffer() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        uint256 withdrawalShares = 6 * DECIMALS;
-        uint256 targetBufferedAssets = 4 * DECIMALS;
-
-        _performDeposit(alice, depositAmount);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
-        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-
-        uint256 bufferBefore = vault.bufferedAssets();
-        uint256 bufferAfterFinalize = bufferBefore - request.assetsExpected;
-        uint256 expectedStaked = bufferAfterFinalize - targetBufferedAssets;
-
-        vm.expectEmit(true, true, true, true, address(core));
-        emit RewardsDelta(0);
-        vm.expectEmit(true, true, true, true, address(core));
-        emit WithdrawalFinalized(bufferBefore, request.assetsExpected);
-        vm.expectEmit(true, true, true, true, address(core));
-        emit Rebalanced(0, request.assetsExpected, expectedStaked, bufferAfterFinalize);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        assertEq(vault.bufferedAssets(), bufferAfterFinalize, "buffered assets reduced by finalize");
     }
 
     function test_Rebalance_FinalizeWithdrawals_QueueDrains() external {
@@ -418,115 +238,9 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(vault.pendingWithdrawalAssets(), 0, "pending queue drained");
     }
 
-    function test_Rebalance_FinalizeWithdrawals_NoLiquidityNoEvent() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        uint256 targetBuffered = 0;
-
-        _performDeposit(alice, depositAmount);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBuffered);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        stakingManager.setStakeReturnAmount(depositAmount);
-        stakingManager.setTotalStaked(depositAmount);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        // Advance past cooldown so a new rebalance cycle can start
-        vm.warp(block.timestamp + 1 hours);
-
-        _requestWithdrawal(alice, depositAmount);
-
-        vm.recordLogs();
-        vm.prank(operator);
-        core.rebalance();
-
-        Vm.Log[] memory entries = vm.getRecordedLogs();
-        bytes32 topic = keccak256("WithdrawalFinalized(uint256,uint256)");
-        bool found;
-        for (uint256 i = 0; i < entries.length; i++) {
-            if (entries[i].emitter == address(core) && entries[i].topics[0] == topic) {
-                found = true;
-                break;
-            }
-        }
-
-        assertFalse(found, "should not emit WithdrawalFinalized without liquidity");
-        assertEq(vault.pendingWithdrawalAssets(), depositAmount, "pending assets unchanged");
-        assertEq(vault.bufferedAssets(), targetBuffered, "buffer unchanged");
-    }
-
-    function test_Rebalance_PullUnstaked_AdvancesWithPendingExits() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        uint256 withdrawalShares = 4 * DECIMALS;
-
-        _performDeposit(alice, depositAmount);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(depositAmount);
-
-        uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
-        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        // Set hasFinalizedUnstakes=true to indicate pending exits exist
-        stakingManager.setWithdrawableUnstakes(1);
-
-        uint256 bufferBefore = vault.bufferedAssets();
-
-        vm.prank(operator);
-        core.rebalance();
-
-        // PullUnstaked no longer blocks — rebalance advances past it and completes
-        IOllaCore.RebalanceProgress memory progressAfterFirst = core.rebalanceProgress();
-        assertEq(
-            uint256(progressAfterFirst.step),
-            uint256(IOllaCore.RebalanceStep.Done),
-            "rebalance should advance past PullUnstaked even with pending exits"
-        );
-
-        // Pending exits had no unstaked funds to pull (unstakedAmount=0), so buffer is
-        // only reduced by the withdrawal finalization against the existing buffer.
-        assertEq(
-            vault.bufferedAssets(), bufferBefore - request.assetsExpected, "buffer reduced by finalized withdrawal"
-        );
-        assertEq(vault.pendingWithdrawalAssets(), 0, "pending assets finalized in same cycle");
-    }
-
     /*//////////////////////////////////////////////////////////////
                         REBALANCE PARTIAL PROGRESS
     //////////////////////////////////////////////////////////////*/
-
-    function test_Rebalance_PullUnstaked_AlwaysCompletes() external {
-        uint256 depositAmount = 10 * DECIMALS;
-        uint256 rewardAmount = 3 * DECIMALS;
-
-        _performDeposit(alice, depositAmount);
-        stakingManager.setHarvestedRewards(rewardAmount);
-
-        // Set target buffer high so nothing gets staked — allows verifying buffer amount
-        uint256 expectedBuffer = vault.bufferedAssets() + rewardAmount;
-        vm.prank(governance);
-        core.setTargetBufferedAssets(expectedBuffer);
-
-        // PullUnstaked is O(1) — just a balance transfer — so it always completes
-        // regardless of gas. Verify it advances past PullUnstaked in a single call.
-        vm.prank(operator);
-        (uint256 rewardsDelta, uint256 finalizedAmount, uint256 stakedAmount, uint256 resultingBuffer) =
-            core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
-        assertTrue(
-            uint256(progressAfter.step) != uint256(IOllaCore.RebalanceStep.PullUnstaked),
-            "rebalance should always advance past PullUnstaked (O(1) step)"
-        );
-        assertEq(rewardsDelta, rewardAmount, "rewards delta should return harvested amount");
-        assertEq(resultingBuffer, expectedBuffer, "buffer should include harvested rewards");
-    }
 
     function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtFinalizeWithdrawals() external {
         uint256 depositAmount = 10 * DECIMALS;
@@ -535,8 +249,6 @@ contract OllaCoreRebalanceTest is Test {
 
         // Deposit and stake first so stakedPrincipal >= exitAmount
         _performDeposit(alice, depositAmount);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setTotalStaked(depositAmount);
         vm.prank(operator);
@@ -607,8 +319,6 @@ contract OllaCoreRebalanceTest is Test {
 
         // Deposit and stake first so stakedPrincipal >= exitAmount
         _performDeposit(alice, depositAmount);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setTotalStaked(depositAmount);
         vm.prank(operator);
@@ -624,11 +334,6 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setUnstakedAmount(unstakedAmount);
         stakingManager.setGasBurnTarget(90_000);
         asset.mint(address(stakingManager), unstakedAmount);
-
-        uint256 expectedBuffer = vault.bufferedAssets() + unstakedAmount;
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(expectedBuffer);
 
         vm.prank(operator);
         core.rebalance{ gas: 400_000 }();
@@ -661,9 +366,6 @@ contract OllaCoreRebalanceTest is Test {
         for (uint256 i = 0; i < totalRequests; i++) {
             _requestWithdrawal(alice, requestShares);
         }
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -743,169 +445,6 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(vault.pendingWithdrawalAssets(), 0, "queue should drain after follow-up rebalance");
     }
 
-    function test_Rebalance_Liveness_ZeroUnstakeReturn_Recovers() external {
-        uint256 bufferAmount = 5 * DECIMALS;
-        uint256 targetBufferedAssets = 20 * DECIMALS;
-
-        asset.mint(address(vault), bufferAmount);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        stakingManager.setPendingUnstakes(0);
-        stakingManager.setUnstakeReturnAmount(0);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
-        assertEq(
-            uint256(progressAfter.step),
-            uint256(IOllaCore.RebalanceStep.Done),
-            "rebalance should advance when no unstake capacity"
-        );
-        assertEq(progressAfter.unstakeRemaining, 0, "unstake remaining should clear when no capacity");
-
-        // Advance past cooldown so a new rebalance cycle can start
-        vm.warp(block.timestamp + 1 hours);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
-        assertEq(
-            uint256(progressFinal.step),
-            uint256(IOllaCore.RebalanceStep.Done),
-            "rebalance should remain done after recovery"
-        );
-    }
-
-    function test_Rebalance_Liveness_ZeroUnstakeReturn_WithCapacity_DoesNotAdvance() external {
-        uint256 bufferAmount = 5 * DECIMALS;
-        uint256 targetBufferedAssets = 20 * DECIMALS;
-
-        asset.mint(address(vault), bufferAmount);
-        vm.prank(governance);
-        vault.reconcileBufferedAssets();
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        stakingManager.setPendingUnstakes(0);
-        stakingManager.setUnstakeReturnAmount(0);
-        stakingManager.setActivatedAttesterCount(1);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
-        assertEq(
-            uint256(progressAfter.step),
-            uint256(IOllaCore.RebalanceStep.InitiateUnstake),
-            "rebalance should stay in initiate unstake with capacity"
-        );
-        assertEq(
-            progressAfter.unstakeRemaining,
-            targetBufferedAssets - bufferAmount,
-            "unstake remaining should persist when capacity exists"
-        );
-    }
-
-    function test_Rebalance_Bounded_StateMachineCompletesAndEmitsOnce() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        uint256 withdrawalShares = 20 * DECIMALS;
-        uint256 targetBufferedAssets = 10 * DECIMALS;
-        uint256 rewardAmount = 5 * DECIMALS;
-        uint256 unstakedAmount = 8 * DECIMALS;
-
-        // Deposit and stake first so stakedPrincipal >= exitAmount
-        _performDeposit(alice, depositAmount);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-        stakingManager.setStakeReturnAmount(depositAmount);
-        stakingManager.setTotalStaked(depositAmount);
-        vm.prank(operator);
-        core.rebalance();
-
-        // Advance past cooldown so a new rebalance cycle can start
-        vm.warp(block.timestamp + 1 hours);
-
-        // Set up the actual test scenario
-        _requestWithdrawal(alice, withdrawalShares);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stakingManager.setHarvestedRewards(rewardAmount);
-        stakingManager.setUnstakedToken(asset);
-        stakingManager.setUnstakedAmount(unstakedAmount);
-        asset.mint(address(stakingManager), unstakedAmount);
-        stakingManager.setStakeReturnAmount(20 * DECIMALS);
-
-        // Force the gas gate to always fail by writing `rebalanceGasThreshold`
-        // directly to type(uint32).max. This bypasses the setter's 1M cap and
-        // its whenRebalanceDone modifier. Any realistic call budget is now
-        // below the gate, so the state machine deterministically parks at the
-        // first gated step (FinalizeWithdrawals) regardless of optimizer
-        // settings — the test no longer depends on a fragile gas-stipend sweep.
-        uint32 defaultThreshold = core.rebalanceGasThreshold();
-        _forceRebalanceGasThreshold(type(uint32).max);
-
-        vm.recordLogs();
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
-        assertEq(
-            uint256(progressAfter.step),
-            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
-            "rebalance should park at first gated step"
-        );
-
-        bytes32 rebalancedSelector = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
-        Vm.Log[] memory earlyLogs = vm.getRecordedLogs();
-        bool earlyEmit;
-        for (uint256 i; i < earlyLogs.length; ++i) {
-            if (earlyLogs[i].topics[0] == rebalancedSelector) {
-                earlyEmit = true;
-                break;
-            }
-        }
-        assertFalse(earlyEmit, "should not emit Rebalanced before completion");
-
-        // Restore threshold so the remaining steps can proceed. vm.store
-        // bypasses whenRebalanceDone (we are mid-rebalance here).
-        _forceRebalanceGasThreshold(defaultThreshold);
-
-        uint256 rebalancedEvents;
-        uint256 maxIterations = 10;
-        for (uint256 i; i < maxIterations; ++i) {
-            vm.recordLogs();
-            vm.prank(operator);
-            core.rebalance();
-            Vm.Log[] memory entries = vm.getRecordedLogs();
-            for (uint256 j; j < entries.length; ++j) {
-                if (entries[j].topics[0] == rebalancedSelector) {
-                    rebalancedEvents += 1;
-                }
-            }
-            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-            if (progress.step == IOllaCore.RebalanceStep.Done) {
-                break;
-            }
-        }
-
-        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
-        assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should finish");
-        assertEq(progressFinal.stakeRemaining, 0, "stake remaining should clear");
-        assertEq(progressFinal.unstakeRemaining, 0, "unstake remaining should clear");
-        assertEq(rebalancedEvents, 1, "Rebalanced should emit once at completion");
-    }
-
     /// @dev Overwrites OllaCore.rebalanceGasThreshold without going through the
     ///      setter to bypass the 1M cap and whenRebalanceDone modifier.
     ///      StdStorage resolves the packed slot from the getter so the helper
@@ -932,32 +471,6 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(vault.bufferedAssets(), bufferedBefore, "buffered assets unchanged");
     }
 
-    function test_Rebalance_Unstake_TargetBufferedAssetsShortfall_NoPending() external {
-        uint256 bufferAmount = 10 * DECIMALS;
-        uint256 targetBufferedAssets = 30 * DECIMALS;
-
-        asset.mint(address(vault), bufferAmount);
-        vm.prank(governance);
-        vault.reconcileBufferedAssets();
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        stakingManager.setPendingUnstakes(0);
-
-        uint256 shortfall = targetBufferedAssets - bufferAmount;
-
-        vm.expectEmit(true, true, true, true, address(core));
-        emit UnstakeInitiated(shortfall, shortfall);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        assertEq(stakingManager.lastUnstakeAmount(), shortfall, "unstake replenishes buffer");
-    }
-
     function test_Rebalance_Unstake_PendingExceedsBuffer() external {
         uint256 pendingAssets = 25 * DECIMALS;
 
@@ -971,29 +484,6 @@ contract OllaCoreRebalanceTest is Test {
         core.rebalance();
 
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets, "unstake initiated");
-    }
-
-    function test_Rebalance_Unstake_PendingPlusTargetBufferedAssets() external {
-        uint256 pendingAssets = 25 * DECIMALS;
-        uint256 targetBufferedAssets = 5 * DECIMALS;
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(pendingAssets);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        stakingManager.setPendingUnstakes(0);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        assertEq(
-            stakingManager.lastUnstakeAmount(),
-            pendingAssets + targetBufferedAssets,
-            "unstake uses pending plus target buffer"
-        );
     }
 
     function test_Rebalance_Unstake_NoOpWhenBufferCoversPending() external {
@@ -1051,139 +541,12 @@ contract OllaCoreRebalanceTest is Test {
                              STAKE SURPLUS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Rebalance_StakeSurplus_UsesActualStakedAmount() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        uint256 targetBufferedAssets = 10 * DECIMALS;
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-
-        // Under pull-model accounting, core.accountingState().stakedPrincipal reads
-        // stakingManager.totalStaked() live, so the mock must propagate the actual staked amount
-        // into its own accounting rather than leaving totalStakedAmount as a static oracle.
-        stakingManager.setTrackStakedAmount(true);
-
-        uint256 actualStaked = 64 * DECIMALS;
-        stakingManager.setStakeReturnAmount(actualStaked);
-
-        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
-        uint256 bufferedBefore = vault.bufferedAssets();
-        uint256 stakeable = bufferedBefore - targetBufferedAssets;
-        uint256 expectedBufferAfter = bufferedBefore - actualStaked;
-        uint256 expectedStakedPrincipal = accountingBefore.stakedPrincipal + actualStaked;
-
-        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.stake, (stakeable)));
-
-        vm.prank(operator);
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
-
-        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
-        assertEq(stakedAmount, actualStaked, "staked amount uses staking manager return");
-        assertEq(resultingBuffer, expectedBufferAfter, "resulting buffer uses actual staked");
-        assertEq(vault.bufferedAssets(), expectedBufferAfter, "buffered assets reduced by actual staked");
-        assertEq(
-            accountingAfter.stakedPrincipal, expectedStakedPrincipal, "staked principal increased by actual staked"
-        );
-    }
-
-    function test_Rebalance_StakeSurplus_NoStakeWhenBelowTarget() external {
-        uint256 depositAmount = 5 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        uint256 targetBufferedAssets = 10 * DECIMALS;
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-
-        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
-        uint256 bufferedBefore = vault.bufferedAssets();
-
-        vm.expectEmit(true, true, true, true, address(core));
-        emit Rebalanced(0, 0, 0, bufferedBefore);
-
-        vm.prank(operator);
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
-
-        assertEq(stakedAmount, 0, "staked amount is zero when below target");
-        assertEq(resultingBuffer, bufferedBefore, "buffer unchanged when below target");
-        assertEq(core.accountingState().stakedPrincipal, accountingBefore.stakedPrincipal, "staked principal unchanged");
-    }
-
-    function test_Rebalance_Liveness_ZeroStakeReturn_Recovers() external {
-        uint256 depositAmount = 30 * DECIMALS;
-        uint256 targetBufferedAssets = 10 * DECIMALS;
-
-        _performDeposit(alice, depositAmount);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        stakingManager.setStakeReturnAmount(0);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
-        assertEq(
-            uint256(progressAfter.step),
-            uint256(IOllaCore.RebalanceStep.Done),
-            "rebalance should advance when no stake capacity"
-        );
-        assertEq(progressAfter.stakeRemaining, 0, "stake remaining should clear when no capacity");
-
-        // Advance past cooldown so a new rebalance cycle can start
-        vm.warp(block.timestamp + 1 hours);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
-        assertEq(
-            uint256(progressFinal.step),
-            uint256(IOllaCore.RebalanceStep.Done),
-            "rebalance should remain done after recovery"
-        );
-    }
-
-    function test_Rebalance_StakeSurplus_RevertsWhenStakedExceedsStakeable() external {
-        uint256 depositAmount = 20 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        uint256 targetBufferedAssets = 10 * DECIMALS;
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-
-        uint256 bufferedBefore = vault.bufferedAssets();
-        uint256 stakeable = bufferedBefore - targetBufferedAssets;
-
-        stakingManager.setStakeReturnAmount(stakeable + 1);
-        stakingManager.setAllowStakeReturnExceeds(true);
-
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__StakeFailed.selector, stakeable + 1));
-        vm.prank(operator);
-        core.rebalance();
-    }
-
     function test_Rebalance_StakeSurplus_ReclampsStaleStakeRemainingOnResume() external {
         uint256 depositAmount = 100 * DECIMALS;
         uint256 initialStakeAmount = 40 * DECIMALS;
         uint256 withdrawalShares = 60 * DECIMALS;
 
         _performDeposit(alice, depositAmount);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -1223,14 +586,118 @@ contract OllaCoreRebalanceTest is Test {
         assertGe(vault.bufferedAssets(), pendingBeforeResume, "buffer still covers pending withdrawals");
     }
 
+    /// @dev Verifies that harvested rewards are observed by accounting via the
+    ///      RewardsDelta event and the cumulativeRewards counter, independent of any
+    ///      staking activity. Staking is suppressed via setStakeReturnAmount(0) so the
+    ///      rebalance only exercises the harvest path.
+    function test_Rebalance_HarvestsRewardsAndUpdatesCumulativeRewards() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 rewardAmount = 5 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setHarvestedRewards(rewardAmount);
+        stakingManager.setUnstakedAmount(0);
+        // Suppress staking: stake() returns 0 and canStake() reports false, so the
+        // surplus stays in the vault buffer regardless of buffered amount.
+        stakingManager.setStakeReturnAmount(0);
+
+        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
+        vm.expectEmit(true, true, true, true, address(core));
+        emit RewardsDelta(rewardAmount);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
+        assertEq(
+            accountingAfter.cumulativeRewards,
+            accountingBefore.cumulativeRewards + rewardAmount,
+            "cumulative rewards should advance by harvested amount"
+        );
+    }
+
+    /// @dev Verifies event ordering during rebalance: WithdrawalFinalized must be
+    ///      emitted before the terminal Rebalanced event. Uses recordLogs to read the
+    ///      ordered log stream rather than asserting exact arg values, so the test is
+    ///      robust to changes in stake/buffer accounting.
+    function test_Rebalance_StakeSurplus_EmitsAfterFinalize() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 withdrawalShares = 20 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+        _requestWithdrawal(alice, withdrawalShares);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        // Non-zero stake return so StakeSurplus actually executes after FinalizeWithdrawals.
+        // Use a high value (clamped by the mock to the requested amount when
+        // allowStakeReturnExceeds is false) so the surplus is fully staked and the
+        // rebalance reaches the terminal Done state -- otherwise Rebalanced would not
+        // emit and the ordering check below could not run.
+        stakingManager.setStakeReturnAmount(1_000 * DECIMALS);
+
+        vm.recordLogs();
+        vm.prank(operator);
+        core.rebalance();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+
+        // Event signatures (kept in this contract / IOllaCore):
+        //   WithdrawalFinalized(uint256,uint256)              — IOllaCore + IOllaVault
+        //   Rebalanced(uint256,uint256,uint256,uint256)       — IOllaCore
+        bytes32 finalizedTopic = keccak256("WithdrawalFinalized(uint256,uint256)");
+        bytes32 rebalancedTopic = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+
+        uint256 finalizedIndex = type(uint256).max;
+        uint256 rebalancedIndex = type(uint256).max;
+        for (uint256 i = 0; i < entries.length; ++i) {
+            if (entries[i].topics.length == 0) continue;
+            // Restrict to events emitted by core to avoid matching the vault's
+            // internal WithdrawalFinalized re-emit if the orderings ever diverge.
+            if (entries[i].emitter != address(core)) continue;
+            if (entries[i].topics[0] == finalizedTopic && finalizedIndex == type(uint256).max) {
+                finalizedIndex = i;
+            } else if (entries[i].topics[0] == rebalancedTopic && rebalancedIndex == type(uint256).max) {
+                rebalancedIndex = i;
+            }
+        }
+
+        assertLt(finalizedIndex, type(uint256).max, "WithdrawalFinalized should be emitted by core");
+        assertLt(rebalancedIndex, type(uint256).max, "Rebalanced should be emitted by core");
+        assertLt(finalizedIndex, rebalancedIndex, "finalize must emit before rebalanced terminal event");
+    }
+
+    /// @dev When the staking manager reports staking more than was offered, the
+    ///      sanity check at the end of `_stakeSurplus` must revert with
+    ///      OllaCore__StakeFailed. We exploit the mock's allowStakeReturnExceeds knob
+    ///      to fabricate this otherwise-impossible response.
+    function test_Rebalance_StakeSurplus_RevertsWhenStakedExceedsStakeable() external {
+        uint256 depositAmount = 20 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        uint256 bufferedBefore = vault.bufferedAssets();
+        // Force the mock to report `bufferedBefore + 1` even though only `bufferedBefore`
+        // was offered to stake(). The core sanity check should catch this.
+        stakingManager.setStakeReturnAmount(bufferedBefore + 1);
+        stakingManager.setAllowStakeReturnExceeds(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__StakeFailed.selector, bufferedBefore + 1));
+        vm.prank(operator);
+        core.rebalance();
+    }
+
     function test_Rebalance_FinalizeWithdrawals_DoesNotFinalizePostSnapshotRequest() external {
         uint256 depositAmount = 100 * DECIMALS;
         uint256 withdrawalShares = 10 * DECIMALS;
 
         _performDeposit(alice, depositAmount);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
 
         uint256 firstRequestId = _requestWithdrawal(alice, withdrawalShares);
 
@@ -1263,77 +730,480 @@ contract OllaCoreRebalanceTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                    REWARDS VAULT SWAP (C3)
+                    PULL UNSTAKED / HARVEST PATHS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Rebalance_StakeSurplus_EmitsAfterFinalize() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        uint256 withdrawalShares = 20 * DECIMALS;
-        uint256 targetBufferedAssets = 10 * DECIMALS;
-        uint256 actualStaked = 64 * DECIMALS;
-
+    /// @dev Re-added post-targetBufferedAssets removal. Verifies that a zero-reward harvest emits
+    ///      RewardsDelta(0) and does NOT advance the cumulativeRewards counter. The previous
+    ///      version pinned the terminal Rebalanced event to exact args via target; with target
+    ///      gone we suppress staking via setStakeReturnAmount(0) and assert the rewards-side
+    ///      contract directly. The exact terminal Rebalanced(...) match is intentionally dropped
+    ///      because the resulting buffer depends on residual buffered assets that are no longer
+    ///      pinned by a target.
+    function test_Rebalance_ZeroRewardsEmitsAndDoesNotUpdateCumulativeRewards() external {
+        uint256 depositAmount = 8 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferedAssets);
+        uint256 firstReward = 3 * DECIMALS;
+        stakingManager.setHarvestedRewards(firstReward);
+        vm.prank(operator);
+        core.rebalance();
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        // Suppress staking on the second rebalance so nothing else perturbs accounting.
+        // canStake() returns false when stakeReturnAmount is 0, and stake() returns 0.
+        stakingManager.setStakeReturnAmount(0);
+        stakingManager.setHarvestedRewards(0);
+
+        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.harvestRewards, ()));
+        vm.expectEmit(true, true, true, true, address(core));
+        emit RewardsDelta(0);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
+        assertEq(accountingAfter.cumulativeRewards, accountingBefore.cumulativeRewards, "cumulative rewards unchanged");
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. Two-cycle test: first cycle stakes the
+    ///      full deposit so the rollup-pull path has a non-zero stakedPrincipal to draw against,
+    ///      then the second cycle pulls those funds back via getUnstakedFunds() and the buffer
+    ///      grows by the unstaked amount. setStakeReturnAmount(0) on the second cycle keeps the
+    ///      pulled funds in the buffer rather than re-staking them.
+    function test_Rebalance_PullUnstakedFunds_IncreasesBuffer() external {
+        uint256 unstakedAmount = 5 * DECIMALS;
+
+        // Deposit and stake first so that stakedPrincipal >= exitAmount.
+        // (The mock returns exitAmount = receivedAmount, and core decrements
+        // stakedPrincipal by exitAmount.)
+        _performDeposit(alice, unstakedAmount);
+        stakingManager.setStakeReturnAmount(unstakedAmount);
+        stakingManager.setTotalStaked(unstakedAmount);
+        vm.prank(operator);
+        core.rebalance();
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        // Now configure unstaked funds for the next rebalance. Suppress further
+        // staking so the pulled funds stay in the vault buffer.
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+        stakingManager.setStakeReturnAmount(0);
+
+        uint256 expectedBuffer = vault.bufferedAssets() + unstakedAmount;
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.getUnstakedFunds, ()));
+        vm.expectEmit(true, true, true, true, address(core));
+        emit UnstakedFundsClaimed(unstakedAmount);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(vault.bufferedAssets(), expectedBuffer, "buffered assets increased");
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. Safety test: if the rollup reports an
+    ///      exitAmount larger than tracked stakedPrincipal (e.g. rollup upgrade or accounting
+    ///      drift after slashing), the core must cap the decrement at stakedPrincipal rather than
+    ///      underflowing. setStakeReturnAmount(0) on the second cycle ensures no further staking
+    ///      perturbs the assertion.
+    function test_Rebalance_PullUnstakedFunds_CapsExitAmountToStakedPrincipal() external {
+        uint256 stakedAmount = 5 * DECIMALS;
+        uint256 unstakedAmount = 8 * DECIMALS; // exitAmount > stakedPrincipal
+
+        // Deposit and stake to establish stakedPrincipal
+        _performDeposit(alice, stakedAmount);
+        stakingManager.setStakeReturnAmount(stakedAmount);
+        stakingManager.setTotalStaked(stakedAmount);
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(core.accountingState().stakedPrincipal, stakedAmount, "stakedPrincipal after stake");
+
+        // Advance past cooldown
+        vm.warp(block.timestamp + 1 hours);
+
+        // Configure unstaked funds where exitAmount > stakedPrincipal.
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        stakingManager.setUnstakedExitAmountOverride(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+        // After exits, nothing remains staked on the rollup
+        stakingManager.setTotalStaked(0);
+        // Suppress further staking
+        stakingManager.setStakeReturnAmount(0);
+
+        // Without the cap, this would revert with arithmetic underflow
+        // because exitAmount (8e18) > stakedPrincipal (5e18).
+        vm.prank(operator);
+        core.rebalance();
+
+        // _updateAccountingInternal runs at end and resets stakedPrincipal
+        // from totalStaked() (now 0). The key assertion is that we didn't revert.
+        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
+        assertEq(accountingAfter.stakedPrincipal, 0, "stakedPrincipal zeroed");
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. PullUnstaked is O(1) and must always
+    ///      complete in one call. Originally a high target was used to suppress staking and pin
+    ///      the buffer; now setStakeReturnAmount(0) suppresses staking the same way. The strict
+    ///      `resultingBuffer == expectedBuffer` assertion is dropped because it was implicitly
+    ///      coupled to the target-pin; the load-bearing assertion is that PullUnstaked is not the
+    ///      terminal step.
+    function test_Rebalance_PullUnstaked_AlwaysCompletes() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 rewardAmount = 3 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+        stakingManager.setHarvestedRewards(rewardAmount);
+
+        // Suppress staking so the surplus stays in the buffer rather than being staked.
+        stakingManager.setStakeReturnAmount(0);
+
+        // PullUnstaked is O(1) — just a balance transfer — so it always completes
+        // regardless of gas. Verify it advances past PullUnstaked in a single call.
+        vm.prank(operator);
+        (uint256 rewardsDelta,,,) = core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
+        assertTrue(
+            uint256(progressAfter.step) != uint256(IOllaCore.RebalanceStep.PullUnstaked),
+            "rebalance should always advance past PullUnstaked (O(1) step)"
+        );
+        assertEq(rewardsDelta, rewardAmount, "rewards delta should return harvested amount");
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. Sets hasFinalizedUnstakes=true to mark
+    ///      pending exits exist; with unstakedAmount=0 there is nothing to actually pull, so
+    ///      PullUnstaked is a no-op. The withdrawal request finalizes against the existing
+    ///      buffer in the same cycle and the rebalance reaches Done. setStakeReturnAmount(0)
+    ///      replaces the original `target = depositAmount` trick to keep the post-finalize
+    ///      surplus from being staked.
+    function test_Rebalance_PullUnstaked_AdvancesWithPendingExits() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 withdrawalShares = 4 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
 
         uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
         IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
-        stakingManager.setStakeReturnAmount(actualStaked);
+        // Set hasFinalizedUnstakes=true to indicate pending exits exist
+        stakingManager.setWithdrawableUnstakes(1);
+        // Suppress staking of the post-finalize surplus
+        stakingManager.setStakeReturnAmount(0);
 
-        uint256 bufferedBefore = vault.bufferedAssets();
-        uint256 bufferAfterFinalize = bufferedBefore - request.assetsExpected;
-        uint256 stakeable = bufferAfterFinalize - targetBufferedAssets;
-        uint256 expectedBufferAfter = bufferAfterFinalize - actualStaked;
-
-        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.stake, (stakeable)));
-
-        vm.recordLogs();
+        uint256 bufferBefore = vault.bufferedAssets();
 
         vm.prank(operator);
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
+        core.rebalance();
 
-        Vm.Log[] memory entries = vm.getRecordedLogs();
-        bytes32 finalizedSelector = keccak256("WithdrawalFinalized(uint256,uint256)");
-        bytes32 rebalancedSelector = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
-        uint256 finalizedIndex = type(uint256).max;
-        uint256 rebalancedIndex = type(uint256).max;
+        // PullUnstaked no longer blocks — rebalance advances past it and completes
+        IOllaCore.RebalanceProgress memory progressAfterFirst = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfterFirst.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should advance past PullUnstaked even with pending exits"
+        );
 
-        for (uint256 i; i < entries.length; ++i) {
-            if (entries[i].topics[0] == finalizedSelector) {
-                finalizedIndex = i;
-            }
-            if (entries[i].topics[0] == rebalancedSelector) {
-                rebalancedIndex = i;
-            }
-        }
-
-        assertTrue(finalizedIndex < rebalancedIndex, "finalize emits before rebalance");
-        assertEq(stakedAmount, actualStaked, "staked amount uses staking manager return");
-        assertEq(resultingBuffer, expectedBufferAfter, "resulting buffer accounts for stake");
+        // Pending exits had no unstaked funds to pull (unstakedAmount=0), so buffer is
+        // only reduced by the withdrawal finalization against the existing buffer.
+        assertEq(
+            vault.bufferedAssets(), bufferBefore - request.assetsExpected, "buffer reduced by finalized withdrawal"
+        );
+        assertEq(vault.pendingWithdrawalAssets(), 0, "pending assets finalized in same cycle");
     }
 
     /*//////////////////////////////////////////////////////////////
-                    GAS EXHAUSTION: InitiateUnstake
+                       FINALIZE WITHDRAWALS
     //////////////////////////////////////////////////////////////*/
 
-    function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtInitiateUnstake() external {
-        uint256 depositAmount = 100 * DECIMALS;
+    /// @dev Re-added post-targetBufferedAssets removal. Finalize consumes the buffer by
+    ///      request.assetsExpected. Originally `expectedStaked = bufferAfterFinalize - target`;
+    ///      with target gone we suppress staking via setStakeReturnAmount(0), so stakedAmount=0
+    ///      and resultingBuffer == bufferAfterFinalize. The Rebalanced event is updated to
+    ///      reflect those values directly.
+    function test_Rebalance_FinalizeWithdrawals_ConsumesBuffer() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        uint256 withdrawalShares = 6 * DECIMALS;
 
         _performDeposit(alice, depositAmount);
 
-        // Create many small withdrawal requests so _finalizeWithdrawals consumes gas
-        uint256 numRequests = 50;
-        for (uint256 i = 0; i < numRequests; i++) {
-            _requestWithdrawal(alice, 1 * DECIMALS);
+        uint256 requestId = _requestWithdrawal(alice, withdrawalShares);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        // Suppress staking so the post-finalize buffer is not consumed by stake().
+        stakingManager.setStakeReturnAmount(0);
+
+        uint256 bufferBefore = vault.bufferedAssets();
+        uint256 bufferAfterFinalize = bufferBefore - request.assetsExpected;
+
+        vm.expectEmit(true, true, true, true, address(core));
+        emit RewardsDelta(0);
+        vm.expectEmit(true, true, true, true, address(core));
+        emit WithdrawalFinalized(bufferBefore, request.assetsExpected);
+        vm.expectEmit(true, true, true, true, address(core));
+        emit Rebalanced(0, request.assetsExpected, 0, bufferAfterFinalize);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(vault.bufferedAssets(), bufferAfterFinalize, "buffered assets reduced by finalize");
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. Validates that when the buffer is empty,
+    ///      finalization is skipped entirely and no WithdrawalFinalized event fires. The first
+    ///      rebalance stakes the full deposit, leaving buffer=0; the second rebalance attempts
+    ///      to finalize the new request but the buffer-empty short-circuit in _finalizeWithdrawals
+    ///      prevents any event emission. The original `setTargetBufferedAssets(0)` line was
+    ///      load-bearing only as a no-op (target=0 was already the default); deleting it does not
+    ///      affect the flow.
+    function test_Rebalance_FinalizeWithdrawals_NoLiquidityNoEvent() external {
+        uint256 depositAmount = 10 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        stakingManager.setTotalStaked(depositAmount);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        _requestWithdrawal(alice, depositAmount);
+
+        vm.recordLogs();
+        vm.prank(operator);
+        core.rebalance();
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 topic = keccak256("WithdrawalFinalized(uint256,uint256)");
+        bool found;
+        for (uint256 i = 0; i < entries.length; i++) {
+            if (entries[i].emitter == address(core) && entries[i].topics[0] == topic) {
+                found = true;
+                break;
+            }
         }
 
-        // Target much higher than current buffer so unstakeRemaining > 0 after finalization
+        assertFalse(found, "should not emit WithdrawalFinalized without liquidity");
+        assertEq(vault.pendingWithdrawalAssets(), depositAmount, "pending assets unchanged");
+        assertEq(vault.bufferedAssets(), 0, "buffer remains empty");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                       LIVENESS / STATE MACHINE
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Re-added post-targetBufferedAssets removal. Forces an unstake deficit by writing
+    ///      pendingWithdrawalAssets directly via stdstore (matches the existing
+    ///      Unstake_PendingExceedsBuffer pattern) instead of using a high target. With
+    ///      activated attester count == 0 (mock default) and unstakeReturnAmount == 0, the
+    ///      InitiateUnstake step takes the no-capacity branch (OllaCore L416-413) and clears
+    ///      unstakeRemaining, advancing to Done — verifying the liveness recovery path.
+    function test_Rebalance_Liveness_ZeroUnstakeReturn_Recovers() external {
+        uint256 bufferAmount = 5 * DECIMALS;
+        uint256 pendingAssets = 20 * DECIMALS;
+
+        // Seed the buffer so the rebalance has live work to evaluate.
+        asset.mint(address(vault), bufferAmount);
         vm.prank(governance);
-        core.setTargetBufferedAssets(200 * DECIMALS);
+        vault.reconcileBufferedAssets();
+
+        // Force an unstake deficit: pending > buffer.
+        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(pendingAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+        stakingManager.setUnstakeReturnAmount(0);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should advance when no unstake capacity"
+        );
+        assertEq(progressAfter.unstakeRemaining, 0, "unstake remaining should clear when no capacity");
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
+        assertEq(
+            uint256(progressFinal.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should remain done after recovery"
+        );
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. Mirror of the recovery test, but with
+    ///      activated attester count > 0. With capacity advertised but unstakeReturnAmount == 0,
+    ///      the InitiateUnstake step parks (saves progress and returns) instead of advancing —
+    ///      the no-capacity escape hatch only fires when there are zero attesters. The unstake
+    ///      deficit is forced via stdstore on pendingWithdrawalAssets (replacing the old
+    ///      target-driven deficit). The expected unstakeRemaining is `pending - buffer`.
+    function test_Rebalance_Liveness_ZeroUnstakeReturn_WithCapacity_DoesNotAdvance() external {
+        uint256 bufferAmount = 5 * DECIMALS;
+        uint256 pendingAssets = 20 * DECIMALS;
+
+        asset.mint(address(vault), bufferAmount);
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
+
+        // Force an unstake deficit: pending > buffer.
+        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(pendingAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+        stakingManager.setUnstakeReturnAmount(0);
+        stakingManager.setActivatedAttesterCount(1);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.InitiateUnstake),
+            "rebalance should stay in initiate unstake with capacity"
+        );
+        assertEq(
+            progressAfter.unstakeRemaining,
+            pendingAssets - bufferAmount,
+            "unstake remaining should persist when capacity exists"
+        );
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. Two-cycle bounded state-machine test:
+    ///      first cycle stakes the full deposit, second cycle exercises every step under a
+    ///      fully-saturated gas gate so the rebalance parks at the first gated step
+    ///      (FinalizeWithdrawals) and resumes across multiple calls until Done. The original
+    ///      version used a target-driven deficit AND pending withdrawals; we now drop the
+    ///      second `setTargetBufferedAssets(targetBufferedAssets)` call entirely — the pending
+    ///      withdrawals already create unstake work and the buffer surplus naturally drives
+    ///      stake work. The invariant under test is unchanged: exactly one terminal Rebalanced
+    ///      event across the resumed cycles, all per-step counters cleared at Done.
+    function test_Rebalance_Bounded_StateMachineCompletesAndEmitsOnce() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 withdrawalShares = 20 * DECIMALS;
+        uint256 rewardAmount = 5 * DECIMALS;
+        uint256 unstakedAmount = 8 * DECIMALS;
+
+        // Deposit and stake first so stakedPrincipal >= exitAmount
+        _performDeposit(alice, depositAmount);
+        stakingManager.setStakeReturnAmount(depositAmount);
+        stakingManager.setTotalStaked(depositAmount);
+        vm.prank(operator);
+        core.rebalance();
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        // Set up the actual test scenario
+        _requestWithdrawal(alice, withdrawalShares);
+
+        stakingManager.setHarvestedRewards(rewardAmount);
+        stakingManager.setUnstakedToken(asset);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+        stakingManager.setStakeReturnAmount(20 * DECIMALS);
+
+        // Force the gas gate to always fail by writing `rebalanceGasThreshold`
+        // directly to type(uint32).max. Any realistic call budget is now below
+        // the gate, so the state machine deterministically parks at the first
+        // gated step (FinalizeWithdrawals).
+        uint32 defaultThreshold = core.rebalanceGasThreshold();
+        _forceRebalanceGasThreshold(type(uint32).max);
+
+        vm.recordLogs();
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "rebalance should park at first gated step"
+        );
+
+        bytes32 rebalancedSelector = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+        Vm.Log[] memory earlyLogs = vm.getRecordedLogs();
+        bool earlyEmit;
+        for (uint256 i; i < earlyLogs.length; ++i) {
+            if (earlyLogs[i].topics[0] == rebalancedSelector) {
+                earlyEmit = true;
+                break;
+            }
+        }
+        assertFalse(earlyEmit, "should not emit Rebalanced before completion");
+
+        // Restore threshold so the remaining steps can proceed.
+        _forceRebalanceGasThreshold(defaultThreshold);
+
+        uint256 rebalancedEvents;
+        uint256 maxIterations = 10;
+        for (uint256 i; i < maxIterations; ++i) {
+            vm.recordLogs();
+            vm.prank(operator);
+            core.rebalance();
+            Vm.Log[] memory entries = vm.getRecordedLogs();
+            for (uint256 j; j < entries.length; ++j) {
+                if (entries[j].topics[0] == rebalancedSelector) {
+                    rebalancedEvents += 1;
+                }
+            }
+            IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
+            if (progress.step == IOllaCore.RebalanceStep.Done) {
+                break;
+            }
+        }
+
+        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
+        assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should finish");
+        assertEq(progressFinal.stakeRemaining, 0, "stake remaining should clear");
+        assertEq(progressFinal.unstakeRemaining, 0, "unstake remaining should clear");
+        assertEq(rebalancedEvents, 1, "Rebalanced should emit once at completion");
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. Searches a gas-stipend range to find a
+    ///      level that allows partial finalization to drain the buffer (advancing past
+    ///      FinalizeWithdrawals via the bufferedAssets()==0 condition) but leaves gasleft below
+    ///      the threshold at InitiateUnstake — parking the rebalance there. The unstake deficit
+    ///      is created by staking the full deposit first, then minting a small fresh buffer and
+    ///      enqueuing more pending withdrawals than that buffer covers; without any target
+    ///      contribution this keeps `pending > buffer` after partial finalize.
+    function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtInitiateUnstake() external {
+        // Force a deficit via stdstore (no real queue work, no rate complications): the
+        // FinalizeWithdrawals step then advances quickly with finalizedAmount=0, so the
+        // gas-search window for parking exactly at InitiateUnstake is narrow and stable.
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 pendingAssets = 200 * DECIMALS;
+        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(pendingAssets);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -1342,8 +1212,9 @@ contract OllaCoreRebalanceTest is Test {
         uint256 snapshotId = vm.snapshotState();
         uint256 selectedGas;
 
-        // Search for gas level that stops exactly at InitiateUnstake
-        for (uint256 gasLimit = 200_000; gasLimit <= 2_000_000; gasLimit += 5_000) {
+        // Search for a gas level that passes FinalizeWithdrawals' gate (gasleft > 180k threshold)
+        // but fails InitiateUnstake's gate after the no-op finalize.
+        for (uint256 gasLimit = 200_000; gasLimit <= 600_000; gasLimit += 1_000) {
             vm.revertToState(snapshotId);
             vm.prank(operator);
             (bool success, bytes memory data) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
@@ -1353,8 +1224,7 @@ contract OllaCoreRebalanceTest is Test {
 
             IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
             if (progress.step == IOllaCore.RebalanceStep.InitiateUnstake) {
-                (, uint256 loopFinalizedAmount, uint256 loopStakedAmount,) =
-                    abi.decode(data, (uint256, uint256, uint256, uint256));
+                (,, uint256 loopStakedAmount,) = abi.decode(data, (uint256, uint256, uint256, uint256));
                 if (loopStakedAmount == 0) {
                     selectedGas = gasLimit;
                     break;
@@ -1377,25 +1247,24 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakedAmount, 0, "staked amount should be zero on partial progress");
     }
 
-    /*//////////////////////////////////////////////////////////////
-                    GAS EXHAUSTION: StakeSurplus
-    //////////////////////////////////////////////////////////////*/
-
+    /// @dev Re-added post-targetBufferedAssets removal. Originally used `target = 10 * DECIMALS`
+    ///      to ensure unstake work was skipped (pending<buffer covered by target) while leaving
+    ///      stake-surplus work. Without target, simply enqueueing fewer withdrawal assets than
+    ///      the buffer naturally yields stake-surplus work without unstake work — same shape,
+    ///      no target dependency.
     function test_Rebalance_ReturnsPartialProgress_WhenGasStopsAtStakeSurplus() external {
         uint256 depositAmount = 100 * DECIMALS;
 
         _performDeposit(alice, depositAmount);
 
         // Create many small withdrawal requests so _finalizeWithdrawals consumes gas
-        // before reaching StakeSurplus
+        // before reaching StakeSurplus. With pending=20 << buffer=100, no unstake work
+        // is generated and the rebalance proceeds straight from FinalizeWithdrawals to
+        // StakeSurplus.
         uint256 numRequests = 20;
         for (uint256 i = 0; i < numRequests; i++) {
             _requestWithdrawal(alice, 1 * DECIMALS);
         }
-
-        // Target is low so buffer > required: stakeRemaining will be > 0
-        vm.prank(governance);
-        core.setTargetBufferedAssets(10 * DECIMALS);
 
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
@@ -1437,6 +1306,97 @@ contract OllaCoreRebalanceTest is Test {
         );
         assertEq(stakedAmount, 0, "staked amount should be zero on partial progress");
     }
+
+    /*//////////////////////////////////////////////////////////////
+                           STAKE SURPLUS (TARGET-FREE)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @dev Re-added post-targetBufferedAssets removal. Verifies that StakeSurplus passes the
+    ///      ACTUAL staked amount (returned by stake()) into the resulting buffer math, not the
+    ///      offered amount. Without target, the offered `stakeable` equals the full
+    ///      bufferedBefore. The mock stakes 64 of 100 offered and the excess 36 is returned to
+    ///      the vault by _stakeSurplus, so `bufferedAssets() == bufferedBefore - actualStaked`.
+    ///      setTrackStakedAmount(true) keeps the mock's totalStaked() in sync with the real
+    ///      transferred amount so accountingState.stakedPrincipal advances correctly.
+    function test_Rebalance_StakeSurplus_UsesActualStakedAmount() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+
+        // Under pull-model accounting, core.accountingState().stakedPrincipal reads
+        // stakingManager.totalStaked() live, so the mock must propagate the actual staked amount
+        // into its own accounting rather than leaving totalStakedAmount as a static oracle.
+        stakingManager.setTrackStakedAmount(true);
+
+        uint256 actualStaked = 64 * DECIMALS;
+        stakingManager.setStakeReturnAmount(actualStaked);
+
+        IOllaCore.AccountingState memory accountingBefore = core.accountingState();
+        uint256 bufferedBefore = vault.bufferedAssets();
+        // Without target, stakeable equals the full buffered amount.
+        uint256 stakeable = bufferedBefore;
+        uint256 expectedBufferAfter = bufferedBefore - actualStaked;
+        uint256 expectedStakedPrincipal = accountingBefore.stakedPrincipal + actualStaked;
+
+        vm.expectCall(address(stakingManager), abi.encodeCall(stakingManager.stake, (stakeable)));
+
+        vm.prank(operator);
+        (,, uint256 stakedAmount, uint256 resultingBuffer) = core.rebalance();
+
+        IOllaCore.AccountingState memory accountingAfter = core.accountingState();
+        assertEq(stakedAmount, actualStaked, "staked amount uses staking manager return");
+        assertEq(resultingBuffer, expectedBufferAfter, "resulting buffer uses actual staked");
+        assertEq(vault.bufferedAssets(), expectedBufferAfter, "buffered assets reduced by actual staked");
+        assertEq(
+            accountingAfter.stakedPrincipal, expectedStakedPrincipal, "staked principal increased by actual staked"
+        );
+    }
+
+    /// @dev Re-added post-targetBufferedAssets removal. With setStakeReturnAmount(0), canStake()
+    ///      returns false; _hasRebalanceWorkAvailable's surplus-stake branch is consequently
+    ///      skipped, and the StakeSurplus step's canStake guard at OllaCore L430 advances to
+    ///      Done with stakeRemaining=0. The original `setTargetBufferedAssets(...)` line was
+    ///      not load-bearing for the assertions below — the no-capacity recovery shape is
+    ///      identical without it.
+    function test_Rebalance_Liveness_ZeroStakeReturn_Recovers() external {
+        uint256 depositAmount = 30 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(0);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfter.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should advance when no stake capacity"
+        );
+        assertEq(progressAfter.stakeRemaining, 0, "stake remaining should clear when no capacity");
+
+        // Advance past cooldown so a new rebalance cycle can start
+        vm.warp(block.timestamp + 1 hours);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressFinal = core.rebalanceProgress();
+        assertEq(
+            uint256(progressFinal.step),
+            uint256(IOllaCore.RebalanceStep.Done),
+            "rebalance should remain done after recovery"
+        );
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    REWARDS VAULT SWAP (C3)
+    //////////////////////////////////////////////////////////////*/
 }
 
 contract OllaCoreRebalanceReentrancyTest is Test {

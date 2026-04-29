@@ -44,23 +44,6 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
     }
 
     /*//////////////////////////////////////////////////////////////
-                     setTargetBufferedAssets
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SetTargetBufferedAssets_ViaTimelock() external {
-        uint256 newBuffer = 100 * DECIMALS;
-        bytes memory data = abi.encodeCall(IOllaGovernance.setTargetBufferedAssets, (newBuffer));
-        _scheduleAndExecute(address(gov), data);
-        assertEq(core.targetBufferedAssets(), newBuffer, "target buffer updated");
-    }
-
-    function test_RevertWhen_SetTargetBufferedAssets_DirectCall() external {
-        vm.expectRevert(IOllaGovernance.OllaGovernance__OnlySelf.selector);
-        vm.prank(admin);
-        gov.setTargetBufferedAssets(100 * DECIMALS);
-    }
-
-    /*//////////////////////////////////////////////////////////////
                      setRebalanceGasThreshold
     //////////////////////////////////////////////////////////////*/
 

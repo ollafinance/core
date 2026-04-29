@@ -92,10 +92,6 @@ contract OllaCoreRebalanceInfiniteRestart is Test {
     }
 
     function test_RebalanceDoesNotInfinitelyRestart_WithWithdrawalQueue() external {
-        // Target buffer = 0, so all buffered assets are "surplus" to stake
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
         _performDeposit(alice, 200_002 * DECIMALS);
 

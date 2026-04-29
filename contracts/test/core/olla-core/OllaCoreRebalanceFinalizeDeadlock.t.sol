@@ -160,9 +160,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         When `_finalizeWithdrawals()` returns 0 (request larger than buffer),
     ///         the state machine must advance past FinalizeWithdrawals to InitiateUnstake.
     function test_Rebalance_FinalizeAdvancesWhenRequestExceedsBuffer() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 10 * DECIMALS;
         uint256 shares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -215,9 +212,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice End-to-end test: deposit -> stake -> request large withdrawal -> rebalance through
     ///         all steps until claim succeeds.
     function test_Rebalance_FullCycleLargeWithdrawal_UnstakeAndFinalize() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 100 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -291,9 +285,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice Tests Change 2: completion is satisfied when `pending > 0 && buffer > 0`
     ///         but `pendingUnstakes == 0` (protocol has done all it can).
     function test_Rebalance_CompletesWhenNoPendingUnstakes() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 50 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -335,9 +326,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice When unstakes are in-flight, rebalance still reaches Done and
     ///         user operations (deposit) are not blocked.
     function test_Rebalance_CompletesAndAllowsDepositsWithPendingUnstakes() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 50 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -383,9 +371,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice Edge case: buffer can finalize some requests but not the next one.
     ///         Verifies partial progress followed by advancement when stuck.
     function test_Rebalance_MultipleSmallRequests_PartialFinalizeThenAdvance() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Deposit enough to cover all redemption shares with margin
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
@@ -447,9 +432,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         When FinalizeWithdrawals returns finalizedAmount = 0 while pending > 0 and buffer > 0,
     ///         the state machine must advance to InitiateUnstake.
     function test_Rebalance_ZeroFinalizedAdvancesToInitiateUnstake() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 20 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -493,9 +475,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice Ensures the fix doesn't break the idle guard for legitimate unproductive cycles.
     ///         When a cycle completes with no productive work, subsequent rebalance calls skip.
     function test_Rebalance_IdleGuardKicksInAfterUnproductiveCycles() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 5 * DECIMALS;
         _performDeposit(alice, depositAmount);
 

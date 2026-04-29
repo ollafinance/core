@@ -81,11 +81,6 @@ interface IOllaCore {
     /// @param newSplitBP The new split in basis points.
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
 
-    /// @notice Emitted when the target buffer is updated.
-    /// @param oldBuffer The old target buffer.
-    /// @param newBuffer The new target buffer.
-    event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
-
     /// @notice Emitted when the rebalance gas threshold is updated.
     /// @param oldThreshold The old gas threshold.
     /// @param newThreshold The new gas threshold.
@@ -202,9 +197,6 @@ interface IOllaCore {
     /// @notice Thrown when stake operation fails.
     error OllaCore__StakeFailed(uint256 amount);
 
-    /// @notice Thrown when the target buffer is invalid.
-    error OllaCore__InvalidTargetBufferedAssets(uint256 newBuffer);
-
     /// @notice Thrown when an action requires rebalance completion.
     error OllaCore__RebalanceInProgress();
 
@@ -304,10 +296,6 @@ interface IOllaCore {
     /// @param newSafetyModule The new safety module address.
     function setSafetyModule(address newSafetyModule) external;
 
-    /// @notice Sets the target buffer used to reserve liquid assets.
-    /// @param newBuffer The new target buffer.
-    function setTargetBufferedAssets(uint256 newBuffer) external;
-
     /// @notice Sets the gas threshold used for rebalance step gating.
     /// @param newThreshold The new gas threshold.
     function setRebalanceGasThreshold(uint256 newThreshold) external;
@@ -343,10 +331,6 @@ interface IOllaCore {
     /// @notice Returns the safety module address.
     /// @return The safety module address.
     function safetyModule() external view returns (address);
-
-    /// @notice Returns the target liquid assets buffer.
-    /// @return The target liquid assets buffer.
-    function targetBufferedAssets() external view returns (uint256);
 
     /// @notice Returns the rebalance gas threshold.
     /// @return The rebalance gas threshold.

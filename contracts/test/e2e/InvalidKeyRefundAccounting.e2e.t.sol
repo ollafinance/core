@@ -14,11 +14,6 @@ contract InvalidKeyRefundAccountingE2E is E2EBaseWithRealStaking {
 
     function setUp() external {
         _deployFullStack();
-
-        // Force all available deposits into staking so a failed-key refund is the only buffer source.
-        _scheduleAndExecute(
-            address(gov), abi.encodeCall(gov.setTargetBufferedAssets, (0)), keccak256("setTargetBufferedAssets-0")
-        );
     }
 
     /*//////////////////////////////////////////////////////////////

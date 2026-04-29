@@ -161,14 +161,9 @@ contract OllaCoreRebalanceRealStakingManager is Test {
 
     /// @notice Test that reproduces the mock loop scenario:
     ///         - 200k ETH deposit
-    ///         - Target buffer = 0
     ///         - Rebalance stakes 200k ETH, leaving small remainder
     ///         - Rebalance should complete (reach Done) and not loop infinitely
     function test_RebalanceWithRealStakingManager_SmallRemainder() external {
-        // Setup: target buffer = 0 (stake everything)
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Setup rollup with 200k ETH activation threshold
         uint256 activationThreshold = 200_000 * DECIMALS;
         mockRollup.setActivationThreshold(activationThreshold);
@@ -233,9 +228,6 @@ contract OllaCoreRebalanceRealStakingManager is Test {
     /// @notice Reproduces the mock-loop bug: after unstake, refreshAttesterState fails to finalize.
     ///         Steps: deposit -> stake -> request withdrawal -> unstake -> refreshAttesterState -> pullUnstaked
     function test_RefreshAttesterStateAfterUnstake() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 activationThreshold = 200_000 * DECIMALS;
         mockRollup.setActivationThreshold(activationThreshold);
 

@@ -25,7 +25,6 @@ contract OllaCoreAccessControlTest is Test {
     event ProtocolFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
     event SafetyModuleUpdated(address oldSafetyModule, address newSafetyModule);
-    event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
@@ -119,12 +118,6 @@ contract OllaCoreAccessControlTest is Test {
         core.setSafetyModule(alice);
     }
 
-    function test_RevertWhen_NonOwnerSetsTargetBufferedAssets() external {
-        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
-        vm.prank(alice);
-        core.setTargetBufferedAssets(1);
-    }
-
     function test_RevertWhen_RenounceOwnership() external {
         vm.expectRevert(bytes("renouncing ownership not allowed"));
         vm.prank(governance);
@@ -160,18 +153,6 @@ contract OllaCoreAccessControlTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newSafetyModule"));
         vm.prank(governance);
         core.setSafetyModule(address(0));
-    }
-
-    function test_SetTargetBufferedAssets_AllowsZero() external {
-        uint256 oldBuffer = core.targetBufferedAssets();
-
-        vm.expectEmit(true, true, true, true, address(core));
-        emit TargetBufferedAssetsUpdated(oldBuffer, 0);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
-        assertEq(core.targetBufferedAssets(), 0, "target buffer set to zero");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -237,19 +218,6 @@ contract OllaCoreAccessControlTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSafetyModule.selector, address(wrongModule)));
         vm.prank(governance);
         core.setSafetyModule(address(wrongModule));
-    }
-
-    function test_SetTargetBufferedAssets_UpdatesAndEmits() external {
-        uint256 oldBuffer = core.targetBufferedAssets();
-        uint256 newBuffer = oldBuffer + 1;
-
-        vm.expectEmit(true, true, true, true, address(core));
-        emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(newBuffer);
-
-        assertEq(core.targetBufferedAssets(), newBuffer, "target buffer updated");
     }
 
     /*//////////////////////////////////////////////////////////////

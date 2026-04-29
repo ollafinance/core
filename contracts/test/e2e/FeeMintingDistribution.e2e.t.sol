@@ -181,10 +181,14 @@ contract FeeMintingDistributionE2ETest is Test {
         vm.warp(block.timestamp + 1 hours + 1);
     }
 
-    /// @dev Establishes a baseline rebalance with high target buffer and zero rewards.
+    /// @dev Establishes a baseline rebalance with staking suppressed and zero rewards.
+    ///      Replaces the historical pattern of setting a huge `targetBufferedAssets` to
+    ///      keep funds in the buffer: `setStakeReturnAmount(0)` toggles the mock's
+    ///      `useStakeReturnAmount` flag, which makes both `canStake()` return false and
+    ///      `stake()` return 0. The flag is sticky across subsequent rebalances, so the
+    ///      `_rebalanceWithRewards` helper inherits the suppression for all later cycles.
     function _baselineRebalance() internal {
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(1_000_000 * DECIMALS);
+        stakingManager.setStakeReturnAmount(0);
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
         _fullRebalance();
@@ -432,11 +436,8 @@ contract FeeMintingDistributionE2ETest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_FeeMinting_WithSlashing_ReducedOrZeroFees() external {
-        // --- Setup: protocolFeeBP = 1000 (10%), targetBuffer = 0, stake all ---
+        // --- Setup: protocolFeeBP = 1000 (10%), stake all ---
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.setProtocolFeeBP, (1_000)));
-        _scheduleAndExecute(
-            address(gov), abi.encodeCall(IOllaGovernance.setTargetBufferedAssets, (0)), bytes32(uint256(1))
-        );
 
         _performDeposit(alice, 100 * DECIMALS);
 

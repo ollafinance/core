@@ -104,12 +104,9 @@ contract OllaCoreStakeSurplusAllowanceTest is Test {
         return shares;
     }
 
-    /// @notice Sets a deposit + zero target buffer so rebalance routes the entire deposit
-    ///         through `_stakeSurplus`.
+    /// @notice Sets a deposit so rebalance routes the entire deposit through `_stakeSurplus`.
     function _setupSurplusToStake(uint256 depositAmount) internal {
         _performDeposit(alice, depositAmount);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         // Disable harvested rewards & unstaked funds so the rebalance reaches StakeSurplus
         // with a clean state.
         stakingManager.setHarvestedRewards(0);

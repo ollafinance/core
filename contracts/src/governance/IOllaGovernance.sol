@@ -122,10 +122,6 @@ interface IOllaGovernance {
     /// @param newSplitBP The new split.
     function setTreasuryFeeSplitBP(uint256 newSplitBP) external;
 
-    /// @notice Sets the target buffer on OllaCore.
-    /// @param newBuffer The new target buffer.
-    function setTargetBufferedAssets(uint256 newBuffer) external;
-
     /// @notice Sets the rebalance gas threshold on OllaCore.
     /// @param newThreshold The new gas threshold.
     function setRebalanceGasThreshold(uint256 newThreshold) external;

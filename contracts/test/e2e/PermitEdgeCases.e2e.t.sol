@@ -170,14 +170,6 @@ contract PermitEdgeCasesE2E is Test {
         vm.warp(block.timestamp + 1 hours + 1);
     }
 
-    function _baselineRebalance() internal {
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(1_000_000 * DECIMALS);
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        _fullRebalance();
-    }
-
     /// @dev Builds an EIP-712 permit digest for a given token.
     function _buildPermitDigest(
         address token,
