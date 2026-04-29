@@ -264,6 +264,7 @@ contract RebalanceIntegrationTest is Test {
 
         _mockZeroHarvest();
         _mockZeroUnstaked();
+
         // Cap the mock's cumulative stake at 120 across all calls (the test runs across
         // multiple resumed rebalance() calls, so a per-call return amount is not enough).
         stakingManager.setStakeReturnAmount(120 * DECIMALS);
