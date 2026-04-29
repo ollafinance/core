@@ -128,7 +128,7 @@ contract StakingManagerReentrancyTest is Test {
 
         vm.prank(core);
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
+            abi.encodeWithSelector(IStakingManager.StakingManager__UnstakeFailed.selector, address(uint160(1)))
         );
         stakingManager.unstake(ACTIVATION_THRESHOLD);
     }

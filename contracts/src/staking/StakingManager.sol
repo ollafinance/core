@@ -656,8 +656,19 @@ contract StakingManager is
             exitAmount = view_.effectiveBalance;
 
             // slither-disable-next-line reentrancy-no-eth
-            bool isInitiated = rollup.initiateWithdraw(attester, address(this));
-            if (!isInitiated) {
+            try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                if (!isInitiated) {
+                    revert StakingManager__UnstakeFailed(attester);
+                }
+            } catch {
+                if (exitAmount == 0) {
+                    uint256 cachedStake = info.stakedAmount;
+                    _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
+                    _removeStakedAmount(attester, cachedStake);
+                    _aggregateState.slashingDelta += cachedStake;
+                    _removeAttester(attester);
+                    return 0;
+                }
                 revert StakingManager__UnstakeFailed(attester);
             }
         } else {
@@ -666,14 +677,34 @@ contract StakingManager is
 
             if (!view_.exit.isRecipient) {
                 // slither-disable-next-line reentrancy-no-eth
-                bool isInitiated = rollup.initiateWithdraw(attester, address(this));
-                if (!isInitiated) {
+                try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                    if (isInitiated) {
+                        return _finalizeUnstakeInitiation(rollup, attester, info, exitAmount);
+                    }
+                    _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
+                    return 0;
+                } catch {
                     _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
                     return 0;
                 }
             }
         }
 
+        return _finalizeUnstakeInitiation(rollup, attester, info, exitAmount);
+    }
+
+    /// @notice Finalizes local accounting after a rollup unstake has been initiated.
+    /// @param rollup The rollup staking interface.
+    /// @param attester The attester address to process.
+    /// @param info The attester info storage reference.
+    /// @param exitAmount The unstake amount initiated for the attester.
+    /// @return The unstake amount initiated for the attester.
+    function _finalizeUnstakeInitiation(
+        IAztecRollup rollup,
+        address attester,
+        AttesterInfo storage info,
+        uint256 exitAmount
+    ) internal returns (uint256) {
         _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
         uint256 cachedStake = info.stakedAmount;
         info.stakedAmount = 0;

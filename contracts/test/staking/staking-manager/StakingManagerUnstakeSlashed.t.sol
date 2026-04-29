@@ -2,6 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
+import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 
 /// @title StakingManagerUnstakeSlashedTest
@@ -59,6 +60,30 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         uint256 expectedSlashingLoss = ACTIVATION_THRESHOLD - slashedBalance; // 25 ether
         assertEq(state.slashingDelta, expectedSlashingLoss, "slashingDelta must capture the slashing gap");
+    }
+
+    /// @notice Fully slashed attesters make the real rollup revert instead of returning false.
+    function test_Unstake_FullySlashedAttester_InitiateWithdrawRevert_RemovesAttester() external {
+        _setupActiveAttester();
+        address attester = address(uint160(1));
+        _slashOnRollup(attester, 0);
+
+        vm.mockCallRevert(
+            address(rollup),
+            abi.encodeWithSelector(IAztecRollup.initiateWithdraw.selector, attester, address(stakingManager)),
+            "AZTEC_FULLY_SLASHED"
+        );
+
+        vm.prank(core);
+        uint256 unstaked = stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(unstaked, 0, "fully slashed attester has no recoverable unstake");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "fully slashed attester should leave active set");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "no exit should be tracked for a full slash");
+        assertEq(state.stakedAmount, 0, "cached stake should be removed");
+        assertEq(state.pendingUnstakeAmount, 0, "no pending unstake should be added");
+        assertEq(state.slashingDelta, ACTIVATION_THRESHOLD, "full stake should be recorded as slashed");
     }
 
     /// @notice Multiple attesters, one slashed — only the slashed one should produce a delta.
