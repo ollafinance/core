@@ -411,7 +411,7 @@ contract StakingManager is
             claimableRewards += unclaimedRewards;
         }
 
-        if (!includedCanonical && IAztecRollup(canonicalRollup).isRewardsClaimable()) {
+        if (!includedCanonical && _isExpectedRewardAsset() && IAztecRollup(canonicalRollup).isRewardsClaimable()) {
             claimableRewards += IAztecRollup(canonicalRollup).getSequencerRewards(address(rewardsAccumulator));
         }
 
@@ -904,6 +904,7 @@ contract StakingManager is
     /// @param rollupAddress The rollup address to track.
     function _trackRewardRollup(address rollupAddress) internal {
         if (_isRewardRollup[rollupAddress]) return;
+        if (!_isExpectedRewardAsset()) return;
         _isRewardRollup[rollupAddress] = true;
         _rewardRollups.push(rollupAddress);
         emit RewardRollupTracked(rollupAddress);
@@ -937,6 +938,12 @@ contract StakingManager is
             }
         }
         revert StakingManager__RewardRollupNotTracked(rollupAddress);
+    }
+
+    /// @notice Returns true when Aztec sequencer rewards are paid in the configured staking asset.
+    /// @return True if the registry reward distributor uses the expected reward asset.
+    function _isExpectedRewardAsset() internal view returns (bool) {
+        return rollupRegistry.getRewardDistributor().ASSET() == stakingAsset;
     }
 
     /// @notice Returns true if an exit is present and exitable.

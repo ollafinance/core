@@ -6,6 +6,8 @@ import { IAccessControl } from "@oz/access/IAccessControl.sol";
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockAztecRewardDistributor } from "src/staking/mocks/MockAztecRewardDistributor.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
@@ -445,6 +447,45 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         uint256 claimable = stakingManager.getClaimableRewards();
 
         assertEq(claimable, secondCanonicalRewards, "previous canonical should stay tracked after harvest sync");
+    }
+
+    function test_HarvestRewards_DoesNotTrackCanonicalRollupWithMismatchedRewardAsset() external {
+        uint256 legacyRewards = 7 ether;
+        uint256 canonicalRewards = 11 ether;
+        MockAztec otherAsset = new MockAztec(address(this));
+        rollupRegistry.setRewardDistributor(new MockAztecRewardDistributor(IERC20(address(otherAsset))));
+        _setRollupRewards(rollup, legacyRewards);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, canonicalRewards);
+
+        vm.prank(core);
+        uint256 harvested = stakingManager.harvestRewards();
+
+        assertEq(harvested, legacyRewards, "should only harvest already tracked rollups");
+        assertEq(rollup.getSequencerRewards(address(rewardsAccumulator)), 0, "legacy rewards drained");
+        assertEq(
+            rollupB.getSequencerRewards(address(rewardsAccumulator)), canonicalRewards, "mismatched canonical skipped"
+        );
+
+        rollupRegistry.setCanonicalRollup(address(rollupC));
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, 0, "mismatched rollup should not have been tracked");
+    }
+
+    function test_GetClaimableRewards_SkipsUntrackedCanonicalWithMismatchedRewardAsset() external {
+        uint256 canonicalRewards = 11 ether;
+        MockAztec otherAsset = new MockAztec(address(this));
+        rollupRegistry.setRewardDistributor(new MockAztecRewardDistributor(IERC20(address(otherAsset))));
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+        _setRollupRewards(rollupB, canonicalRewards);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, 0, "mismatched canonical rewards should be ignored");
     }
 
     function test_HarvestRewards_RemovesLegacyRollupAfterSuccessfulClaim() external {

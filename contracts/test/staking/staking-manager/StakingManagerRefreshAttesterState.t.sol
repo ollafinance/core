@@ -584,7 +584,8 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     function test_RevertWhen_RefreshAttesterState_Reentrancy() external {
         // Deploy a malicious rollup that re-enters during finalizeWithdraw
         MaliciousAztecRollup maliciousRollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
-        MockAztecRollupRegistry maliciousRegistry = new MockAztecRollupRegistry(address(maliciousRollup));
+        MockAztecRollupRegistry maliciousRegistry =
+            new MockAztecRollupRegistry(address(maliciousRollup), IERC20(address(aztec)));
         MockRewardsAccumulator maliciousRewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy a fresh StakingManager wired to the malicious rollup

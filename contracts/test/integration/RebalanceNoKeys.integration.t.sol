@@ -61,7 +61,7 @@ contract RebalanceNoKeysIntegrationTest is Test {
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
         rollup = new MockAztecRollup(IERC20(address(asset)), ACTIVATION_THRESHOLD);
-        rollupRegistry = new MockAztecRollupRegistry(address(rollup));
+        rollupRegistry = new MockAztecRollupRegistry(address(rollup), IERC20(address(asset)));
 
         StakingManager stakingImplementation = new StakingManager();
         ERC1967Proxy stakingProxy = new ERC1967Proxy(address(stakingImplementation), "");

@@ -37,7 +37,7 @@ contract StakingManagerReentrancyTest is Test {
 
         aztec = new MockAztec(address(this));
         rollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
-        rollupRegistry = new MockAztecRollupRegistry(address(rollup));
+        rollupRegistry = new MockAztecRollupRegistry(address(rollup), IERC20(address(aztec)));
         rewardsAccumulator = new MaliciousRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy StakingManager behind proxy

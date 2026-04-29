@@ -29,7 +29,7 @@ contract MocksDeployer is BaseDeployer {
         MockAztecRollup mockRollup = new MockAztecRollup(IERC20(address(mockAsset)), 0);
         _logDeployment("MockAztecRollup", address(mockRollup));
 
-        MockAztecRollupRegistry registry = new MockAztecRollupRegistry(address(mockRollup));
+        MockAztecRollupRegistry registry = new MockAztecRollupRegistry(address(mockRollup), IERC20(address(mockAsset)));
         _logDeployment("MockAztecRollupRegistry", address(registry));
 
         // Mint initial tokens to all 10 default Anvil accounts for local testing.

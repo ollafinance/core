@@ -147,7 +147,7 @@ abstract contract E2EBaseWithRealStaking is Test {
 
         // MockAztecRollup + Registry
         mockRollup = new MockAztecRollup(IERC20(asset), 0);
-        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup));
+        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup), IERC20(asset));
 
         // StakingProviderRegistry (real, behind proxy)
         StakingProviderRegistry regImpl = new StakingProviderRegistry();
