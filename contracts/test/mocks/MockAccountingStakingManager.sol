@@ -27,6 +27,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public unstakedExitAmountOverride;
     bool public useUnstakedExitAmountOverride;
     uint256 public pendingUnstakeAmount;
+    uint256 public claimableUnstakedFundsAmount;
     bool public hasFinalizedUnstakesValue;
     uint256 public activatedAttesterCount;
     uint256 public pendingUnstakeCount;
@@ -102,6 +103,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function setPendingUnstakes(uint256 value) external {
         pendingUnstakeAmount = value;
+    }
+
+    function setClaimableUnstakedFunds(uint256 value) external {
+        claimableUnstakedFundsAmount = value;
     }
 
     function setWithdrawableUnstakes(uint256 value) external {
@@ -275,6 +280,10 @@ contract MockAccountingStakingManager is IStakingManager {
 
     function hasFinalizedUnstakes() external view override returns (bool) {
         return hasFinalizedUnstakesValue;
+    }
+
+    function claimableUnstakedFunds() external view override returns (uint256) {
+        return claimableUnstakedFundsAmount;
     }
 
     function core() external pure virtual override returns (address) {

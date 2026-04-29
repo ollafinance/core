@@ -541,6 +541,70 @@ contract OllaCoreRebalanceTest is Test {
         assertEq(stakingManager.lastUnstakeAmount(), pendingAssets - pendingUnstakes, "unstake reduced by pending");
     }
 
+    function test_Rebalance_Unstake_ClaimableUnstakedFundsReduceInitiation() external {
+        uint256 pendingAssets = 30 * DECIMALS;
+        uint256 claimableUnstakedFunds = 12 * DECIMALS;
+
+        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(pendingAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(0);
+        stakingManager.setClaimableUnstakedFunds(claimableUnstakedFunds);
+
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(
+            stakingManager.lastUnstakeAmount(),
+            pendingAssets - claimableUnstakedFunds,
+            "unstake reduced by claimable funds"
+        );
+    }
+
+    function test_Rebalance_ResumeInitiateUnstake_CountsNewClaimableFunds() external {
+        uint256 bufferAmount = 100 * DECIMALS;
+        uint256 pendingAssets = 180 * DECIMALS;
+        uint256 pendingUnstakesBefore = 60 * DECIMALS;
+        uint256 newlyClaimable = 20 * DECIMALS;
+
+        asset.mint(address(vault), bufferAmount);
+        vm.prank(governance);
+        vault.reconcileBufferedAssets();
+
+        stdstore.target(address(vault)).sig("pendingWithdrawalAssets()").checked_write(pendingAssets);
+
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setPendingUnstakes(pendingUnstakesBefore);
+        stakingManager.setClaimableUnstakedFunds(0);
+
+        uint32 defaultThreshold = core.rebalanceGasThreshold();
+        _forceRebalanceGasThreshold(type(uint32).max);
+        vm.prank(operator);
+        core.rebalance();
+
+        IOllaCore.RebalanceProgress memory progressAfterPause = core.rebalanceProgress();
+        assertEq(
+            uint256(progressAfterPause.step),
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "rebalance should pause after pull unstaked"
+        );
+
+        stakingManager.setPendingUnstakes(pendingUnstakesBefore - newlyClaimable);
+        stakingManager.setClaimableUnstakedFunds(newlyClaimable);
+
+        _forceRebalanceGasThreshold(defaultThreshold);
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(
+            stakingManager.lastUnstakeAmount(),
+            pendingAssets - bufferAmount - pendingUnstakesBefore,
+            "claimable funds should prevent over-unstake"
+        );
+    }
+
     function test_Rebalance_Unstake_NoUnitRounding() external {
         uint256 pendingAssets = 210 * DECIMALS;
 
@@ -1661,6 +1725,8 @@ contract UnstakeRevertingStakingManager is IStakingManager {
         pending = value;
     }
 
+    function setClaimableUnstakedFunds(uint256) external pure { }
+
     function setWithdrawableUnstakes(uint256 value) external {
         _exitableUnstakes = value != 0;
     }
@@ -1730,6 +1796,10 @@ contract UnstakeRevertingStakingManager is IStakingManager {
 
     function hasFinalizedUnstakes() external view override returns (bool) {
         return _exitableUnstakes;
+    }
+
+    function claimableUnstakedFunds() external pure override returns (uint256) {
+        return 0;
     }
 
     function getProviderConfig() external view override returns (ProviderConfig memory) {

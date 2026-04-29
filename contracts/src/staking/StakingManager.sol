@@ -435,6 +435,11 @@ contract StakingManager is
     }
 
     /// @inheritdoc IStakingManager
+    function claimableUnstakedFunds() external view override returns (uint256 amount) {
+        return _pendingClaimAmount + _pendingRefundAmount;
+    }
+
+    /// @inheritdoc IStakingManager
     function canStake(uint256 amount) external view override returns (bool) {
         uint256 availableKeys = stakingProviderRegistry.getQueueLength();
         if (availableKeys == 0) return false;
