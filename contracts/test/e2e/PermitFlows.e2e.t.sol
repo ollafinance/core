@@ -171,9 +171,14 @@ contract PermitFlowsE2ETest is Test {
         vm.warp(block.timestamp + 1 hours + 1);
     }
 
+    /// @dev Establishes a baseline rebalance with staking suppressed and zero rewards.
+    ///      Replaces the historical pattern of setting a huge `targetBufferedAssets` to
+    ///      keep funds in the buffer: `setStakeReturnAmount(0)` toggles the mock's
+    ///      `useStakeReturnAmount` flag, which makes both `canStake()` return false and
+    ///      `stake()` return 0. The flag is sticky across subsequent rebalances, so
+    ///      later rebalances that harvest rewards do not stake the new buffer either.
     function _baselineRebalance() internal {
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(1_000_000 * DECIMALS);
+        stakingManager.setStakeReturnAmount(0);
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
         _fullRebalance();

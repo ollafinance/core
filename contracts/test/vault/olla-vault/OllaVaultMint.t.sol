@@ -221,8 +221,6 @@ contract OllaVaultMintTest is Test {
 
         // Move assets to staking so slashing actually reduces totalAssets
         vm.warp(block.timestamp + 1 hours + 1);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(initialDeposit);
         core.rebalance();
 

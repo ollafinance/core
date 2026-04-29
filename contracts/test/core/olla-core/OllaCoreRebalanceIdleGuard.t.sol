@@ -88,17 +88,13 @@ contract OllaCoreRebalanceIdleGuard is Test {
     /// @notice Tests that after an unproductive rebalance cycle completes (step=Done, pause=false),
     ///         subsequent rebalance calls do not trigger full unnecessary cycles.
     ///
-    ///         After a large deposit with targetBuffer=0, the first rebalance stakes most assets
+    ///         After a large deposit, the first rebalance stakes most assets
     ///         but leaves a small remainder (2 AZTEC). The second rebalance call advances StakeSurplus
     ///         to Done (stake returns 0), clears pause.
     ///
     ///         The fix ensures that the 4th call does not trigger a Rebalanced event, proving
     ///         that the idle buffer guard prevents infinite restarts.
     function test_RebalanceDoesNotInfinitelyRestart() external {
-        // Target buffer = 0, so all buffered assets are "surplus" to stake
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
         _performDeposit(alice, 200_002 * DECIMALS);
 
@@ -173,9 +169,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
     ///         productive work in prior calls (e.g. staking). Once set, rebalance() may
     ///         incorrectly no-op and skip harvesting/pulling newly available funds.
     function test_RebalanceIdleGuardDoesNotBlockPullingNewRewardsAccumulatorFunds() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _performDeposit(alice, 200_002 * DECIMALS);
 
         // Call 1: stake most assets; leaves 2 AZTEC buffered and progress at StakeSurplus.
@@ -213,9 +206,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
     /// @notice Tests that repeatedly calling rebalance does not trigger unnecessary cycles.
     ///         The idle buffer guard prevents starting new cycles when no productive work is possible.
     function test_RebalanceRepeatedCycling() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
         _performDeposit(alice, 200_002 * DECIMALS);
 
@@ -264,9 +254,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
     /// @notice Ensures claimable rollup rewards allow rebalance to start a new cycle
     ///         even when rewards vault balance is still zero.
     function test_RebalanceIdleGuardDoesNotBlockClaimableRewards() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _performDeposit(alice, 200_002 * DECIMALS);
 
         // Call 1: stake most assets; leaves 2 AZTEC buffered and progress at StakeSurplus.

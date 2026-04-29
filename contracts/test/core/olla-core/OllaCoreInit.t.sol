@@ -104,7 +104,6 @@ contract OllaCoreInitTest is Test {
         assertEq(core.owner(), governance, "owner set");
         assertEq(core.rewardsAccumulator(), address(rewardsAccumulator), "rewards vault set");
         assertEq(core.safetyModule(), address(safetyModule), "safety module set");
-        assertEq(core.targetBufferedAssets(), 0, "target buffered assets init");
         IOllaCore.LatestReport memory report = core.latestReport();
         assertEq(report.exchangeRate, 1e18, "exchange rate init");
         assertEq(report.totalAssets, 0, "lastTotalAssets init");

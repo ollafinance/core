@@ -193,11 +193,6 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
     }
 
     /// @inheritdoc IOllaGovernance
-    function setTargetBufferedAssets(uint256 newBuffer) external override onlySelf {
-        IOllaCore(core).setTargetBufferedAssets(newBuffer);
-    }
-
-    /// @inheritdoc IOllaGovernance
     function setRebalanceGasThreshold(uint256 newThreshold) external override onlySelf {
         IOllaCore(core).setRebalanceGasThreshold(newThreshold);
     }

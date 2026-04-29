@@ -490,8 +490,6 @@ contract OllaCoreAccountingTest is Test {
         core.setProtocolFeeBP(1_000);
 
         // Move all assets to staking so buffer is empty, then slash everything
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         vm.prank(operator);
         core.rebalance();
@@ -899,8 +897,6 @@ contract OllaCoreAccountingTest is Test {
         _performDeposit(alice, depositAmount);
 
         // Move all to staked so buffer is empty
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         vm.prank(operator);
         core.rebalance();
@@ -952,8 +948,6 @@ contract OllaCoreAccountingTest is Test {
         _performDeposit(alice, depositAmount);
 
         // Move all to staked so buffer is empty
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         vm.prank(operator);
         core.rebalance();

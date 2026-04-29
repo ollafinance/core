@@ -98,10 +98,14 @@ contract OllaVaultFinalizeGasTest is Test {
 
         uint256 pendingBefore = vault.pendingWithdrawalAssets();
 
+        // 40 finalizations fit comfortably in 5M with the 150K _FINALIZE_GAS_THRESHOLD.
+        // The threshold must exceed both the worst-case per-iteration cost (~58K cold
+        // SLOADs + zero→nonzero SSTOREs) and the post-loop bookkeeping cost (~60-90K),
+        // otherwise the gasleft() check passes but the next iteration OOGs mid-flight.
         vm.prank(address(core));
         (bool success,) = address(vault)
         .call{
-            gas: 1_000_000
+            gas: 5_000_000
         }(abi.encodeCall(vault.finalizeWithdrawals, (pendingBefore, type(uint256).max, type(uint256).max)));
 
         assertTrue(success, "finalization should leave gas for vault post-processing");

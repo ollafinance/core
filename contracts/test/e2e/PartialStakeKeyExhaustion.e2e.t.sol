@@ -24,11 +24,6 @@ contract PartialStakeKeyExhaustionE2E is E2EBaseWithRealStaking {
 
     function setUp() external {
         _deployFullStack();
-
-        // Set target buffer to 0 so all deposited funds go to staking
-        _scheduleAndExecute(
-            address(gov), abi.encodeCall(gov.setTargetBufferedAssets, (0)), keccak256("setTargetBufferedAssets-0")
-        );
     }
 
     /*//////////////////////////////////////////////////////////////

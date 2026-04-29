@@ -312,9 +312,6 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
         core.setTreasuryFeeSplitBP(1);
 
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
-        core.setTargetBufferedAssets(1);
-
         vm.stopPrank();
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
@@ -329,21 +326,6 @@ contract OllaCoreRebalancePauseTest is Test {
     /*//////////////////////////////////////////////////////////////
                      REBALANCE COMPLETION
     //////////////////////////////////////////////////////////////*/
-
-    function test_RebalanceCompletion_WhenTargetBufferChanges() external {
-        _performDeposit(alice, 12 * DECIMALS);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(2 * DECIMALS);
-
-        // Complete a rebalance after setting target buffer
-        stakingManager.setStakeReturnAmount(0);
-        stakingManager.setActivatedAttesterCount(0);
-        vm.prank(operator);
-        core.rebalance();
-
-        assertEq(uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance completed");
-    }
 
     function test_RebalanceCompletion_SnapshotMonotonic_WhenQueueChanges() external {
         _performDeposit(alice, 20 * DECIMALS);
@@ -711,10 +693,6 @@ contract OllaCoreRebalancePauseTest is Test {
         vm.prank(governance);
         core.setProtocolFeeBP(100);
         assertEq(core.protocolFeeBP(), 100, "setProtocolFeeBP works after force reset");
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(1 * DECIMALS);
-        assertEq(core.targetBufferedAssets(), 1 * DECIMALS, "setTargetBufferedAssets works after force reset");
     }
 
     function test_ForceRebalanceReset_MidCycle_AllowsNewRebalanceCycle() external {

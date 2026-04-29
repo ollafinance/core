@@ -223,16 +223,39 @@ contract OllaCoreGuardsTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-            _hasRebalanceWorkAvailable RETURNING FALSE
+          _stakeSurplus ZERO / _initiateUnstake ZERO
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Rebalance_NoSurplusToStake_NoUnstakeNeeded() external {
+        _performDeposit(alice, 100 * DECIMALS);
+
+        // Warp past cooldown
+        vm.warp(block.timestamp + 2 hours);
+
+        // Configure staking manager to return 0 from stake
+        stakingManager.setStakeReturnAmount(0);
+
+        // Rebalance — will attempt to stake surplus but stakingManager returns 0
+        core.rebalance();
+
+        // The stake attempt may result in 0 or the try-catch path
+        // Either way, the rebalance should complete without reverting
+        assertTrue(true, "rebalance completed without reverting");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              REBALANCE IDLE-BUFFER EARLY RETURN
     //////////////////////////////////////////////////////////////*/
 
     function test_Rebalance_NoWorkAvailable_ReturnsEarly() external {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // Set targetBufferedAssets = deposit so no surplus is staked, making rebalance idle
-        vm.prank(address(governance));
-        core.setTargetBufferedAssets(depositAmount);
+        // Suppress staking so the first rebalance completes without staking the surplus.
+        // With stakeReturnAmount = 0, the mock's canStake() returns false → no surplus is
+        // staked, no withdrawals to finalize, no rewards, so the cycle ends with all-zero
+        // outputs and `_rebalanceIdleBuffer` is recorded.
+        stakingManager.setStakeReturnAmount(0);
 
         // Warp past cooldown (use absolute timestamps)
         uint256 t1 = block.timestamp + 2 hours;
@@ -252,27 +275,5 @@ contract OllaCoreGuardsTest is Test {
         assertEq(f2, 0, "finalized amount should be 0 on idle rebalance");
         assertEq(s2, 0, "staked amount should be 0 on idle rebalance");
         assertEq(b2, b1, "buffer should remain unchanged on idle rebalance");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-          _stakeSurplus ZERO / _initiateUnstake ZERO
-    //////////////////////////////////////////////////////////////*/
-
-    function test_Rebalance_NoSurplusToStake_NoUnstakeNeeded() external {
-        // Deposit exact amount that will be buffered (targetBufferedAssets == 0)
-        _performDeposit(alice, 100 * DECIMALS);
-
-        // Warp past cooldown
-        vm.warp(block.timestamp + 2 hours);
-
-        // Configure staking manager to return 0 from stake
-        stakingManager.setStakeReturnAmount(0);
-
-        // Rebalance — will attempt to stake surplus but stakingManager returns 0
-        core.rebalance();
-
-        // The stake attempt may result in 0 or the try-catch path
-        // Either way, the rebalance should complete without reverting
-        assertTrue(true, "rebalance completed without reverting");
     }
 }

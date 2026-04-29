@@ -85,9 +85,6 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         _deposit(alice, aliceDeposit);
         _deposit(bob, bobDeposit);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         stakingManager.setStakeReturnAmount(aliceDeposit + bobDeposit);
         stakingManager.setAllowStakeReturnExceeds(true);
         stakingManager.setTotalStaked(aliceDeposit + bobDeposit);
@@ -148,9 +145,6 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _deposit(alice, depositAmount);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setAllowStakeReturnExceeds(true);
         stakingManager.setTotalStaked(depositAmount);
@@ -200,9 +194,6 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         uint256 depositAmount = 50 * DECIMALS;
         _deposit(alice, depositAmount);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setAllowStakeReturnExceeds(true);
         stakingManager.setTotalStaked(depositAmount);
@@ -244,9 +235,6 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
         _deposit(alice, aliceDeposit);
         _deposit(bob, bobDeposit);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 totalDeposits = aliceDeposit + bobDeposit;
         stakingManager.setStakeReturnAmount(totalDeposits);
         stakingManager.setAllowStakeReturnExceeds(true);
@@ -284,9 +272,6 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
     function test_ClaimReceivesAdjustedAmount() external {
         uint256 depositAmount = 100 * DECIMALS;
         _deposit(alice, depositAmount);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
 
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setAllowStakeReturnExceeds(true);

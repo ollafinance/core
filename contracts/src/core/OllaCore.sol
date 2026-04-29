@@ -84,9 +84,6 @@ contract OllaCore is
 
     IOllaCore.RebalanceProgress private _rebalanceProgress;
 
-    /// @notice Target liquid assets to keep buffered for withdrawals.
-    uint256 public targetBufferedAssets;
-
     /// @notice Snapshot of bufferedAssets at the end of an unproductive rebalance cycle.
     uint256 private _rebalanceIdleBuffer;
 
@@ -177,7 +174,6 @@ contract OllaCore is
 
         protocolFeeBP = SafeCast.toUint16(protocolFeeBP_);
         treasuryFeeSplitBP = SafeCast.toUint16(treasuryFeeSplitBP_);
-        targetBufferedAssets = 0;
         rebalanceGasThreshold = SafeCast.toUint32(_REBALANCE_GAS_THRESHOLD);
         _rebalanceProgress.step = IOllaCore.RebalanceStep.Done;
 
@@ -269,14 +265,6 @@ contract OllaCore is
         // Recording the current timestamp is intentional; miner manipulation is negligible here.
         // slither-disable-next-line timestamp
         ISafetyModule(newSafetyModule).setLatestAccountingTimestamp(block.timestamp);
-    }
-
-    /// @inheritdoc IOllaCore
-    function setTargetBufferedAssets(uint256 newBuffer) external override onlyOwner whenNotPaused whenRebalanceDone {
-        uint256 oldBuffer = targetBufferedAssets;
-        targetBufferedAssets = newBuffer;
-        _rebalanceIdleBuffer = 0;
-        emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
     }
 
     /// @inheritdoc IOllaCore
@@ -408,7 +396,7 @@ contract OllaCore is
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.InitiateUnstake) {
             {
-                (uint256 requiredBuffer,) = _computeRequiredBuffer();
+                uint256 requiredBuffer = vaultRef.pendingWithdrawalAssets();
                 progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
             }
             // slither-disable-next-line incorrect-equality,timestamp
@@ -443,7 +431,7 @@ contract OllaCore is
 
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
-            (uint256 requiredBuffer,) = _computeRequiredBuffer();
+            uint256 requiredBuffer = vaultRef.pendingWithdrawalAssets();
             uint256 freshStakeRemaining = _computeStakeRemaining(requiredBuffer);
             // slither-disable-next-line incorrect-equality,timestamp
             if (progress.stakeRemaining == 0) {
@@ -1099,26 +1087,13 @@ contract OllaCore is
 
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();
-        if (pendingWithdrawals > 0 && vaultRef.bufferedAssets() > 0) return true;
+        uint256 currentBuffer = vaultRef.bufferedAssets();
+        if (pendingWithdrawals > 0 && currentBuffer > 0) return true;
 
         // Surplus buffer that can actually be staked (keys available + amount >= threshold).
-        uint256 currentBuffer = vaultRef.bufferedAssets();
-        if (currentBuffer > targetBufferedAssets) {
-            uint256 surplus = currentBuffer - targetBufferedAssets;
-            if (_modules.stakingManager.canStake(surplus)) return true;
-        }
+        if (currentBuffer > 0 && _modules.stakingManager.canStake(currentBuffer)) return true;
 
         return false;
-    }
-
-    /// @notice Computes the buffer required to cover pending withdrawals plus the target buffer.
-    /// @return requiredBuffer The total buffer needed.
-    /// @return pendingWithdrawals The current pending withdrawal asset amount.
-    function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {
-        pendingWithdrawals = IOllaVault(_modules.vault).pendingWithdrawalAssets();
-        uint256 targetBuffered = targetBufferedAssets;
-        requiredBuffer = pendingWithdrawals + targetBuffered;
-        return (requiredBuffer, pendingWithdrawals);
     }
 
     /// @notice Calculates how much more needs to be unstaked to meet the required buffer, net of pending unstakes.

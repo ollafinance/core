@@ -396,8 +396,6 @@ contract OllaCoreProtocolFeesTest is Test {
 
         // Stake all assets so buffer is empty
         vm.warp(block.timestamp + 1 hours + 1);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setRewardsToken(asset);
         vm.prank(operator);

@@ -201,10 +201,6 @@ contract RebalanceInProgressIntegrationTest is Test {
         // Admin setters should revert with OllaCore__RebalanceInProgress
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
         vm.prank(governance);
-        core.setTargetBufferedAssets(1);
-
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
-        vm.prank(governance);
         core.setProtocolFeeBP(1);
 
         // Complete the rebalance
@@ -215,8 +211,8 @@ contract RebalanceInProgressIntegrationTest is Test {
 
         // Admin setters succeed after rebalance completes
         vm.prank(governance);
-        core.setTargetBufferedAssets(1 * DECIMALS);
-        assertEq(core.targetBufferedAssets(), 1 * DECIMALS, "setTargetBufferedAssets works after rebalance");
+        core.setProtocolFeeBP(1);
+        assertEq(core.protocolFeeBP(), 1, "setProtocolFeeBP works after rebalance");
     }
 
     /// @notice Claims of previously-finalized requests work during rebalance in progress.
