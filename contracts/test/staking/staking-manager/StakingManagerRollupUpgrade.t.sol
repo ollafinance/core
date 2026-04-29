@@ -352,7 +352,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(claimable, legacyRewards, "legacy rollup rewards should remain claimable");
     }
 
-    function test_GetClaimableRewards_IncludesNewCanonicalBeforePersisted() external {
+    function test_GetClaimableRewards_ExcludesNewCanonicalBeforePersisted() external {
         uint256 canonicalRewards = 11 ether;
         rollupRegistry.setCanonicalRollup(address(rollupB));
         _setRollupRewards(rollupB, canonicalRewards);
@@ -360,10 +360,10 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, canonicalRewards, "new canonical rewards should be read before sync");
+        assertEq(claimable, 0, "new canonical rewards should be read after harvest sync");
     }
 
-    function test_GetClaimableRewards_SumsLegacyAndCanonicalRewards() external {
+    function test_GetClaimableRewards_IncludesCanonicalAfterHarvestSync() external {
         uint256 legacyRewards = 7 ether;
         uint256 canonicalRewards = 11 ether;
         _setRollupRewards(rollup, legacyRewards);
@@ -371,9 +371,14 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         _setRollupRewards(rollupB, canonicalRewards);
 
         vm.prank(core);
+        stakingManager.harvestRewards();
+
+        _setRollupRewards(rollupB, canonicalRewards);
+
+        vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, legacyRewards + canonicalRewards, "legacy plus canonical rewards should be summed");
+        assertEq(claimable, canonicalRewards, "synced canonical rewards should be included");
     }
 
     function test_GetClaimableRewards_SkipsRewardsWhenRollupNotClaimable() external {
@@ -387,10 +392,10 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, canonicalRewards, "non-claimable legacy rewards should be skipped");
+        assertEq(claimable, 0, "unsynced canonical rewards should be skipped");
     }
 
-    function test_GetClaimableRewards_SkipsUntrackedCanonicalWhenNotClaimable() external {
+    function test_GetClaimableRewards_SkipsUnsyncedCanonicalWhenNotClaimable() external {
         uint256 legacyRewards = 7 ether;
         uint256 canonicalRewards = 11 ether;
         _setRollupRewards(rollup, legacyRewards);
@@ -401,7 +406,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, legacyRewards, "non-claimable untracked canonical rewards should be skipped");
+        assertEq(claimable, legacyRewards, "tracked legacy rewards should still be included");
     }
 
     function test_RevertWhen_GetClaimableRewards_LegacyRewardReadReverts() external {
@@ -475,7 +480,7 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(claimable, 0, "mismatched rollup should not have been tracked");
     }
 
-    function test_GetClaimableRewards_SkipsUntrackedCanonicalWithMismatchedRewardAsset() external {
+    function test_GetClaimableRewards_SkipsUnsyncedCanonicalWithMismatchedRewardAsset() external {
         uint256 canonicalRewards = 11 ether;
         MockAztec otherAsset = new MockAztec(address(this));
         rollupRegistry.setRewardDistributor(new MockAztecRewardDistributor(IERC20(address(otherAsset))));

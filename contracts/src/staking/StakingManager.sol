@@ -395,24 +395,15 @@ contract StakingManager is
     /// @return claimableRewards The total rewards claimable to rewards recipient.
     // slither-disable-next-line calls-loop
     function getClaimableRewards() external view override onlyCore returns (uint256 claimableRewards) {
-        address canonicalRollup = rollupRegistry.getCanonicalRollup();
-        bool includedCanonical = false;
         uint256 length = _rewardRollups.length;
 
         for (uint256 i; i < length; ++i) {
             address rollupAddress = _rewardRollups[i];
-            if (rollupAddress == canonicalRollup) {
-                includedCanonical = true;
-            }
             if (!IAztecRollup(rollupAddress).isRewardsClaimable()) {
                 continue;
             }
             uint256 unclaimedRewards = IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator));
             claimableRewards += unclaimedRewards;
-        }
-
-        if (!includedCanonical && _isExpectedRewardAsset() && IAztecRollup(canonicalRollup).isRewardsClaimable()) {
-            claimableRewards += IAztecRollup(canonicalRollup).getSequencerRewards(address(rewardsAccumulator));
         }
 
         return claimableRewards;
