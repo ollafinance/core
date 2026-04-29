@@ -57,7 +57,7 @@ contract StakingManagerUpgradeTest is Test {
 
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
-        rollupRegistry = new MockAztecRollupRegistry(address(rollup));
+        rollupRegistry = new MockAztecRollupRegistry(address(rollup), IERC20(address(aztec)));
         rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         StakingManager implementation = new StakingManager();

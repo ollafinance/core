@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
+import { IAztecRewardDistributor } from "src/staking/interfaces/IAztecRewardDistributor.sol";
+
 /// @title IAztecRollupRegistry
 /// @notice Minimal interface for the Aztec Rollup Registry contract.
 /// @dev Mirrors the IRegistry interface from Aztec contracts.
@@ -26,4 +28,8 @@ interface IAztecRollupRegistry {
     /// @notice Returns the governance address.
     /// @return The address of the governance contract.
     function getGovernance() external view returns (address);
+
+    /// @notice Returns the Aztec reward distributor.
+    /// @return The reward distributor contract.
+    function getRewardDistributor() external view returns (IAztecRewardDistributor);
 }
