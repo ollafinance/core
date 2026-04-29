@@ -251,6 +251,8 @@ contract SafetyModule is AccessControl, ISafetyModule {
     ///      Increasing `withdrawalMinimum` can retroactively prevent users with fewer shares
     ///      from withdrawing. This is mitigated by the governance timelock (advance notice) and
     ///      the expectation that minimum is set conservatively at launch. Bounded by MAX_WITHDRAWAL_MINIMUM.
+    ///      The same minimum is enforced at deposit time in `OllaVault._processDeposit`, so a
+    ///      depositor cannot land in a sub-minimum state via a small initial deposit.
     function setWithdrawalMinimum(uint256 minimumShares) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (minimumShares > MAX_WITHDRAWAL_MINIMUM) {
             revert SafetyModule__InvalidParameter();
