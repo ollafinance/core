@@ -796,7 +796,12 @@ contract StakingManager is
                 // slither-disable-next-line calls-loop
                 try rollup.finalizeWithdraw(attester) { }
                 catch (bytes memory reason) {
-                    if (bytes4(reason) == ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector) {
+                    if (
+                        keccak256(reason)
+                            == keccak256(
+                                abi.encodeWithSelector(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector)
+                            )
+                    ) {
                         revert ReentrancyGuardTransient.ReentrancyGuardReentrantCall();
                     }
                     info.stakedAmount = newBalance;
@@ -968,6 +973,7 @@ contract StakingManager is
             return false;
         }
 
+        // slither-disable-next-line calls-loop
         IAztecGovernance.Withdrawal memory withdrawal =
             IAztecGovernance(rollupRegistry.getGovernance()).getWithdrawal(view_.exit.withdrawalId);
         if (withdrawal.claimed) {

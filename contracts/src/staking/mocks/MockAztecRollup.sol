@@ -438,5 +438,6 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     function rewardsCoinbase() external view override returns (address coinbase) {
         coinbase = _rewardState.rewardsCoinbase;
+        return coinbase;
     }
 }
