@@ -598,6 +598,47 @@ contract OllaCoreAccountingTest is Test {
         assertEq(reportAfter.rewardsSnapshot, 5 * DECIMALS, "rewards snapshot tracks current rewards");
     }
 
+    /// @notice When `claimSequencerRewards` is invoked out-of-band, claimable rewards on the rollup
+    ///         are transferred into RewardsAccumulator without going through Olla's harvest flow.
+    ///         updateAccounting must include the unrecorded RewardsAccumulator balance in
+    ///         `currentRewards`, otherwise the rewards snapshot is understated by exactly the
+    ///         amount that was moved (causing the next harvest's recordBalance to look like an
+    ///         inflated reward and producing inconsistent reward reporting).
+    function test_UpdateAccounting_IncludesUnrecordedRewardsAccumulatorBalance() external {
+        uint256 depositAmount = 10 * DECIMALS;
+        _performDeposit(alice, depositAmount);
+
+        uint256 rewardsAmount = 100 * DECIMALS;
+
+        // --- Baseline: rewards are still claimable on the rollup. ---
+        stakingManager.setClaimableRewards(rewardsAmount);
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory baselineReport = core.latestReport();
+        assertEq(baselineReport.rewardsSnapshot, rewardsAmount, "baseline snapshot reflects claimable");
+
+        // --- Out-of-band claim: rollup-side rewards move into the accumulator,
+        //     bypassing Olla's harvest flow (no recordBalance, no cumulativeRewards update). ---
+        stakingManager.setClaimableRewards(0);
+        deal(address(asset), address(rewardsAccumulator), rewardsAmount);
+
+        // Sanity: the balance is visible to the accumulator but unrecorded by core.
+        assertEq(rewardsAccumulator.balance(), rewardsAmount, "accumulator holds the claimed amount");
+        assertEq(core.accountingState().cumulativeRewards, 0, "cumulativeRewards still zero pre-harvest");
+
+        // --- updateAccounting must keep the rewards snapshot whole (cumulative + claimable + accumulator). ---
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory postClaimReport = core.latestReport();
+        assertEq(
+            postClaimReport.rewardsSnapshot,
+            rewardsAmount,
+            "rewards snapshot must include unrecorded accumulator balance"
+        );
+    }
+
     function test_UpdateAccounting_InvokesSafetyChecks() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
