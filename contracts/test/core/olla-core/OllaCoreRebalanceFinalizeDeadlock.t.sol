@@ -7,9 +7,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
@@ -43,7 +41,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
@@ -72,13 +69,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation),
-            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
-        );
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
@@ -88,7 +78,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -123,7 +113,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     {
         vm.prank(owner);
         requestId = vault.requestRedeem(shares, recipient, owner);
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);
     }
@@ -287,7 +277,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "second cycle should reach Done");
 
         // Withdrawal should now be finalized -- verify user can claim
-        assertEq(withdrawalQueue.totalPendingAssets(), 0, "all pending withdrawals should be finalized");
+        assertEq(vault.pendingWithdrawalAssets(), 0, "all pending withdrawals should be finalized");
 
         vm.prank(alice);
         uint256 claimed = vault.claimRequestById(requestId);
@@ -421,7 +411,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         assertLe(ae1 + ae2, 7 * DECIMALS, "first two requests should fit in buffer");
         assertGt(ae3, 7 * DECIMALS - ae1 - ae2, "third request should NOT fit in remaining buffer");
 
-        uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
+        uint256 pendingBefore = vault.pendingWithdrawalAssets();
         assertEq(pendingBefore, ae1 + ae2 + ae3, "total pending matches sum of requests");
 
         // First rebalance: should finalize first two requests (ae1 + ae2), but not the third
@@ -434,7 +424,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         assertEq(finalizedAmount, ae1 + ae2, "should finalize first two requests");
 
-        uint256 pendingAfterFirst = withdrawalQueue.totalPendingAssets();
+        uint256 pendingAfterFirst = vault.pendingWithdrawalAssets();
         assertEq(pendingAfterFirst, ae3, "only third request remaining");
 
         // Second rebalance: buffer < ae3 -> finalizedAmount = 0 -> advances past FinalizeWithdrawals

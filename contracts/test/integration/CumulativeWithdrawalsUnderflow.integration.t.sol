@@ -8,10 +8,8 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
@@ -36,7 +34,6 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
     OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
-    WithdrawalQueue internal queue;
     address internal governance;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
@@ -64,15 +61,9 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        queue = WithdrawalQueue(address(queueProxy));
-
-        queue.initialize(address(vault), governance, 180_000);
-
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(queue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -134,7 +125,7 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         uint256 redeemShares = shares / 2;
         uint256 requestId = _requestRedeem(alice, redeemShares);
 
-        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         uint256 assetsExpected = req.assetsExpected;
 
         uint256 cumulativeBefore = vault.cumulativeWithdrawals();
@@ -158,7 +149,7 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         assertGt(slashingAdjAfter, slashingAdjBefore, "cumulativeSlashingAdjustments should increase");
 
         // The request should be finalized with adjusted amount
-        IWithdrawalQueue.WithdrawalRequest memory reqAfter = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqAfter = vault.getWithdrawalRequest(requestId);
         assertTrue(reqAfter.finalized, "request should be finalized");
         assertLe(reqAfter.assetsExpected, assetsExpected, "payout should be reduced or equal due to slashing");
     }
@@ -176,7 +167,7 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         // Request partial redeem at the elevated rate (~1.5:1)
         uint256 requestId = _requestRedeem(alice, sharesAlice / 2);
 
-        IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         uint256 assetsExpected = req.assetsExpected;
         assertGt(assetsExpected, 0, "assetsExpected should be positive");
 
@@ -198,7 +189,7 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         assertGt(slashingAdjAfter, slashingAdjBefore, "cumulativeSlashingAdjustments should increase");
 
         // The request should be finalized with adjusted amount
-        IWithdrawalQueue.WithdrawalRequest memory reqAfter = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqAfter = vault.getWithdrawalRequest(requestId);
         assertTrue(reqAfter.finalized, "request should be finalized even after severe slashing");
         assertLt(reqAfter.assetsExpected, assetsExpected, "payout should be reduced due to severe slashing");
     }
@@ -285,7 +276,7 @@ contract CumulativeWithdrawalsUnderflowTest is Test {
         // Alice requests full redeem
         uint256 requestIdAlice = _requestRedeem(alice, sharesAlice);
 
-        IWithdrawalQueue.WithdrawalRequest memory reqAlice = queue.getRequest(requestIdAlice);
+        IOllaVault.WithdrawalRequest memory reqAlice = vault.getWithdrawalRequest(requestIdAlice);
         uint256 assetsExpectedAlice = reqAlice.assetsExpected;
 
         uint256 cumulativeBefore = vault.cumulativeWithdrawals();

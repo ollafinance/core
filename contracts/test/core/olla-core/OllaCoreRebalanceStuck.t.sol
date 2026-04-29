@@ -8,7 +8,6 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
@@ -31,7 +30,6 @@ contract OllaCoreRebalanceStuck is Test {
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
-    WithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -55,12 +53,6 @@ contract OllaCoreRebalanceStuck is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation),
-            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
-        );
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
@@ -70,7 +62,7 @@ contract OllaCoreRebalanceStuck is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));

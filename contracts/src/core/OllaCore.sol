@@ -792,18 +792,22 @@ contract OllaCore is
             if (actualStaked > stakeable) revert OllaCore__StakeFailed(actualStaked);
             totalStaked = actualStaked;
         } catch {
-            // Stake failed entirely -- return all assets to Vault
+            // Stake failed entirely -- return all assets to Vault and clear the residual
+            // allowance granted to StakingManager before the failed call.
+            assetRef.forceApprove(address(stakingManagerRef), 0);
             assetRef.safeTransfer(address(vaultRef), stakeable);
             vaultRef.receiveUnstaked(stakeable);
             return 0;
         }
 
-        // Return any excess (stakeable - actualStaked) to Vault
+        // Return any excess (stakeable - actualStaked) to Vault and clear any residual
+        // allowance left over from the partial-stake path.
         uint256 excess = stakeable - totalStaked;
         if (excess > 0) {
             assetRef.safeTransfer(address(vaultRef), excess);
             vaultRef.receiveUnstaked(excess);
         }
+        assetRef.forceApprove(address(stakingManagerRef), 0);
 
         return totalStaked;
     }

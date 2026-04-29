@@ -11,7 +11,6 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
@@ -46,7 +45,6 @@ contract OllaVaultGuardsTest is Test {
     MockOllaGovernance internal governance;
     address internal alice;
     address internal bob;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
@@ -70,7 +68,6 @@ contract OllaVaultGuardsTest is Test {
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
@@ -78,7 +75,7 @@ contract OllaVaultGuardsTest is Test {
         core.initialize(
             asset, stAztec, stakingManager, 0, 5_000, address(governance), rewardsAccumulator, address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(governance));
+        vault.initialize(asset, stAztec, address(core), address(governance));
 
         vm.prank(address(governance));
         core.setVault(address(vault));
@@ -165,9 +162,7 @@ contract OllaVaultGuardsTest is Test {
         OllaVault freshVault = OllaVault(address(proxy));
 
         vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__ZeroAddress.selector, "asset_"));
-        freshVault.initialize(
-            MockAztec(address(0)), stAztec, address(withdrawalQueue), address(core), address(governance)
-        );
+        freshVault.initialize(MockAztec(address(0)), stAztec, address(core), address(governance));
     }
 
     function test_RevertWhen_InitializeZeroStAztec() external {
@@ -176,16 +171,7 @@ contract OllaVaultGuardsTest is Test {
         OllaVault freshVault = OllaVault(address(proxy));
 
         vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__ZeroAddress.selector, "stAztec_"));
-        freshVault.initialize(asset, StAztec(address(0)), address(withdrawalQueue), address(core), address(governance));
-    }
-
-    function test_RevertWhen_InitializeZeroWithdrawalQueue() external {
-        OllaVault impl = new OllaVault();
-        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), "");
-        OllaVault freshVault = OllaVault(address(proxy));
-
-        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__ZeroAddress.selector, "withdrawalQueue_"));
-        freshVault.initialize(asset, stAztec, address(0), address(core), address(governance));
+        freshVault.initialize(asset, StAztec(address(0)), address(core), address(governance));
     }
 
     function test_RevertWhen_InitializeZeroCore() external {
@@ -194,7 +180,7 @@ contract OllaVaultGuardsTest is Test {
         OllaVault freshVault = OllaVault(address(proxy));
 
         vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__ZeroAddress.selector, "core_"));
-        freshVault.initialize(asset, stAztec, address(withdrawalQueue), address(0), address(governance));
+        freshVault.initialize(asset, stAztec, address(0), address(governance));
     }
 
     function test_RevertWhen_InitializeZeroGovernance() external {
@@ -203,7 +189,7 @@ contract OllaVaultGuardsTest is Test {
         OllaVault freshVault = OllaVault(address(proxy));
 
         vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__ZeroAddress.selector, "governanceContract_"));
-        freshVault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(0));
+        freshVault.initialize(asset, stAztec, address(core), address(0));
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -313,21 +299,6 @@ contract OllaVaultGuardsTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-                  SET QUEUE GAS THRESHOLD (EVENT)
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SetQueueGasThreshold_EmitsEvent() external {
-        uint256 oldThreshold = withdrawalQueue.gasThreshold();
-        uint256 newThreshold = 500_000;
-
-        vm.expectEmit(true, true, true, true);
-        emit IOllaVault.QueueGasThresholdUpdated(oldThreshold, newThreshold);
-
-        vm.prank(address(governance));
-        vault.setQueueGasThreshold(newThreshold);
-    }
-
-    /*//////////////////////////////////////////////////////////////
                       GUARDIAN PAUSE / UNPAUSE
     //////////////////////////////////////////////////////////////*/
 
@@ -390,23 +361,6 @@ contract OllaVaultGuardsTest is Test {
         vm.expectRevert(IOllaVault.OllaVault__InvalidAmount.selector);
         vm.prank(alice);
         vault.deposit(0, alice, 0);
-    }
-
-    function test_RevertWhen_ClaimWithdrawal_AssetsMismatch() external {
-        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
-        uint256 requestId = _performRequestRedeem(alice, shares);
-        _finalizeAll(10 * DECIMALS);
-
-        // Mock claimWithdrawal to return a different amount
-        vm.mockCall(
-            address(withdrawalQueue),
-            abi.encodeWithSelector(MockWithdrawalQueue.claimWithdrawal.selector, requestId),
-            abi.encode(uint256(1))
-        );
-
-        vm.expectRevert();
-        vm.prank(alice);
-        vault.claimRequestById(requestId);
     }
 
     function test_RevertWhen_ReconcileBufferedAssets_ActualBelowFinalizedUnclaimed() external {
@@ -477,31 +431,6 @@ contract OllaVaultGuardsTest is Test {
         vault.requestRedeemWithPermit(
             10 * DECIMALS, alice, block.timestamp + 1, 27, bytes32(uint256(1)), bytes32(uint256(2))
         );
-    }
-
-    /*//////////////////////////////////////////////////////////////
-              UNEXPECTED REQUEST ID IN _executeRedeemRequest
-    //////////////////////////////////////////////////////////////*/
-
-    function test_RevertWhen_RequestRedeem_UnexpectedRequestId() external {
-        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
-
-        // The mock queue's nextRequestId() returns 1 (the expected ID).
-        // Mock requestWithdrawal to return a different ID (999) to trigger the mismatch.
-        uint64 expectedId = withdrawalQueue.nextRequestId();
-        uint256 mismatchedId = 999;
-
-        vm.mockCall(
-            address(withdrawalQueue),
-            abi.encodeWithSelector(MockWithdrawalQueue.requestWithdrawal.selector),
-            abi.encode(mismatchedId)
-        );
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IOllaVault.OllaVault__UnexpectedRequestId.selector, expectedId, mismatchedId)
-        );
-        vm.prank(alice);
-        vault.requestRedeem(shares, alice, alice);
     }
 
     /*//////////////////////////////////////////////////////////////

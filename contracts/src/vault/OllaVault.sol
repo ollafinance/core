@@ -11,6 +11,7 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
+import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
@@ -18,12 +19,12 @@ import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 
 /// @title OllaVault
 /// @notice User-facing ERC-7540/ERC-7575/ERC-4626 vault.
-/// @dev Holds assets, mints/burns stAztec, manages withdrawal requests.
-///      Pricing is delegated to OllaCore via cross-contract view calls.
+/// @dev Holds assets, mints/burns stAztec, and manages withdrawal requests in-place.
+///      The withdrawal queue (formerly a separate proxy) is folded into this contract
+///      so that finalize is a single self-contained loop. Pricing is delegated to OllaCore.
 /// @author Olla Core contributors
 contract OllaVault is
     Initializable,
@@ -49,6 +50,20 @@ contract OllaVault is
     /// @notice Basis points divisor.
     uint256 public constant BP_DIVISOR = 10_000;
 
+    /// @notice Tolerance for rate comparison in slashing adjustment (1 wei).
+    /// @dev Accounts for floor-rounding differences between the gross rate
+    ///      (computed on aggregate state) and per-request rates.
+    uint256 private constant _SLASHING_RATE_TOLERANCE = 1;
+
+    /// @notice Scale factor for exchange rate calculations.
+    uint256 private constant _RATE_SCALE = 1e18;
+
+    /// @notice Gas safety net for the finalization loop.
+    /// @dev With the queue folded into the vault there is no longer a cross-contract loop sharing
+    ///      a gas budget, so this threshold is purely a defensive cap on per-call work. Callers
+    ///      should still bound their batch via `maxRequestId` for predictable rebalance pacing.
+    uint256 private constant _FINALIZE_GAS_THRESHOLD = 50_000;
+
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
@@ -62,7 +77,22 @@ contract OllaVault is
     /// @notice Assets that have been finalized but not yet claimed.
     uint256 private _finalizedUnclaimedAssets;
 
-    /// @notice Withdrawal request tracking.
+    /// @notice Next request id to assign (starts at 1; id 0 is reserved as "none").
+    uint64 private _nextRequestId;
+
+    /// @notice Next request id to consider for finalization (the queue head).
+    uint64 private _nextPendingId;
+
+    /// @notice Stored withdrawal requests by id.
+    mapping(uint256 requestId => WithdrawalRequest request) private _requests;
+
+    /// @notice Total assets outstanding across unfinalized requests.
+    uint256 public override pendingWithdrawalAssets;
+
+    /// @notice Total shares outstanding across unfinalized requests (burned but not yet finalized).
+    uint256 public override pendingWithdrawalShares;
+
+    /// @notice Withdrawal request ownership tracking.
     mapping(uint256 requestId => address owner) private _requestOwners;
     mapping(address owner => uint256[] requestIds) private _ownerRequestIds;
     mapping(uint256 requestId => uint256 index) private _ownerRequestIndex;
@@ -86,7 +116,7 @@ contract OllaVault is
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[44] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -101,16 +131,13 @@ contract OllaVault is
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IOllaVault
-    function initialize(
-        IERC20 asset_,
-        IStAztec stAztec_,
-        address withdrawalQueue_,
-        address core_,
-        address governanceContract_
-    ) external override initializer {
+    function initialize(IERC20 asset_, IStAztec stAztec_, address core_, address governanceContract_)
+        external
+        override
+        initializer
+    {
         if (address(asset_) == address(0)) revert OllaVault__ZeroAddress("asset_");
         if (address(stAztec_) == address(0)) revert OllaVault__ZeroAddress("stAztec_");
-        if (withdrawalQueue_ == address(0)) revert OllaVault__ZeroAddress("withdrawalQueue_");
         if (core_ == address(0)) revert OllaVault__ZeroAddress("core_");
         if (governanceContract_ == address(0)) revert OllaVault__ZeroAddress("governanceContract_");
 
@@ -119,9 +146,10 @@ contract OllaVault is
         __Pausable_init();
         _pause();
 
-        _modules = VaultModules({
-            asset: asset_, stAztec: stAztec_, withdrawalQueue: IWithdrawalQueue(withdrawalQueue_), core: core_
-        });
+        _modules = VaultModules({ asset: asset_, stAztec: stAztec_, core: core_ });
+
+        _nextRequestId = 1;
+        _nextPendingId = 1;
 
         _grantRole(AccessControlUpgradeable.DEFAULT_ADMIN_ROLE, governanceContract_);
         _grantRole(GUARDIAN_ROLE, governanceContract_);
@@ -196,10 +224,9 @@ contract OllaVault is
         // Pull shares to vault via transferFrom, consuming the permit-set allowance.
         // slither-disable-next-line reentrancy-benign
         IERC20(address(stAztecRef)).safeTransferFrom(msg.sender, address(this), shares);
-        uint256 assets;
-        (requestId, assets) = _executeRedeemRequest(msg.sender, controller, controller, shares, true);
+        (requestId,) = _executeRedeemRequest(msg.sender, controller, shares, true);
 
-        emit RedeemRequest(controller, msg.sender, requestId, msg.sender, assets);
+        emit RedeemRequest(controller, msg.sender, requestId, msg.sender, shares);
         return requestId;
     }
 
@@ -314,10 +341,9 @@ contract OllaVault is
         }
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
 
-        uint256 assets;
-        (requestId, assets) = _executeRedeemRequest(owner, controller, controller, shares, false);
+        (requestId,) = _executeRedeemRequest(owner, controller, shares, false);
 
-        emit RedeemRequest(controller, owner, requestId, msg.sender, assets);
+        emit RedeemRequest(controller, owner, requestId, msg.sender, shares);
         return requestId;
     }
 
@@ -405,16 +431,6 @@ contract OllaVault is
     }
 
     /// @inheritdoc IOllaVault
-    /// @notice Updates the gas threshold used by the withdrawal queue's finalization loop.
-    /// @dev Only callable by governance (owner). The gas threshold controls how many withdrawal
-    ///      requests can be processed per `finalizeWithdrawals()` call before the loop exits.
-    function setQueueGasThreshold(uint256 threshold) external override onlyOwner {
-        uint256 oldThreshold = _modules.withdrawalQueue.gasThreshold();
-        emit QueueGasThresholdUpdated(oldThreshold, threshold);
-        _modules.withdrawalQueue.setGasThreshold(threshold);
-    }
-
-    /// @inheritdoc IOllaVault
     function recoverStAztec(address recipient, uint256 amount) external override onlyOwner {
         if (amount == 0) revert OllaVault__InvalidAmount();
         address resolvedRecipient = recipient == address(0) ? _treasury() : recipient;
@@ -492,6 +508,8 @@ contract OllaVault is
         return _operators[controller][operator];
     }
 
+    // slither-disable-start pess-multiple-storage-read
+    // Reads a single request struct; multiple field accesses on the same _requests slot are required.
     /// @notice Returns pending (unfinalized) shares for a request (ERC-7540).
     /// @param requestId The withdrawal request id.
     /// @param controller The controller address.
@@ -503,8 +521,8 @@ contract OllaVault is
         returns (uint256 pendingShares)
     {
         if (_requestOwners[requestId] != controller) return 0;
-        IWithdrawalQueue.WithdrawalRequest memory request = _modules.withdrawalQueue.getRequest(requestId);
-        if (!request.finalized && !request.claimed) return request.shares;
+        WithdrawalRequest storage request = _requests[requestId];
+        if (!request.finalized) return request.shares;
         return 0;
     }
 
@@ -519,10 +537,12 @@ contract OllaVault is
         returns (uint256 claimableShares)
     {
         if (_requestOwners[requestId] != controller) return 0;
-        IWithdrawalQueue.WithdrawalRequest memory request = _modules.withdrawalQueue.getRequest(requestId);
-        if (request.finalized && !request.claimed) return request.shares;
+        WithdrawalRequest storage request = _requests[requestId];
+        if (request.finalized) return request.shares;
         return 0;
     }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /*//////////////////////////////////////////////////////////////
                            VIEW FUNCTIONS
@@ -540,20 +560,20 @@ contract OllaVault is
         return _modules.core;
     }
 
-    /// @notice Returns the withdrawal queue module address.
-    /// @return The withdrawal queue address.
-    function withdrawalQueue() external view override returns (address) {
-        return address(_modules.withdrawalQueue);
-    }
-
     /// @inheritdoc IOllaVault
     function nextWithdrawalRequestId() external view override returns (uint256 requestId) {
-        return _modules.withdrawalQueue.nextRequestId();
+        return _nextRequestId;
     }
 
     /// @inheritdoc IOllaVault
     function nextUnfinalizedWithdrawalRequestId() external view override returns (uint256 requestId) {
-        return _modules.withdrawalQueue.nextUnfinalized();
+        return _nextPendingId;
+    }
+
+    /// @inheritdoc IOllaVault
+    function getWithdrawalRequest(uint256 requestId) external view override returns (WithdrawalRequest memory request) {
+        if (_requestOwners[requestId] == address(0)) revert OllaVault__RequestNotFound(requestId);
+        return _requests[requestId];
     }
 
     /// @notice Returns the safety module address (reads canonical reference from Core).
@@ -580,17 +600,6 @@ contract OllaVault is
     /// @return The current buffered assets.
     function bufferedAssets() external view override returns (uint256) {
         return _bufferedAssets;
-    }
-
-    /// @notice Returns current pending withdrawal assets.
-    /// @return The current pending withdrawal assets.
-    function pendingWithdrawalAssets() external view override returns (uint256) {
-        return _modules.withdrawalQueue.totalPendingAssets();
-    }
-
-    /// @inheritdoc IOllaVault
-    function pendingWithdrawalShares() external view override returns (uint256) {
-        return _modules.withdrawalQueue.totalPendingShares();
     }
 
     /// @notice Converts assets to shares (delegates to Core).
@@ -666,30 +675,105 @@ contract OllaVault is
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    // solhint-disable function-max-lines
+    // slither-disable-start cyclomatic-complexity,pess-multiple-storage-read
+    // FIFO finalization intentionally reads sequential request storage entries; complexity reflects
+    // the slashing-adjustment / liquidity / event-emit branches inherent to the loop body.
+    /// @notice Finalizes pending withdrawal requests up to, but not including, `maxRequestId`.
+    /// @dev Single self-contained loop. Per-controller `_claimableShares` is updated inline as
+    ///      each request transitions to finalized, removing the previous outer loop in the vault
+    ///      that shared a gas budget with a separate queue contract. The loop is bounded only
+    ///      by `maxRequestId`; the prior `gasleft()` heuristic is no longer needed.
     function _finalizeWithdrawals(uint256 availableAssets, uint256 currentRate, uint256 maxRequestId)
         internal
         returns (uint256 finalizedAmount, uint256 finalizedCount)
     {
-        // slither-disable-start reentrancy-events,reentrancy-no-eth,reentrancy-benign
-        // CORE_ROLE only; all external calls target trusted WithdrawalQueue.
         // Zero-amount short circuit; not a timestamp concern.
         // slither-disable-next-line timestamp,incorrect-equality
         if (availableAssets == 0) return (0, 0);
 
-        IWithdrawalQueue queue = _modules.withdrawalQueue;
-        uint256 queued = queue.totalPendingAssets();
+        uint256 queued = pendingWithdrawalAssets;
         // No pending requests; not a timestamp concern.
         // slither-disable-next-line timestamp,incorrect-equality
         if (queued == 0) return (0, 0);
 
-        uint256 prevPending = queue.nextUnfinalized();
-        uint256 totalAdjusted;
-        (finalizedAmount, finalizedCount, totalAdjusted) =
-            queue.finalizeWithdrawals(availableAssets, currentRate, maxRequestId);
+        uint256 requestTail = _nextRequestId;
+        uint256 upperBound = maxRequestId < requestTail ? maxRequestId : requestTail;
 
-        uint256 queuedAfter = queue.totalPendingAssets();
-        if (queued - queuedAfter != finalizedAmount + totalAdjusted) {
-            revert OllaVault__FinalizeAmountMismatch(queued - queuedAfter, finalizedAmount + totalAdjusted);
+        uint256 currentId = _nextPendingId;
+        uint256 available = availableAssets;
+        uint256 pendingAssets = queued;
+        uint256 pendingShares_ = pendingWithdrawalShares;
+        uint256 totalAdjusted;
+
+        while (currentId < upperBound) {
+            if (gasleft() < _FINALIZE_GAS_THRESHOLD) {
+                break;
+            }
+            WithdrawalRequest storage request = _requests[currentId];
+            if (!request.finalized) {
+                uint256 assetsExpected = request.assetsExpected;
+
+                // Adjust payout when slashing has reduced the exchange rate below the locked rate.
+                // The > 1 tolerance accounts for floor-rounding differences between the gross rate
+                // (computed on aggregate state) and per-request rates.
+                if (currentRate < request.rate && request.rate - currentRate > _SLASHING_RATE_TOLERANCE) {
+                    uint256 payout = (request.shares * currentRate) / _RATE_SCALE;
+                    if (payout < assetsExpected) {
+                        // Check liquidity against the ADJUSTED payout before any storage write.
+                        if (available < payout) {
+                            break;
+                        }
+                        uint256 adjustment = assetsExpected - payout;
+                        pendingAssets -= adjustment;
+                        totalAdjusted += adjustment;
+                        request.assetsExpected = payout;
+                        assetsExpected = payout;
+                        emit WithdrawalAdjusted(currentId, assetsExpected + adjustment, assetsExpected);
+                    }
+                }
+
+                // Slashing reduced payout to zero; finalize without consuming liquidity but
+                // count the request — `finalizedCount` is the count of finalized requests,
+                // which includes zero-payout slashes. (Audit L-27: previously the count was
+                // not incremented here and the post-loop bidirectional invariant relied on
+                // that omission; both have been corrected.)
+                if (assetsExpected == 0) {
+                    pendingShares_ -= request.shares;
+                    request.finalized = true;
+                    _claimableShares[_requestOwners[currentId]] += request.shares;
+                    ++finalizedCount;
+                    emit WithdrawalRequestFinalized(currentId, 0);
+                    ++currentId;
+                    continue;
+                }
+
+                // Breaks on first under-funded non-adjusted request; does not skip.
+                if (available < assetsExpected) {
+                    break;
+                }
+
+                available -= assetsExpected;
+                finalizedAmount += assetsExpected;
+                pendingAssets -= assetsExpected;
+                pendingShares_ -= request.shares;
+                request.finalized = true;
+                _claimableShares[_requestOwners[currentId]] += request.shares;
+                ++finalizedCount;
+                emit WithdrawalRequestFinalized(currentId, assetsExpected);
+            }
+
+            ++currentId;
+        }
+
+        pendingWithdrawalAssets = pendingAssets;
+        pendingWithdrawalShares = pendingShares_;
+        _nextPendingId = SafeCast.toUint64(currentId);
+
+        if (queued - pendingAssets != finalizedAmount + totalAdjusted) {
+            // Defensive — would only trigger from a future code change that breaks the
+            // pendingAssets bookkeeping above.
+            revert OllaVault__FinalizeInconsistent(finalizedAmount + totalAdjusted, queued - pendingAssets);
         }
 
         uint256 buffered = _bufferedAssets;
@@ -697,15 +781,19 @@ contract OllaVault is
             revert OllaVault__InsufficientBufferedAssets(finalizedAmount, buffered);
         }
 
-        // Consistency invariant: both must be zero or both non-zero.
+        // Consistency invariant: any liquidity consumed must correspond to at least one finalized
+        // request. The reverse is not true after L-27: a batch of all-slashed-to-zero requests
+        // legitimately finalizes with count > 0 and amount == 0.
         // slither-disable-next-line incorrect-equality
-        if ((finalizedAmount == 0) != (finalizedCount == 0)) {
+        if (finalizedAmount > 0 && finalizedCount == 0) {
             revert OllaVault__FinalizeInconsistent(finalizedAmount, finalizedCount);
         }
 
-        // Nothing finalized; short circuit.
+        // Nothing materially happened (no liquidity moved, no slashing adjustment); short circuit
+        // before mutating buffered/cumulative state. We may still have advanced `_nextPendingId`
+        // and finalized zero-payout slashes — those writes were already committed above.
         // slither-disable-next-line incorrect-equality
-        if (finalizedAmount == 0 && totalAdjusted == 0) return (0, 0);
+        if (finalizedAmount == 0 && totalAdjusted == 0) return (0, finalizedCount);
 
         if (finalizedAmount > 0) {
             _bufferedAssets = buffered - finalizedAmount;
@@ -717,23 +805,12 @@ contract OllaVault is
             cumulativeSlashingAdjustments += totalAdjusted;
         }
 
-        // Update per-controller claimable shares for O(1) maxRedeem.
-        // slither-disable-start calls-loop
-        // Bounded by finalizedCount; same requests the queue already processed.
-        uint256 newPending = queue.nextUnfinalized();
-        for (uint256 id = prevPending; id < newPending; ++id) {
-            IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(id);
-            if (req.finalized) {
-                _claimableShares[_requestOwners[id]] += req.shares;
-            }
-        }
-        // slither-disable-end calls-loop
-
-        // CORE_ROLE only; external call to trusted WithdrawalQueue.
         emit WithdrawalFinalized(availableAssets, finalizedAmount);
         return (finalizedAmount, finalizedCount);
-        // slither-disable-end reentrancy-events,reentrancy-no-eth,reentrancy-benign
     }
+
+    // slither-disable-end cyclomatic-complexity,pess-multiple-storage-read
+    // solhint-enable function-max-lines
 
     /// @notice Validates deposit preconditions (safety module, cap) and computes shares.
     /// @param caller The depositor address.
@@ -782,21 +859,17 @@ contract OllaVault is
     }
 
     /// @notice Executes the shared logic for all async redemption paths.
-    /// @param shareOwner  Address whose stAztec shares are burned.
-    /// @param controller  Address that owns the withdrawal request (bookkeeping).
-    /// @param recipient   Address passed to the WithdrawalQueue as the payout destination.
-    /// @param shares      The amount of shares to redeem.
+    /// @param shareOwner Address whose stAztec shares are burned.
+    /// @param controller Address that owns the withdrawal request (also the default claim receiver).
+    /// @param shares The amount of shares to redeem.
     /// @param sharesPulledToVault True when shares were already transferred to the vault
     ///        (permit paths use safeTransferFrom to consume the allowance).
-    /// @return requestId  The withdrawal request id.
+    /// @return requestId The withdrawal request id.
     /// @return assetsExpected The expected asset amount for the redeemed shares.
-    function _executeRedeemRequest(
-        address shareOwner,
-        address controller,
-        address recipient,
-        uint256 shares,
-        bool sharesPulledToVault
-    ) internal returns (uint256 requestId, uint256 assetsExpected) {
+    function _executeRedeemRequest(address shareOwner, address controller, uint256 shares, bool sharesPulledToVault)
+        internal
+        returns (uint256 requestId, uint256 assetsExpected)
+    {
         if (shares == 0) revert OllaVault__InvalidAmount();
 
         VaultModules memory modules = _modules;
@@ -810,50 +883,62 @@ contract OllaVault is
         uint256 rate = coreRef.withdrawalRate();
         assetsExpected = coreRef.convertToAssetsGross(shares);
         ISafetyModule(_safetyModule()).checkWithdrawalMinimum(shares);
-        uint256 expectedRequestId = modules.withdrawalQueue.nextRequestId();
 
-        _requestOwners[expectedRequestId] = controller;
-        _ownerRequestIndex[expectedRequestId] = _ownerRequestIds[controller].length + 1;
-        _ownerRequestIds[controller].push(expectedRequestId);
+        // Effects: persist the request and aggregate counters before any external call. CEI keeps
+        // the contract in a consistent state if the trusted stAztec.burn ever transitions to a
+        // hookful implementation; today it cannot reenter due to nonReentrant on the entrypoints.
+        requestId = _nextRequestId;
+        _nextRequestId = SafeCast.toUint64(requestId + 1);
+
+        _requests[requestId] =
+            WithdrawalRequest({ finalized: false, shares: shares, assetsExpected: assetsExpected, rate: rate });
+
+        _requestOwners[requestId] = controller;
+        _ownerRequestIndex[requestId] = _ownerRequestIds[controller].length + 1;
+        _ownerRequestIds[controller].push(requestId);
+
+        pendingWithdrawalAssets += assetsExpected;
+        pendingWithdrawalShares += shares;
         cumulativeWithdrawals += assetsExpected;
 
+        // Interactions: burn happens after state is settled.
         // Permit paths pull shares to vault via safeTransferFrom before calling this function,
         // so burn from vault's balance. Non-permit paths burn directly from the share owner.
         modules.stAztec.burn(sharesPulledToVault ? address(this) : shareOwner, shares);
 
-        requestId = modules.withdrawalQueue.requestWithdrawal(recipient, shares, assetsExpected, rate);
-        // Request ID consistency check; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        if (requestId != expectedRequestId) {
-            revert OllaVault__UnexpectedRequestId(expectedRequestId, requestId);
-        }
-
+        emit WithdrawalRequested(requestId, controller, shares, assetsExpected, rate);
         return (requestId, assetsExpected);
     }
 
-    /// @dev Claims a withdrawal request. If receiverOverride is address(0), uses the request's recipient.
-    // Trusted WithdrawalQueue; marks request as claimed and returns asset amount.
-    // slither-disable-next-line reentrancy-benign
+    // slither-disable-start pess-multiple-storage-read
+    // Single request struct accessed for multiple fields then deleted; caching is not applicable.
+    /// @dev Claims a withdrawal request. If receiverOverride is address(0), uses the request's owner.
+    ///      Storage is deleted on success, so a second claim of the same id falls through the
+    ///      `requestOwnerAddr == address(0)` check and reverts with `OllaVault__RequestNotFound`.
+    ///      A dedicated `AlreadyClaimed` revert path was deliberately retired in audit cleanup #357
+    ///      so integrators don't have to catch a separate revert reason for the second-claim case.
     function _claimWithdrawal(uint256 requestId, address receiverOverride) internal returns (uint256 assets) {
-        IWithdrawalQueue queue = _modules.withdrawalQueue;
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
-        if (!request.finalized) revert OllaVault__NotFinalized(requestId);
-        address receiver = receiverOverride == address(0) ? request.recipient : receiverOverride;
-        assets = request.assetsExpected;
+        WithdrawalRequest storage request = _requests[requestId];
         address requestOwnerAddr = _requestOwners[requestId];
+        if (requestOwnerAddr == address(0)) revert OllaVault__RequestNotFound(requestId);
+        if (!request.finalized) revert OllaVault__NotFinalized(requestId);
 
-        _claimableShares[requestOwnerAddr] -= request.shares;
+        address receiver = receiverOverride == address(0) ? requestOwnerAddr : receiverOverride;
+        assets = request.assetsExpected;
+        uint256 sharesClaimed = request.shares;
+
+        _claimableShares[requestOwnerAddr] -= sharesClaimed;
         _removeOwnerRequest(requestOwnerAddr, requestId);
         delete _requestOwners[requestId];
-
-        uint256 assetsClaimed = queue.claimWithdrawal(requestId);
-        if (assetsClaimed != assets) revert OllaVault__ClaimAssetsMismatch(requestId, assets, assetsClaimed);
+        delete _requests[requestId];
 
         _finalizedUnclaimedAssets -= assets;
         _modules.asset.safeTransfer(receiver, assets);
         emit WithdrawalClaimed(requestId, receiver, assets);
         return assets;
     }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /// @notice Removes a request from the owner's tracked array using swap-and-pop.
     /// @param requestOwnerAddr The owner of the request.
@@ -919,17 +1004,13 @@ contract OllaVault is
     function _findClaimableRequest(address controller, uint256 shares) internal view returns (uint256 requestId) {
         uint256[] storage requestIds = _ownerRequestIds[controller];
         uint256 len = requestIds.length;
-        IWithdrawalQueue queue = _modules.withdrawalQueue;
-        // slither-disable-start calls-loop
-        // Bounded by the controller's own request count; ERC-7540 redeem() compat path only.
         for (uint256 i = 0; i < len; ++i) {
             uint256 id = requestIds[i];
-            IWithdrawalQueue.WithdrawalRequest memory req = queue.getRequest(id);
-            if (req.finalized && !req.claimed && req.shares == shares) {
+            WithdrawalRequest storage req = _requests[id];
+            if (req.finalized && req.shares == shares) {
                 return id;
             }
         }
-        // slither-disable-end calls-loop
         revert OllaVault__RequestNotFound(0);
     }
 

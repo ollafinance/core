@@ -47,7 +47,6 @@ contract DeployResumeTest is Test {
         address firstStakingManager = vm.parseJsonAddress(first, ".addresses.StakingManagerProxy");
         address firstRewardsAccumulator = vm.parseJsonAddress(first, ".addresses.RewardsAccumulatorProxy");
         address firstSafetyModule = vm.parseJsonAddress(first, ".addresses.SafetyModule");
-        address firstWithdrawalQueue = vm.parseJsonAddress(first, ".addresses.WithdrawalQueueProxy");
         address firstGovernance = vm.parseJsonAddress(first, ".addresses.OllaGovernanceProxy");
         bool firstCompleted = vm.parseJsonBool(first, ".status.completed");
         string memory firstPhase = vm.parseJsonString(first, ".status.phase");
@@ -65,7 +64,7 @@ contract DeployResumeTest is Test {
         );
         AtomicProxyFactory(firstFactory)
             .deployVaultAndInitialize(
-                address(0), bytes32(0), IERC20(address(0)), IStAztec(address(0)), address(0), address(0), address(0)
+                address(0), bytes32(0), IERC20(address(0)), IStAztec(address(0)), address(0), address(0)
             );
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
@@ -82,8 +81,7 @@ contract DeployResumeTest is Test {
             );
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        OllaVault(firstVault)
-            .initialize(IERC20(firstAsset), IStAztec(firstStAztec), firstWithdrawalQueue, firstCore, firstGovernance);
+        OllaVault(firstVault).initialize(IERC20(firstAsset), IStAztec(firstStAztec), firstCore, firstGovernance);
 
         _runDeploy();
 

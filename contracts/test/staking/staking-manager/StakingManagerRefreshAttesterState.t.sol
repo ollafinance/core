@@ -632,4 +632,130 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         maliciousSM.refreshAttesterState(reentrancyAttesters);
     }
+
+    /*//////////////////////////////////////////////////////////////
+        EXTERNALLY-FINALIZED EXIT STORAGE CLEANUP
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Reads AttesterInfo storage directly via vm.load.
+    /// @dev    The mapping `_attesterMap` lives at slot 8 in StakingManager's storage layout
+    ///         (verified via `forge inspect StakingManager storageLayout`). Each `AttesterInfo`
+    ///         struct (per Solidity packing rules) occupies 4 slots:
+    ///             slot+0: attester (lower 160 bits)
+    ///             slot+1: stakedAmount (full 256 bits)
+    ///             slot+2: exitRollup (lower 160 bits) || pendingExitAmount (upper 96 bits)
+    ///             slot+3: status (uint8 enum at byte 0)
+    ///         exitRollup (20B) + pendingExitAmount (12B) pack into a single 32B slot;
+    ///         status starts a new slot because the previous one has no remaining room.
+    function _readAttesterInfoSlots(address attester)
+        internal
+        view
+        returns (
+            address attesterField,
+            uint256 stakedAmount,
+            address exitRollup,
+            uint96 pendingExitAmount,
+            uint8 status
+        )
+    {
+        bytes32 baseSlot = keccak256(abi.encode(attester, uint256(8)));
+        attesterField = address(uint160(uint256(vm.load(address(stakingManager), baseSlot))));
+        stakedAmount = uint256(vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 1)));
+        bytes32 packedSlot2 = vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 2));
+        exitRollup = address(uint160(uint256(packedSlot2)));
+        pendingExitAmount = uint96(uint256(packedSlot2) >> 160);
+        bytes32 statusSlot = vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 3));
+        status = uint8(uint256(statusSlot));
+    }
+
+    /// @notice After an attester is removed via the externally-finalized exit branch, every
+    ///         field of its `AttesterInfo` storage slot must be fully zeroed — including
+    ///         `stakedAmount`. No subsequent write in the same call may resurrect any field.
+    /// @dev    The branch is reached when `status == Exiting && !view_.exit.exists`. To make
+    ///         the property observable we route through it with a non-zero rollup balance
+    ///         (clear the exit record but leave a non-zero stake). The branch condition
+    ///         depends only on status and exit existence, so a non-zero balance is fine.
+    function test_RefreshAttesterState_ExternallyFinalizedExit_ClearsAttesterStorage() external {
+        _setupActiveAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // Drive the externally-finalized branch with a non-zero rollup balance so any stray
+        // post-removal write to `stakedAmount` would be observable in storage.
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, ACTIVATION_THRESHOLD, address(stakingManager));
+
+        // Sanity: pre-refresh the attester is Exiting with the rollup recorded.
+        (,, address exitRollupBefore,, uint8 statusBefore) = _readAttesterInfoSlots(attester);
+        assertEq(uint256(statusBefore), uint256(IStakingManager.InternalAttesterStatus.Exiting), "pre: Exiting");
+        assertEq(exitRollupBefore, address(rollup), "pre: exitRollup recorded");
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        // _removeAttester wipes the storage slot; no subsequent write should resurrect any field.
+        (
+            address attesterField,
+            uint256 stakedAmountAfter,
+            address exitRollupAfter,
+            uint96 pendingExitAfter,
+            uint8 statusAfter
+        ) = _readAttesterInfoSlots(attester);
+
+        assertEq(attesterField, address(0), "attester field must be zeroed");
+        assertEq(exitRollupAfter, address(0), "exitRollup field must be zeroed");
+        assertEq(uint256(pendingExitAfter), 0, "pendingExitAmount must be zeroed");
+        assertEq(uint256(statusAfter), 0, "status must be zeroed");
+        assertEq(stakedAmountAfter, 0, "stakedAmount must be zeroed");
+    }
+
+    /// @notice In the externally-finalized exit branch, `_refreshSingleAttester` must emit
+    ///         exactly one `AttesterStateRefreshed` and one `AttesterRemoved` for the attester.
+    /// @dev    A regression where the branch falls through to the function tail would cause
+    ///         the trailing `emit AttesterStateRefreshed(...)` block to run after removal,
+    ///         producing two `AttesterStateRefreshed` events for the same attester. Counting
+    ///         events is order-agnostic and aligned with the other terminal branches that
+    ///         emit `AttesterStateRefreshed` after `_removeAttester`.
+    function test_RefreshAttesterState_ExternallyFinalizedExit_EmitsOneAttesterStateRefreshed() external {
+        _setupActiveAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // Drive the externally-finalized branch with a non-zero rollup balance.
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, ACTIVATION_THRESHOLD, address(stakingManager));
+
+        bytes32 attesterRemovedSig = keccak256(abi.encodePacked("AttesterRemoved(address)"));
+        bytes32 attesterStateRefreshedSig =
+            keccak256(abi.encodePacked("AttesterStateRefreshed(address,uint256,uint256)"));
+        bytes32 attesterTopic = bytes32(uint256(uint160(attester)));
+
+        vm.recordLogs();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        uint256 removedCount;
+        uint256 stateRefreshedCount;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(stakingManager)) continue;
+            if (logs[i].topics.length < 2) continue;
+            if (logs[i].topics[1] != attesterTopic) continue;
+
+            if (logs[i].topics[0] == attesterRemovedSig) {
+                ++removedCount;
+            } else if (logs[i].topics[0] == attesterStateRefreshedSig) {
+                ++stateRefreshedCount;
+            }
+        }
+
+        assertEq(stateRefreshedCount, 1, "exactly one AttesterStateRefreshed event must be emitted for the attester");
+        assertEq(removedCount, 1, "exactly one AttesterRemoved event must be emitted for the attester");
+    }
 }

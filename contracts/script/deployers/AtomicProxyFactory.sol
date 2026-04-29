@@ -69,7 +69,6 @@ contract AtomicProxyFactory {
         bytes32 salt,
         IERC20 asset,
         IStAztec stAztec,
-        address withdrawalQueue,
         address core,
         address governance
     ) external onlyDeployer returns (address proxy) {
@@ -78,7 +77,7 @@ contract AtomicProxyFactory {
         }
 
         proxy = address(new ERC1967Proxy{ salt: salt }(implementation, ""));
-        OllaVault(proxy).initialize(asset, stAztec, withdrawalQueue, core, governance);
+        OllaVault(proxy).initialize(asset, stAztec, core, governance);
 
         return proxy;
     }

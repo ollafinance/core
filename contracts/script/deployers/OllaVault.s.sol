@@ -21,7 +21,6 @@ contract OllaVaultDeployer is BaseDeployer {
     /// @param vaultImplementation The OllaVault implementation address
     /// @param asset The asset token address
     /// @param stAztec The StAztec token address
-    /// @param withdrawalQueue The WithdrawalQueue proxy address
     /// @param core The OllaCore proxy address
     /// @param governance The OllaGovernance proxy address (set as owner)
     /// @param salt The deterministic salt used by AtomicProxyFactory
@@ -32,7 +31,6 @@ contract OllaVaultDeployer is BaseDeployer {
         address vaultImplementation,
         address asset,
         address stAztec,
-        address withdrawalQueue,
         address core,
         address governance,
         bytes32 salt
@@ -44,7 +42,7 @@ contract OllaVaultDeployer is BaseDeployer {
         vm.startBroadcast(config.deployerPrivateKey);
 
         address vaultProxy = _PROXY_FACTORY.deployVaultAndInitialize(
-            vaultImplementation, salt, IERC20(asset), IStAztec(stAztec), withdrawalQueue, core, governance
+            vaultImplementation, salt, IERC20(asset), IStAztec(stAztec), core, governance
         );
         _logDeployment("OllaVault Proxy", vaultProxy);
 
