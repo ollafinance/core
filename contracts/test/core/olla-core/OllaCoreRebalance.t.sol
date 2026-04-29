@@ -335,8 +335,28 @@ contract OllaCoreRebalanceTest is Test {
         stakingManager.setGasBurnTarget(90_000);
         asset.mint(address(stakingManager), unstakedAmount);
 
+        // Gas-probe for a stipend that parks exactly at FinalizeWithdrawals after the
+        // gas-burn in Harvest + the PullUnstaked step. A hardcoded value is fragile to
+        // optimizer/version drift; the search makes the test robust by construction.
+        uint256 snapshotId = vm.snapshotState();
+        uint256 selectedGas;
+        for (uint256 gasLimit = 250_000; gasLimit <= 800_000; gasLimit += 25_000) {
+            vm.revertToState(snapshotId);
+            vm.prank(operator);
+            (bool success,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
+            if (!success) continue;
+
+            if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.FinalizeWithdrawals) {
+                selectedGas = gasLimit;
+                break;
+            }
+        }
+
+        assertGt(selectedGas, 0, "should find gas stipend that parks at FinalizeWithdrawals");
+
+        vm.revertToState(snapshotId);
         vm.prank(operator);
-        core.rebalance{ gas: 400_000 }();
+        core.rebalance{ gas: selectedGas }();
 
         IOllaCore.RebalanceProgress memory progressAfter = core.rebalanceProgress();
         assertEq(
