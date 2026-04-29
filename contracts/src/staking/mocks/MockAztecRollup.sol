@@ -22,6 +22,13 @@ import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 contract MockAztecRollup is IMockAztecRollup {
     using SafeERC20 for IERC20;
 
+    struct RewardState {
+        uint256 rewardRatePerSecond;
+        uint256 lastTick;
+        address rewardsCoinbase;
+        bool useTransferMode;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                  CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -58,16 +65,7 @@ contract MockAztecRollup is IMockAztecRollup {
     /// @inheritdoc IMockAztecRollup
     bool public isRewardsClaimable;
 
-    /// @notice Rewards accrued per second when `tick` is called.
-    uint256 public rewardRatePerSecond;
-    /// @notice Last timestamp used for reward accrual.
-    uint256 public lastTick;
-
-    /// @notice Recipient used for tick() reward accrual.
-    address public rewardsCoinbase;
-
-    /// @notice When true, claimSequencerRewards transfers from balance instead of minting.
-    bool public useTransferMode;
+    RewardState private _rewardState;
 
     /// @notice Tracked count of activated attesters.
     uint256 private _activatedAttesterCount;
@@ -85,7 +83,7 @@ contract MockAztecRollup is IMockAztecRollup {
     constructor(IERC20 stakingAsset, uint256 activationThreshold) {
         STAKING_ASSET = stakingAsset;
         _activationThreshold = activationThreshold == 0 ? DEFAULT_ACTIVATION_THRESHOLD : activationThreshold;
-        lastTick = block.timestamp;
+        _rewardState.lastTick = block.timestamp;
         isRewardsClaimable = true;
     }
 
@@ -113,7 +111,7 @@ contract MockAztecRollup is IMockAztecRollup {
         withdrawers[_attester] = _withdrawer;
         _publicKeys[_attester] = _publicKeyInG1;
         if (previousStake == 0) {
-            _activatedAttesterCount++;
+            ++_activatedAttesterCount;
         }
         emit Deposit(_attester, _withdrawer, _publicKeyInG1, _publicKeyInG2, _proofOfPossession, _activationThreshold);
     }
@@ -184,7 +182,7 @@ contract MockAztecRollup is IMockAztecRollup {
         uint256 amount = pendingRewards[_coinbase];
         if (amount > 0) {
             pendingRewards[_coinbase] = 0;
-            if (useTransferMode) {
+            if (_rewardState.useTransferMode) {
                 STAKING_ASSET.safeTransfer(_coinbase, amount);
             } else {
                 IERC20Mintable(address(STAKING_ASSET)).mint(_coinbase, amount);
@@ -200,19 +198,19 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function tick(address coinbase) external override returns (uint256 added) {
-        uint256 dt = block.timestamp - lastTick;
+        uint256 dt = block.timestamp - _rewardState.lastTick;
         if (dt == 0) return 0;
 
-        added = rewardRatePerSecond * dt;
+        added = _rewardState.rewardRatePerSecond * dt;
         if (added > 0) {
             pendingRewards[coinbase] += added;
         }
-        lastTick = block.timestamp;
+        _rewardState.lastTick = block.timestamp;
     }
 
     /// @inheritdoc IMockAztecRollup
     function setRewardRatePerSecond(uint256 newRate) external override {
-        rewardRatePerSecond = newRate;
+        _rewardState.rewardRatePerSecond = newRate;
     }
 
     /// @inheritdoc IMockAztecRollup
@@ -222,7 +220,7 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function setRewardsCoinbase(address coinbase) external override {
-        rewardsCoinbase = coinbase;
+        _rewardState.rewardsCoinbase = coinbase;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -231,7 +229,7 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function setUseTransferMode(bool _enabled) external override {
-        useTransferMode = _enabled;
+        _rewardState.useTransferMode = _enabled;
     }
 
     /// @inheritdoc IMockAztecRollup
@@ -318,7 +316,7 @@ contract MockAztecRollup is IMockAztecRollup {
         // Decrement activated count if the attester was previously deposited
         if (currentStake > 0 || _exits[_attester].exists || withdrawers[_attester] != address(0)) {
             if (_activatedAttesterCount > 0) {
-                _activatedAttesterCount--;
+                --_activatedAttesterCount;
             }
         }
         stakes[_attester] = 0;
@@ -335,8 +333,12 @@ contract MockAztecRollup is IMockAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function reduceExitAmount(address _attester, uint256 _newAmount) external override {
-        require(_exits[_attester].exists, "MockAztecRollup: no exit");
-        require(_newAmount <= _exits[_attester].amount, "MockAztecRollup: new amount exceeds current");
+        if (!_exits[_attester].exists) {
+            revert MockAztecRollup__NoExit();
+        }
+        if (_newAmount > _exits[_attester].amount) {
+            revert MockAztecRollup__InvalidExitAmount();
+        }
         _exits[_attester].amount = _newAmount;
     }
 
@@ -431,5 +433,11 @@ contract MockAztecRollup is IMockAztecRollup {
             proofOfPossession: G1Point({ x: 0, y: 0 }),
             moveWithLatestRollup: false
         });
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function rewardsCoinbase() external view override returns (address coinbase) {
+        coinbase = _rewardState.rewardsCoinbase;
+        return coinbase;
     }
 }
