@@ -73,6 +73,12 @@ interface IMockAztecRollup {
     /// @notice Thrown when withdraw reward bps is invalid.
     error MockAztecRollup__InvalidBps();
 
+    /// @notice Thrown when attempting to update a missing exit.
+    error MockAztecRollup__NoExit();
+
+    /// @notice Thrown when an exit amount update is invalid.
+    error MockAztecRollup__InvalidExitAmount();
+
     /*//////////////////////////////////////////////////////////////
                          EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/

@@ -172,6 +172,21 @@ contract OllaVault is
     }
 
     /// @inheritdoc IOllaVault
+    function mint(uint256 shares, address receiver, uint256 maxAssetsIn)
+        external
+        override(IOllaVault)
+        nonReentrant
+        whenNotPaused
+        returns (uint256 assets)
+    {
+        assets = _mintShares(msg.sender, shares, receiver);
+        // Slippage bound check; not a timestamp concern.
+        // slither-disable-next-line timestamp
+        if (assets > maxAssetsIn) revert OllaVault__SlippageExceeded(assets, maxAssetsIn);
+        return assets;
+    }
+
+    /// @inheritdoc IOllaVault
     function depositWithPermit(
         uint256 assets,
         address recipient,
@@ -260,6 +275,8 @@ contract OllaVault is
     }
 
     /// @notice Mints exact shares to receiver by depositing assets (ERC-4626).
+    /// @dev This standard overload has NO slippage protection. Prefer the 3-arg
+    ///      `mint(shares, receiver, maxAssetsIn)` variant for front-run safety.
     /// @param shares The exact amount of shares to mint.
     /// @param receiver The address that will receive the minted shares.
     /// @return assets The amount of underlying assets deposited.
@@ -270,23 +287,7 @@ contract OllaVault is
         whenNotPaused
         returns (uint256 assets)
     {
-        if (receiver == address(0)) revert OllaVault__ZeroAddress("receiver");
-        if (shares == 0) revert OllaVault__InvalidAmount();
-
-        ISafetyModule sm = ISafetyModule(_safetyModule());
-        if (sm.isDepositPaused()) revert OllaVault__SafetyModulePaused();
-        _syncBufferedWithBalance();
-
-        IOllaCore coreRef = IOllaCore(_modules.core);
-        assets = coreRef.convertToAssetsCeil(shares);
-
-        uint256 currentTotalAssets = coreRef.totalAssets();
-        if (!sm.checkDepositAllowed(assets, currentTotalAssets)) {
-            revert OllaVault__DepositCapExceeded(assets, currentTotalAssets);
-        }
-
-        _processDeposit(msg.sender, assets, shares, receiver);
-        return assets;
+        return _mintShares(msg.sender, shares, receiver);
     }
 
     /// @notice Claims a finalized async redeem request (ERC-4626/ERC-7540).
@@ -684,6 +685,11 @@ contract OllaVault is
     ///      each request transitions to finalized, removing the previous outer loop in the vault
     ///      that shared a gas budget with a separate queue contract. The loop is bounded only
     ///      by `maxRequestId`; the prior `gasleft()` heuristic is no longer needed.
+    /// @param availableAssets The asset budget available to satisfy pending requests this batch.
+    /// @param currentRate The current shares-to-assets rate applied to finalized requests.
+    /// @param maxRequestId Exclusive upper bound on request ids to consider for finalization.
+    /// @return finalizedAmount The total assets allocated to requests finalized in this call.
+    /// @return finalizedCount The number of requests transitioned to finalized in this call.
     function _finalizeWithdrawals(uint256 availableAssets, uint256 currentRate, uint256 maxRequestId)
         internal
         returns (uint256 finalizedAmount, uint256 finalizedCount)
@@ -834,6 +840,33 @@ contract OllaVault is
         shares = coreRef.convertToShares(assets);
         _processDeposit(caller, assets, shares, recipient);
         return shares;
+    }
+
+    /// @notice Internal helper for `mint`: converts shares to assets, validates safety
+    ///         caps, and processes the deposit. Shared by the standard ERC-4626 mint
+    ///         and the slippage-protected overload.
+    /// @param caller The address providing the assets.
+    /// @param shares The exact amount of shares to mint.
+    /// @param receiver The recipient of the minted shares.
+    /// @return assets The amount of underlying assets deposited.
+    function _mintShares(address caller, uint256 shares, address receiver) internal returns (uint256 assets) {
+        if (receiver == address(0)) revert OllaVault__ZeroAddress("receiver");
+        if (shares == 0) revert OllaVault__InvalidAmount();
+
+        ISafetyModule sm = ISafetyModule(_safetyModule());
+        if (sm.isDepositPaused()) revert OllaVault__SafetyModulePaused();
+        _syncBufferedWithBalance();
+
+        IOllaCore coreRef = IOllaCore(_modules.core);
+        assets = coreRef.convertToAssetsCeil(shares);
+
+        uint256 currentTotalAssets = coreRef.totalAssets();
+        if (!sm.checkDepositAllowed(assets, currentTotalAssets)) {
+            revert OllaVault__DepositCapExceeded(assets, currentTotalAssets);
+        }
+
+        _processDeposit(caller, assets, shares, receiver);
+        return assets;
     }
 
     /// @notice Transfers assets from caller, updates buffered accounting, mints shares, and emits Deposit.

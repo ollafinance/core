@@ -4,6 +4,7 @@ pragma solidity 0.8.27;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IAztecRewardDistributor } from "src/staking/interfaces/IAztecRewardDistributor.sol";
 import { IMockAztecRollupRegistry } from "src/staking/mocks/IMockAztecRollupRegistry.sol";
+import { MockAztecGovernance } from "src/staking/mocks/MockAztecGovernance.sol";
 import { MockAztecRewardDistributor } from "src/staking/mocks/MockAztecRewardDistributor.sol";
 
 /// @title MockRollupRegistry
@@ -25,7 +26,7 @@ contract MockAztecRollupRegistry is IMockAztecRollupRegistry {
     /// @param rewardAsset_ The reward distributor asset.
     constructor(address canonicalRollup_, IERC20 rewardAsset_) {
         _canonicalRollup = canonicalRollup_;
-        _governance = msg.sender;
+        _governance = address(new MockAztecGovernance());
         _rewardDistributor = new MockAztecRewardDistributor(rewardAsset_);
     }
 
@@ -37,6 +38,12 @@ contract MockAztecRollupRegistry is IMockAztecRollupRegistry {
     /// @inheritdoc IMockAztecRollupRegistry
     function setRewardDistributor(IAztecRewardDistributor rewardDistributor_) external override {
         _rewardDistributor = rewardDistributor_;
+    }
+
+    /// @inheritdoc IMockAztecRollupRegistry
+    /// @param governance_ The new governance address.
+    function setGovernance(address governance_) external override {
+        _governance = governance_;
     }
 
     /// @notice Returns the canonical (latest) rollup address.
@@ -55,11 +62,5 @@ contract MockAztecRollupRegistry is IMockAztecRollupRegistry {
     /// @return The reward distributor contract.
     function getRewardDistributor() external view override returns (IAztecRewardDistributor) {
         return _rewardDistributor;
-    }
-
-    /// @inheritdoc IMockAztecRollupRegistry
-    /// @param governance_ The new governance address.
-    function setGovernance(address governance_) external override {
-        _governance = governance_;
     }
 }

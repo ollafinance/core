@@ -970,6 +970,7 @@ contract StakingManager is
             return false;
         }
 
+        // slither-disable-next-line calls-loop
         IAztecGovernance.Withdrawal memory withdrawal =
             IAztecGovernance(rollupRegistry.getGovernance()).getWithdrawal(view_.exit.withdrawalId);
         if (withdrawal.claimed) {

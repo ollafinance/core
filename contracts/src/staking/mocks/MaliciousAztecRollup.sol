@@ -370,8 +370,12 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function reduceExitAmount(address _attester, uint256 _newAmount) external override {
-        require(_exits[_attester].exists, "MaliciousAztecRollup: no exit");
-        require(_newAmount <= _exits[_attester].amount, "MaliciousAztecRollup: new amount exceeds current");
+        if (!_exits[_attester].exists) {
+            revert MockAztecRollup__NoExit();
+        }
+        if (_newAmount > _exits[_attester].amount) {
+            revert MockAztecRollup__InvalidExitAmount();
+        }
         _exits[_attester].amount = _newAmount;
     }
 
