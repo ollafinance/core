@@ -685,6 +685,11 @@ contract OllaVault is
     ///      each request transitions to finalized, removing the previous outer loop in the vault
     ///      that shared a gas budget with a separate queue contract. The loop is bounded only
     ///      by `maxRequestId`; the prior `gasleft()` heuristic is no longer needed.
+    /// @param availableAssets The asset budget available to satisfy pending requests this batch.
+    /// @param currentRate The current shares-to-assets rate applied to finalized requests.
+    /// @param maxRequestId Exclusive upper bound on request ids to consider for finalization.
+    /// @return finalizedAmount The total assets allocated to requests finalized in this call.
+    /// @return finalizedCount The number of requests transitioned to finalized in this call.
     function _finalizeWithdrawals(uint256 availableAssets, uint256 currentRate, uint256 maxRequestId)
         internal
         returns (uint256 finalizedAmount, uint256 finalizedCount)
