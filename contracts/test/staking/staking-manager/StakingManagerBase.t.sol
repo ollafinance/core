@@ -11,6 +11,7 @@ import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockAztecGovernance } from "src/staking/mocks/MockAztecGovernance.sol";
 import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegistry.sol";
 import { MockAztecRewardDistributor } from "src/staking/mocks/MockAztecRewardDistributor.sol";
@@ -32,6 +33,7 @@ abstract contract StakingManagerBaseTest is Test {
     MockAztec internal aztec;
     MockAztecRollup internal rollup;
     MockAztecRollupRegistry internal rollupRegistry;
+    MockAztecGovernance internal aztecGovernance;
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
 
@@ -74,6 +76,8 @@ abstract contract StakingManagerBaseTest is Test {
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         rollupRegistry = new MockAztecRollupRegistry(address(rollup), IERC20(address(aztec)));
+        aztecGovernance = new MockAztecGovernance();
+        rollupRegistry.setGovernance(address(aztecGovernance));
         rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         StakingManager implementation = new StakingManager();

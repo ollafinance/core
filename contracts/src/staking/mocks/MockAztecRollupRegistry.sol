@@ -57,9 +57,9 @@ contract MockAztecRollupRegistry is IMockAztecRollupRegistry {
         return _rewardDistributor;
     }
 
-    /// @notice Sets the governance address (for testing).
+    /// @inheritdoc IMockAztecRollupRegistry
     /// @param governance_ The new governance address.
-    function _setGovernance(address governance_) internal {
+    function setGovernance(address governance_) external override {
         _governance = governance_;
     }
 }

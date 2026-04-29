@@ -9,6 +9,7 @@ import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
 import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { EnumerableSet } from "@oz/utils/structs/EnumerableSet.sol";
+import { IAztecGovernance } from "src/staking/interfaces/IAztecGovernance.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 import { IStakingManager, IStakingManagerRewardRollupAdmin } from "src/staking/interfaces/IStakingManager.sol";
@@ -782,7 +783,7 @@ contract StakingManager is
             } else {
                 _reconcileExitingExitAmount(info, view_.exit.amount);
 
-                if (!_isExitExitable(view_)) {
+                if (!_isExitFinalizable(view_)) {
                     info.stakedAmount = newBalance;
                     emit AttesterStateRefreshed(attester, oldBalance, newBalance);
                     return;
@@ -792,11 +793,16 @@ contract StakingManager is
                 uint256 exitAmount = view_.exit.amount;
                 uint256 pendingExit = info.pendingExitAmount;
 
+                // slither-disable-next-line calls-loop
+                try rollup.finalizeWithdraw(attester) { }
+                catch {
+                    info.stakedAmount = newBalance;
+                    emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                    return;
+                }
+
                 _removeAttester(attester);
                 emit UnstakeFinalized(attester, exitAmount);
-                // slither-disable-next-line calls-loop
-                rollup.finalizeWithdraw(attester);
-
                 _pendingClaimAmount += exitAmount;
 
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
@@ -946,16 +952,30 @@ contract StakingManager is
         return rollupRegistry.getRewardDistributor().ASSET() == stakingAsset;
     }
 
-    /// @notice Returns true if an exit is present and exitable.
+    /// @notice Returns true if an exit is present and finalizable through governance.
     /// @param view_ The attester view data.
     /// @return True if the exit is available to finalize.
-    function _isExitExitable(AttesterView memory view_) internal view returns (bool) {
+    function _isExitFinalizable(AttesterView memory view_) internal view returns (bool) {
         if (!view_.exit.exists) {
             return false;
         }
-        // Timestamp used only to gate exit readiness from the rollup state.
+        // Timestamp used only to gate exit readiness from rollup and governance state.
         // slither-disable-next-line timestamp
-        return Timestamp.unwrap(view_.exit.exitableAt) < block.timestamp + 1;
+        if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+            return false;
+        }
+
+        IAztecGovernance.Withdrawal memory withdrawal =
+            IAztecGovernance(rollupRegistry.getGovernance()).getWithdrawal(view_.exit.withdrawalId);
+        if (withdrawal.claimed) {
+            return true;
+        }
+        if (withdrawal.recipient == address(0)) {
+            return false;
+        }
+
+        // slither-disable-next-line timestamp
+        return Timestamp.unwrap(withdrawal.unlocksAt) <= block.timestamp;
     }
 
     /// @notice Returns the canonical rollup address and interface.

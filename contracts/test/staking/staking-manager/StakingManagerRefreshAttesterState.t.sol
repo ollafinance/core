@@ -4,7 +4,6 @@ pragma solidity >=0.8.27 <0.9.0;
 import { Vm } from "@forge-std/Test.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
@@ -62,6 +61,61 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         (, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match the finalized amount");
+    }
+
+    /// @notice refreshAttesterState() must not call rollup.finalizeWithdraw until the
+    ///         corresponding governance withdrawal has unlocked.
+    function test_RefreshAttesterState_SkipsFinalizationUntilGovernanceWithdrawalUnlocks() external {
+        _setupActiveAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+        uint256 unlocksAt = block.timestamp + 38 days;
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        aztecGovernance.setWithdrawal(0, ACTIVATION_THRESHOLD, unlocksAt, address(rollup), false);
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertTrue(stakingManager.isUnstakePending(attester), "attester should stay exiting while governance locked");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "pending count should remain");
+        assertEq(stakingManager.pendingUnstakes(), ACTIVATION_THRESHOLD, "pending amount should remain");
+        assertFalse(stakingManager.hasFinalizedUnstakes(), "nothing should be finalized yet");
+
+        vm.warp(unlocksAt);
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertFalse(stakingManager.isUnstakePending(attester), "attester should finalize once governance unlocks");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending count should clear");
+
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
+        assertEq(received, ACTIVATION_THRESHOLD, "funds should be received after unlock");
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exit amount should be claimable after unlock");
+    }
+
+    /// @notice If the governance withdrawal was already claimed, refresh can finalize the
+    ///         rollup exit immediately once the rollup exit delay has passed.
+    function test_RefreshAttesterState_FinalizesWhenGovernanceWithdrawalAlreadyClaimed() external {
+        _setupActiveAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        aztecGovernance.setWithdrawal(0, ACTIVATION_THRESHOLD, block.timestamp + 38 days, address(rollup), true);
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertFalse(stakingManager.isUnstakePending(attester), "claimed governance withdrawal should not block");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending count should clear");
+
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
+        assertEq(received, ACTIVATION_THRESHOLD, "funds should be received");
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exit amount should be claimable");
     }
 
     /// @notice Multiple calls to refreshAttesterState() accumulate _pendingClaimAmount
@@ -580,12 +634,14 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice refreshAttesterState() is protected by nonReentrant. Re-entering via the rollup's
-    ///         finalizeWithdraw() callback reverts with ReentrancyGuardReentrantCall.
-    function test_RevertWhen_RefreshAttesterState_Reentrancy() external {
+    ///         finalizeWithdraw() callback fails the finalize attempt, but the batch refresh catches
+    ///         that failure and leaves the attester pending.
+    function test_RefreshAttesterState_ReentrancyLeavesAttesterPending() external {
         // Deploy a malicious rollup that re-enters during finalizeWithdraw
         MaliciousAztecRollup maliciousRollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
         MockAztecRollupRegistry maliciousRegistry =
             new MockAztecRollupRegistry(address(maliciousRollup), IERC20(address(aztec)));
+        maliciousRegistry.setGovernance(address(aztecGovernance));
         MockRewardsAccumulator maliciousRewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy a fresh StakingManager wired to the malicious rollup
@@ -629,9 +685,16 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         );
         maliciousRollup.setReenterOnFinalizeWithdraw(true);
 
-        // The reentrancy attempt should revert
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         maliciousSM.refreshAttesterState(reentrancyAttesters);
+
+        assertTrue(maliciousSM.isUnstakePending(keys[0].attester), "attester should remain pending");
+        assertEq(maliciousSM.getPendingUnstakeCount(), 1, "pending count should remain");
+        assertFalse(maliciousSM.hasFinalizedUnstakes(), "failed finalize should not create claimable amount");
+
+        // Once the rollup stops reverting, a later refresh can finalize normally.
+        maliciousRollup.setReenterOnFinalizeWithdraw(false);
+        maliciousSM.refreshAttesterState(reentrancyAttesters);
+        assertFalse(maliciousSM.isUnstakePending(keys[0].attester), "attester should finalize after retry");
     }
 
     /*//////////////////////////////////////////////////////////////

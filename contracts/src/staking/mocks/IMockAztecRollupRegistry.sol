@@ -16,4 +16,8 @@ interface IMockAztecRollupRegistry is IAztecRollupRegistry {
     /// @notice Sets the reward distributor address (for testing).
     /// @param rewardDistributor The new reward distributor contract.
     function setRewardDistributor(IAztecRewardDistributor rewardDistributor) external;
+
+    /// @notice Sets the governance address (for testing).
+    /// @param governance The new governance address.
+    function setGovernance(address governance) external;
 }
