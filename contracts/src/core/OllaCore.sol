@@ -226,18 +226,34 @@ contract OllaCore is
     }
 
     /// @inheritdoc IOllaCore
-    function setProtocolFeeBP(uint256 newFeeBP) external override onlyOwner whenNotPaused whenRebalanceDone {
+    function setProtocolFeeBP(uint256 newFeeBP)
+        external
+        override
+        onlyOwner
+        whenNotPaused
+        whenRebalanceDone
+        nonReentrant
+    {
         if (newFeeBP > MAX_PROTOCOL_FEE_BP) revert OllaCore__InvalidFeeBP(newFeeBP);
+        _updateAccountingInternal();
         uint256 oldFeeBP = protocolFeeBP;
         protocolFeeBP = SafeCast.toUint16(newFeeBP);
         emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
     }
 
     /// @inheritdoc IOllaCore
-    function setTreasuryFeeSplitBP(uint256 newSplitBP) external override onlyOwner whenNotPaused whenRebalanceDone {
+    function setTreasuryFeeSplitBP(uint256 newSplitBP)
+        external
+        override
+        onlyOwner
+        whenNotPaused
+        whenRebalanceDone
+        nonReentrant
+    {
         if (newSplitBP < MIN_TREASURY_SPLIT_BP || newSplitBP > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(newSplitBP);
         }
+        _updateAccountingInternal();
         uint256 oldSplitBP = treasuryFeeSplitBP;
         treasuryFeeSplitBP = SafeCast.toUint16(newSplitBP);
         emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
