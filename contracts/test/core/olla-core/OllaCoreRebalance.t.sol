@@ -338,9 +338,11 @@ contract OllaCoreRebalanceTest is Test {
         // Gas-probe for a stipend that parks exactly at FinalizeWithdrawals after the
         // gas-burn in Harvest + the PullUnstaked step. A hardcoded value is fragile to
         // optimizer/version drift; the search makes the test robust by construction.
+        // Range and step are intentionally generous so the parking window is found across
+        // CI vs. local optimizer/solc differences.
         uint256 snapshotId = vm.snapshotState();
         uint256 selectedGas;
-        for (uint256 gasLimit = 250_000; gasLimit <= 800_000; gasLimit += 25_000) {
+        for (uint256 gasLimit = 150_000; gasLimit <= 2_000_000; gasLimit += 5_000) {
             vm.revertToState(snapshotId);
             vm.prank(operator);
             (bool success,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
