@@ -880,6 +880,10 @@ contract OllaVault is
     /// @param recipient The receiver of the minted shares.
     function _processDeposit(address caller, uint256 assets, uint256 shares, address recipient) internal {
         if (shares == 0) revert OllaVault__InvalidAmount();
+        // L-11: a deposit that mints fewer shares than the current `withdrawalMinimum`
+        // would land the user in a state with no exit path — async redeem and instant
+        // redeem both gate on the same minimum. Mirror the exit-side check on entry.
+        ISafetyModule(_safetyModule()).checkWithdrawalMinimum(shares);
 
         VaultModules memory modules = _modules;
         modules.asset.safeTransferFrom(caller, address(this), assets);

@@ -69,6 +69,12 @@ contract OllaCore is
     /// @notice Maximum allowed cooldown value.
     uint256 public constant MAX_REBALANCE_COOLDOWN = 24 hours;
 
+    /// @notice Minimum RewardsAccumulator balance considered actionable by the idle fast-path.
+    /// @dev Balances at or below this threshold are treated as dust and do not bypass the idle
+    ///      no-op short-circuit in `rebalance()`. This prevents griefers from consuming the
+    ///      cooldown by donating tiny amounts to the accumulator.
+    uint256 public constant REWARDS_ACCUMULATOR_DUST_THRESHOLD = 10_000 * 1e18;
+
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
@@ -1079,7 +1085,7 @@ contract OllaCore is
     // slither-disable-next-line timestamp,pess-multiple-storage-read
     function _hasRebalanceWorkAvailable() internal view returns (bool) {
         uint256 rewardsAccumulatorBalance = _getRewardsAccumulatorBalance();
-        if (rewardsAccumulatorBalance > 0) return true;
+        if (rewardsAccumulatorBalance > REWARDS_ACCUMULATOR_DUST_THRESHOLD) return true;
 
         if (_modules.stakingManager.getClaimableRewards() > 0) return true;
 
