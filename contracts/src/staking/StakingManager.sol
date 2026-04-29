@@ -572,13 +572,6 @@ contract StakingManager is
     ///      added to _activeAttesterSet or _activeCount until promoted via refreshAttesterState.
     /// @param attester The attester address.
     /// @param stakedAmount The amount staked for this attester.
-    function _setQueued(address attester, uint256 stakedAmount) internal {
-        _setQueued(attester, stakedAmount, rollupRegistry.getCanonicalRollup());
-    }
-
-    /// @notice Marks an attester as queued in the registry and updates running state.
-    /// @param attester The attester address.
-    /// @param stakedAmount The amount staked for this attester.
     /// @param queueRollup The rollup where the deposit was submitted.
     function _setQueued(address attester, uint256 stakedAmount, address queueRollup) internal {
         AttesterInfo storage info = _attesterMap[attester];

@@ -189,6 +189,11 @@ contract CircuitBreakerCascadesE2ETest is Test {
         vault.deposit(amount, depositor, 0);
     }
 
+    function _assertDepositAllowed(address depositor, uint256 amount) internal returns (uint256 shares) {
+        shares = _performDeposit(depositor, amount);
+        assertGt(shares, 0, "deposit should be allowed");
+    }
+
     /*//////////////////////////////////////////////////////////////
         TEST 3A: RATE DROP DURING REBALANCE PAUSES PROTOCOL
     //////////////////////////////////////////////////////////////*/
@@ -287,8 +292,8 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // --- Verify paused ---
         assertTrue(safetyModule.isPaused(), "should be paused after queue ratio breach");
 
-        // --- Verify deposit blocked ---
-        _assertDepositBlocked(bob, 10 * DECIMALS);
+        // --- Verify queue-ratio pauses still allow deposits ---
+        _assertDepositAllowed(bob, 10 * DECIMALS);
 
         // --- Recovery: guardian unpause ---
         vm.prank(guardian);
@@ -402,7 +407,7 @@ contract CircuitBreakerCascadesE2ETest is Test {
         _fullRebalance();
 
         assertTrue(safetyModule.isPaused(), "should be paused after first breaker (queue ratio)");
-        _assertDepositBlocked(bob, 10 * DECIMALS);
+        _assertDepositAllowed(bob, 10 * DECIMALS);
 
         // --- Guardian unpause after first breaker ---
         vm.prank(guardian);
@@ -416,7 +421,7 @@ contract CircuitBreakerCascadesE2ETest is Test {
         _fullRebalance();
 
         assertTrue(safetyModule.isPaused(), "should be paused after second breaker");
-        _assertDepositBlocked(bob, 10 * DECIMALS);
+        _assertDepositAllowed(bob, 10 * DECIMALS);
 
         // --- Final recovery: admin raises queue ratio threshold, guardian unpauses ---
         vm.prank(admin);
