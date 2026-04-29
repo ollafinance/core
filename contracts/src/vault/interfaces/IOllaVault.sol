@@ -187,6 +187,13 @@ interface IOllaVault {
     /// @return shares The shares minted to the recipient.
     function deposit(uint256 assets, address recipient, uint256 minSharesOut) external returns (uint256 shares);
 
+    /// @notice Mints exact shares with slippage protection (Olla-native).
+    /// @param shares The exact amount of shares to mint.
+    /// @param receiver The recipient of the minted shares.
+    /// @param maxAssetsIn The maximum assets the caller is willing to pay; set type(uint256).max to skip the check.
+    /// @return assets The assets deposited.
+    function mint(uint256 shares, address receiver, uint256 maxAssetsIn) external returns (uint256 assets);
+
     /// @notice Deposits assets with a permit signature.
     /// @param assets The amount of assets to deposit.
     /// @param recipient The recipient of the stAztec shares.
@@ -241,6 +248,8 @@ interface IOllaVault {
     function deposit(uint256 assets, address receiver) external returns (uint256 shares);
 
     /// @notice Mints exact shares (ERC-4626).
+    /// @dev This standard overload has NO slippage protection. Prefer the 3-arg
+    ///      `mint(shares, receiver, maxAssetsIn)` variant for front-run safety.
     /// @param shares The exact number of shares to mint.
     /// @param receiver The recipient of the minted shares.
     /// @return assets The assets deposited.
