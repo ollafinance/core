@@ -27,6 +27,9 @@ contract MockAztecGovernance is IAztecGovernance {
     function getWithdrawal(uint256 withdrawalId) external view override returns (Withdrawal memory withdrawal) {
         withdrawal = _withdrawals[withdrawalId];
         if (withdrawal.recipient == address(0)) {
+            // Test affordance: old staking tests do not configure governance withdrawals.
+            // Real Aztec Governance returns claimed=false for unset ids, so tests that need
+            // mainnet-like locked behavior should set the withdrawal explicitly.
             withdrawal.claimed = true;
         }
         return withdrawal;

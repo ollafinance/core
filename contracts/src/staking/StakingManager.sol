@@ -793,11 +793,16 @@ contract StakingManager is
                 uint256 exitAmount = view_.exit.amount;
                 uint256 pendingExit = info.pendingExitAmount;
 
+                // slither-disable-next-line calls-loop
+                try rollup.finalizeWithdraw(attester) { }
+                catch {
+                    info.stakedAmount = newBalance;
+                    emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                    return;
+                }
+
                 _removeAttester(attester);
                 emit UnstakeFinalized(attester, exitAmount);
-                // slither-disable-next-line calls-loop
-                rollup.finalizeWithdraw(attester);
-
                 _pendingClaimAmount += exitAmount;
 
                 if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
