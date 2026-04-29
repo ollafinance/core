@@ -283,7 +283,9 @@ contract OllaVaultOperatorTest is Test {
         stAztec.approve(address(vault), partialAllowance);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), partialAllowance, shares)
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), partialAllowance, shares
+            )
         );
         vm.prank(bob);
         vault.requestRedeem(shares, alice, alice);
