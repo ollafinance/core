@@ -660,12 +660,13 @@ contract StakingManager is
                 if (!isInitiated) {
                     revert StakingManager__UnstakeFailed(attester);
                 }
-            } catch {
+            } catch (bytes memory reason) {
                 if (exitAmount == 0) {
                     uint256 cachedStake = info.stakedAmount;
                     _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
                     _removeStakedAmount(attester, cachedStake);
                     _aggregateState.slashingDelta += cachedStake;
+                    emit FullySlashedAttesterPurged(attester, cachedStake, reason);
                     _removeAttester(attester);
                     return 0;
                 }
@@ -684,8 +685,7 @@ contract StakingManager is
                     _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
                     return 0;
                 } catch {
-                    _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
-                    return 0;
+                    revert StakingManager__UnstakeFailed(attester);
                 }
             }
         }

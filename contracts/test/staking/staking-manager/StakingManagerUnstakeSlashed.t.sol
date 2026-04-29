@@ -67,12 +67,16 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
         _setupActiveAttester();
         address attester = address(uint160(1));
         _slashOnRollup(attester, 0);
+        bytes memory revertReason = "AZTEC_FULLY_SLASHED";
 
         vm.mockCallRevert(
             address(rollup),
             abi.encodeWithSelector(IAztecRollup.initiateWithdraw.selector, attester, address(stakingManager)),
-            "AZTEC_FULLY_SLASHED"
+            revertReason
         );
+
+        vm.expectEmit(true, true, false, true, address(stakingManager));
+        emit FullySlashedAttesterPurged(attester, ACTIVATION_THRESHOLD, revertReason);
 
         vm.prank(core);
         uint256 unstaked = stakingManager.unstake(ACTIVATION_THRESHOLD);
@@ -84,6 +88,23 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
         assertEq(state.stakedAmount, 0, "cached stake should be removed");
         assertEq(state.pendingUnstakeAmount, 0, "no pending unstake should be added");
         assertEq(state.slashingDelta, ACTIVATION_THRESHOLD, "full stake should be recorded as slashed");
+    }
+
+    /// @notice Nonzero-balance rollup reverts are not treated as fully slashed local purges.
+    function test_Unstake_SlashedAttester_InitiateWithdrawRevert_NonzeroBalanceReverts() external {
+        _setupActiveAttester();
+        address attester = address(uint160(1));
+        _slashOnRollup(attester, 1 wei);
+
+        vm.mockCallRevert(
+            address(rollup),
+            abi.encodeWithSelector(IAztecRollup.initiateWithdraw.selector, attester, address(stakingManager)),
+            "AZTEC_UNAVAILABLE"
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnstakeFailed.selector, attester));
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
     /// @notice Multiple attesters, one slashed — only the slashed one should produce a delta.
