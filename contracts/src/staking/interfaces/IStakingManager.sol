@@ -119,6 +119,12 @@ interface IStakingManager {
     /// @param newBalance The new balance from rollup.
     event AttesterStateRefreshed(address indexed attester, uint256 indexed oldBalance, uint256 indexed newBalance);
 
+    /// @notice Emitted when an unstake observes a fully slashed attester and removes stale local state.
+    /// @param attester The purged attester address.
+    /// @param cachedStake The locally cached stake recorded as slashed.
+    /// @param reason The low-level revert reason from the rollup withdraw attempt.
+    event FullySlashedAttesterPurged(address indexed attester, uint256 indexed cachedStake, bytes reason);
+
     /// @notice Emitted when a failed queue entry is purged by governance.
     /// @param attester The purged attester address.
     /// @param recoveredAmount The stake amount removed from stakedAmount accounting.

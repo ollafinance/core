@@ -656,8 +656,22 @@ contract StakingManager is
             exitAmount = view_.effectiveBalance;
 
             // slither-disable-next-line reentrancy-no-eth
-            bool isInitiated = rollup.initiateWithdraw(attester, address(this));
-            if (!isInitiated) {
+            try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                if (!isInitiated) {
+                    revert StakingManager__UnstakeFailed(attester);
+                }
+            } catch (bytes memory reason) {
+                if (exitAmount == 0) {
+                    uint256 cachedStake = info.stakedAmount;
+                    // Aztec fully slashed this attester when it reports no exit and no effective balance.
+                    // The withdraw revert data is emitted so operators can audit each local purge.
+                    _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
+                    _removeStakedAmount(attester, cachedStake);
+                    _aggregateState.slashingDelta += cachedStake;
+                    emit FullySlashedAttesterPurged(attester, cachedStake, reason);
+                    _removeAttester(attester);
+                    return 0;
+                }
                 revert StakingManager__UnstakeFailed(attester);
             }
         } else {
@@ -666,14 +680,33 @@ contract StakingManager is
 
             if (!view_.exit.isRecipient) {
                 // slither-disable-next-line reentrancy-no-eth
-                bool isInitiated = rollup.initiateWithdraw(attester, address(this));
-                if (!isInitiated) {
+                try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                    if (isInitiated) {
+                        return _finalizeUnstakeInitiation(rollup, attester, info, exitAmount);
+                    }
                     _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
                     return 0;
+                } catch {
+                    revert StakingManager__UnstakeFailed(attester);
                 }
             }
         }
 
+        return _finalizeUnstakeInitiation(rollup, attester, info, exitAmount);
+    }
+
+    /// @notice Finalizes local accounting after a rollup unstake has been initiated.
+    /// @param rollup The rollup staking interface.
+    /// @param attester The attester address to process.
+    /// @param info The attester info storage reference.
+    /// @param exitAmount The unstake amount initiated for the attester.
+    /// @return The unstake amount initiated for the attester.
+    function _finalizeUnstakeInitiation(
+        IAztecRollup rollup,
+        address attester,
+        AttesterInfo storage info,
+        uint256 exitAmount
+    ) internal returns (uint256) {
         _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
         uint256 cachedStake = info.stakedAmount;
         info.stakedAmount = 0;
@@ -726,6 +759,7 @@ contract StakingManager is
 
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
+        bool zombieExitClaimed = false;
 
         // Handle Queued attesters: check if the rollup has activated them.
         if (info.status == InternalAttesterStatus.Queued) {
@@ -755,7 +789,9 @@ contract StakingManager is
             // Zombie exit (isRecipient=false): claim it by calling initiateWithdraw to set recipient
             if (!view_.exit.isRecipient) {
                 // slither-disable-next-line calls-loop,unused-return
-                rollup.initiateWithdraw(attester, address(this));
+                try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                    zombieExitClaimed = isInitiated;
+                } catch { }
             }
             _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
             uint256 exitAmount = view_.exit.amount;
@@ -808,6 +844,23 @@ contract StakingManager is
                 emit AttesterStateRefreshed(attester, oldBalance, newBalance);
                 return;
             } else {
+                if (!view_.exit.isRecipient && !zombieExitClaimed) {
+                    // Retry zombie-exit claiming on each refresh. A revert here should not DoS the batch;
+                    // the exit remains tracked on exitRollup and can be claimed by a later refresh.
+                    // slither-disable-next-line calls-loop,unused-return
+                    try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                        if (!isInitiated) {
+                            info.stakedAmount = newBalance;
+                            emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                            return;
+                        }
+                    } catch {
+                        info.stakedAmount = newBalance;
+                        emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                        return;
+                    }
+                }
+
                 _reconcileExitingExitAmount(attester, info, view_.exit.amount);
 
                 if (!_isExitFinalizable(view_)) {

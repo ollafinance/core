@@ -106,6 +106,23 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
         assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should increase");
     }
 
+    function test_RevertWhen_Unstake_InitiateWithdrawReverts_ExitExists() external {
+        _setupActiveAttester();
+        address attester = address(uint160(1));
+
+        rollup.setExternalExit(attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+
+        vm.mockCallRevert(
+            address(rollup),
+            abi.encodeWithSelector(IAztecRollup.initiateWithdraw.selector, attester, address(stakingManager)),
+            "AZTEC_ZOMBIE_CLAIM_FAILED"
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnstakeFailed.selector, attester));
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+    }
+
     function test_RevertWhen_Unstake_InitiateWithdrawFails_NoExit() external {
         // Setup: stake one attester and promote to Active
         _setupActiveAttester();
