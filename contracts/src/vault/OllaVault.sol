@@ -337,12 +337,18 @@ contract OllaVault is
         whenNotPaused
         returns (uint256 requestId)
     {
-        if (msg.sender != owner && !_operators[owner][msg.sender]) {
-            revert OllaVault__Unauthorized();
-        }
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
 
-        (requestId,) = _executeRedeemRequest(owner, controller, shares, false);
+        if (msg.sender != owner && !_operators[owner][msg.sender]) {
+            // ERC-7540 spec: ERC-20 share allowance is a valid authorization path.
+            // safeTransferFrom reverts on insufficient allowance — the allowance check
+            // IS the authorization, so the arbitrary `from` is intentional and bounded.
+            // slither-disable-next-line arbitrary-send-erc20,pess-nft-approve-warning
+            IERC20(address(_modules.stAztec)).safeTransferFrom(owner, address(this), shares);
+            (requestId,) = _executeRedeemRequest(owner, controller, shares, true);
+        } else {
+            (requestId,) = _executeRedeemRequest(owner, controller, shares, false);
+        }
 
         emit RedeemRequest(controller, owner, requestId, msg.sender, shares);
         return requestId;
