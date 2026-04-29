@@ -663,6 +663,8 @@ contract StakingManager is
             } catch (bytes memory reason) {
                 if (exitAmount == 0) {
                     uint256 cachedStake = info.stakedAmount;
+                    // Aztec fully slashed this attester when it reports no exit and no effective balance.
+                    // The withdraw revert data is emitted so operators can audit each local purge.
                     _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
                     _removeStakedAmount(attester, cachedStake);
                     _aggregateState.slashingDelta += cachedStake;
@@ -757,6 +759,7 @@ contract StakingManager is
 
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
+        bool zombieExitClaimed;
 
         // Handle Queued attesters: check if the rollup has activated them.
         if (info.status == InternalAttesterStatus.Queued) {
@@ -786,7 +789,9 @@ contract StakingManager is
             // Zombie exit (isRecipient=false): claim it by calling initiateWithdraw to set recipient
             if (!view_.exit.isRecipient) {
                 // slither-disable-next-line calls-loop,unused-return
-                rollup.initiateWithdraw(attester, address(this));
+                try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                    zombieExitClaimed = isInitiated;
+                } catch { }
             }
             _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
             uint256 exitAmount = view_.exit.amount;
@@ -839,6 +844,23 @@ contract StakingManager is
                 emit AttesterStateRefreshed(attester, oldBalance, newBalance);
                 return;
             } else {
+                if (!view_.exit.isRecipient && !zombieExitClaimed) {
+                    // Retry zombie-exit claiming on each refresh. A revert here should not DoS the batch;
+                    // the exit remains tracked on exitRollup and can be claimed by a later refresh.
+                    // slither-disable-next-line calls-loop,unused-return
+                    try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                        if (!isInitiated) {
+                            info.stakedAmount = newBalance;
+                            emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                            return;
+                        }
+                    } catch {
+                        info.stakedAmount = newBalance;
+                        emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                        return;
+                    }
+                }
+
                 _reconcileExitingExitAmount(attester, info, view_.exit.amount);
 
                 if (!_isExitFinalizable(view_)) {

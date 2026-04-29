@@ -107,6 +107,22 @@ contract StakingManagerUnstakeSlashedTest is StakingManagerBaseTest {
         stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
+    /// @notice Full-stake rollup reverts are not swallowed by the fully slashed catch path.
+    function test_Unstake_FullBalance_InitiateWithdrawRevert_RaisesUnstakeFailed() external {
+        _setupActiveAttester();
+        address attester = address(uint160(1));
+
+        vm.mockCallRevert(
+            address(rollup),
+            abi.encodeWithSelector(IAztecRollup.initiateWithdraw.selector, attester, address(stakingManager)),
+            "AZTEC_UNAVAILABLE"
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnstakeFailed.selector, attester));
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+    }
+
     /// @notice Multiple attesters, one slashed — only the slashed one should produce a delta.
     function test_Unstake_OneSlashedAmongMultiple_CorrectAccounting() external {
         _setupMultipleActiveAttesters(3);
