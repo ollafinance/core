@@ -19,10 +19,10 @@ sequenceDiagram
     OG->>C: setProtocolFeeBP(newFee)
 
     Note over GOV,C: Same pattern for all parameter setters:
-    Note over GOV,C: setTreasuryFeeSplitBP, setInstantRedemptionFeeBP,
-    Note over GOV,C: setTargetBufferedAssets, setRebalanceGasThreshold,
-    Note over GOV,C: setRebalanceCooldown, setQueueGasThreshold,
-    Note over GOV,C: reconcileBufferedAssets, setSafetyModule, recoverStAztec
+    Note over GOV,C: setTreasuryFeeSplitBP, setRebalanceGasThreshold,
+    Note over GOV,C: setRebalanceCooldown, setSafetyModule,
+    Note over GOV,C: reconcileBufferedAssets, recoverStAztec
+    Note over GOV,C: (setVault is invoked through the timelock against OllaCore directly)
 ```
 
 ## Safety module configuration
@@ -51,17 +51,15 @@ sequenceDiagram
 
 ## Governance transfer (two-step)
 
-Governance transfer is initiated via the timelock but accepted directly by the new governance address. On acceptance, `OllaGovernance` atomically transfers timelock roles (proposer/executor/canceller) and propagates `DEFAULT_ADMIN_ROLE` changes to all satellite contracts.
+Governance transfer is initiated via the timelock but accepted directly by the new governance address. On acceptance, `OllaGovernance` atomically transfers timelock roles (proposer/executor/canceller) and `DEFAULT_ADMIN_ROLE` from the old governance admin to the new one.
+
+The `OllaGovernance` *contract address itself* is the `DEFAULT_ADMIN_ROLE` holder on every satellite (`OllaCore`, `OllaVault`, `SafetyModule`, `RewardsAccumulator`, `StakingManager`, `StakingProviderRegistry`). Because the contract address does not change when the governance admin wallet is rotated, no per-satellite role propagation is needed; the new governance admin steers those roles by scheduling timelock actions on `OllaGovernance`, which holds them on every satellite.
 
 ```mermaid
 sequenceDiagram
     participant GOV as Current Governance Admin
     participant OG as OllaGovernance (timelock)
-    participant NEW as New Governance
-    participant WQ as WithdrawalQueue
-    participant RV as RewardsVault
-    participant SM as StakingManager
-    participant SPR as StakingProviderRegistry
+    participant NEW as New Governance Admin
 
     GOV->>OG: schedule(proposeGovernance(newGov))
     Note right of OG: Wait for minDelay
@@ -71,17 +69,11 @@ sequenceDiagram
 
     NEW->>OG: acceptGovernance()
     Note right of OG: Direct call, not timelocked
-    OG->>OG: grant PROPOSER/EXECUTOR/CANCELLER to newGov
-    OG->>WQ: grantRole(DEFAULT_ADMIN_ROLE, newGov)
-    OG->>RV: grantRole(DEFAULT_ADMIN_ROLE, newGov)
-    OG->>SM: grantRole(DEFAULT_ADMIN_ROLE, newGov)
-    OG->>SPR: grantRole(DEFAULT_ADMIN_ROLE, newGov)
-    OG->>WQ: revokeRole(DEFAULT_ADMIN_ROLE, oldGov)
-    OG->>RV: revokeRole(DEFAULT_ADMIN_ROLE, oldGov)
-    OG->>SM: revokeRole(DEFAULT_ADMIN_ROLE, oldGov)
-    OG->>SPR: revokeRole(DEFAULT_ADMIN_ROLE, oldGov)
-    OG->>OG: revoke PROPOSER/EXECUTOR/CANCELLER from oldGov
+    OG->>OG: grant PROPOSER/EXECUTOR/CANCELLER/DEFAULT_ADMIN_ROLE to newGov
+    OG->>OG: revoke PROPOSER/EXECUTOR/CANCELLER/DEFAULT_ADMIN_ROLE from oldGov
+    OG->>OG: governanceAdmin = newGov
     OG-->>NEW: GovernanceTransferAccepted(oldGov, newGov)
+    Note right of OG: Satellites are unaffected; OllaGovernance itself remains their admin
 
     opt cancel before accept
         GOV->>OG: schedule(cancelGovernanceProposal())
@@ -93,7 +85,7 @@ sequenceDiagram
 
 ## Treasury management
 
-The treasury address is managed by `OllaGovernance` via the timelock. Note: instant redemption fees are no longer sent to the treasury — they are absorbed into the protocol buffer, benefiting remaining shareholders.
+The treasury address is managed by `OllaGovernance` via the timelock. The treasury receives the treasury share of protocol fees minted on each accounting update.
 
 ```mermaid
 sequenceDiagram
@@ -169,7 +161,8 @@ sequenceDiagram
     GOV->>OG: execute(upgradeCore(newImpl))
     OG->>C: upgradeToAndCall(newImpl, "")
 
-    Note over GOV,SAT: Upgrade satellite (WQ, RV, SM, SPR)
+    Note over GOV,SAT: Upgrade satellite (OllaVault, RewardsAccumulator, StakingManager, StakingProviderRegistry)
+    Note over GOV,SAT: SafetyModule is non-UUPS; replace via OllaCore.setSafetyModule instead
     GOV->>OG: schedule(upgradeSatellite(proxy, newImpl))
     Note right of OG: Wait for minDelay
     GOV->>OG: execute(upgradeSatellite(proxy, newImpl))

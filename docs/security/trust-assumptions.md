@@ -13,9 +13,9 @@ This serves two purposes:
 |---|---|---|---|
 | T-1 | Only the immutable `OLLA_VAULT` address can burn stAztec | StAztec | Any other caller able to burn can confiscate arbitrary users' staking positions without allowance |
 | T-2 | Only the immutable `OLLA_VAULT` address can mint stAztec | StAztec | Any other caller able to mint can create unbacked stAztec, diluting all existing holders |
-| T-3 | `DEFAULT_ADMIN_ROLE` (governance) can upgrade all UUPS proxies | OllaCore, WithdrawalQueue, RewardsAccumulator, StakingManager, StakingProviderRegistry | A compromised governance key can replace any implementation — full protocol rug |
+| T-3 | Governance can upgrade all UUPS proxies (OllaCore/OllaVault via `Ownable2Step` owner; the rest via `DEFAULT_ADMIN_ROLE`) | OllaCore, OllaVault, RewardsAccumulator, StakingManager, StakingProviderRegistry, OllaGovernance (self-upgrade) | A compromised governance key can replace any implementation, which would be a full protocol rug |
 | T-4 | Governance can set protocol fees up to 50% (`MAX_PROTOCOL_FEE_BP = 5_000`) | OllaCore | Fee misconfiguration can extract up to half of yield from stakers |
-| T-5 | Governance can hot-swap modules (StakingManager, RewardsAccumulator, WithdrawalQueue, SafetyModule) | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
+| T-5 | Governance can hot-swap `SafetyModule` (`OllaCore.setSafetyModule`) and replace any other satellite via UUPS upgrade | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
 | T-6 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
 | T-7 | `GUARDIAN_ROLE` can pause/unpause and force-reset a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-resetting mid-rebalance discards in-progress work (unharvested rewards wait for next cycle, partial unstakes are tracked on-chain) |
 
@@ -23,9 +23,9 @@ This serves two purposes:
 
 ### Rebalance and accounting are permissionless
 
-`rebalance()`, `updateAccounting()`, and `refreshAttesterState(address[])` are callable by any address. This eliminates the operator as a liveness dependency — anyone can advance the protocol's state machine. `refreshAttesterState` delta-updates the aggregate staking state per attester and finalizes exits when applicable — it replaces the previous `computeAttesterState()` and `finalizeExits()` functions with an event-driven, idempotent design. Rate-limiting is enforced by a governance-configurable cooldown (`rebalanceCooldown`, bounded to 10 min–24 h) that prevents new rebalance cycles from starting too frequently. All accounting data is derived from on-chain state (rollup attester views, rewards vault balances), not operator-submitted values.
+`rebalance()`, `updateAccounting()`, and `refreshAttesterState(address[])` are callable by any address. There is no operator as a liveness dependency; anyone can advance the protocol's state machine. `refreshAttesterState` delta-updates the aggregate staking state per attester and finalizes exits when applicable. It replaces the previous `computeAttesterState()` and `finalizeExits()` functions with an event-driven, idempotent design. Rate-limiting is enforced by a governance-configurable cooldown (`rebalanceCooldown`, bounded to 10 min to 24 h) that prevents new rebalance cycles from starting too frequently. All accounting data is derived from on-chain state (rollup attester views, RewardsAccumulator balance), not operator-submitted values.
 
-`reconcileBufferedAssets()` was moved from `OPERATOR_ROLE` to `DEFAULT_ADMIN_ROLE` (governance) because it has donation-absorption side effects that should remain privileged.
+`reconcileBufferedAssets()` is gated by `onlyOwner` (governance) on `OllaVault` because it has donation-absorption side effects that must remain privileged.
 
 ### SafetyModule is intentionally non-UUPS
 

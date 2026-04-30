@@ -35,7 +35,7 @@ forge script script/ops/PrintState.s.sol
 cd contracts
 
 RATE=1000000000000000000 forge script script/rollup/SetRewardRate.s.sol --broadcast  # ROLLUP defaults to MockAztecRollup
-forge script script/rollup/TickRewards.s.sol --broadcast  # COINBASE defaults to RewardsVaultProxy
+forge script script/rollup/TickRewards.s.sol --broadcast  # COINBASE defaults to RewardsAccumulatorProxy
 forge script script/ops/Rebalance.s.sol --broadcast  # CORE defaults to OllaCoreProxy
 forge script script/ops/UpdateAccounting.s.sol --broadcast  # CORE defaults to OllaCoreProxy
 ```
@@ -51,14 +51,6 @@ COUNT=5 forge script script/provider/AddKeys.s.sol --broadcast  # REGISTRY defau
 > **Note:** The registry rejects duplicate attester addresses. Running `AddKeys` twice with the
 > same `COUNT` will revert because the script generates deterministic addresses. To add more keys,
 > either drip existing keys first or increase `COUNT` beyond the previous value.
-
-## Grant operator
-
-```bash
-cd contracts
-
-TARGET=0x0000000000000000000000000000000000000001 forge script script/ops/GrantOperator.s.sol --broadcast  # TARGET defaults to broadcaster
-```
 
 ## Finalize withdraw demo
 

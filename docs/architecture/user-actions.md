@@ -7,22 +7,23 @@ This document summarizes user-facing flows in Olla Core.
 ```mermaid
 sequenceDiagram
     participant U as User
+    participant V as OllaVault
     participant C as OllaCore
     participant SAF as SafetyModule
     participant AZ as AssetToken
     participant ST as StAztec
 
-    U->>C: deposit(assets, recipient)
-    C->>SAF: isPaused()
-    SAF-->>C: false
-    C->>SAF: checkDepositAllowed(assets, totalAssets)
-    SAF-->>C: true
-    C->>C: shares = convertToShares(assets)
-    C->>C: bufferedAssets += assets
-    U->>AZ: approve(C, assets)
-    C->>AZ: transferFrom(U, C, assets)
-    C->>C: syncBufferedWithBalance()
-    C->>ST: mint(to=recipient, amount=shares)
+    U->>AZ: approve(V, assets)
+    U->>V: deposit(assets, recipient, minSharesOut)
+    V->>SAF: isPaused()
+    SAF-->>V: false
+    V->>C: convertToShares(assets)
+    C-->>V: shares
+    V->>V: require shares >= minSharesOut
+    V->>SAF: checkDepositAllowed(assets, totalAssets)
+    SAF-->>V: ok
+    V->>AZ: transferFrom(U, V, assets)
+    V->>ST: mint(to=recipient, amount=shares)
     ST-->>U: stAztec balance updated
 ```
 
@@ -53,47 +54,54 @@ sequenceDiagram
     ST-->>U: stAztec balance updated
 ```
 
-## Withdrawal (queue)
+## Request redeem (async queue)
+
+The redemption queue lives inside `OllaVault`. A request is locked at the current `withdrawalRate`, the shares are burned immediately, and the user later claims when the rebalance loop has finalized the request and made assets available.
 
 ```mermaid
 sequenceDiagram
     participant U as User
+    participant V as OllaVault
     participant C as OllaCore
     participant SAF as SafetyModule
     participant ST as StAztec
-    participant WQ as WithdrawalQueue
-    participant AZ as AssetToken
 
-    Note over U,C: Phase 1 - user requests withdrawal
+    Note over U,V: Phase 1: user requests redemption
 
-    U->>C: requestRedeem(shares, recipient)
-    C->>C: require no active request for U
-    C->>C: rate = exchangeRate
-    C->>C: assetsExpected = shares * rate / 1e18
-    C->>SAF: checkWithdrawalMinimum(shares)
-    C->>WQ: nextRequestId()
-    C->>ST: burn(owner=U, amount=shares)
-    C->>WQ: requestWithdrawal(recipient, shares, assetsExpected, rate)
-    WQ->>WQ: enqueue withdrawalRequest (FIFO)
+    U->>V: requestRedeem(shares, controller, owner)
+    V->>C: withdrawalRate()
+    C-->>V: rate
+    V->>C: convertToAssetsGross(shares)
+    C-->>V: assetsExpected
+    V->>SAF: checkWithdrawalMinimum(shares)
+    V->>V: requestId = _nextRequestId++
+    V->>V: store WithdrawalRequest{shares, assetsExpected, rate, finalized=false}
+    V->>V: pendingWithdrawalAssets += assetsExpected
+    V->>V: pendingWithdrawalShares += shares
+    V->>ST: burn(owner=U or vault, amount=shares)
+    V-->>U: emit RedeemRequest, returns requestId
 
-    Note over U,WQ: Phase 2 - later, after liquidity and operator action
-    Note over WQ: If slashing occurred after request, finalization adjusts:
-    Note over WQ: payout = shares * min(currentRate, lockedRate) / 1e18
+    Note over U,V: Phase 2: later, after rebalance liquidity is available
 
-    U->>C: claimRequestById(requestId)
-    C->>WQ: claimWithdrawal(requestId)
-    WQ-->>C: assetsClaimed
-    C->>AZ: transfer(recipient, assetsClaimed)
+    Note over V: If slashing occurred between request and finalization:
+    Note over V: payout = shares * min(currentRate, lockedRate) / 1e18
+    Note over V: capped at the request's recorded assetsExpected
+
+    U->>V: claimRequestById(requestId)
+    V->>V: load request, require finalized
+    V->>V: _finalizedUnclaimedAssets -= request.assetsClaimable
+    V-->>U: transfer asset to controller, emit Withdraw
 ```
 
-## Withdrawal with permit (queue)
+## Request redeem with permit
+
+`requestRedeemWithPermit` consumes an EIP-2612 permit on `stAztec` to set the vault's allowance, then pulls the shares to the vault before queuing the request. If the permit was frontrun but the resulting allowance is sufficient, the request still proceeds.
 
 ```mermaid
 sequenceDiagram
     participant U as User
     participant V as OllaVault
     participant ST as StAztec
-    participant WQ as WithdrawalQueue
 
     U->>V: requestRedeemWithPermit(shares, controller, deadline, v, r, s)
     V->>ST: try permit(U, V, shares, deadline, v, r, s)
@@ -109,71 +117,7 @@ sequenceDiagram
     end
     V->>ST: safeTransferFrom(U, V, shares)
     Note right of V: Shares pulled to vault, consuming allowance
-    V->>V: rate = exchangeRate
-    V->>V: assetsExpected = shares * rate / 1e18
+    V->>V: enqueue request (see "Request redeem (async queue)")
     V->>ST: burn(owner=V, amount=shares)
     Note right of V: Burns from vault's balance (not user's)
-    V->>WQ: requestWithdrawal(recipient, shares, assetsExpected, rate)
-```
-
-## Instant redemption
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as OllaCore
-    participant SAF as SafetyModule
-    participant ST as StAztec
-    participant AZ as AssetToken
-
-    U->>C: redeem(shares, recipient)
-    C->>SAF: isPaused()
-    SAF-->>C: false
-    C->>C: syncBufferedWithBalance()
-    Note right of C: bufferedAssets = balance - _finalizedUnclaimedAssets
-    C->>SAF: checkWithdrawalMinimum(shares)
-    C->>C: grossAssets = convertToAssets(shares)
-    C->>C: fee = grossAssets * feeBP / BP_DIVISOR
-    C->>C: netAssets = grossAssets - fee
-    C->>C: available = bufferedAssets - pendingWithdrawalAssets
-    C->>C: require netAssets <= available
-    C->>ST: burn(owner=U, amount=shares)
-    C->>C: bufferedAssets -= netAssets
-    Note right of C: Fee stays in buffer, accruing to remaining shareholders
-    C->>AZ: transfer(recipient, netAssets)
-    C-->>U: netAssets
-```
-
-## Instant redemption with permit
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant V as OllaVault
-    participant ST as StAztec
-    participant AZ as AssetToken
-
-    U->>V: instantRedeemWithPermit(shares, recipient, minAssetsOut, deadline, v, r, s)
-    V->>ST: try permit(U, V, shares, deadline, v, r, s)
-    alt permit succeeds
-        ST-->>V: allowance set
-    else permit fails (frontrun / expired / bad sig)
-        V->>ST: allowance(U, V)
-        alt allowance >= shares
-            Note right of V: Proceed (frontrun protection)
-        else allowance < shares
-            V-->>U: revert OllaVault__PermitFailed
-        end
-    end
-    V->>ST: safeTransferFrom(U, V, shares)
-    Note right of V: Shares pulled to vault, consuming allowance
-    V->>V: grossAssets = convertToAssets(shares)
-    V->>V: fee = grossAssets * feeBP / BP_DIVISOR
-    V->>V: netAssets = grossAssets - fee
-    V->>V: require netAssets <= available liquidity
-    V->>ST: burn(owner=V, amount=shares)
-    Note right of V: Burns from vault's balance (not user's)
-    V->>V: bufferedAssets -= netAssets
-    V->>AZ: transfer(recipient, netAssets)
-    V-->>U: netAssets
 ```

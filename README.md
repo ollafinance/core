@@ -20,7 +20,7 @@
 `contracts/` is a Foundry project holding the core contracts. Each module directory under `contracts/src/` additionally contains `interfaces/`, `libraries/`, and `mocks/` subdirectories where applicable.
 
 - `contracts/src/core/` Protocol core contracts (`OllaCore`, `RewardsAccumulator`).
-- `contracts/src/vault/` ERC-7540 vault contracts (`OllaVault`, `StAztec`, `WithdrawalQueue`).
+- `contracts/src/vault/` ERC-7540 vault contracts (`OllaVault`, `StAztec`). `OllaVault` holds the embedded async-redemption queue.
 - `contracts/src/staking/` Staking module contracts (`StakingManager`, `StakingProviderRegistry`).
 - `contracts/src/safetymodule/` Safety module contracts (`SafetyModule`, `ISafetyModule`).
 - `contracts/src/governance/` Governance contract and interface (`OllaGovernance` with embedded timelock).
