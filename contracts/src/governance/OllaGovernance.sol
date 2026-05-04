@@ -144,6 +144,7 @@ contract OllaGovernance is Initializable, TimelockControllerUpgradeable, UUPSUpg
             _revokeRole(PROPOSER_ROLE, oldGovernance);
             _revokeRole(EXECUTOR_ROLE, oldGovernance);
             _revokeRole(CANCELLER_ROLE, oldGovernance);
+            _revokeRole(DEFAULT_ADMIN_ROLE, oldGovernance);
         }
 
         emit GovernanceTransferAccepted(oldGovernance, newGovernance);
