@@ -1243,7 +1243,11 @@ contract OllaCore is
         uint256 pricedLiveAssets = currentRate.mulDiv(liveSupply, _EXCHANGE_RATE_SCALE, Math.Rounding.Ceil);
         // Pure arithmetic guard; no block timestamp dependency.
         // slither-disable-next-line timestamp
-        if (pricedLiveAssets >= grossAssets) return 0;
+        if (pricedLiveAssets < virtualOffset + 1) return Math.min(grossAssets, pendingAssets);
+
+        // Pure arithmetic guard; no block timestamp dependency.
+        // slither-disable-next-line timestamp
+        if (pricedLiveAssets > grossAssets - 1) return 0;
 
         uint256 adjustedPendingAssets = grossAssets - pricedLiveAssets;
 
