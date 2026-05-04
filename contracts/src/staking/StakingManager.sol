@@ -745,6 +745,7 @@ contract StakingManager is
     /// @dev Reads rollup state (source of truth), delta-updates the aggregate accumulator,
     ///      and finalizes exits when exitable. Silently skips unknown attesters.
     ///      Active attesters are queried on the canonical rollup (they follow upgrades via GSE).
+    ///      Queued attesters are queried on queueRollup first, then canonical if queueRollup reports no state.
     ///      Exiting attesters are queried on their stored exitRollup to prevent phantom credits
     ///      after a rollup upgrade (exit state is local to the rollup instance that initiated it).
     /// @param canonicalRollup The current canonical rollup interface.
