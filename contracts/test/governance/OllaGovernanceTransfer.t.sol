@@ -104,8 +104,9 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         assertTrue(gov.hasRole(gov.EXECUTOR_ROLE(), newGov), "newGov has EXECUTOR_ROLE");
         assertTrue(gov.hasRole(gov.CANCELLER_ROLE(), newGov), "newGov has CANCELLER_ROLE");
 
-        // New governance has DEFAULT_ADMIN_ROLE
-        assertTrue(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), newGov), "newGov has DEFAULT_ADMIN_ROLE");
+        // DEFAULT_ADMIN_ROLE remains on the timelock, not the external governance wallet
+        assertFalse(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), newGov), "newGov should not have DEFAULT_ADMIN_ROLE");
+        assertTrue(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), address(gov)), "timelock retains DEFAULT_ADMIN_ROLE");
 
         // Old governance lost roles
         assertFalse(gov.hasRole(gov.PROPOSER_ROLE(), admin), "old lost PROPOSER_ROLE");
@@ -179,6 +180,23 @@ contract OllaGovernanceTransferTest is OllaGovernanceSetup {
         );
         vm.prank(newGov);
         vault.grantRole(coreRole, newGov);
+    }
+
+    function test_AcceptGovernance_NewGovernanceWalletCannotDirectlyGrantGovernanceRoles() external {
+        bytes32 proposerRole = gov.PROPOSER_ROLE();
+
+        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.proposeGovernance, (newGov)));
+
+        vm.prank(newGov);
+        gov.acceptGovernance();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector, newGov, gov.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(newGov);
+        gov.grantRole(proposerRole, alice);
     }
 
     function test_RevertWhen_AcceptGovernance_NotPending() external {
