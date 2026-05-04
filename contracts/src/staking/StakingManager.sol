@@ -357,10 +357,20 @@ contract StakingManager is
         }
 
         // Query the rollup where the deposit was queued. Canonical may have changed before flush.
-        IAztecRollup rollup = IAztecRollup(info.queueRollup);
+        address queueRollupAddress = info.queueRollup;
+        IAztecRollup rollup = IAztecRollup(queueRollupAddress);
         AttesterView memory view_ = rollup.getAttesterView(attester);
         if (view_.status != Status.NONE || view_.exit.exists || view_.effectiveBalance > 0) {
             revert StakingManager__NotFailedQueueEntry(attester);
+        }
+
+        (address canonicalRollupAddress, IAztecRollup canonicalRollup) = _getRollup();
+        if (canonicalRollupAddress != queueRollupAddress) {
+            AttesterView memory canonicalView = canonicalRollup.getAttesterView(attester);
+            if (canonicalView.status != Status.NONE || canonicalView.exit.exists || canonicalView.effectiveBalance > 0)
+            {
+                revert StakingManager__NotFailedQueueEntry(attester);
+            }
         }
 
         // Verify the attester is NOT still in the rollup's entry queue (waiting for flush).
@@ -763,7 +773,20 @@ contract StakingManager is
 
         // Handle Queued attesters: check if the rollup has activated them.
         if (info.status == InternalAttesterStatus.Queued) {
-            if (view_.status == Status.NONE) return;
+            if (view_.status == Status.NONE && !view_.exit.exists && view_.effectiveBalance == 0) {
+                if (address(rollup) == address(canonicalRollup)) return;
+
+                AttesterView memory canonicalView = canonicalRollup.getAttesterView(attester);
+                if (
+                    canonicalView.status == Status.NONE && !canonicalView.exit.exists
+                        && canonicalView.effectiveBalance == 0
+                ) {
+                    return;
+                }
+
+                rollup = canonicalRollup;
+                view_ = canonicalView;
+            }
             info.queueRollup = address(0);
             _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
         }
