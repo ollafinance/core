@@ -1237,21 +1237,11 @@ contract OllaCore is
         uint256 currentRate = (grossAssets + virtualOffset)
         .mulDiv(_EXCHANGE_RATE_SCALE, liveSupply + pendingShares + virtualOffset, Math.Rounding.Floor);
 
-        // Price live shares only against `liveSupply`. The virtual offset is an anti-donation
-        // constant, not a real share, so it must not accrue rate exposure here (otherwise the
-        // residual `V * (rate - 1)` biases the pending-asset discount).
-        uint256 pricedLiveAssets = currentRate.mulDiv(liveSupply, _EXCHANGE_RATE_SCALE, Math.Rounding.Ceil);
-        // Pure arithmetic guard; no block timestamp dependency.
-        // slither-disable-next-line timestamp
-        if (pricedLiveAssets < virtualOffset + 1) return Math.min(grossAssets, pendingAssets);
+        // Price only real pending shares. The virtual offset is an anti-donation constant, not a
+        // real share, so it must not accrue rewards or absorb slashing in the pending deduction.
+        uint256 adjustedPendingAssets = pendingShares.mulDiv(currentRate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
 
-        // Pure arithmetic guard; no block timestamp dependency.
-        // slither-disable-next-line timestamp
-        if (pricedLiveAssets > grossAssets - 1) return 0;
-
-        uint256 adjustedPendingAssets = grossAssets - pricedLiveAssets;
-
-        return Math.min(adjustedPendingAssets, pendingAssets);
+        return Math.min(Math.min(adjustedPendingAssets, pendingAssets), grossAssets);
     }
 
     /// @notice Computes the exchange rate for withdrawal queue finalization.
