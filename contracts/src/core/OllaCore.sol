@@ -955,9 +955,14 @@ contract OllaCore is
             uint256 rate
         ) = _computeAccountingOutputs(oldTotalAssets, netFlows, pendingWithdrawals);
 
+        IOllaCore.AccountingState memory pricingBuckets = _liveAccountingState();
+        uint256 bufferedAssets = vaultRef.bufferedAssets();
+        uint256 pricedPendingWithdrawals = _pricingPendingAssets(vaultRef, pricingBuckets, bufferedAssets);
+        uint256 livePricingTotalAssets = _computeTotalAssets(pricingBuckets, bufferedAssets, pricedPendingWithdrawals);
+
         // Trusted SafetyModule; may trigger circuit breaker but holds no funds.
         // slither-disable-next-line reentrancy-no-eth
-        safetyModuleRef.checkQueueRatio(pendingWithdrawals, totalAssets());
+        safetyModuleRef.checkQueueRatio(pricedPendingWithdrawals, livePricingTotalAssets);
         _validateRateDrop(safetyModuleRef, oldRate, rate);
         _updateReportingSnapshots(newTotalAssets, rate, grossRewards, netFlows, flowsSnapshot, currentRewards);
         _updateAccountingTimestamp(safetyModuleRef);
