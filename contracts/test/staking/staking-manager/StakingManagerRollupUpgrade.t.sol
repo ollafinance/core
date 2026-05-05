@@ -291,6 +291,69 @@ contract StakingManagerRollupUpgradeTest is StakingManagerBaseTest {
         assertEq(state.stakedAmount, 0, "old-rollup failed queue entry purged");
     }
 
+    function test_RefreshAttesterState_QueuedAttester_PromotesFromNewCanonicalAfterUpgrade() external {
+        _setupStakedAttester();
+        address attester = _attesterAddresses(1)[0];
+
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, 0, address(0));
+        aztec.mint(address(rollupB), ACTIVATION_THRESHOLD);
+        rollupB.setStake(attester, ACTIVATION_THRESHOLD, address(stakingManager));
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "queued attester promoted from canonical rollup");
+        assertEq(state.stakedAmount, ACTIVATION_THRESHOLD, "canonical balance remains tracked");
+    }
+
+    function test_RevertWhen_PurgeFailedQueueEntry_QueuedAttesterActiveOnNewCanonicalAfterUpgrade() external {
+        _setupStakedAttester();
+        address attester = _attesterAddresses(1)[0];
+
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, 0, address(0));
+        aztec.mint(address(rollupB), ACTIVATION_THRESHOLD);
+        rollupB.setStake(attester, ACTIVATION_THRESHOLD, address(stakingManager));
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__NotFailedQueueEntry.selector, attester));
+        stakingManager.purgeFailedQueueEntry(attester);
+    }
+
+    function test_RefreshAttesterState_QueuedAttester_HandlesExitOnNewCanonicalAfterUpgrade() external {
+        _setupStakedAttester();
+        address attester = _attesterAddresses(1)[0];
+
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, 0, address(0));
+        rollupB.setExternalExit(attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertTrue(stakingManager.isUnstakePending(attester), "canonical exit transitions queued attester to exiting");
+        assertEq(stakingManager.getActivatedAttesterCount(), 0, "attester should not become active");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "attester should be tracked as exiting");
+        assertEq(state.stakedAmount, 0, "queued stake moved out of staked amount");
+        assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD, "canonical exit amount tracked as pending");
+    }
+
+    function test_RevertWhen_PurgeFailedQueueEntry_QueuedAttesterHasExitOnNewCanonicalAfterUpgrade() external {
+        _setupStakedAttester();
+        address attester = _attesterAddresses(1)[0];
+
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, 0, address(0));
+        rollupB.setExternalExit(attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+        rollupRegistry.setCanonicalRollup(address(rollupB));
+
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__NotFailedQueueEntry.selector, attester));
+        stakingManager.purgeFailedQueueEntry(attester);
+    }
+
     /*//////////////////////////////////////////////////////////////
             ROLLUP UPGRADE -- EXTERNAL EXIT ON OLD ROLLUP
     //////////////////////////////////////////////////////////////*/
