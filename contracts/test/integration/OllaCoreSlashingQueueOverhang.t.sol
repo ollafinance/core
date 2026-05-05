@@ -261,7 +261,11 @@ contract OllaCoreSlashingQueueOverhangTest is Test {
 
         uint256 withdrawalRateAfterSlash = core.withdrawalRate();
         uint256 exchangeRateAfterSlash = core.exchangeRate();
-        assertEq(exchangeRateAfterSlash, withdrawalRateAfterSlash, "exchange rate should not double-discount pending");
+        // Tolerance absorbs floor/ceil rounding wedge between the two-step pending-adjusted
+        // exchange rate and the single-step gross withdrawal rate.
+        assertApproxEqAbs(
+            exchangeRateAfterSlash, withdrawalRateAfterSlash, 10, "exchange rate should not double-discount pending"
+        );
     }
 
     /*//////////////////////////////////////////////////////////////
