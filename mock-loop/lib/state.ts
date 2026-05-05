@@ -10,7 +10,6 @@ import {
   getOllaCore,
   getOllaVault,
   getStakingManager,
-  getWithdrawalQueue,
   getAsset,
   getStAztec,
   getStakingProviderRegistry,
@@ -31,7 +30,6 @@ export async function readFullState(
   const ollaCore = getOllaCore(addresses, publicClient);
   const ollaVault = getOllaVault(addresses, publicClient);
   const stakingManager = getStakingManager(addresses, publicClient);
-  const withdrawalQueue = getWithdrawalQueue(addresses, publicClient);
   const asset = getAsset(addresses, publicClient);
   const stAztec = getStAztec(addresses, publicClient);
   const providerRegistry = getStakingProviderRegistry(addresses, publicClient);
@@ -62,10 +60,10 @@ export async function readFullState(
     stakingManager.read.getPendingUnstakeCount(),
   ] as const) as [bigint, bigint];
 
-  // Read WithdrawalQueue state
+  // Withdrawal queue state now lives inside OllaVault.
   const [totalPendingAssets, nextRequestId] = await Promise.all([
-    withdrawalQueue.read.totalPendingAssets(),
-    withdrawalQueue.read.nextRequestId(),
+    ollaVault.read.pendingWithdrawalAssets(),
+    ollaVault.read.nextWithdrawalRequestId(),
   ] as const) as [bigint, bigint];
 
   // Read token balances (assets are held by OllaVault, not OllaCore)

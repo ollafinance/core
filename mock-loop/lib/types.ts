@@ -245,8 +245,8 @@ export interface DeploymentAddresses {
   OllaVaultProxy: string;
   Asset: string;
   StAztec: string;
-  WithdrawalQueueImplementation: string;
-  WithdrawalQueueProxy: string;
+  WithdrawalQueueImplementation?: string;
+  WithdrawalQueueProxy?: string;
   RewardsAccumulatorImplementation: string;
   RewardsAccumulatorProxy: string;
   StakingManagerImplementation: string;
