@@ -337,6 +337,10 @@ interface IOllaCore {
     function rebalanceGasThreshold() external view returns (uint32);
 
     /// @notice Returns the latest accounting report snapshot.
+    /// @dev `LatestReport.totalAssets` is an accounting snapshot used for rewards and flow deltas.
+    ///      It subtracts raw locked pending withdrawal liabilities. The live `totalAssets()` view
+    ///      can differ while withdrawals are pending because it subtracts slash-adjusted pending
+    ///      liabilities for share pricing.
     /// @return The latest accounting report snapshot.
     function latestReport() external view returns (LatestReport memory);
 
@@ -352,8 +356,11 @@ interface IOllaCore {
     /// @return The accounting buckets snapshot.
     function accountingState() external view returns (AccountingState memory);
 
-    /// @notice Returns the current total assets held by the protocol.
-    /// @return The current total assets held by the protocol.
+    /// @notice Returns the current total assets attributable to live shares for pricing.
+    /// @dev Pending withdrawals are deducted at a slash-adjusted pricing value capped by their raw
+    ///      locked liability. This may differ from `latestReport().totalAssets`, which preserves raw
+    ///      pending liabilities for reward/accounting deltas.
+    /// @return The current live-pricing total assets.
     function totalAssets() external view returns (uint256);
 
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.

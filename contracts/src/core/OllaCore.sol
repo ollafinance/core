@@ -747,8 +747,8 @@ contract OllaCore is
         // slither-disable-next-line timestamp,incorrect-equality
         if (available == 0) return 0;
 
-        uint256 queued = vaultRef.pendingWithdrawalAssets();
-        uint256 total = totalAssets();
+        uint256 queued = _pricingPendingAssets(vaultRef, _liveAccountingState(), available);
+        uint256 total = _computeTotalAssets(_liveAccountingState(), available, queued);
 
         // Trusted SafetyModule; may trigger circuit breaker but holds no funds.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
@@ -931,6 +931,9 @@ contract OllaCore is
     ) internal {
         (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
         IOllaVault vaultRef = IOllaVault(_modules.vault);
+        // Raw locked pending liabilities are used for reward/accounting deltas. `totalAssets()`
+        // intentionally uses pricing-adjusted pending liabilities for live share pricing, so the
+        // report snapshot can differ from the read-through view while withdrawals are pending.
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();
         // Emit AttestersStateRead BEFORE `_updateReportingSnapshots` advances
         // `_latestReport.rewardsSnapshot`, otherwise rewardsDelta would be zero.
