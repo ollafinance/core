@@ -101,7 +101,7 @@ sequenceDiagram
 
 ## Safety module circuit breaker
 
-The safety module circuit breaker is triggered automatically by OllaCore during operations. The guardian can pause/unpause directly.
+The safety module circuit breaker is triggered automatically by OllaCore during operations. The configured guardian wallet can pause/unpause the SafetyModule directly. This path is not timelocked.
 
 ```mermaid
 sequenceDiagram
@@ -122,7 +122,7 @@ sequenceDiagram
 
 ## Emergency pause / unpause
 
-The governance admin can pause or unpause both `OllaCore` and `OllaVault` in a single call. These functions are **not timelocked** — they are callable directly by the governance admin for rapid incident response.
+The governance admin can pause or unpause both `OllaCore` and `OllaVault` in a single call. These functions are **not timelocked** -- they are callable directly by the governance admin for rapid incident response. This works because `OllaGovernance` holds `GUARDIAN_ROLE` on `OllaCore` and `OllaVault` in the default deployment.
 
 ```mermaid
 sequenceDiagram

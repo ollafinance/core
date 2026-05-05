@@ -87,6 +87,7 @@ contract DeployScript is BaseDeployer {
         _enforceOperatorFlowGuardrails(config);
 
         _resetLocalArtifactIfStale(config);
+        _stageDeploymentArtifactWrites(config.name);
 
         // Track deployed addresses
         address asset;
@@ -335,6 +336,7 @@ contract DeployScript is BaseDeployer {
         _recordMetadataString("stAztecName", stAztecName);
         _recordMetadataString("stAztecVersion", stAztecVersion);
         _setPhase("D", true);
+        _commitDeploymentArtifactWrites(config.name);
     }
 
     function _resolveOrDeployOllaGovernance(DeployConfig memory config)
@@ -764,8 +766,18 @@ contract DeployScript is BaseDeployer {
         }
 
         vm.startBroadcast(config.deployerPrivateKey);
-        safetyModule =
-            address(new SafetyModule(admin, config.guardian, core, vault, 1_000_000_000e18, 500, 5_000, 2 hours));
+        safetyModule = address(
+            new SafetyModule(
+                admin,
+                config.guardian,
+                core,
+                vault,
+                config.safetyDepositCap,
+                config.safetyMinRateDropBps,
+                config.safetyMaxQueueRatioBps,
+                config.safetyMaxAccountingDelay
+            )
+        );
         vm.stopBroadcast();
         _logDeployment("SafetyModule", safetyModule);
         _recordAddress("SafetyModule", safetyModule);
@@ -779,9 +791,16 @@ contract DeployScript is BaseDeployer {
             OllaGovernance(payable(governance)).core() == address(0), "Deploy: ADDRESS_STATE_MISMATCH.Governance.core"
         );
         _ollaGovernanceDeployer.setCore(config, governance, core);
-        require(
-            OllaGovernance(payable(governance)).core() == core, "Deploy: ADDRESS_STATE_MISMATCH.Governance.core.after"
-        );
+        address currentCore = OllaGovernance(payable(governance)).core();
+        if (config.timelockMinDelay == 0) {
+            require(
+                currentCore == core, "Deploy: ADDRESS_STATE_MISMATCH.Governance.core.after"
+            );
+        } else if (currentCore == address(0)) {
+            _logInfo("OllaGovernance.setCore(OllaCore) scheduled or pending governance execution");
+        } else {
+            require(currentCore == core, "Deploy: ADDRESS_STATE_MISMATCH.Governance.core.after");
+        }
     }
 
     function _resetLocalArtifactIfStale(DeployConfig memory config) internal {
@@ -1039,12 +1058,11 @@ contract DeployScript is BaseDeployer {
         address rewardsAccumulator,
         address safetyModule
     ) internal view {
+        address governanceCore = OllaGovernance(payable(ollaGovProxy)).core();
         if (config.timelockMinDelay == 0) {
-            require(OllaGovernance(payable(ollaGovProxy)).core() == ollaCoreProxy, "Deploy: governance core mismatch");
+            require(governanceCore == ollaCoreProxy, "Deploy: governance core mismatch");
         } else {
-            require(
-                OllaGovernance(payable(ollaGovProxy)).core() == address(0), "Deploy: governance core should be unset"
-            );
+            require(governanceCore == address(0) || governanceCore == ollaCoreProxy, "Deploy: governance core mismatch");
         }
         require(OllaCore(ollaCoreProxy).owner() == ollaGovProxy, "Deploy: core owner mismatch");
         require(OllaVault(ollaVaultProxy).owner() == ollaGovProxy, "Deploy: vault owner mismatch");

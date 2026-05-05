@@ -76,8 +76,8 @@ subgraph "Aztec Contracts"
     rollup["AztecRollup (canonical)"]
 end
 
-guardianWallet -. "GUARDIAN_ROLE" .-> core
-guardianWallet -. "GUARDIAN_ROLE" .-> vault
+ollaGov -. "GUARDIAN_ROLE" .-> core
+ollaGov -. "GUARDIAN_ROLE" .-> vault
 guardianWallet -. "GUARDIAN_ROLE" .-> safety
 
 stakingProviderAdminWallet -. "STAKING_PROVIDER_ADMIN_ROLE" .-> spr
@@ -106,8 +106,12 @@ anyone -->|"updateAccounting()"| core
 %% refreshAttesterState finalizes exits via rollup
 stkMan -->|"finalizeWithdraw >Aztec< transferFrom(rollup, StakingManager, exitAmount)"| rollup
 
-%% Guardian control
-guardianWallet -->|"forceRebalanceReset()"| core
+%% Emergency control
+governanceAdminWallet -->|"emergencyPauseAll / emergencyUnpauseAll (not timelocked)"| ollaGov
+ollaGov -->|"pause / unpause"| core
+ollaGov -->|"pause / unpause"| vault
+ollaGov -. "forceRebalanceReset() via timelock" .-> core
+guardianWallet -->|"pause / unpause"| safety
 
 %% Core instructs Vault via CORE_ROLE during rebalance
 core -->|"transferToCore / receiveUnstaked / finalizeWithdrawals / mintFees (CORE_ROLE)"| vault
@@ -311,12 +315,18 @@ style stkMan stroke:#090,stroke-width:3px
 
 ## Guardian
 
-Requires `GUARDIAN_ROLE` on OllaCore, OllaVault, and SafetyModule.
+Emergency authority is split by module:
+
+- `OllaGovernance` holds `GUARDIAN_ROLE` on `OllaCore` and `OllaVault` by default. The governance admin can call `emergencyPauseAll()` and `emergencyUnpauseAll()` directly on `OllaGovernance`; those functions are not timelocked and forward `pause()`/`unpause()` to Core and Vault.
+- The configured guardian wallet holds `GUARDIAN_ROLE` on `SafetyModule` by default and can pause/unpause the SafetyModule directly.
+- `OllaCore.forceRebalanceReset()` is gated by Core's `GUARDIAN_ROLE`. In the default deployment that role is held by `OllaGovernance`, so the reset is a governance/timelock action unless governance grants Core's `GUARDIAN_ROLE` to a separate emergency wallet.
 
 ```mermaid
 flowchart LR
 
 guardianWallet[Guardian Wallet]
+governanceAdminWallet[Governance Admin Wallet]
+ollaGov["OllaGovernance"]
 
 subgraph "Olla Core"
     core[OllaCore]
@@ -326,15 +336,16 @@ subgraph "Olla Vault"
     vault[OllaVault]
 end
 
-guardianWallet -->|"pause()"| core
-guardianWallet -->|"unpause()"| core
-guardianWallet -->|"forceRebalanceReset()"| core
-guardianWallet -->|"pause()"| vault
-guardianWallet -->|"unpause()"| vault
+governanceAdminWallet -->|"emergencyPauseAll() / emergencyUnpauseAll()"| ollaGov
+ollaGov -->|"pause() / unpause()"| core
+ollaGov -->|"pause() / unpause()"| vault
+ollaGov -. "forceRebalanceReset() via timelock" .-> core
 guardianWallet -->|"pause()"| safety
 guardianWallet -->|"unpause()"| safety
 
 style guardianWallet stroke:#050,stroke-width:2px
+style governanceAdminWallet stroke:#050,stroke-width:2px
+style ollaGov stroke:#f90,stroke-width:3px
 style core stroke:#090,stroke-width:4px
 style vault stroke:#090,stroke-width:4px
 style safety stroke:#090,stroke-width:3px

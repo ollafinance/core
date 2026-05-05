@@ -273,7 +273,7 @@ sequenceDiagram
 sequenceDiagram
     participant A as Anyone
     participant C as OllaCore
-    participant G as Guardian
+    participant G as Core Guardian
 
     A->>C: rebalance()
     Note right of C: Cooldown check: elapsed >= rebalanceCooldown
@@ -288,10 +288,11 @@ sequenceDiagram
     Note over C: On completion: lastRebalanceTimestamp = block.timestamp
     Note over C: updateAccounting() does NOT reset cooldown
 
-    opt guardian override
+    opt core guardian override
         G->>C: forceRebalanceReset()
         Note right of C: resets state machine to Done
         Note right of C: resets lastRebalanceTimestamp (enforces cooldown from reset)
+        Note right of C: default holder is OllaGovernance, so this is timelocked unless a separate Core guardian is granted
     end
 ```
 
