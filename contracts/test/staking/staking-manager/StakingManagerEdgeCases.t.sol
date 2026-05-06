@@ -80,30 +80,21 @@ contract StakingManagerEdgeCasesTest is StakingManagerBaseTest {
          FAILED initiateWithdraw PATH (SECURITY-CRITICAL)
     //////////////////////////////////////////////////////////////*/
 
-    function test_Unstake_InitiateWithdrawFails_ExitExists_SetsExiting() external {
-        // Setup: stake one attester and promote to Active
+    function test_RevertWhen_Unstake_InitiateWithdrawFails_ExitExists() external {
         _setupActiveAttester();
         address attester = address(uint160(1));
 
-        // Simulate an existing exit on rollup (as if someone else initiated)
         rollup.setExternalExit(attester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
 
-        // Mock initiateWithdraw to return false
         vm.mockCall(
             address(rollup),
             abi.encodeWithSelector(IAztecRollup.initiateWithdraw.selector, attester, address(stakingManager)),
             abi.encode(false)
         );
 
-        // Unstake should NOT revert because exit.exists is true
-        // It should set status to Exiting and return 0 for this attester
+        vm.expectRevert(abi.encodeWithSelector(IStakingManager.StakingManager__UnstakeFailed.selector, attester));
         vm.prank(core);
-        uint256 unstaked = stakingManager.unstake(ACTIVATION_THRESHOLD);
-
-        // exitAmount returned is 0 for the failed path
-        assertEq(unstaked, 0, "unstaked should be 0 when initiateWithdraw fails with existing exit");
-        assertEq(stakingManager.getActivatedAttesterCount(), 0, "active count should decrease");
-        assertEq(stakingManager.getPendingUnstakeCount(), 1, "exiting count should increase");
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
     function test_RevertWhen_Unstake_InitiateWithdrawReverts_ExitExists() external {
