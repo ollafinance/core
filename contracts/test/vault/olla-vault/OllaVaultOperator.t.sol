@@ -223,14 +223,14 @@ contract OllaVaultOperatorTest is Test {
         uint256 shares = _performDeposit(alice, 10 * DECIMALS);
 
         vm.prank(alice);
-        stAztec.approve(address(vault), shares);
+        stAztec.approve(bob, shares);
 
         vm.prank(bob);
         uint256 requestId = vault.requestRedeem(shares, alice, alice);
 
         assertGt(requestId, 0, "request created");
         assertEq(stAztec.balanceOf(alice), 0, "shares burned from alice");
-        assertEq(stAztec.balanceOf(address(vault)), 0, "shares burned from vault transit");
+        assertEq(stAztec.balanceOf(address(vault)), 0, "vault never holds shares");
     }
 
     /// @notice ERC-20 allowance is consumed when used for authorization.
@@ -238,13 +238,13 @@ contract OllaVaultOperatorTest is Test {
         uint256 shares = _performDeposit(alice, 10 * DECIMALS);
 
         vm.prank(alice);
-        stAztec.approve(address(vault), shares);
-        assertEq(stAztec.allowance(alice, address(vault)), shares, "allowance set");
+        stAztec.approve(bob, shares);
+        assertEq(stAztec.allowance(alice, bob), shares, "allowance set");
 
         vm.prank(bob);
         vault.requestRedeem(shares, alice, alice);
 
-        assertEq(stAztec.allowance(alice, address(vault)), 0, "allowance consumed");
+        assertEq(stAztec.allowance(alice, bob), 0, "allowance consumed");
     }
 
     /// @notice Operator path does not touch the ERC-20 share allowance.
@@ -252,7 +252,7 @@ contract OllaVaultOperatorTest is Test {
         uint256 shares = _performDeposit(alice, 10 * DECIMALS);
 
         vm.prank(alice);
-        stAztec.approve(address(vault), shares);
+        stAztec.approve(bob, shares);
 
         vm.prank(alice);
         vault.setOperator(bob, true);
@@ -260,16 +260,29 @@ contract OllaVaultOperatorTest is Test {
         vm.prank(bob);
         vault.requestRedeem(shares, alice, alice);
 
-        assertEq(stAztec.allowance(alice, address(vault)), shares, "allowance untouched");
+        assertEq(stAztec.allowance(alice, bob), shares, "allowance untouched");
+    }
+
+    /// @notice Approving the vault itself does not authorize arbitrary third-party requestRedeem callers.
+    function test_RevertWhen_RequestRedeem_VaultAllowanceDoesNotAuthorizeCaller() external {
+        uint256 shares = _performDeposit(alice, 10 * DECIMALS);
+
+        vm.prank(alice);
+        stAztec.approve(address(vault), type(uint256).max);
+
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, bob, 0, shares));
+        vm.prank(bob);
+        vault.requestRedeem(shares, bob, alice);
+
+        assertEq(stAztec.balanceOf(alice), shares, "alice shares not drained");
+        assertEq(stAztec.allowance(alice, address(vault)), type(uint256).max, "vault allowance untouched");
     }
 
     /// @notice requestRedeem reverts when caller has neither operator approval nor sufficient allowance.
     function test_RevertWhen_RequestRedeem_NoOperatorOrAllowance() external {
         _performDeposit(alice, 10 * DECIMALS);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), 0, 10 * DECIMALS)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, bob, 0, 10 * DECIMALS));
         vm.prank(bob);
         vault.requestRedeem(10 * DECIMALS, alice, alice);
     }
@@ -280,12 +293,10 @@ contract OllaVaultOperatorTest is Test {
         uint256 partialAllowance = shares - 1;
 
         vm.prank(alice);
-        stAztec.approve(address(vault), partialAllowance);
+        stAztec.approve(bob, partialAllowance);
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), partialAllowance, shares
-            )
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, bob, partialAllowance, shares)
         );
         vm.prank(bob);
         vault.requestRedeem(shares, alice, alice);
