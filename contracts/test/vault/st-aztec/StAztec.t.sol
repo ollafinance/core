@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import { Test } from "@forge-std/Test.sol";
 
+import { IERC20Errors } from "@oz/interfaces/draft-IERC6093.sol";
 import { ERC20Permit } from "@oz/token/ERC20/extensions/ERC20Permit.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { IStAztec } from "src/vault/interfaces/IStAztec.sol";
@@ -174,6 +175,31 @@ contract StAztecTest is Test {
         token.burn(alice, 4 * DECIMALS);
 
         assertEq(token.balanceOf(alice), 6 * DECIMALS, "burned balance");
+    }
+
+    function test_OnlyAuthorizedCanSpendAllowance() external {
+        vm.prank(alice);
+        token.approve(bob, 4 * DECIMALS);
+
+        vm.expectRevert(IStAztec.StAztec__Unauthorized.selector);
+        vm.prank(bob);
+        token.spendAllowance(alice, bob, 1 * DECIMALS);
+
+        vm.prank(core);
+        token.spendAllowance(alice, bob, 3 * DECIMALS);
+
+        assertEq(token.allowance(alice, bob), 1 * DECIMALS, "allowance consumed");
+    }
+
+    function test_RevertWhen_SpendAllowanceInsufficientAllowance() external {
+        vm.prank(alice);
+        token.approve(bob, 1 * DECIMALS);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, bob, 1 * DECIMALS, 2 * DECIMALS)
+        );
+        vm.prank(core);
+        token.spendAllowance(alice, bob, 2 * DECIMALS);
     }
 
     /*//////////////////////////////////////////////////////////////

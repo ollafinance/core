@@ -33,6 +33,12 @@ interface IStAztec is IERC20, IERC20Metadata, IERC20Permit {
     /// @param amount The amount of shares to burn.
     function burn(address from, uint256 amount) external;
 
+    /// @notice Spends an ERC-20 allowance on behalf of the authorized OllaVault.
+    /// @param owner The account that granted the allowance.
+    /// @param spender The account whose allowance is consumed.
+    /// @param amount The amount of allowance to spend.
+    function spendAllowance(address owner, address spender, uint256 amount) external;
+
     /*//////////////////////////////////////////////////////////////
                                VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
