@@ -362,12 +362,10 @@ contract PermitEdgeCasesE2E is Test {
 
         // Bob is NOT approved as operator and has no share allowance
         assertFalse(vault.isOperator(alice, bob), "bob should not be alice's operator");
-        assertEq(stAztec.allowance(alice, address(vault)), 0, "no share allowance");
+        assertEq(stAztec.allowance(alice, bob), 0, "no share allowance");
 
         vm.prank(bob);
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), 0, 50 * DECIMALS)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, bob, 0, 50 * DECIMALS));
         vault.requestRedeem(50 * DECIMALS, alice, alice);
 
         assertEq(stAztec.balanceOf(alice), 100 * DECIMALS, "alice shares unchanged");
@@ -478,13 +476,11 @@ contract PermitEdgeCasesE2E is Test {
         vm.prank(alice);
         vault.setOperator(bob, false);
         assertFalse(vault.isOperator(alice, bob), "bob should no longer be operator");
-        assertEq(stAztec.allowance(alice, address(vault)), 0, "no share allowance");
+        assertEq(stAztec.allowance(alice, bob), 0, "no share allowance");
 
         // Bob's request should now fail
         vm.prank(bob);
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(vault), 0, 50 * DECIMALS)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, bob, 0, 50 * DECIMALS));
         vault.requestRedeem(50 * DECIMALS, alice, alice);
 
         assertEq(stAztec.balanceOf(alice), 100 * DECIMALS, "alice shares unchanged");
