@@ -602,14 +602,6 @@ contract OllaCore is
     }
 
     /// @inheritdoc IOllaCore
-    function convertToAssetsGross(uint256 shares) external view override returns (uint256) {
-        IOllaVault vaultRef = IOllaVault(_modules.vault);
-        uint256 grossAssets = _computeTotalAssets(_liveAccountingState(), vaultRef.bufferedAssets(), 0);
-        uint256 grossSupply = _modules.stAztec.totalSupply() + vaultRef.pendingWithdrawalShares();
-        return shares.mulDiv(grossAssets + _VIRTUAL_OFFSET, grossSupply + _VIRTUAL_OFFSET, Math.Rounding.Floor);
-    }
-
-    /// @inheritdoc IOllaCore
     function convertToShares(uint256 assets) external view override returns (uint256 shares) {
         return _convertToShares(assets, Math.Rounding.Floor);
     }
@@ -755,8 +747,8 @@ contract OllaCore is
         // slither-disable-next-line timestamp,incorrect-equality
         if (available == 0) return 0;
 
-        uint256 queued = vaultRef.pendingWithdrawalAssets();
-        uint256 total = totalAssets();
+        uint256 queued = _pricingPendingAssets(vaultRef, _liveAccountingState(), available);
+        uint256 total = _computeTotalAssets(_liveAccountingState(), available, queued);
 
         // Trusted SafetyModule; may trigger circuit breaker but holds no funds.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
@@ -766,13 +758,32 @@ contract OllaCore is
         // slither-disable-next-line timestamp,incorrect-equality
         if (queued == 0) return 0;
 
-        uint256 finalizedCount;
-        // Trusted Vault; finalizes pending withdrawal queue entries.
-        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
-        (finalizedAmount, finalizedCount) =
-            vaultRef.finalizeWithdrawals(available, _withdrawalRate(vaultRef), maxRequestId);
+        uint256 initialAvailable = available;
+        // slither-disable-start calls-loop
+        // Trusted Vault/StAztec reads and Vault finalization are intentionally repeated so each
+        // queue head settles against a rate recomputed after the prior request changes pending state.
+        while (vaultRef.nextUnfinalizedWithdrawalRequestId() < maxRequestId && available > 0 && _hasGasForStep()) {
+            uint256 nextRequestId = vaultRef.nextUnfinalizedWithdrawalRequestId();
+            // Finalize only the current queue head so the next iteration's gross rate reflects
+            // the just-finalized request's pending-share and buffered-asset removal.
+            uint256 requestUpperBound = nextRequestId + 1;
 
-        emit WithdrawalFinalized(available, finalizedAmount);
+            // Trusted Vault; finalizes pending withdrawal queue entries.
+            // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
+            (uint256 amount, uint256 count) =
+                vaultRef.finalizeWithdrawals(available, _withdrawalRate(vaultRef), requestUpperBound);
+
+            // slither-disable-next-line timestamp
+            if (count < 1) break;
+
+            finalizedAmount += amount;
+            available = vaultRef.bufferedAssets();
+
+            if (vaultRef.pendingWithdrawalAssets() < 1) break;
+        }
+        // slither-disable-end calls-loop
+
+        emit WithdrawalFinalized(initialAvailable, finalizedAmount);
         return finalizedAmount;
     }
 
@@ -920,6 +931,9 @@ contract OllaCore is
     ) internal {
         (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
         IOllaVault vaultRef = IOllaVault(_modules.vault);
+        // Raw locked pending liabilities are used for reward/accounting deltas. `totalAssets()`
+        // intentionally uses pricing-adjusted pending liabilities for live share pricing, so the
+        // report snapshot can differ from the read-through view while withdrawals are pending.
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();
         // Emit AttestersStateRead BEFORE `_updateReportingSnapshots` advances
         // `_latestReport.rewardsSnapshot`, otherwise rewardsDelta would be zero.
@@ -941,9 +955,14 @@ contract OllaCore is
             uint256 rate
         ) = _computeAccountingOutputs(oldTotalAssets, netFlows, pendingWithdrawals);
 
+        IOllaCore.AccountingState memory pricingBuckets = _liveAccountingState();
+        uint256 bufferedAssets = vaultRef.bufferedAssets();
+        uint256 pricedPendingWithdrawals = _pricingPendingAssets(vaultRef, pricingBuckets, bufferedAssets);
+        uint256 livePricingTotalAssets = _computeTotalAssets(pricingBuckets, bufferedAssets, pricedPendingWithdrawals);
+
         // Trusted SafetyModule; may trigger circuit breaker but holds no funds.
         // slither-disable-next-line reentrancy-no-eth
-        safetyModuleRef.checkQueueRatio(pendingWithdrawals, totalAssets());
+        safetyModuleRef.checkQueueRatio(pricedPendingWithdrawals, livePricingTotalAssets);
         _validateRateDrop(safetyModuleRef, oldRate, rate);
         _updateReportingSnapshots(newTotalAssets, rate, grossRewards, netFlows, flowsSnapshot, currentRewards);
         _updateAccountingTimestamp(safetyModuleRef);
@@ -1226,20 +1245,11 @@ contract OllaCore is
         uint256 currentRate = (grossAssets + virtualOffset)
         .mulDiv(_EXCHANGE_RATE_SCALE, liveSupply + pendingShares + virtualOffset, Math.Rounding.Floor);
 
-        uint256 pricedLiveAssets =
-            currentRate.mulDiv(liveSupply + virtualOffset, _EXCHANGE_RATE_SCALE, Math.Rounding.Ceil);
-        // Pure arithmetic guard; no block timestamp dependency.
-        // slither-disable-next-line timestamp
-        if (pricedLiveAssets < virtualOffset + 1) return Math.min(grossAssets, pendingAssets);
+        // Price only real pending shares. The virtual offset is an anti-donation constant, not a
+        // real share, so it must not accrue rewards or absorb slashing in the pending deduction.
+        uint256 adjustedPendingAssets = pendingShares.mulDiv(currentRate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
 
-        pricedLiveAssets -= virtualOffset;
-        // Pure arithmetic guard; no block timestamp dependency.
-        // slither-disable-next-line timestamp
-        if (pricedLiveAssets > grossAssets - 1) return 0;
-
-        uint256 adjustedPendingAssets = grossAssets - pricedLiveAssets;
-
-        return Math.min(adjustedPendingAssets, pendingAssets);
+        return Math.min(Math.min(adjustedPendingAssets, pendingAssets), grossAssets);
     }
 
     /// @notice Computes the exchange rate for withdrawal queue finalization.
@@ -1252,11 +1262,16 @@ contract OllaCore is
     /// @param vaultRef The vault reference.
     /// @return The withdrawal-safe exchange rate.
     function _withdrawalRate(IOllaVault vaultRef) internal view returns (uint256) {
+        // slither-disable-start calls-loop
+        // This function is intentionally called during per-request finalization; the Vault and
+        // stAztec are trusted protocol modules and must be reread after each queue head settles.
         uint256 buffered = vaultRef.bufferedAssets();
         uint256 grossAssets = _computeTotalAssets(_liveAccountingState(), buffered, 0);
         uint256 grossSupply = _modules.stAztec.totalSupply() + vaultRef.pendingWithdrawalShares();
-        return (grossAssets + _VIRTUAL_OFFSET)
+        uint256 rate = (grossAssets + _VIRTUAL_OFFSET)
         .mulDiv(_EXCHANGE_RATE_SCALE, grossSupply + _VIRTUAL_OFFSET, Math.Rounding.Floor);
+        // slither-disable-end calls-loop
+        return rate;
     }
 
     /// @notice Converts a share amount to assets using floor rounding.

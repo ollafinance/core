@@ -172,16 +172,15 @@ contract OllaCoreWithdrawalQueueTest is Test {
         deal(address(asset), address(rewardsAccumulator), 6 ether);
 
         uint256 shares = 9 ether;
-        uint256 expectedRate = core.withdrawalRate();
-        // Hand-formula spec: shares * rate / 1e18. Tolerance absorbs the rounding wedge between
-        // this two-step floor and the one-step mulDiv in convertToAssetsGross.
+        uint256 expectedRate = core.exchangeRate();
+        // Hand-formula spec: shares * rate / 1e18. Tolerance absorbs floor-rounding differences.
         uint256 expectedAssets = shares * expectedRate / 1e18;
 
         (uint256 requestId,) = _requestRedeem(alice, shares, alice);
         IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
 
         assertApproxEqAbs(request.assetsExpected, expectedAssets, 10, "assetsExpected matches shares * rate / 1e18");
-        assertEq(request.rate, expectedRate, "request rate matches core.withdrawalRate");
+        assertEq(request.rate, expectedRate, "request rate matches core.exchangeRate");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -271,6 +270,35 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(requestId, 1, "request id should be first");
         assertEq(claimed, assetsExpected, "redeem should claim full assetsExpected");
         assertEq(receiverBalanceAfter - receiverBalanceBefore, assetsExpected, "redeem claims full assetsExpected");
+    }
+
+    function test_Finalize_RecomputesRateBetweenHeterogeneousRequests() external {
+        _deposit(alice, 1_000 ether);
+        uint256 shares = 100 ether;
+
+        vm.prank(alice);
+        uint256 firstRequestId = vault.requestRedeem(shares, alice, alice);
+        IOllaVault.WithdrawalRequest memory firstRequest = vault.getWithdrawalRequest(firstRequestId);
+        assertEq(firstRequest.assetsExpected, 100 ether, "first request locks initial rate");
+
+        deal(address(asset), address(rewardsAccumulator), 100 ether);
+        uint256 secondExpectedAssets = core.convertToAssets(shares);
+        assertGt(secondExpectedAssets, 111 ether, "second request should use reward-increased live rate");
+
+        vm.prank(alice);
+        uint256 secondRequestId = vault.requestRedeem(shares, alice, alice);
+        IOllaVault.WithdrawalRequest memory secondRequest = vault.getWithdrawalRequest(secondRequestId);
+        assertEq(secondRequest.assetsExpected, secondExpectedAssets, "second request locks higher net rate");
+
+        core.rebalance();
+
+        firstRequest = vault.getWithdrawalRequest(firstRequestId);
+        secondRequest = vault.getWithdrawalRequest(secondRequestId);
+        assertTrue(firstRequest.finalized, "first request finalized");
+        assertTrue(secondRequest.finalized, "second request finalized");
+        assertEq(firstRequest.assetsExpected, 100 ether, "first request not reward-adjusted");
+        assertEq(secondRequest.assetsExpected, secondExpectedAssets, "second request not phantom-slashed");
+        assertEq(vault.pendingWithdrawalAssets(), 0, "queue fully drained");
     }
 
     function test_RevertWhen_ClaimWhilePaused() external {
