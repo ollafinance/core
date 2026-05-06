@@ -340,6 +340,8 @@ contract OllaVault is
         if (controller == address(0)) revert OllaVault__ZeroAddress("controller");
 
         if (msg.sender != owner && !_operators[owner][msg.sender]) {
+            // Trusted stAztec call only consumes allowance; no token transfer or hook can reenter.
+            // slither-disable-next-line reentrancy-benign
             _modules.stAztec.spendAllowance(owner, msg.sender, shares);
         }
 
