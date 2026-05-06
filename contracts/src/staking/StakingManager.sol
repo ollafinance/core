@@ -691,11 +691,10 @@ contract StakingManager is
             if (!view_.exit.isRecipient) {
                 // slither-disable-next-line reentrancy-no-eth
                 try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
-                    if (isInitiated) {
-                        return _finalizeUnstakeInitiation(rollup, attester, info, exitAmount);
+                    if (!isInitiated) {
+                        revert StakingManager__UnstakeFailed(attester);
                     }
-                    _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
-                    return 0;
+                    return _finalizeUnstakeInitiation(rollup, attester, info, exitAmount);
                 } catch {
                     revert StakingManager__UnstakeFailed(attester);
                 }
