@@ -6,8 +6,8 @@ import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title PrintNextProtocolUpgradePayload
-/// @notice Prints exactly one next timelock payload step for protocol-wide upgrades.
-/// @dev Intended for strict multisig flows where schedule and execute are separate transactions.
+/// @notice Prints the next timelock payload for protocol-wide upgrades using the fewest transactions possible.
+/// @dev Batches all currently-needed implementation upgrades into one scheduleBatch and one executeBatch.
 contract PrintNextProtocolUpgradePayload is BaseScript {
     struct OperationState {
         bytes32 id;
@@ -17,13 +17,72 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
         uint256 timestamp;
     }
 
-    uint256 internal constant _TOTAL_STEPS = 12;
+    struct UpgradeTarget {
+        string label;
+        address proxy;
+        address operationTarget;
+        address currentImplementation;
+        address candidateImplementation;
+        bool upToDate;
+        bytes callData;
+    }
+
+    uint256 internal constant _MAX_UPGRADES = 6;
+    uint256 internal constant _TOTAL_STEPS = 2;
     bytes32 internal constant _IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
     function run() external view {
         string memory env = _deployEnv();
 
         address governance = _addrOrDeployment("GOVERNANCE_PROXY", "OllaGovernanceProxy", "GOVERNANCE_PROXY missing");
+        OllaGovernance gov = OllaGovernance(payable(governance));
+
+        UpgradeTarget[] memory targets = _upgradeTargets(env, governance);
+        uint256 upgradeCount = _upgradeCount(targets);
+
+        bytes32 predecessor = bytes32(vm.envOr("PREDECESSOR", uint256(0)));
+        bytes32 salt = bytes32(vm.envOr("SALT", uint256(0)));
+        uint256 delay = gov.getMinDelay();
+
+        console2.log("env", env);
+        console2.log("chainId", block.chainid);
+        console2.log("governance", governance);
+        console2.log("multisig (governanceAdmin)", gov.governanceAdmin());
+        console2.log("timelock.minDelay", delay);
+        console2.log("root.predecessor");
+        console2.logBytes32(predecessor);
+        console2.log("salt");
+        console2.logBytes32(salt);
+
+        for (uint256 i; i < targets.length; i++) {
+            _logComponent(targets[i]);
+        }
+
+        if (upgradeCount == 0) {
+            console2.log("step", "Step 2/2: Upgrade campaign complete");
+            console2.log("step.index", uint256(2));
+            console2.log("step.total", _TOTAL_STEPS);
+            console2.log("next.action", "none");
+            console2.log("next.status", "upgrade_complete_or_no_changes");
+            console2.log("next.step", "No upgrade payloads are required.");
+            return;
+        }
+
+        (address[] memory batchTargets, uint256[] memory values, bytes[] memory payloads, string memory labels) =
+            _batch(governance, targets, upgradeCount);
+
+        bytes32 operationId = gov.hashOperationBatch(batchTargets, values, payloads, predecessor, salt);
+        OperationState memory op = _operationState(gov, operationId);
+
+        console2.log("batch.upgradeCount", upgradeCount);
+        console2.log("batch.labels", labels);
+
+        _printBatchAction(governance, batchTargets, values, payloads, predecessor, salt, delay, op);
+    }
+
+    function _upgradeTargets(string memory env, address governance) internal view returns (UpgradeTarget[] memory targets) {
+        targets = new UpgradeTarget[](_MAX_UPGRADES);
+
         address rewardsProxy = _addrOrDeployment(
             "REWARDS_ACCUMULATOR_PROXY", "RewardsAccumulatorProxy", "REWARDS_ACCUMULATOR_PROXY missing"
         );
@@ -35,279 +94,83 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
         address vaultProxy = _addrOrDeployment("VAULT", "OllaVaultProxy", "VAULT missing");
         address coreProxy = _addrOrDeployment("CORE", "OllaCoreProxy", "CORE missing");
 
-        address rewardsImpl =
-            _implCandidate("REWARDS_ACCUMULATOR_IMPLEMENTATION", env, "RewardsAccumulatorImplementation");
-        address sprImpl =
-            _implCandidate("STAKING_PROVIDER_REGISTRY_IMPLEMENTATION", env, "StakingProviderRegistryImplementation");
-        address stakingManagerImpl =
-            _implCandidate("STAKING_MANAGER_IMPLEMENTATION", env, "StakingManagerImplementation");
+        address rewardsImpl = _implCandidate("REWARDS_ACCUMULATOR_IMPLEMENTATION", env, "RewardsAccumulatorImplementation");
+        address sprImpl = _implCandidate("STAKING_PROVIDER_REGISTRY_IMPLEMENTATION", env, "StakingProviderRegistryImplementation");
+        address stakingManagerImpl = _implCandidate("STAKING_MANAGER_IMPLEMENTATION", env, "StakingManagerImplementation");
         address vaultImpl = _implCandidate("VAULT_IMPLEMENTATION", env, "OllaVaultImplementation");
         address coreImpl = _implCandidate("CORE_IMPLEMENTATION", env, "OllaCoreImplementation");
         address governanceImpl = _implCandidate("GOVERNANCE_IMPLEMENTATION", env, "OllaGovernanceImplementation");
 
-        OllaGovernance gov = OllaGovernance(payable(governance));
+        targets[0] = _satelliteTarget("rewardsAccumulator", rewardsProxy, rewardsImpl);
+        targets[1] = _satelliteTarget("stakingProviderRegistry", sprProxy, sprImpl);
+        targets[2] = _satelliteTarget("stakingManager", stakingManagerProxy, stakingManagerImpl);
+        targets[3] = _satelliteTarget("vault", vaultProxy, vaultImpl);
 
-        bytes32 rootPredecessor = bytes32(vm.envOr("PREDECESSOR", uint256(0)));
-        bytes32 salt = bytes32(vm.envOr("SALT", uint256(0)));
-        uint256 delay = gov.getMinDelay();
-
-        address rewardsCurrent = _proxyImplementation(rewardsProxy);
-        address sprCurrent = _proxyImplementation(sprProxy);
-        address stakingManagerCurrent = _proxyImplementation(stakingManagerProxy);
-        address vaultCurrent = _proxyImplementation(vaultProxy);
         address coreCurrent = _proxyImplementation(coreProxy);
+        targets[4] = UpgradeTarget({
+            label: "core",
+            proxy: coreProxy,
+            operationTarget: coreProxy,
+            currentImplementation: coreCurrent,
+            candidateImplementation: coreImpl,
+            upToDate: _isUpToDate(coreCurrent, coreImpl),
+            callData: abi.encodeWithSignature("upgradeToAndCall(address,bytes)", coreImpl, bytes(""))
+        });
+
         address governanceCurrent = _proxyImplementation(governance);
+        targets[5] = UpgradeTarget({
+            label: "governance",
+            proxy: governance,
+            operationTarget: governance,
+            currentImplementation: governanceCurrent,
+            candidateImplementation: governanceImpl,
+            upToDate: _isUpToDate(governanceCurrent, governanceImpl),
+            callData: abi.encodeWithSignature("upgradeToAndCall(address,bytes)", governanceImpl, bytes(""))
+        });
+    }
 
-        bool rewardsUpToDate = _isUpToDate(rewardsCurrent, rewardsImpl);
-        bool sprUpToDate = _isUpToDate(sprCurrent, sprImpl);
-        bool stakingManagerUpToDate = _isUpToDate(stakingManagerCurrent, stakingManagerImpl);
-        bool vaultUpToDate = _isUpToDate(vaultCurrent, vaultImpl);
-        bool coreUpToDate = _isUpToDate(coreCurrent, coreImpl);
-        bool governanceUpToDate = _isUpToDate(governanceCurrent, governanceImpl);
+    function _satelliteTarget(string memory label, address proxy, address candidateImplementation)
+        internal
+        view
+        returns (UpgradeTarget memory target)
+    {
+        address currentImplementation = _proxyImplementation(proxy);
+        target = UpgradeTarget({
+            label: label,
+            proxy: proxy,
+            operationTarget: address(0),
+            currentImplementation: currentImplementation,
+            candidateImplementation: candidateImplementation,
+            upToDate: _isUpToDate(currentImplementation, candidateImplementation),
+            callData: abi.encodeCall(OllaGovernance.upgradeSatellite, (proxy, candidateImplementation, bytes("")))
+        });
+    }
 
-        bool hasAnyTargetChange = !(rewardsUpToDate && sprUpToDate && stakingManagerUpToDate && vaultUpToDate
-                && coreUpToDate && governanceUpToDate);
-
-        console2.log("env", env);
-        console2.log("chainId", block.chainid);
-        console2.log("governance", governance);
-        console2.log("multisig (governanceAdmin)", gov.governanceAdmin());
-        console2.log("timelock.minDelay", delay);
-        console2.log("root.predecessor");
-        console2.logBytes32(rootPredecessor);
-        console2.log("salt");
-        console2.logBytes32(salt);
-
-        _logComponent("rewardsAccumulator", rewardsProxy, rewardsCurrent, rewardsImpl, rewardsUpToDate);
-        _logComponent("stakingProviderRegistry", sprProxy, sprCurrent, sprImpl, sprUpToDate);
-        _logComponent(
-            "stakingManager", stakingManagerProxy, stakingManagerCurrent, stakingManagerImpl, stakingManagerUpToDate
-        );
-        _logComponent("vault", vaultProxy, vaultCurrent, vaultImpl, vaultUpToDate);
-        _logComponent("core", coreProxy, coreCurrent, coreImpl, coreUpToDate);
-        _logComponent("governance", governance, governanceCurrent, governanceImpl, governanceUpToDate);
-
-        if (!hasAnyTargetChange) {
-            // Distinguish "all upgraded" from "no targets configured" by checking whether
-            // any timelock operation in the canonical chain was executed (done).
-            bytes memory chainHeadData =
-                abi.encodeCall(OllaGovernance.upgradeSatellite, (rewardsProxy, rewardsImpl, bytes("")));
-            bytes32 chainHeadOpId = gov.hashOperation(governance, 0, chainHeadData, rootPredecessor, salt);
-            bool anyOpDone = gov.isOperationDone(chainHeadOpId);
-
-            if (anyOpDone) {
-                console2.log("step", "Step 12/12: Upgrade campaign complete");
-                console2.log("step.index", uint256(12));
-                console2.log("step.total", _TOTAL_STEPS);
-                console2.log("next.action", "none");
-                console2.log("next.status", "upgrade_complete");
-                console2.log("next.step", "No further upgrade payloads are required.");
-            } else {
-                console2.log("step", "Step 0/12: No pending upgrade targets configured");
-                console2.log("step.index", uint256(0));
-                console2.log("step.total", _TOTAL_STEPS);
-                console2.log("next.action", "blocked_missing_upgrade_targets");
-                console2.log("upload.possible", false);
-                console2.log(
-                    "next.step",
-                    string.concat(
-                        "Deploy new implementations and set *_IMPLEMENTATION env overrides, or update ",
-                        "deployments/<env>.json, so candidates differ from current proxy implementations."
-                    )
-                );
-            }
-            return;
+    function _upgradeCount(UpgradeTarget[] memory targets) internal pure returns (uint256 count) {
+        for (uint256 i; i < targets.length; i++) {
+            if (!targets[i].upToDate) count++;
         }
+    }
 
-        bytes memory rewardsData =
-            abi.encodeCall(OllaGovernance.upgradeSatellite, (rewardsProxy, rewardsImpl, bytes("")));
-        bytes32 rewardsCanonicalOpId = gov.hashOperation(governance, 0, rewardsData, rootPredecessor, salt);
-        OperationState memory rewardsCanonicalOp = _operationState(gov, rewardsCanonicalOpId);
+    function _batch(address governance, UpgradeTarget[] memory targets, uint256 upgradeCount)
+        internal
+        pure
+        returns (address[] memory batchTargets, uint256[] memory values, bytes[] memory payloads, string memory labels)
+    {
+        batchTargets = new address[](upgradeCount);
+        values = new uint256[](upgradeCount);
+        payloads = new bytes[](upgradeCount);
 
-        if (!rewardsUpToDate) {
-            _printNextAction(
-                gov,
-                "upgradeRewardsAccumulator",
-                "OllaGovernance.upgradeSatellite(RewardsAccumulatorProxy,newImplementation)",
-                governance,
-                governance,
-                rewardsData,
-                rootPredecessor,
-                salt,
-                delay,
-                rewardsCanonicalOp,
-                1,
-                2,
-                "After execution, rerun to generate the StakingProviderRegistry upgrade payload."
-            );
-            return;
+        uint256 cursor;
+        for (uint256 i; i < targets.length; i++) {
+            if (targets[i].upToDate) continue;
+
+            batchTargets[cursor] = targets[i].operationTarget == address(0) ? governance : targets[i].operationTarget;
+            values[cursor] = 0;
+            payloads[cursor] = targets[i].callData;
+            labels = bytes(labels).length == 0 ? targets[i].label : string.concat(labels, ",", targets[i].label);
+            cursor++;
         }
-
-        bytes memory sprData = abi.encodeCall(OllaGovernance.upgradeSatellite, (sprProxy, sprImpl, bytes("")));
-        bytes32 sprCanonicalPredecessor = rewardsCanonicalOpId;
-        bytes32 sprCanonicalOpId = gov.hashOperation(governance, 0, sprData, sprCanonicalPredecessor, salt);
-        OperationState memory sprCanonicalOp = _operationState(gov, sprCanonicalOpId);
-        bytes32 sprSelectedPredecessor =
-            _selectPredecessor(rewardsUpToDate, rewardsCanonicalOpId, rewardsCanonicalOp, sprCanonicalPredecessor);
-        OperationState memory sprOp = sprCanonicalOp;
-        if (sprSelectedPredecessor != sprCanonicalPredecessor) {
-            sprOp = _operationState(gov, gov.hashOperation(governance, 0, sprData, sprSelectedPredecessor, salt));
-        }
-
-        if (!sprUpToDate) {
-            _printNextAction(
-                gov,
-                "upgradeStakingProviderRegistry",
-                "OllaGovernance.upgradeSatellite(StakingProviderRegistryProxy,newImplementation)",
-                governance,
-                governance,
-                sprData,
-                sprSelectedPredecessor,
-                salt,
-                delay,
-                sprOp,
-                3,
-                4,
-                "After execution, rerun to generate the StakingManager upgrade payload."
-            );
-            return;
-        }
-
-        bytes memory stakingManagerData =
-            abi.encodeCall(OllaGovernance.upgradeSatellite, (stakingManagerProxy, stakingManagerImpl, bytes("")));
-        bytes32 stakingManagerCanonicalPredecessor = sprCanonicalOpId;
-        bytes32 stakingManagerCanonicalOpId =
-            gov.hashOperation(governance, 0, stakingManagerData, stakingManagerCanonicalPredecessor, salt);
-        OperationState memory stakingManagerCanonicalOp = _operationState(gov, stakingManagerCanonicalOpId);
-        bytes32 stakingManagerSelectedPredecessor =
-            _selectPredecessor(sprUpToDate, sprCanonicalOpId, sprCanonicalOp, stakingManagerCanonicalPredecessor);
-        OperationState memory stakingManagerOp = stakingManagerCanonicalOp;
-        if (stakingManagerSelectedPredecessor != stakingManagerCanonicalPredecessor) {
-            stakingManagerOp = _operationState(
-                gov, gov.hashOperation(governance, 0, stakingManagerData, stakingManagerSelectedPredecessor, salt)
-            );
-        }
-
-        if (!stakingManagerUpToDate) {
-            _printNextAction(
-                gov,
-                "upgradeStakingManager",
-                "OllaGovernance.upgradeSatellite(StakingManagerProxy,newImplementation)",
-                governance,
-                governance,
-                stakingManagerData,
-                stakingManagerSelectedPredecessor,
-                salt,
-                delay,
-                stakingManagerOp,
-                5,
-                6,
-                "After execution, rerun to generate the OllaVault upgrade payload."
-            );
-            return;
-        }
-
-        bytes memory vaultData = abi.encodeCall(OllaGovernance.upgradeSatellite, (vaultProxy, vaultImpl, bytes("")));
-        bytes32 vaultCanonicalPredecessor = stakingManagerCanonicalOpId;
-        bytes32 vaultCanonicalOpId = gov.hashOperation(governance, 0, vaultData, vaultCanonicalPredecessor, salt);
-        OperationState memory vaultCanonicalOp = _operationState(gov, vaultCanonicalOpId);
-        bytes32 vaultSelectedPredecessor = _selectPredecessor(
-            stakingManagerUpToDate, stakingManagerCanonicalOpId, stakingManagerCanonicalOp, vaultCanonicalPredecessor
-        );
-        OperationState memory vaultOp = vaultCanonicalOp;
-        if (vaultSelectedPredecessor != vaultCanonicalPredecessor) {
-            vaultOp = _operationState(gov, gov.hashOperation(governance, 0, vaultData, vaultSelectedPredecessor, salt));
-        }
-
-        if (!vaultUpToDate) {
-            _printNextAction(
-                gov,
-                "upgradeVault",
-                "OllaGovernance.upgradeSatellite(OllaVaultProxy,newImplementation)",
-                governance,
-                governance,
-                vaultData,
-                vaultSelectedPredecessor,
-                salt,
-                delay,
-                vaultOp,
-                7,
-                8,
-                "After execution, rerun to generate the OllaCore upgrade payload."
-            );
-            return;
-        }
-
-        bytes memory coreData = abi.encodeCall(OllaGovernance.upgradeCore, (coreImpl, bytes("")));
-        bytes32 coreCanonicalPredecessor = vaultCanonicalOpId;
-        bytes32 coreCanonicalOpId = gov.hashOperation(governance, 0, coreData, coreCanonicalPredecessor, salt);
-        OperationState memory coreCanonicalOp = _operationState(gov, coreCanonicalOpId);
-        bytes32 coreSelectedPredecessor =
-            _selectPredecessor(vaultUpToDate, vaultCanonicalOpId, vaultCanonicalOp, coreCanonicalPredecessor);
-        OperationState memory coreOp = coreCanonicalOp;
-        if (coreSelectedPredecessor != coreCanonicalPredecessor) {
-            coreOp = _operationState(gov, gov.hashOperation(governance, 0, coreData, coreSelectedPredecessor, salt));
-        }
-
-        if (!coreUpToDate) {
-            _printNextAction(
-                gov,
-                "upgradeCore",
-                "OllaGovernance.upgradeCore(newImplementation)",
-                governance,
-                governance,
-                coreData,
-                coreSelectedPredecessor,
-                salt,
-                delay,
-                coreOp,
-                9,
-                10,
-                "After execution, rerun to generate the OllaGovernance upgrade payload."
-            );
-            return;
-        }
-
-        bytes memory governanceUpgradeData =
-            abi.encodeWithSignature("upgradeToAndCall(address,bytes)", governanceImpl, bytes(""));
-        bytes32 governanceCanonicalPredecessor = coreCanonicalOpId;
-        bytes32 governanceCanonicalOpId =
-            gov.hashOperation(governance, 0, governanceUpgradeData, governanceCanonicalPredecessor, salt);
-        OperationState memory governanceCanonicalOp = _operationState(gov, governanceCanonicalOpId);
-        bytes32 governanceSelectedPredecessor =
-            _selectPredecessor(coreUpToDate, coreCanonicalOpId, coreCanonicalOp, governanceCanonicalPredecessor);
-        OperationState memory governanceOp = governanceCanonicalOp;
-        if (governanceSelectedPredecessor != governanceCanonicalPredecessor) {
-            governanceOp = _operationState(
-                gov, gov.hashOperation(governance, 0, governanceUpgradeData, governanceSelectedPredecessor, salt)
-            );
-        }
-
-        if (!governanceUpToDate) {
-            _printNextAction(
-                gov,
-                "upgradeGovernance",
-                "OllaGovernanceProxy.upgradeToAndCall(newImplementation, \"\")",
-                governance,
-                governance,
-                governanceUpgradeData,
-                governanceSelectedPredecessor,
-                salt,
-                delay,
-                governanceOp,
-                11,
-                12,
-                "After execution, rerun to confirm upgrade campaign complete."
-            );
-            return;
-        }
-
-        console2.log("step", "Step 12/12: Upgrade campaign complete");
-        console2.log("step.index", uint256(12));
-        console2.log("step.total", _TOTAL_STEPS);
-        console2.log("next.action", "none");
-        console2.log("next.status", "upgrade_complete");
-        console2.log("next.step", "No further upgrade payloads are required.");
     }
 
     function _implCandidate(string memory envVar, string memory env, string memory deploymentKey)
@@ -325,115 +188,70 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
     }
 
     function _isUpToDate(address currentImplementation, address candidateImplementation) internal view returns (bool) {
-        if (currentImplementation == candidateImplementation) {
-            return true;
-        }
+        if (currentImplementation == candidateImplementation) return true;
 
         bytes32 currentCodeHash = _codeHash(currentImplementation);
         bytes32 candidateCodeHash = _codeHash(candidateImplementation);
         return candidateCodeHash != bytes32(0) && candidateCodeHash == currentCodeHash;
     }
 
-    function _selectPredecessor(
-        bool previousStepSatisfiedByState,
-        bytes32 previousCanonicalOpId,
-        OperationState memory previousCanonicalOp,
-        bytes32 canonicalPredecessor
-    ) internal view returns (bytes32) {
-        previousCanonicalOpId;
-        if (!previousStepSatisfiedByState) {
-            return canonicalPredecessor;
-        }
-
-        if (!previousCanonicalOp.done) {
-            return bytes32(0);
-        }
-
-        return canonicalPredecessor;
+    function _logComponent(UpgradeTarget memory target) internal pure {
+        console2.log(string.concat(target.label, ".proxy"), target.proxy);
+        console2.log(string.concat(target.label, ".implementation.current"), target.currentImplementation);
+        console2.log(string.concat(target.label, ".implementation.candidate"), target.candidateImplementation);
+        console2.log(string.concat(target.label, ".upToDate"), target.upToDate);
     }
 
-    function _logComponent(
-        string memory label,
-        address proxy,
-        address currentImpl,
-        address candidateImpl,
-        bool upToDate
-    ) internal view {
-        console2.log(string.concat(label, ".proxy"), proxy);
-        console2.log(string.concat(label, ".implementation.current"), currentImpl);
-        console2.log(string.concat(label, ".implementation.candidate"), candidateImpl);
-        console2.log(string.concat(label, ".upToDate"), upToDate);
-    }
-
-    function _printNextAction(
-        OllaGovernance gov,
-        string memory actionLabel,
-        string memory operationLabel,
+    function _printBatchAction(
         address governance,
-        address target,
-        bytes memory targetCallData,
+        address[] memory batchTargets,
+        uint256[] memory values,
+        bytes[] memory payloads,
         bytes32 predecessor,
         bytes32 salt,
         uint256 delay,
-        OperationState memory op,
-        uint256 scheduleStep,
-        uint256 executeStep,
-        string memory nextStepAfterExecute
+        OperationState memory op
     ) internal view {
-        gov;
-
         bool known = op.pending || op.ready || op.done;
 
         if (!known) {
             bytes memory payload = abi.encodeWithSignature(
-                "schedule(address,uint256,bytes,bytes32,bytes32,uint256)",
-                target,
-                0,
-                targetCallData,
+                "scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)",
+                batchTargets,
+                values,
+                payloads,
                 predecessor,
                 salt,
                 delay
             );
 
-            console2.log(
-                "step",
-                string.concat(
-                    "Step ", _toString(scheduleStep), "/", _toString(_TOTAL_STEPS), ": Schedule ", operationLabel
-                )
-            );
-            console2.log("step.index", scheduleStep);
+            console2.log("step", "Step 1/2: Schedule batched protocol upgrades");
+            console2.log("step.index", uint256(1));
             console2.log("step.total", _TOTAL_STEPS);
-            console2.log("next.action", string.concat("schedule_", actionLabel));
+            console2.log("next.action", "scheduleBatch_protocolUpgrades");
             console2.log("target.contractToCall", governance);
             console2.log("target.value", uint256(0));
-            console2.log("target.operationTarget", target);
             console2.log("target.predecessor");
             console2.logBytes32(predecessor);
             console2.log("target.salt");
             console2.logBytes32(salt);
             console2.log("payload");
             console2.logBytes(payload);
-            console2.log("next.step", "After this transaction is mined, rerun this script.");
+            console2.log("next.step", "After this transaction is mined, rerun this script to get the execute payload.");
             return;
         }
 
         if (op.ready) {
             bytes memory payload = abi.encodeWithSignature(
-                "execute(address,uint256,bytes,bytes32,bytes32)", target, 0, targetCallData, predecessor, salt
+                "executeBatch(address[],uint256[],bytes[],bytes32,bytes32)", batchTargets, values, payloads, predecessor, salt
             );
 
-            console2.log(
-                "step",
-                string.concat(
-                    "Step ", _toString(executeStep), "/", _toString(_TOTAL_STEPS), ": Execute ", operationLabel
-                )
-            );
-            console2.log("step.index", executeStep);
+            console2.log("step", "Step 2/2: Execute batched protocol upgrades");
+            console2.log("step.index", uint256(2));
             console2.log("step.total", _TOTAL_STEPS);
-            console2.log("next.action", string.concat("execute_", actionLabel));
+            console2.log("next.action", "executeBatch_protocolUpgrades");
             console2.log("target.contractToCall", governance);
             console2.log("target.value", uint256(0));
-            console2.log("target.operationTarget", target);
             console2.log("target.predecessor");
             console2.logBytes32(predecessor);
             console2.log("target.salt");
@@ -442,47 +260,26 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
             console2.logBytes32(op.id);
             console2.log("payload");
             console2.logBytes(payload);
-            console2.log("next.step", nextStepAfterExecute);
+            console2.log("next.step", "After execution, rerun this script to confirm the upgrade campaign is complete.");
             return;
         }
 
         if (op.done) {
-            console2.log(
-                "step",
-                string.concat(
-                    "Step ",
-                    _toString(executeStep),
-                    "/",
-                    _toString(_TOTAL_STEPS),
-                    ": Execute ",
-                    operationLabel,
-                    " (already done)"
-                )
-            );
-            console2.log("step.index", executeStep);
+            console2.log("step", "Step 2/2: Batched protocol upgrades already executed");
+            console2.log("step.index", uint256(2));
             console2.log("step.total", _TOTAL_STEPS);
-            console2.log("next.action", string.concat(actionLabel, "_already_done"));
+            console2.log("next.action", "none");
             console2.log("operation.id");
             console2.logBytes32(op.id);
-            console2.log("next.step", "Rerun this script to continue with the next upgrade step.");
+            console2.log("next.status", "upgrade_complete");
+            console2.log("next.step", "No further upgrade payloads are required.");
             return;
         }
 
-        console2.log(
-            "step",
-            string.concat(
-                "Step ",
-                _toString(executeStep),
-                "/",
-                _toString(_TOTAL_STEPS),
-                ": Execute ",
-                operationLabel,
-                " (timelock wait)"
-            )
-        );
-        console2.log("step.index", executeStep);
+        console2.log("step", "Step 2/2: Execute batched protocol upgrades (timelock wait)");
+        console2.log("step.index", uint256(2));
         console2.log("step.total", _TOTAL_STEPS);
-        console2.log("next.action", string.concat("wait_for_", actionLabel));
+        console2.log("next.action", "wait_for_executeBatch_protocolUpgrades");
         console2.log("target.contractToCall", governance);
         console2.log("operation.id");
         console2.logBytes32(op.id);
@@ -512,31 +309,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
     }
 
     function _codeHash(address account) internal view returns (bytes32) {
-        if (account == address(0) || account.code.length == 0) {
-            return bytes32(0);
-        }
+        if (account == address(0) || account.code.length == 0) return bytes32(0);
         return account.codehash;
-    }
-
-    function _toString(uint256 value) internal pure returns (string memory) {
-        if (value == 0) {
-            return "0";
-        }
-
-        uint256 temp = value;
-        uint256 digits;
-        while (temp != 0) {
-            digits++;
-            temp /= 10;
-        }
-
-        bytes memory buffer = new bytes(digits);
-        while (value != 0) {
-            digits -= 1;
-            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
-            value /= 10;
-        }
-
-        return string(buffer);
     }
 }

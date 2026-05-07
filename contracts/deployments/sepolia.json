@@ -12,18 +12,18 @@
   },
   "addresses": {
     "AtomicProxyFactory": "0x1e1d680881dc950db7cfc8154d8f0d6a14dcddec",
-    "OllaGovernanceImplementation": "0x80c03a68fa3278bba66be4ca7307132697733e0f",
+    "OllaGovernanceImplementation": "0x14efa15e12bd598f64391a7421cb0c5fc3801b14",
     "OllaGovernanceProxy": "0x0f2c964126c93e76a736380fec5686f054a801a7",
-    "OllaCoreImplementation": "0xcc9ee676bd55874eabfdeb41ccca8cd5253dc2fc",
-    "OllaVaultImplementation": "0xb0e1893de6f1dcb049c55de7b0d1e19c7c990a6f",
+    "OllaCoreImplementation": "0xf6da22b4cdeed762d360a13bc5f70d7a12715397",
+    "OllaVaultImplementation": "0x00322f7c1e29a4cbe9837b957a880249bad74ea5",
     "Asset": "0x5595cb9ed193cac2c0bc5393313bc6115817954b",
     "StAztec": "0x80b8d8c0cf6cf7811a82c5e068e49818a8d28e2d",
     "StAztecOFTAdapter": "0x3faa22188f3dfd2f7fe446cbc83ed1a663983a92",
-    "RewardsAccumulatorImplementation": "0x5b660899fb9aa6ca2ae91bf2df89a411180df1d3",
+    "RewardsAccumulatorImplementation": "0x1d994677e1782e19aa754dbfa3a6a4853b7ea89f",
     "RewardsAccumulatorProxy": "0x24f14b07af574928bc6b4640c9a90530fc78689b",
-    "StakingManagerImplementation": "0x196339254194649d3c7b7084518d789d0461e2b9",
+    "StakingManagerImplementation": "0x90914b1a9ae6b4be13201d9e816fb9c5b88c903b",
     "StakingManagerProxy": "0x5e6440b92bc292b21f72ad245ab0a1fa7ca7b158",
-    "StakingProviderRegistryImplementation": "0xb2506ff80aecdfdcf170a51dff7ca326150884ad",
+    "StakingProviderRegistryImplementation": "0x81ecb18ee95cdd38d906aa11a8d06a7ca17a426f",
     "StakingProviderRegistryProxy": "0xfb0012715d426c060276fbecab08f4b126cd8662",
     "SafetyModule": "0x326956e33338d85d2fd7742354b454ffc4b76237",
     "StakingManager": "0x5e6440b92bc292b21f72ad245ab0a1fa7ca7b158",
@@ -33,7 +33,7 @@
   "status": {
     "phase": "D",
     "completed": true,
-    "updatedAtBlock": 10794591,
+    "updatedAtBlock": 10807513,
     "flags": {
       "coreInitialized": true,
       "vaultInitialized": true
