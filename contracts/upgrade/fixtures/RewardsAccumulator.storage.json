@@ -1,7 +1,7 @@
 {
   "storage": [
     {
-      "astId": 2985,
+      "astId": 2967,
       "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
       "label": "rewardsToken",
       "offset": 0,
@@ -9,7 +9,7 @@
       "type": "t_contract(IERC20)1019"
     },
     {
-      "astId": 2988,
+      "astId": 2970,
       "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
       "label": "core",
       "offset": 0,
@@ -17,7 +17,7 @@
       "type": "t_address"
     },
     {
-      "astId": 2991,
+      "astId": 2973,
       "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
       "label": "latestRecordedRewardsAmount",
       "offset": 0,
@@ -25,12 +25,20 @@
       "type": "t_uint256"
     },
     {
-      "astId": 2996,
+      "astId": 2976,
+      "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
+      "label": "governanceUpgradeAuthority",
+      "offset": 0,
+      "slot": "3",
+      "type": "t_address"
+    },
+    {
+      "astId": 2981,
       "contract": "src/core/RewardsAccumulator.sol:RewardsAccumulator",
       "label": "__gap",
       "offset": 0,
-      "slot": "3",
-      "type": "t_array(t_uint256)50_storage"
+      "slot": "4",
+      "type": "t_array(t_uint256)49_storage"
     }
   ],
   "types": {
@@ -39,10 +47,10 @@
       "label": "address",
       "numberOfBytes": "20"
     },
-    "t_array(t_uint256)50_storage": {
+    "t_array(t_uint256)49_storage": {
       "encoding": "inplace",
-      "label": "uint256[50]",
-      "numberOfBytes": "1600",
+      "label": "uint256[49]",
+      "numberOfBytes": "1568",
       "base": "t_uint256"
     },
     "t_contract(IERC20)1019": {

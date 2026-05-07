@@ -2,13 +2,14 @@ name: Storage Layout
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [ opened, synchronize, reopened, ready_for_review ]
     branches:
       - main
 
 jobs:
   storage-layout:
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft
+      == false }}
     name: check storage layout
     runs-on: ubuntu-latest
     defaults:
@@ -30,7 +31,6 @@ jobs:
         run: |
           npx tsx script/check-storage-layout.ts --contract OllaCore --fixture upgrade/fixtures/OllaCore.storage.json
           npx tsx script/check-storage-layout.ts --contract OllaVault --fixture upgrade/fixtures/OllaVault.storage.json
-          npx tsx script/check-storage-layout.ts --contract WithdrawalQueue --fixture upgrade/fixtures/WithdrawalQueue.storage.json
           npx tsx script/check-storage-layout.ts --contract RewardsAccumulator --fixture upgrade/fixtures/RewardsAccumulator.storage.json
           npx tsx script/check-storage-layout.ts --contract StakingManager --fixture upgrade/fixtures/StakingManager.storage.json
           npx tsx script/check-storage-layout.ts --contract StakingProviderRegistry --fixture upgrade/fixtures/StakingProviderRegistry.storage.json
