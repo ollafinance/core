@@ -22,7 +22,7 @@ import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 ///         `_finalizeWithdrawals()` returns `finalizedAmount = 0` but `pending > 0 && buffer > 0`
 ///         caused the state machine to early-return instead of advancing to InitiateUnstake.
 ///
-///         Change 1: FinalizeWithdrawals now also advances when `finalizedAmount == 0`.
+///         Change 1: FinalizeWithdrawals now advances when the queue cursor makes no progress.
 ///         Change 2: `_rebalanceCompletionSatisfied` allows completion when `pending > 0 && buffer > 0`
 ///         provided there are no pending unstakes (the protocol has done all it can).
 contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
@@ -465,6 +465,50 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
             uint256(progress.step),
             uint256(IOllaCore.RebalanceStep.InitiateUnstake),
             "should advance to InitiateUnstake or beyond"
+        );
+    }
+
+    /// @notice Zero-payout slashed requests still move the queue cursor, so they should not
+    ///         be treated as a no-progress finalization pass merely because finalizedAmount is 0.
+    function test_Rebalance_ZeroPayoutSlashKeepsFinalizingWhenQueueAdvances() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 allShares = _performDeposit(alice, depositAmount);
+        _stakeAll(depositAmount);
+
+        // Keep a nonzero buffer, but small enough that the first request's post-slash payout
+        // floors to zero.
+        _injectBuffer(1);
+
+        uint256 zeroPayoutShares = allShares / 10_000;
+        uint256 largeShares = allShares - zeroPayoutShares;
+        (, uint256 zeroPayoutAssetsExpected) = _requestRedeem(alice, zeroPayoutShares, alice);
+        (, uint256 largeAssetsExpected) = _requestRedeem(alice, largeShares, alice);
+        assertGt(zeroPayoutAssetsExpected, 0, "first request starts with nonzero expected assets");
+        assertGt(largeAssetsExpected, vault.bufferedAssets(), "second request should exceed remaining buffer");
+
+        // Slash all assets except less than one scaled-rate unit per pending share. The first
+        // request finalizes with zero payout after floor rounding and advances
+        // nextUnfinalizedWithdrawalRequestId, while the second request remains underfunded.
+        stakingManager.setTotalStaked(1);
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(0);
+        stakingManager.setPendingUnstakes(0);
+
+        uint256 nextBefore = vault.nextUnfinalizedWithdrawalRequestId();
+
+        vm.prank(operator);
+        (, uint256 finalizedAmount,,) = core.rebalance();
+
+        uint256 nextAfter = vault.nextUnfinalizedWithdrawalRequestId();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
+
+        assertEq(finalizedAmount, 0, "zero-payout slash consumes no buffer");
+        assertGt(nextAfter, nextBefore, "queue cursor should advance");
+        assertEq(
+            uint256(progress.step),
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "cursor progress should remain in FinalizeWithdrawals"
         );
     }
 

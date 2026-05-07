@@ -223,6 +223,7 @@ contract OllaCore is
         _rebalanceProgress =
             IOllaCore.RebalanceProgress({ step: IOllaCore.RebalanceStep.Done, stakeRemaining: 0, unstakeRemaining: 0 });
         _rebalanceIdleBuffer = 0;
+        _rebalanceWithdrawalSnapshotEndId = 0;
         lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
         emit RebalanceReset();
     }
@@ -388,10 +389,14 @@ contract OllaCore is
                 _rebalanceProgress = progress;
                 return (rewardsDelta, 0, 0, vaultRef.bufferedAssets());
             }
+            uint256 priorUnfinalized = vaultRef.nextUnfinalizedWithdrawalRequestId();
             finalizedAmount = _finalizeWithdrawals(withdrawalSnapshotEndId);
             uint256 nextUnfinalized = vaultRef.nextUnfinalizedWithdrawalRequestId();
             // slither-disable-next-line incorrect-equality,timestamp
-            if (nextUnfinalized >= withdrawalSnapshotEndId || vaultRef.bufferedAssets() == 0 || finalizedAmount == 0) {
+            if (
+                nextUnfinalized >= withdrawalSnapshotEndId || vaultRef.bufferedAssets() == 0
+                    || nextUnfinalized == priorUnfinalized
+            ) {
                 progress.step = IOllaCore.RebalanceStep.InitiateUnstake;
             } else {
                 _rebalanceProgress = progress;

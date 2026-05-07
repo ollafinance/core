@@ -58,6 +58,15 @@ contract StAztec is ERC20Permit, IStAztec {
         _burn(from, amount);
     }
 
+    /// @notice Spends an ERC-20 allowance on behalf of the authorized OllaVault.
+    /// @param owner The account that granted the allowance.
+    /// @param spender The account whose allowance is consumed.
+    /// @param amount The amount of allowance to spend.
+    function spendAllowance(address owner, address spender, uint256 amount) external override {
+        if (msg.sender != OLLA_VAULT) revert StAztec__Unauthorized();
+        _spendAllowance(owner, spender, amount);
+    }
+
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
