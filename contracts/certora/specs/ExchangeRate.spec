@@ -13,13 +13,26 @@
 using OllaCoreHarness as core;
 
 methods {
-    function totalAssets() external returns (uint256) envfree;
-    function exchangeRate() external returns (uint256) envfree;
+    // convertTo* and exchangeRate ARE the functions under test -- their bodies must
+    // execute so the rules verify the actual math. Declare them envfree so the rules
+    // can call them without an env, but do NOT summarize: the prover needs the real
+    // implementation to prove monotonicity, round-trip loss bounds, etc.
     function convertToShares(uint256) external returns (uint256) envfree;
     function convertToAssets(uint256) external returns (uint256) envfree;
     function convertToAssetsCeil(uint256) external returns (uint256) envfree;
+    function exchangeRate() external returns (uint256) envfree;
 
-    // Harness getters for internal state
+    // totalAssets() is the underlying state input to the conversion math. We do NOT
+    // want to verify its implementation here -- summarize it as PER_CALLEE_CONSTANT
+    // so every call within a rule returns a single value, eliminating the prior
+    // failure mode where the prover picked totalAssets()=1 in one expression and
+    // totalAssets()=8358 in another (violating the requireRealisticState ratio
+    // bound). The wildcard `_.totalAssets() external => PER_CALLEE_CONSTANT` below
+    // would NOT have caught self-calls if the verified contract's own method
+    // declaration shadowed it; declaring the summary here explicitly is required.
+    function totalAssets() external returns (uint256) envfree => PER_CALLEE_CONSTANT;
+
+    // Harness getters for internal state -- envfree pure storage reads.
     function getStakedPrincipal() external returns (uint256) envfree;
     function getRewardsAccumulatorBalance() external returns (uint256) envfree;
     function getClaimableRewards() external returns (uint256) envfree;
@@ -31,6 +44,57 @@ methods {
     function _.pendingWithdrawalAssets() external => PER_CALLEE_CONSTANT;
     function _.pendingWithdrawalShares() external => PER_CALLEE_CONSTANT;
     function _.totalSupply() external => PER_CALLEE_CONSTANT;
+
+    // _liveAccountingState() (the backbone of totalAssets / convertToAssets /
+    // convertToAssetsCeil) calls the StakingManager and RewardsAccumulator. Without
+    // summaries the Prover havocs the returns and picks adversarial values that
+    // overflow the bounded-state assumptions in requireRealisticState(), breaking
+    // every conversion rule.
+    function _.getClaimableRewards() external => PER_CALLEE_CONSTANT;
+    function _.balance() external => PER_CALLEE_CONSTANT;
+    function _.totalStaked() external => PER_CALLEE_CONSTANT;
+    function _.getSlashingDelta() external => PER_CALLEE_CONSTANT;
+
+    // Even though no rule in this spec calls rebalance(), the prover still has to
+    // analyze every method on OllaCoreHarness during initial transformation. The
+    // SafeERC20 inline-assembly transfers in rebalance() (and the unsummarized
+    // staking-manager / accumulator callees from rebalance) trigger pointer-analysis
+    // failure 1277565207, which cascades into harness-wide havocs that wreck the
+    // bounds on totalAssets() and supply -- producing the inconsistent counterexamples
+    // (e.g. ta=1 but supply=8358) we see when all 10 conversion rules collapse.
+    // Summarize the SafeERC20 wrappers and the rebalance-only callees here so the
+    // harness compiles cleanly, even though these rules never exercise them.
+    function SafeERC20.safeTransfer(address, address, uint256) internal => NONDET;
+    function SafeERC20.safeTransferFrom(address, address, address, uint256) internal => NONDET;
+    function _.withdrawToCore() external => NONDET;
+    function _.recordBalance() external => NONDET;
+    function _.harvestRewards() external => NONDET;
+    function _.stake(uint256) external => NONDET;
+    function _.unstake(uint256) external => NONDET;
+    function _.refreshAttesterState(address[]) external => NONDET;
+    function _.setGasThreshold(uint256) external => NONDET;
+    function _.pendingUnstakes() external => PER_CALLEE_CONSTANT;
+    function _.getProviderConfig() external => PER_CALLEE_CONSTANT;
+    function _.getActivatedAttesterCount() external => PER_CALLEE_CONSTANT;
+    function _.canStake(uint256) external => PER_CALLEE_CONSTANT;
+    function _.getUnstakedFunds() external => PER_CALLEE_CONSTANT;
+    function _.claimableUnstakedFunds() external => PER_CALLEE_CONSTANT;
+    function _.hasFinalizedUnstakes() external => PER_CALLEE_CONSTANT;
+    function _.transferToCore(uint256) external => NONDET;
+    function _.receiveUnstaked(uint256) external => NONDET;
+    function _.mintFees(address, uint256, address, uint256) external => NONDET;
+    function _.finalizeWithdrawals(uint256, uint256, uint256) external => NONDET;
+    function _.cumulativeDeposits() external => PER_CALLEE_CONSTANT;
+    function _.cumulativeWithdrawals() external => PER_CALLEE_CONSTANT;
+    function _.cumulativeSlashingAdjustments() external => PER_CALLEE_CONSTANT;
+    function _.nextWithdrawalRequestId() external => PER_CALLEE_CONSTANT;
+    function _.nextUnfinalizedWithdrawalRequestId() external => PER_CALLEE_CONSTANT;
+    function _.checkAccountingLiveness() external => NONDET;
+    function _.checkDepositAllowed(uint256, uint256) external => NONDET;
+    function _.checkQueueRatio(uint256, uint256) external => NONDET;
+    function _.checkRateDrop(uint256, uint256) external => NONDET;
+    function _.setLatestAccountingTimestamp(uint256) external => NONDET;
+    function _.treasury() external => PER_CALLEE_CONSTANT;
 }
 
 /*//////////////////////////////////////////////////////////////
@@ -43,25 +107,26 @@ methods {
 // realistic protocol states (total AZTEC supply is ~1B tokens = ~1e27 wei).
 //
 // totalSupply() is summarized as PER_CALLEE_CONSTANT (not linked), so the prover
-// can pick any uint256. We bound it to <2^128 and require a reasonable ratio with
+// can pick any uint256. We bound it to <2^96 and require a reasonable ratio with
 // totalAssets to prevent spurious counterexamples from unreachable extreme states.
+//
+// totalAssets() is summarized as PER_CALLEE_CONSTANT in the methods block, so all
+// calls in a rule return the same value. We can use it directly in the requires
+// without caching -- the prior failure mode (ta=1 in one expression, ta=8358 in
+// another) was caused by the missing summary, not by repeated invocations.
 function requireRealisticState() {
-    // Require totalAssets doesn't overflow (implicitly: sum of buckets fits uint256).
-    // Bound to 2^96 -- realistic max is ~1e27 (1B AZTEC tokens in wei, ~2^90).
-    // This also keeps mulDiv's 512-bit intermediate products well under 2^256,
-    // avoiding Certora modeling issues with OZ's assembly-based mulDiv.
-    require totalAssets() < 2^96;
-
-    // Bound totalSupply to realistic range
+    uint256 ta = totalAssets();
     uint256 supply = getTotalSupply();
+
+    // Bound to 2^96 -- realistic max is ~1e27 (1B AZTEC tokens in wei, ~2^90).
+    // Keeps mulDiv's 512-bit intermediate products well under 2^256.
+    require ta < 2^96;
     require supply < 2^96;
 
-    // Ratio constraint: supply and assets track each other roughly.
-    // The virtual offset is 1e3, so even at 0 real supply/assets the math works,
-    // but extreme ratios (e.g. supply=2^127, assets=1) are unreachable in practice.
-    // Allow up to 1000x divergence (covers launch, heavy rewards, or mild slashing).
-    require supply == 0 || totalAssets() * 1000 >= supply;
-    require totalAssets() == 0 || supply * 1000 >= totalAssets();
+    // Ratio constraint: supply and assets track each other within ~1000x. Covers
+    // launch, heavy rewards, mild slashing; rules out unreachable extremes.
+    require supply == 0 || ta * 1000 >= supply;
+    require ta == 0 || supply * 1000 >= ta;
 }
 
 /*//////////////////////////////////////////////////////////////
