@@ -67,7 +67,8 @@ contract OllaGovernanceDeployer is BaseDeployer {
 
         vm.startBroadcast(config.deployerPrivateKey);
 
-        bool isKnown = gov.isOperationPending(operationId) || gov.isOperationReady(operationId) || gov.isOperationDone(operationId);
+        bool isKnown =
+            gov.isOperationPending(operationId) || gov.isOperationReady(operationId) || gov.isOperationDone(operationId);
         if (!isKnown) {
             if (config.timelockMinDelay == 0 && block.chainid == 31337 && block.timestamp == 1) {
                 vm.warp(block.timestamp + 1);

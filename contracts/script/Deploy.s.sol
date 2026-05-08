@@ -793,9 +793,7 @@ contract DeployScript is BaseDeployer {
         _ollaGovernanceDeployer.setCore(config, governance, core);
         address currentCore = OllaGovernance(payable(governance)).core();
         if (config.timelockMinDelay == 0) {
-            require(
-                currentCore == core, "Deploy: ADDRESS_STATE_MISMATCH.Governance.core.after"
-            );
+            require(currentCore == core, "Deploy: ADDRESS_STATE_MISMATCH.Governance.core.after");
         } else if (currentCore == address(0)) {
             _logInfo("OllaGovernance.setCore(OllaCore) scheduled or pending governance execution");
         } else {
@@ -1058,11 +1056,12 @@ contract DeployScript is BaseDeployer {
         address rewardsAccumulator,
         address safetyModule
     ) internal view {
-        address governanceCore = OllaGovernance(payable(ollaGovProxy)).core();
         if (config.timelockMinDelay == 0) {
-            require(governanceCore == ollaCoreProxy, "Deploy: governance core mismatch");
+            require(OllaGovernance(payable(ollaGovProxy)).core() == ollaCoreProxy, "Deploy: governance core mismatch");
         } else {
-            require(governanceCore == address(0) || governanceCore == ollaCoreProxy, "Deploy: governance core mismatch");
+            require(
+                OllaGovernance(payable(ollaGovProxy)).core() == address(0), "Deploy: governance core should be unset"
+            );
         }
         require(OllaCore(ollaCoreProxy).owner() == ollaGovProxy, "Deploy: core owner mismatch");
         require(OllaVault(ollaVaultProxy).owner() == ollaGovProxy, "Deploy: vault owner mismatch");
