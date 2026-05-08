@@ -35,24 +35,20 @@ certoraRun certora/confs/OllaCore.conf
 # Exchange rate and conversion properties
 certoraRun certora/confs/ExchangeRate.conf
 
-# WithdrawalQueue properties (standalone, no external deps)
-certoraRun certora/confs/WithdrawalQueue.conf
-
-# WithdrawalQueue finalization loop (pessimistic unrolling, slower)
-certoraRun certora/confs/WithdrawalQueueDeepLoop.conf
-
-# OllaVault deposit/redeem safety, counter monotonicity, role gating
+# OllaVault: deposit/redeem safety, counter monotonicity, role gating, queue properties
 certoraRun certora/confs/OllaVault.conf
+
+# OllaVault finalization loop (pessimistic unrolling, slower)
+certoraRun certora/confs/OllaVaultDeepLoop.conf
 ```
 
 ## Spec Overview
 
 | Spec | Contract | Properties |
 |------|----------|------------|
-| `WithdrawalQueue.spec` | WithdrawalQueue | FIFO ordering, pointer monotonicity, pending assets consistency, claim-deletes-request |
 | `OllaCoreAccounting.spec` | OllaCore | Fee bounds, treasury split bounds, rebalance FSM transitions, report timestamp monotonicity, parameter setter bounds |
 | `ExchangeRate.spec` | OllaCore | Conversion round-trip loss, virtual offset protection, rate consistency |
-| `OllaVault.spec` | OllaVault | Deposit/redeem value conservation, counter monotonicity, role gating, pause behavior, fee bounds |
+| `OllaVault.spec` | OllaVault | Deposit/redeem value conservation, counter monotonicity, role gating, pause behavior, fee bounds, plus the withdrawal queue properties (FIFO ordering, pointer monotonicity, pending consistency, slashing-adjusted payout safety) folded in alongside the M10 queue/vault merge |
 
 ## Known Issues
 
