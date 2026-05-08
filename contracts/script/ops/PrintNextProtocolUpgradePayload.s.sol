@@ -80,7 +80,11 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
         _printBatchAction(governance, batchTargets, values, payloads, predecessor, salt, delay, op);
     }
 
-    function _upgradeTargets(string memory env, address governance) internal view returns (UpgradeTarget[] memory targets) {
+    function _upgradeTargets(string memory env, address governance)
+        internal
+        view
+        returns (UpgradeTarget[] memory targets)
+    {
         targets = new UpgradeTarget[](_MAX_UPGRADES);
 
         address rewardsProxy = _addrOrDeployment(
@@ -94,9 +98,12 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
         address vaultProxy = _addrOrDeployment("VAULT", "OllaVaultProxy", "VAULT missing");
         address coreProxy = _addrOrDeployment("CORE", "OllaCoreProxy", "CORE missing");
 
-        address rewardsImpl = _implCandidate("REWARDS_ACCUMULATOR_IMPLEMENTATION", env, "RewardsAccumulatorImplementation");
-        address sprImpl = _implCandidate("STAKING_PROVIDER_REGISTRY_IMPLEMENTATION", env, "StakingProviderRegistryImplementation");
-        address stakingManagerImpl = _implCandidate("STAKING_MANAGER_IMPLEMENTATION", env, "StakingManagerImplementation");
+        address rewardsImpl =
+            _implCandidate("REWARDS_ACCUMULATOR_IMPLEMENTATION", env, "RewardsAccumulatorImplementation");
+        address sprImpl =
+            _implCandidate("STAKING_PROVIDER_REGISTRY_IMPLEMENTATION", env, "StakingProviderRegistryImplementation");
+        address stakingManagerImpl =
+            _implCandidate("STAKING_MANAGER_IMPLEMENTATION", env, "StakingManagerImplementation");
         address vaultImpl = _implCandidate("VAULT_IMPLEMENTATION", env, "OllaVaultImplementation");
         address coreImpl = _implCandidate("CORE_IMPLEMENTATION", env, "OllaCoreImplementation");
         address governanceImpl = _implCandidate("GOVERNANCE_IMPLEMENTATION", env, "OllaGovernanceImplementation");
@@ -127,6 +134,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
             upToDate: _isUpToDate(governanceCurrent, governanceImpl),
             callData: abi.encodeWithSignature("upgradeToAndCall(address,bytes)", governanceImpl, bytes(""))
         });
+        return targets;
     }
 
     function _satelliteTarget(string memory label, address proxy, address candidateImplementation)
@@ -144,33 +152,7 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
             upToDate: _isUpToDate(currentImplementation, candidateImplementation),
             callData: abi.encodeCall(OllaGovernance.upgradeSatellite, (proxy, candidateImplementation, bytes("")))
         });
-    }
-
-    function _upgradeCount(UpgradeTarget[] memory targets) internal pure returns (uint256 count) {
-        for (uint256 i; i < targets.length; i++) {
-            if (!targets[i].upToDate) count++;
-        }
-    }
-
-    function _batch(address governance, UpgradeTarget[] memory targets, uint256 upgradeCount)
-        internal
-        pure
-        returns (address[] memory batchTargets, uint256[] memory values, bytes[] memory payloads, string memory labels)
-    {
-        batchTargets = new address[](upgradeCount);
-        values = new uint256[](upgradeCount);
-        payloads = new bytes[](upgradeCount);
-
-        uint256 cursor;
-        for (uint256 i; i < targets.length; i++) {
-            if (targets[i].upToDate) continue;
-
-            batchTargets[cursor] = targets[i].operationTarget == address(0) ? governance : targets[i].operationTarget;
-            values[cursor] = 0;
-            payloads[cursor] = targets[i].callData;
-            labels = bytes(labels).length == 0 ? targets[i].label : string.concat(labels, ",", targets[i].label);
-            cursor++;
-        }
+        return target;
     }
 
     function _implCandidate(string memory envVar, string memory env, string memory deploymentKey)
@@ -193,13 +175,6 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
         bytes32 currentCodeHash = _codeHash(currentImplementation);
         bytes32 candidateCodeHash = _codeHash(candidateImplementation);
         return candidateCodeHash != bytes32(0) && candidateCodeHash == currentCodeHash;
-    }
-
-    function _logComponent(UpgradeTarget memory target) internal pure {
-        console2.log(string.concat(target.label, ".proxy"), target.proxy);
-        console2.log(string.concat(target.label, ".implementation.current"), target.currentImplementation);
-        console2.log(string.concat(target.label, ".implementation.candidate"), target.candidateImplementation);
-        console2.log(string.concat(target.label, ".upToDate"), target.upToDate);
     }
 
     function _printBatchAction(
@@ -243,7 +218,12 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
 
         if (op.ready) {
             bytes memory payload = abi.encodeWithSignature(
-                "executeBatch(address[],uint256[],bytes[],bytes32,bytes32)", batchTargets, values, payloads, predecessor, salt
+                "executeBatch(address[],uint256[],bytes[],bytes32,bytes32)",
+                batchTargets,
+                values,
+                payloads,
+                predecessor,
+                salt
             );
 
             console2.log("step", "Step 2/2: Execute batched protocol upgrades");
@@ -311,5 +291,41 @@ contract PrintNextProtocolUpgradePayload is BaseScript {
     function _codeHash(address account) internal view returns (bytes32) {
         if (account == address(0) || account.code.length == 0) return bytes32(0);
         return account.codehash;
+    }
+
+    function _upgradeCount(UpgradeTarget[] memory targets) internal pure returns (uint256 count) {
+        for (uint256 i; i < targets.length; i++) {
+            if (!targets[i].upToDate) count++;
+        }
+        return count;
+    }
+
+    function _logComponent(UpgradeTarget memory target) internal pure {
+        console2.log(string.concat(target.label, ".proxy"), target.proxy);
+        console2.log(string.concat(target.label, ".implementation.current"), target.currentImplementation);
+        console2.log(string.concat(target.label, ".implementation.candidate"), target.candidateImplementation);
+        console2.log(string.concat(target.label, ".upToDate"), target.upToDate);
+    }
+
+    function _batch(address governance, UpgradeTarget[] memory targets, uint256 upgradeCount)
+        internal
+        pure
+        returns (address[] memory batchTargets, uint256[] memory values, bytes[] memory payloads, string memory labels)
+    {
+        batchTargets = new address[](upgradeCount);
+        values = new uint256[](upgradeCount);
+        payloads = new bytes[](upgradeCount);
+
+        uint256 cursor;
+        for (uint256 i; i < targets.length; i++) {
+            if (targets[i].upToDate) continue;
+
+            batchTargets[cursor] = targets[i].operationTarget == address(0) ? governance : targets[i].operationTarget;
+            values[cursor] = 0;
+            payloads[cursor] = targets[i].callData;
+            labels = bytes(labels).length == 0 ? targets[i].label : string.concat(labels, ",", targets[i].label);
+            cursor++;
+        }
+        return (batchTargets, values, payloads, labels);
     }
 }

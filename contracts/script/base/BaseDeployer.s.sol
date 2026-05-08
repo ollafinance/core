@@ -269,11 +269,6 @@ abstract contract BaseDeployer is Script {
         _touchDeploymentStatus(env);
     }
 
-    function _artifactWriteEnabled() internal view returns (bool) {
-        return vm.envOr("DEPLOY_ALLOW_ARTIFACT_WRITE", false) || vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
-            || vm.isContext(VmSafe.ForgeContext.ScriptResume);
-    }
-
     function _stageDeploymentArtifactWrites(string memory env) internal {
         if (!_useStagedDeploymentArtifact()) {
             return;
@@ -313,6 +308,11 @@ abstract contract BaseDeployer is Script {
         if (vm.isFile(stagedPath)) {
             vm.removeFile(stagedPath);
         }
+    }
+
+    function _artifactWriteEnabled() internal view returns (bool) {
+        return vm.envOr("DEPLOY_ALLOW_ARTIFACT_WRITE", false) || vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+            || vm.isContext(VmSafe.ForgeContext.ScriptResume);
     }
 
     function _useStagedDeploymentArtifact() internal view returns (bool) {
@@ -365,29 +365,6 @@ abstract contract BaseDeployer is Script {
         }
     }
 
-    function _inferMockAztec(string memory existing) internal pure returns (bool mockAztec, bool inferred) {
-        address mockRollup = address(0);
-        address mockRollupRegistry = address(0);
-
-        try vm.parseJsonAddress(existing, ".addresses.MockAztecRollup") returns (address parsedMockRollup) {
-            mockRollup = parsedMockRollup;
-        } catch { }
-
-        try vm.parseJsonAddress(existing, ".addresses.MockAztecRollupRegistry") returns (address parsedMockRegistry) {
-            mockRollupRegistry = parsedMockRegistry;
-        } catch { }
-
-        if (mockRollup != address(0) || mockRollupRegistry != address(0)) {
-            return (true, true);
-        }
-
-        return (false, false);
-    }
-
-    function _jsonString(string memory value) internal pure returns (string memory) {
-        return string.concat("\"", value, "\"");
-    }
-
     /// @notice Get the deployment file path for a given environment
     function _getDeploymentPath(string memory env) internal view returns (string memory) {
         if (keccak256(bytes(env)) != keccak256(bytes("local"))) {
@@ -402,6 +379,10 @@ abstract contract BaseDeployer is Script {
             return stagedPath;
         }
         return _getFinalDeploymentPath(env);
+    }
+
+    function _jsonString(string memory value) internal pure returns (string memory) {
+        return string.concat("\"", value, "\"");
     }
 
     function _getStagedDeploymentPath(string memory env) internal pure returns (string memory) {
