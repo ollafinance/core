@@ -7,6 +7,16 @@ This serves two purposes:
 1. **For the development team and governance:** a checklist of invariants that must be maintained across upgrades, role grants, and module replacements.
 2. **For external auditors:** a clear declaration of what the protocol considers in-scope trust versus out-of-scope trust, reducing ambiguity during audit engagements.
 
+## Privileged Roles
+
+The protocol has 3 privileged roles:
+
+**OllaGovernance (timelock)** — holds `DEFAULT_ADMIN_ROLE` on all contracts; 2-day minimum delay on proposals controlling upgrades (`upgradeCore`, `upgradeSatellite`), fourteen parameter setters (`setCore`, `setStakingManager`, `setSafetyModule`, `setInstantRedemptionFeeBP`, `setMaxInstantRedemptionFeeBP`, `setMinRebalancingCooldown`, `setTreasuryFeeBP`, `setProviderFeeBP`, `setMinRateDropBps`, `setMaxQueueRatioBps`, `setMaxAccountingDelay`, `setDepositCap`, `setMinProposalDelay`, `setGovernanceAdmin`), and role grants; emergency pause/unpause (`emergencyPauseAll`, `emergencyUnpauseAll`) executes instantly without timelock via separate `governanceAdmin` role.
+
+**GUARDIAN_ROLE** — pauses/unpauses OllaCore, OllaVault, SafetyModule instantly via `pause`/`unpause`; resets rebalance state machine via `forceRebalanceReset` (does not modify accounting or touch funds); cannot change parameters or access user funds.
+
+**STAKING_PROVIDER_ADMIN_ROLE** — adds attester keys to StakingProviderRegistry via `dripQueue`; sets rewards recipient per provider via `setProviderRewardsRecipient`; not subject to timelock; cannot access protocol funds or modify system parameters.
+
 ## Assumptions
 
 | # | Assumption | Contracts | Impact if Violated |
@@ -18,6 +28,7 @@ This serves two purposes:
 | T-5 | Governance can hot-swap `SafetyModule` (`OllaCore.setSafetyModule`) and replace any other satellite via UUPS upgrade | OllaCore | Replacing a module with a malicious contract can drain assets or corrupt state |
 | T-6 | The Aztec rollup and registry contracts behave correctly | StakingManager | If the canonical rollup is compromised, staked funds and rewards are at risk |
 | T-7 | `GUARDIAN_ROLE` can pause/unpause and force-reset a stuck rebalance | OllaCore | A malicious guardian can disrupt protocol availability; force-resetting mid-rebalance discards in-progress work (unharvested rewards wait for next cycle, partial unstakes are tracked on-chain) |
+| T-8 | `STAKING_PROVIDER_ADMIN_ROLE` can add attester keys to the registry and set per-provider rewards recipients; not subject to timelock | StakingProviderRegistry | A compromised key can register malicious attesters or redirect provider rewards, but cannot access vault funds, staked assets, or modify protocol parameters |
 
 ## Design Decisions
 
@@ -42,3 +53,4 @@ SafetyModule uses plain `AccessControl` (not upgradeable) with an `immutable COR
 - **T-3 through T-5** are governance-controlled risks. The primary mitigation is a **timelocked multisig** for all admin and role-grant operations, giving the community a window to react to malicious proposals.
 - **T-6** is an external dependency risk. The protocol relies on the Aztec rollup behaving as specified. Circuit breakers in SafetyModule (rate drop, accounting staleness) provide partial protection.
 - **T-7** is mitigated by separating `GUARDIAN_ROLE` from `DEFAULT_ADMIN_ROLE` — the guardian can pause but cannot upgrade or drain.
+- **T-8** is mitigated by scoping the role to two narrow operations (key registration and rewards recipient) that cannot access vault funds or modify protocol parameters. Governance can revoke the role at any time.

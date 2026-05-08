@@ -269,9 +269,54 @@ abstract contract BaseDeployer is Script {
         _touchDeploymentStatus(env);
     }
 
+    function _stageDeploymentArtifactWrites(string memory env) internal {
+        if (!_useStagedDeploymentArtifact()) {
+            return;
+        }
+
+        string memory path = _getDeploymentPath(env);
+        string memory stagedPath = _getStagedDeploymentPath(env);
+        vm.createDir(_DEPLOYMENTS_PATH, true);
+
+        if (vm.isFile(stagedPath)) {
+            vm.removeFile(stagedPath);
+        }
+
+        if (vm.isFile(path)) {
+            vm.copyFile(path, stagedPath);
+        }
+    }
+
+    function _commitDeploymentArtifactWrites(string memory env) internal {
+        if (!_useStagedDeploymentArtifact()) {
+            return;
+        }
+
+        string memory stagedPath = _getStagedDeploymentPath(env);
+        if (vm.isFile(stagedPath)) {
+            vm.copyFile(stagedPath, _getFinalDeploymentPath(env));
+            vm.removeFile(stagedPath);
+        }
+    }
+
+    function _discardDeploymentArtifactWrites(string memory env) internal {
+        if (!_useStagedDeploymentArtifact()) {
+            return;
+        }
+
+        string memory stagedPath = _getStagedDeploymentPath(env);
+        if (vm.isFile(stagedPath)) {
+            vm.removeFile(stagedPath);
+        }
+    }
+
     function _artifactWriteEnabled() internal view returns (bool) {
         return vm.envOr("DEPLOY_ALLOW_ARTIFACT_WRITE", false) || vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
             || vm.isContext(VmSafe.ForgeContext.ScriptResume);
+    }
+
+    function _useStagedDeploymentArtifact() internal view returns (bool) {
+        return vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) || vm.isContext(VmSafe.ForgeContext.ScriptResume);
     }
 
     function _tryReadDeploymentFlag(string memory env, string memory key)
@@ -320,6 +365,26 @@ abstract contract BaseDeployer is Script {
         }
     }
 
+    /// @notice Get the deployment file path for a given environment
+    function _getDeploymentPath(string memory env) internal view returns (string memory) {
+        if (keccak256(bytes(env)) != keccak256(bytes("local"))) {
+            return _getStagedOrFinalDeploymentPath(env);
+        }
+        return _getFinalDeploymentPath(env);
+    }
+
+    function _getStagedOrFinalDeploymentPath(string memory env) internal view returns (string memory) {
+        string memory stagedPath = _getStagedDeploymentPath(env);
+        if (_useStagedDeploymentArtifact() && vm.isFile(stagedPath)) {
+            return stagedPath;
+        }
+        return _getFinalDeploymentPath(env);
+    }
+
+    function _jsonString(string memory value) internal pure returns (string memory) {
+        return string.concat("\"", value, "\"");
+    }
+
     function _inferMockAztec(string memory existing) internal pure returns (bool mockAztec, bool inferred) {
         address mockRollup = address(0);
         address mockRollupRegistry = address(0);
@@ -339,12 +404,11 @@ abstract contract BaseDeployer is Script {
         return (false, false);
     }
 
-    function _jsonString(string memory value) internal pure returns (string memory) {
-        return string.concat("\"", value, "\"");
+    function _getStagedDeploymentPath(string memory env) internal pure returns (string memory) {
+        return string.concat(_DEPLOYMENTS_PATH, env, ".json.tmp");
     }
 
-    /// @notice Get the deployment file path for a given environment
-    function _getDeploymentPath(string memory env) internal pure returns (string memory) {
+    function _getFinalDeploymentPath(string memory env) internal pure returns (string memory) {
         return string.concat(_DEPLOYMENTS_PATH, env, ".json");
     }
 

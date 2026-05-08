@@ -1,7 +1,7 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "deployer": "0x7f805c72c48d95a2036ef69bdc997dc5bcac910e",
+  "deployer": "0x637019700f47a874fa5fe936d60035e404d47dcd",
   "mode": {
     "mockAztec": false
   },
@@ -11,37 +11,35 @@
     "lzEndpoint": "0x6edce65403992e310a62460808c4b910d972f10f"
   },
   "addresses": {
-    "AtomicProxyFactory": "0x7c0f150b6b91929ed26de025a318e260b156bc25",
-    "OllaGovernanceImplementation": "0xdab08d73076f5bc612a7bf5a43fba10fe3652c8d",
-    "OllaGovernanceProxy": "0x66e64803b12ccab11c0de93e388f3a494fcba7fc",
-    "OllaCoreImplementation": "0x10041a403746d9ecb3ed32ff193b6bdfe5e122c1",
-    "OllaCoreProxy": "0x7944ec66faa8c7828cef23a34048a6a49bdd0b5a",
-    "OllaVaultImplementation": "0x16fb9a7e50944f00e096345185a9eb08e1ee5306",
-    "OllaVaultProxy": "0x876c4dc496377da3175ce66a28eafa82c2cab837",
+    "AtomicProxyFactory": "0x1e1d680881dc950db7cfc8154d8f0d6a14dcddec",
+    "OllaGovernanceImplementation": "0x14efa15e12bd598f64391a7421cb0c5fc3801b14",
+    "OllaGovernanceProxy": "0x0f2c964126c93e76a736380fec5686f054a801a7",
+    "OllaCoreImplementation": "0xf6da22b4cdeed762d360a13bc5f70d7a12715397",
+    "OllaVaultImplementation": "0x00322f7c1e29a4cbe9837b957a880249bad74ea5",
     "Asset": "0x5595cb9ed193cac2c0bc5393313bc6115817954b",
-    "StAztec": "0xbf645e4d9b0a32d5f0ac22f18a76fba1c7523701",
-    "StAztecOFTAdapter": "0xfdd3affd49fa87e256378ab348104092d5a6d812",
-    "WithdrawalQueueImplementation": "0xf2c2069b34ee21dfefb91747c4ccd90111842761",
-    "WithdrawalQueueProxy": "0xabeadf286dae9b80752b05ad149d2a9aaef2475f",
-    "RewardsAccumulatorImplementation": "0x35c2e9582fe4d3d315f087525350d791df59d4df",
-    "RewardsAccumulatorProxy": "0x98c6251ebeb96ad7345ed434abc79b7e3a3cd22b",
-    "StakingManagerImplementation": "0x96e97779d1e2ef86d49e3eff605dab3fca73b04f",
-    "StakingManagerProxy": "0x2a7bd4fb090056fb189a86cd49848bdabc5b920a",
-    "StakingProviderRegistryImplementation": "0x50f491a68c23563f1911a74de90e39f4f66a7ddf",
-    "StakingProviderRegistryProxy": "0x79426ba0097318f61c208a8ccf9e621922dd0f42",
-    "SafetyModule": "0x1cd77b15b5bdbc357cbf10d076917be42adb18c8",
-    "StakingManager": "0x2a7bd4fb090056fb189a86cd49848bdabc5b920a"
+    "StAztec": "0x80b8d8c0cf6cf7811a82c5e068e49818a8d28e2d",
+    "StAztecOFTAdapter": "0x3faa22188f3dfd2f7fe446cbc83ed1a663983a92",
+    "RewardsAccumulatorImplementation": "0x1d994677e1782e19aa754dbfa3a6a4853b7ea89f",
+    "RewardsAccumulatorProxy": "0x24f14b07af574928bc6b4640c9a90530fc78689b",
+    "StakingManagerImplementation": "0x90914b1a9ae6b4be13201d9e816fb9c5b88c903b",
+    "StakingManagerProxy": "0x5e6440b92bc292b21f72ad245ab0a1fa7ca7b158",
+    "StakingProviderRegistryImplementation": "0x81ecb18ee95cdd38d906aa11a8d06a7ca17a426f",
+    "StakingProviderRegistryProxy": "0xfb0012715d426c060276fbecab08f4b126cd8662",
+    "SafetyModule": "0x326956e33338d85d2fd7742354b454ffc4b76237",
+    "StakingManager": "0x5e6440b92bc292b21f72ad245ab0a1fa7ca7b158",
+    "OllaCoreProxy": "0x890b876a817e1e5d5c2a547d0d092e8038c0bc9a",
+    "OllaVaultProxy": "0x779305b3176b6111a7bffe9eb7232b0454f35d4e"
   },
   "status": {
     "phase": "D",
     "completed": true,
-    "updatedAtBlock": 10553526,
+    "updatedAtBlock": 10807513,
     "flags": {
       "coreInitialized": true,
       "vaultInitialized": true
     }
   },
-  "genesisBlock": 10553526,
+  "genesisBlock": 10794590,
   "stAztecName": "stAztec",
   "stAztecVersion": "1"
 }

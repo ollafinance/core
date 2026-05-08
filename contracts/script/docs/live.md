@@ -19,6 +19,7 @@ This guide documents deployment and operations for live networks.
 - `LZ_ENDPOINT` (must be defined; may be `0x0000000000000000000000000000000000000000`)
 - If `MOCK_AZTEC=false`: `ASSET`, `ROLLUP_REGISTRY`, `GOVERNANCE`, `TREASURY`, `PROVIDER_ADMIN`, `GUARDIAN` (all required; deployer must differ from each, and `GOVERNANCE` must differ from `PROVIDER_ADMIN`)
 - If `MOCK_AZTEC=true`: `GOVERNANCE` is optional. If omitted, it defaults to deployer.
+- Optional deployment defaults: `PROTOCOL_FEE_BP`, `TREASURY_FEE_SPLIT_BP`, `SAFETY_DEPOSIT_CAP`, `SAFETY_MIN_RATE_DROP_BPS`, `SAFETY_MAX_QUEUE_RATIO_BPS`, `SAFETY_MAX_ACCOUNTING_DELAY`, `PROVIDER_REWARDS_RECIPIENT`
 
 ### Mainnet (`ETHEREUM_CHAIN_ID=1`)
 
@@ -86,6 +87,18 @@ Notes:
 - Mainnet default: `TIMELOCK_DURATION=172800`
 - Override by setting `TIMELOCK_DURATION` explicitly
 
+## Deployment parameter env vars
+
+- `PROTOCOL_FEE_BP`: OllaCore initial protocol fee, default `500`.
+- `TREASURY_FEE_SPLIT_BP`: OllaCore initial treasury fee split, default `5000`.
+- `SAFETY_DEPOSIT_CAP`: SafetyModule initial deposit cap in raw asset units, default `1000000000000000000000000000`.
+- `SAFETY_MIN_RATE_DROP_BPS`: SafetyModule initial rate-drop threshold, default `500`.
+- `SAFETY_MAX_QUEUE_RATIO_BPS`: SafetyModule initial queued-withdrawal ratio threshold, default `5000`.
+- `SAFETY_MAX_ACCOUNTING_DELAY`: SafetyModule initial accounting-liveness delay in seconds, default `7200`.
+- `PROVIDER_REWARDS_RECIPIENT`: initial staking provider rewards recipient, default `PROVIDER_ADMIN`.
+- `REBALANCE_COOLDOWN` is not an initializer env var today. OllaCore initializes to `1 hours`; set it after activation through governance with `setRebalanceCooldown(86400)`.
+- `REBALANCE_GAS_THRESHOLD` is not an initializer env var today. OllaCore initializes to `180000`; set it after activation through governance with `setRebalanceGasThreshold(...)` if needed.
+
 ## Post-deploy expectations
 
 - On strict chains (Sepolia/Mainnet), deployment does not auto-activate protocol state.
@@ -99,9 +112,7 @@ Notes:
 
 ## Emergency pause
 
-`GUARDIAN_ROLE` is granted to `OllaGovernance` during initialization of Core, Vault, and SafetyModule.
-The governance contract exposes emergency pause/unpause functions callable by the `governanceAdmin`
-(multisig) — no timelock delay.
+`GUARDIAN_ROLE` is granted to `OllaGovernance` during initialization of Core and Vault. `GUARDIAN` is granted `GUARDIAN_ROLE` on SafetyModule. The governance contract exposes emergency pause/unpause functions callable by the `governanceAdmin` (multisig) -- no timelock delay.
 
 ### Global pause/unpause
 

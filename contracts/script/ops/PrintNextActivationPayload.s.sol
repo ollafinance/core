@@ -317,6 +317,8 @@ contract PrintNextActivationPayload is BaseScript {
         bytes memory buffer = new bytes(digits);
         while (value != 0) {
             digits -= 1;
+            // casting to 'uint8' is safe because value % 10 is always in range [0,9], so 48 + result is in [48,57]
+            // forge-lint: disable-next-line(unsafe-typecast)
             buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
             value /= 10;
         }

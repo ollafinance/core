@@ -61,17 +61,25 @@ contract OllaGovernanceDeployer is BaseDeployer {
     function setCore(DeployConfig memory config, address govProxy, address coreProxy) external {
         OllaGovernance gov = OllaGovernance(payable(govProxy));
         bytes memory setCoreData = abi.encodeCall(IOllaGovernance.setCore, (coreProxy));
+        bytes32 predecessor = bytes32(0);
+        bytes32 salt = bytes32(0);
+        bytes32 operationId = gov.hashOperation(address(gov), 0, setCoreData, predecessor, salt);
 
         vm.startBroadcast(config.deployerPrivateKey);
 
-        if (config.timelockMinDelay == 0 && block.chainid == 31337 && block.timestamp == 1) {
-            vm.warp(block.timestamp + 1);
+        bool isKnown =
+            gov.isOperationPending(operationId) || gov.isOperationReady(operationId) || gov.isOperationDone(operationId);
+        if (!isKnown) {
+            if (config.timelockMinDelay == 0 && block.chainid == 31337 && block.timestamp == 1) {
+                vm.warp(block.timestamp + 1);
+            }
+            gov.schedule(address(gov), 0, setCoreData, predecessor, salt, config.timelockMinDelay);
         }
 
-        gov.schedule(address(gov), 0, setCoreData, bytes32(0), bytes32(0), config.timelockMinDelay);
-
-        if (config.timelockMinDelay == 0) {
-            gov.execute(address(gov), 0, setCoreData, bytes32(0), bytes32(0));
+        address caller = vm.addr(config.deployerPrivateKey);
+        bool canExecute = gov.hasRole(gov.EXECUTOR_ROLE(), caller) || gov.hasRole(gov.EXECUTOR_ROLE(), address(0));
+        if (gov.isOperationReady(operationId) && canExecute) {
+            gov.execute(address(gov), 0, setCoreData, predecessor, salt);
         }
 
         vm.stopBroadcast();
