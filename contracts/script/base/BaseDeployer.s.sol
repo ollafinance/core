@@ -385,6 +385,25 @@ abstract contract BaseDeployer is Script {
         return string.concat("\"", value, "\"");
     }
 
+    function _inferMockAztec(string memory existing) internal pure returns (bool mockAztec, bool inferred) {
+        address mockRollup = address(0);
+        address mockRollupRegistry = address(0);
+
+        try vm.parseJsonAddress(existing, ".addresses.MockAztecRollup") returns (address parsedMockRollup) {
+            mockRollup = parsedMockRollup;
+        } catch { }
+
+        try vm.parseJsonAddress(existing, ".addresses.MockAztecRollupRegistry") returns (address parsedMockRegistry) {
+            mockRollupRegistry = parsedMockRegistry;
+        } catch { }
+
+        if (mockRollup != address(0) || mockRollupRegistry != address(0)) {
+            return (true, true);
+        }
+
+        return (false, false);
+    }
+
     function _getStagedDeploymentPath(string memory env) internal pure returns (string memory) {
         return string.concat(_DEPLOYMENTS_PATH, env, ".json.tmp");
     }
