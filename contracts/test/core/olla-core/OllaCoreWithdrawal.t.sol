@@ -10,12 +10,10 @@ import { ECDSA } from "@oz/utils/cryptography/ECDSA.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
@@ -67,7 +65,6 @@ contract OllaCoreWithdrawalTest is Test {
     address internal permitOwner;
     uint256 internal permitOwnerKey;
     uint256 internal permitAttackerKey;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -96,7 +93,6 @@ contract OllaCoreWithdrawalTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
@@ -107,7 +103,7 @@ contract OllaCoreWithdrawalTest is Test {
             asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
         );
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -146,8 +142,12 @@ contract OllaCoreWithdrawalTest is Test {
         view
         returns (address user, uint256 shares, uint256 assetsExpected, uint256 rate)
     {
-        (user,,, shares, assetsExpected, rate) = withdrawalQueue.lastRequest();
-        return (user, shares, assetsExpected, rate);
+        uint256 lastId = vault.nextWithdrawalRequestId() - 1;
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(lastId);
+        user = vault.requestOwner(lastId);
+        shares = req.shares;
+        assetsExpected = req.assetsExpected;
+        rate = req.rate;
     }
 
     function _signPermit(
@@ -231,7 +231,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         // Finalize requests before claiming
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max, type(uint256).max);
 
         vm.prank(alice);
         vault.claimRequestById(secondRequestId);
@@ -285,8 +285,8 @@ contract OllaCoreWithdrawalTest is Test {
         vm.prank(alice);
         uint256 secondRequestId = vault.requestRedeem(sharesSecond, alice, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory firstRequest = withdrawalQueue.getRequest(firstRequestId);
-        IWithdrawalQueue.WithdrawalRequest memory secondRequest = withdrawalQueue.getRequest(secondRequestId);
+        IOllaVault.WithdrawalRequest memory firstRequest = vault.getWithdrawalRequest(firstRequestId);
+        IOllaVault.WithdrawalRequest memory secondRequest = vault.getWithdrawalRequest(secondRequestId);
         uint256 expectedFirst = firstRequest.assetsExpected;
         uint256 expectedSecond = secondRequest.assetsExpected;
 
@@ -295,7 +295,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         // Finalize requests before claiming
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max, type(uint256).max);
 
         uint256 bobBalanceBefore = asset.balanceOf(bob);
         uint256 aliceBalanceBefore = asset.balanceOf(alice);
@@ -329,7 +329,7 @@ contract OllaCoreWithdrawalTest is Test {
 
         // Finalize request before claiming
         vm.prank(address(core));
-        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max);
+        vault.finalizeWithdrawals(type(uint256).max, type(uint256).max, type(uint256).max);
 
         uint256 balanceBefore = asset.balanceOf(bob);
 

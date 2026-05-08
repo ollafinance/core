@@ -2,6 +2,7 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 import { Exit } from "src/staking/libraries/AztecTypes.sol";
 
@@ -110,6 +111,33 @@ contract StakingManagerSlashedExitFinalizationTest is StakingManagerBaseTest {
 
         // attester[0] is no longer pending (finalized in same refresh)
         assertFalse(stakingManager.isUnstakePending(keys[0].attester), "zombie attester should be finalized");
+    }
+
+    /// @notice A rollup revert while claiming a zombie exit should not revert the refresh batch.
+    function test_RefreshAttesterState_ZombieExitRevertDoesNotBlockBatch() external {
+        _setupMultipleActiveAttesters(2);
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(2);
+        address zombieAttester = keys[0].attester;
+        address healthyAttester = keys[1].attester;
+
+        rollup.setExternalExit(zombieAttester, ACTIVATION_THRESHOLD, block.timestamp + 1 days);
+
+        vm.mockCallRevert(
+            address(rollup),
+            abi.encodeWithSelector(IAztecRollup.initiateWithdraw.selector, zombieAttester, address(stakingManager)),
+            "AZTEC_ZOMBIE_CLAIM_FAILED"
+        );
+
+        address[] memory allAttesters = _attesterAddresses(2);
+        stakingManager.refreshAttesterState(allAttesters);
+
+        assertTrue(stakingManager.isUnstakePending(zombieAttester), "zombie attester should still be tracked exiting");
+        assertFalse(stakingManager.isUnstakePending(healthyAttester), "healthy attester should still be active");
+        assertEq(stakingManager.getActivatedAttesterCount(), 1, "healthy attester should remain active");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "zombie exit should be tracked for retry");
+
+        IStakingManager.StakingState memory state = stakingManager.getStakingState();
+        assertEq(state.pendingUnstakeAmount, ACTIVATION_THRESHOLD, "zombie exit amount should be tracked");
     }
 
     /// @notice Once a zombie exit is claimed during refresh, unstake() operates on healthy attesters

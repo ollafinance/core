@@ -1,7 +1,7 @@
 {
   "storage": [
     {
-      "astId": 4387,
+      "astId": 4335,
       "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
       "label": "core",
       "offset": 0,
@@ -9,7 +9,7 @@
       "type": "t_address"
     },
     {
-      "astId": 4391,
+      "astId": 4339,
       "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
       "label": "treasury",
       "offset": 0,
@@ -17,7 +17,7 @@
       "type": "t_address"
     },
     {
-      "astId": 4395,
+      "astId": 4343,
       "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
       "label": "pendingGovernance",
       "offset": 0,
@@ -25,7 +25,7 @@
       "type": "t_address"
     },
     {
-      "astId": 4398,
+      "astId": 4346,
       "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
       "label": "governanceAdmin",
       "offset": 0,
@@ -33,7 +33,7 @@
       "type": "t_address"
     },
     {
-      "astId": 4403,
+      "astId": 4351,
       "contract": "src/governance/OllaGovernance.sol:OllaGovernance",
       "label": "__gap",
       "offset": 0,

@@ -3,7 +3,6 @@ pragma solidity ^0.8.27;
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { E2EBaseWithRealStaking } from "./E2EBaseWithRealStaking.sol";
 
 /// @title MultiStepRebalanceE2E
@@ -23,11 +22,6 @@ contract MultiStepRebalanceE2E is E2EBaseWithRealStaking {
 
     function setUp() external {
         _deployFullStack();
-
-        // Set target buffer to 0 so all deposited funds go to staking
-        _scheduleAndExecute(
-            address(gov), abi.encodeCall(gov.setTargetBufferedAssets, (0)), keccak256("setTargetBufferedAssets-0")
-        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -402,7 +396,7 @@ contract MultiStepRebalanceE2E is E2EBaseWithRealStaking {
         //    So with ~1.1M total gas, Harvest completes but _hasGasForStep() fails
         //    at PullUnstaked because gasleft < 1M.
         vm.prank(operator);
-        try core.rebalance{ gas: 1_100_000 }() returns (uint256, uint256, uint256, uint256) {
+        try core.rebalance{ gas: 1_050_000 }() returns (uint256, uint256, uint256, uint256) {
             // If it returns, check if it was interrupted
             IOllaCore.RebalanceProgress memory p = core.rebalanceProgress();
             assertTrue(

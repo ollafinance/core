@@ -21,7 +21,6 @@ import { MockAztecRollupRegistry } from "src/staking/mocks/MockAztecRollupRegist
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 
 /// @title E2EBaseWithRealStaking
 /// @notice Shared base for E2E tests that deploy real StakingManager + real RewardsAccumulator
@@ -48,7 +47,6 @@ abstract contract E2EBaseWithRealStaking is Test {
     OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
-    WithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
@@ -138,10 +136,6 @@ abstract contract E2EBaseWithRealStaking is Test {
         stAztec = new StAztec(address(vault));
 
         // WithdrawalQueue
-        WithdrawalQueue queueImpl = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), address(gov), 180_000);
     }
 
     function _deployStakingInfrastructure() internal {
@@ -153,7 +147,7 @@ abstract contract E2EBaseWithRealStaking is Test {
 
         // MockAztecRollup + Registry
         mockRollup = new MockAztecRollup(IERC20(asset), 0);
-        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup));
+        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup), IERC20(asset));
 
         // StakingProviderRegistry (real, behind proxy)
         StakingProviderRegistry regImpl = new StakingProviderRegistry();
@@ -209,13 +203,13 @@ abstract contract E2EBaseWithRealStaking is Test {
             address(safetyModule)
         );
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
+        vault.initialize(asset, stAztec, address(core), address(gov));
     }
 
     function _wireContracts() internal {
         vm.prank(address(gov));
         core.setVault(address(vault));
-        vm.prank(admin);
+        vm.prank(address(gov));
         gov.setCore(address(core));
     }
 

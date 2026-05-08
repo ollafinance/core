@@ -10,8 +10,8 @@ import { G1Point, G2Point } from "src/staking/libraries/BN254Lib.sol";
 
 /// @notice Harness that exposes the internal `_setQueued` for direct testing.
 contract StakingManagerHarness is StakingManager {
-    function exposed_setQueued(address attester, uint256 stakedAmount) external {
-        _setQueued(attester, stakedAmount);
+    function exposed_setQueued(address attester, uint256 stakedAmount, address queueRollup) external {
+        _setQueued(attester, stakedAmount, queueRollup);
     }
 }
 
@@ -43,19 +43,19 @@ contract StakingManagerDuplicateAttesterTest is StakingManagerBaseTest {
         address attester = address(uint160(42));
 
         // First activation succeeds
-        harness.exposed_setQueued(attester, 100 ether);
+        harness.exposed_setQueued(attester, 100 ether, address(rollup));
 
         // Second activation of the same attester reverts
         vm.expectRevert(
             abi.encodeWithSelector(IStakingManager.StakingManager__AttesterAlreadyActive.selector, attester)
         );
-        harness.exposed_setQueued(attester, 100 ether);
+        harness.exposed_setQueued(attester, 100 ether, address(rollup));
     }
 
     function test_SetActive_AccountingCorrectOnSingleActivation() external {
         address attester = address(uint160(42));
 
-        harness.exposed_setQueued(attester, 100 ether);
+        harness.exposed_setQueued(attester, 100 ether, address(rollup));
 
         IStakingManager.StakingState memory state = harness.getStakingState();
         assertEq(state.stakedAmount, 100 ether, "stakedAmount should be 100 ether");

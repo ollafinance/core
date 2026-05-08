@@ -177,17 +177,6 @@ export function getStakingManager(
   );
 }
 
-export function getWithdrawalQueue(
-  addresses: DeploymentAddresses,
-  client: PublicClient | WalletClient
-) {
-  return getContractInstance(
-    "WithdrawalQueue",
-    addresses.WithdrawalQueueProxy as Address,
-    client
-  );
-}
-
 export function getAsset(
   addresses: DeploymentAddresses,
   client: PublicClient | WalletClient

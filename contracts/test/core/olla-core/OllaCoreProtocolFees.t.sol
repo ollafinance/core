@@ -12,12 +12,10 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
-import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
 contract OllaCoreProtocolFeesTest is Test {
     using Math for uint256;
@@ -60,7 +58,6 @@ contract OllaCoreProtocolFeesTest is Test {
     address internal governance;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
-    MockWithdrawalQueue internal withdrawalQueue;
     address internal operator;
     address internal alice;
     address internal providerRewardsRecipient;
@@ -88,7 +85,6 @@ contract OllaCoreProtocolFeesTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
@@ -103,7 +99,7 @@ contract OllaCoreProtocolFeesTest is Test {
             address(safetyModule)
         );
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -156,7 +152,9 @@ contract OllaCoreProtocolFeesTest is Test {
     function test_CalculateProtocolFees_LargeAssetsTinyRewards_MatchesConvertToShares() external {
         uint256 depositAmount = 1e24;
         _performDeposit(alice, depositAmount);
-        core.exposedApplyAccountingUpdates(1, 0, 0, 0, 0);
+        // Under pull-model accounting, totalAssets reads stakedPrincipal live from stakingManager.
+        // Pushing a 1-wei staked delta exercises the off-by-one path the test targets.
+        stakingManager.setTotalStaked(1);
 
         uint256 grossRewards = 20;
         (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
@@ -204,9 +202,9 @@ contract OllaCoreProtocolFeesTest is Test {
         uint256 expectedTimestamp = block.timestamp;
 
         vm.expectEmit(true, true, true, true, address(core));
-        emit OllaProtocolFeesPaid(protocolFeeAssets, treasuryShares, providerShares);
-        vm.expectEmit(true, true, true, true, address(core));
         emit AttestersStateRead(rewards, 0, expectedTimestamp);
+        vm.expectEmit(true, true, true, true, address(core));
+        emit OllaProtocolFeesPaid(protocolFeeAssets, treasuryShares, providerShares);
         vm.expectEmit(true, true, true, true, address(core));
         emit AccountingUpdated(
             expectedTotalAssets,
@@ -260,6 +258,80 @@ contract OllaCoreProtocolFeesTest is Test {
 
         assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury minted (from zero)");
         assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider minted (from zero)");
+    }
+
+    function test_SetProtocolFeeBP_SettlesAccruedRewardsAtOldFeeRate() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 rewards = 20 * DECIMALS;
+        uint256 newFeeBP = 1_000;
+
+        _performDeposit(alice, depositAmount);
+        stakingManager.setClaimableRewards(rewards);
+
+        uint256 oldSupply = stAztec.totalSupply();
+        uint256 expectedTotalAssets = depositAmount + rewards;
+        uint256 protocolFeeAssets = rewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 rateBeforeFees = (expectedTotalAssets + 1e3).mulDiv(DECIMALS, oldSupply + 1e3, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeFees, Math.Rounding.Floor);
+        uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
+        uint256 providerShares = protocolSharesTotal - treasuryShares;
+
+        vm.prank(governance);
+        core.setProtocolFeeBP(newFeeBP);
+
+        IOllaCore.LatestReport memory reportAfterSet = core.latestReport();
+        assertEq(core.protocolFeeBP(), newFeeBP, "protocol fee updated");
+        assertEq(reportAfterSet.grossRewards, rewards, "rewards settled before fee change");
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury paid at old fee rate");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider paid at old fee rate");
+        assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "only old-rate fee shares minted");
+
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfterUpdate = core.latestReport();
+        assertEq(reportAfterUpdate.grossRewards, 0, "no retroactive rewards left for new fee rate");
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury unchanged after follow-up update");
+        assertEq(
+            stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider unchanged after follow-up update"
+        );
+    }
+
+    function test_SetTreasuryFeeSplitBP_SettlesAccruedRewardsAtOldSplit() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 rewards = 20 * DECIMALS;
+        uint256 newSplitBP = 9_000;
+
+        _performDeposit(alice, depositAmount);
+        stakingManager.setClaimableRewards(rewards);
+
+        uint256 oldSupply = stAztec.totalSupply();
+        uint256 expectedTotalAssets = depositAmount + rewards;
+        uint256 protocolFeeAssets = rewards * PROTOCOL_FEE_BP / BP_DIVISOR;
+        uint256 rateBeforeFees = (expectedTotalAssets + 1e3).mulDiv(DECIMALS, oldSupply + 1e3, Math.Rounding.Floor);
+        uint256 protocolSharesTotal = protocolFeeAssets.mulDiv(DECIMALS, rateBeforeFees, Math.Rounding.Floor);
+        uint256 treasuryShares = protocolSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
+        uint256 providerShares = protocolSharesTotal - treasuryShares;
+
+        vm.prank(governance);
+        core.setTreasuryFeeSplitBP(newSplitBP);
+
+        IOllaCore.LatestReport memory reportAfterSet = core.latestReport();
+        assertEq(core.treasuryFeeSplitBP(), newSplitBP, "treasury split updated");
+        assertEq(reportAfterSet.grossRewards, rewards, "rewards settled before split change");
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury paid at old split");
+        assertEq(stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider paid at old split");
+        assertEq(stAztec.totalSupply(), oldSupply + protocolSharesTotal, "fee shares minted once");
+
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.LatestReport memory reportAfterUpdate = core.latestReport();
+        assertEq(reportAfterUpdate.grossRewards, 0, "no retroactive rewards left for new split");
+        assertEq(stAztec.balanceOf(governance), treasuryShares, "treasury unchanged after follow-up update");
+        assertEq(
+            stAztec.balanceOf(providerRewardsRecipient), providerShares, "provider unchanged after follow-up update"
+        );
     }
 
     function test_UpdateAccounting_NetFlowsNegative_NoPhantomFees() external {
@@ -324,8 +396,6 @@ contract OllaCoreProtocolFeesTest is Test {
 
         // Stake all assets so buffer is empty
         vm.warp(block.timestamp + 1 hours + 1);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         stakingManager.setRewardsToken(asset);
         vm.prank(operator);
@@ -422,187 +492,5 @@ contract OllaCoreProtocolFeesTest is Test {
         // Shares split sums to total
         uint256 totalShares = core.convertToShares(expectedFeeAssets);
         assertEq(treasuryShares + providerShares, totalShares, "treasury + provider == total shares");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-        EXIT FEES EXCLUDED FROM GROSS REWARDS
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice After an instant redemption with exit fees and no staking rewards,
-    ///         the subsequent accounting cycle should report grossRewards = 0 and
-    ///         mint no protocol fee shares. Exit fees are a redistribution to holders,
-    ///         not yield.
-    function test_ExitFeeOnly_ExcludedFromGrossRewards_NoProtocolFees() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        // Establish baseline accounting
-        vm.prank(operator);
-        core.updateAccounting();
-
-        // Enable 5% instant redemption fee
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(500);
-
-        // Alice instant redeems 20 shares: grossAssets=20e18, fee=1e18, net=19e18
-        uint256 redeemShares = 20 * DECIMALS;
-        vm.prank(alice);
-        stAztec.approve(address(vault), redeemShares);
-        vm.prank(alice);
-        vault.instantRedeem(redeemShares, alice, 0);
-
-        // Snapshot balances before second accounting
-        uint256 supplyBefore = stAztec.totalSupply();
-        uint256 govSharesBefore = stAztec.balanceOf(governance);
-        uint256 providerSharesBefore = stAztec.balanceOf(providerRewardsRecipient);
-
-        // Run accounting — exit fee should NOT appear as grossRewards
-        vm.prank(operator);
-        core.updateAccounting();
-
-        IOllaCore.LatestReport memory report = core.latestReport();
-        assertEq(report.grossRewards, 0, "exit fee excluded from grossRewards");
-        assertEq(stAztec.totalSupply(), supplyBefore, "no protocol fee shares minted on exit fee");
-        assertEq(stAztec.balanceOf(governance), govSharesBefore, "treasury unchanged");
-        assertEq(stAztec.balanceOf(providerRewardsRecipient), providerSharesBefore, "provider unchanged");
-    }
-
-    /// @notice When staking rewards AND exit fees both occur in the same period,
-    ///         protocol fees are computed only on the staking rewards portion.
-    function test_ExitFeePlusStakingRewards_ProtocolFeeOnlyOnStakingRewards() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        // Establish baseline
-        vm.prank(operator);
-        core.updateAccounting();
-
-        // Enable 5% instant redemption fee
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(500);
-
-        // Alice instant redeems 20 shares: fee = 1e18
-        uint256 redeemShares = 20 * DECIMALS;
-        vm.prank(alice);
-        stAztec.approve(address(vault), redeemShares);
-        vm.prank(alice);
-        vault.instantRedeem(redeemShares, alice, 0);
-
-        // Also simulate 10 AZTEC staking rewards
-        uint256 stakingRewards = 10 * DECIMALS;
-        stakingManager.setClaimableRewards(stakingRewards);
-
-        // Protocol fees should be computed on staking rewards only (not exit fee)
-        uint256 expectedProtocolFeeAssets = stakingRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
-
-        vm.expectEmit(true, true, true, false, address(core));
-        emit OllaProtocolFeesPaid(expectedProtocolFeeAssets, 0, 0); // only check first arg (fee assets)
-
-        // Run accounting
-        vm.prank(operator);
-        core.updateAccounting();
-
-        IOllaCore.LatestReport memory report = core.latestReport();
-        // grossRewards should be staking rewards only (exit fee excluded)
-        assertEq(report.grossRewards, stakingRewards, "grossRewards = staking rewards only");
-    }
-
-    /// @notice Verifies cumulativeExitFees counter increments correctly on instant redeem.
-    function test_CumulativeExitFees_TracksInstantRedemptionFees() external {
-        uint256 depositAmount = 100 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(500); // 5%
-
-        assertEq(vault.cumulativeExitFees(), 0, "starts at zero");
-
-        // First redeem: 20 shares at 1:1 rate → grossAssets=20e18, fee=1e18
-        vm.prank(alice);
-        stAztec.approve(address(vault), 40 * DECIMALS);
-        vm.prank(alice);
-        vault.instantRedeem(20 * DECIMALS, alice, 0);
-
-        uint256 feesAfterFirst = vault.cumulativeExitFees();
-        assertEq(feesAfterFirst, 1 * DECIMALS, "tracks first exit fee");
-
-        // Second redeem: rate has shifted (exit fee stayed in buffer), so fee > 1e18
-        uint256 grossAssets2 = core.convertToAssets(20 * DECIMALS);
-        uint256 expectedFee2 = grossAssets2 * 500 / BP_DIVISOR;
-        vm.prank(alice);
-        vault.instantRedeem(20 * DECIMALS, alice, 0);
-
-        assertEq(vault.cumulativeExitFees(), feesAfterFirst + expectedFee2, "accumulates across redeems");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-        FEE-ON-FEE INTERACTION: PROTOCOL FEES + INSTANT REDEMPTION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice When both protocol fees and instant redemption fees are active,
-    ///         the instant redemption fee is applied to the gross assets (before protocol
-    ///         fees dilute the exchange rate), and the protocol fee applies to rewards.
-    ///         This test verifies both fees compound correctly without double-charging.
-    function test_FeeOnFee_ProtocolFeeAndInstantRedemptionFee() external {
-        // Setup: deposit 100 AZTEC
-        uint256 depositAmount = 100 * DECIMALS;
-        uint256 aliceShares = _performDeposit(alice, depositAmount);
-
-        // Enable instant redemption fee (1%)
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(100);
-
-        // Simulate 10 AZTEC rewards via claimableRewards + updateAccounting
-        uint256 rewards = 10 * DECIMALS;
-        stakingManager.setClaimableRewards(rewards);
-
-        vm.prank(operator);
-        core.updateAccounting();
-
-        // After updateAccounting: totalAssets = 100 + 10 = 110e18, protocol fee shares minted
-        uint256 totalAssetsAfterFees = core.totalAssets();
-        assertEq(totalAssetsAfterFees, depositAmount + rewards, "totalAssets = deposit + rewards");
-
-        // Protocol fee shares were minted to treasury and provider
-        uint256 treasuryShares = stAztec.balanceOf(governance);
-        uint256 providerShares = stAztec.balanceOf(providerRewardsRecipient);
-        assertGt(treasuryShares + providerShares, 0, "fee shares should have been minted");
-
-        // The exchange rate has increased but is diluted by fee shares
-        uint256 rateAfterFees = core.exchangeRate();
-        assertGt(rateAfterFees, 1e18, "rate should be > 1 after rewards");
-
-        // Alice redeems half her shares via instant redeem.
-        // (The vault buffer only holds the original 100 AZTEC deposit, not the reward tokens,
-        //  since rewards are tracked via accounting but tokens remain with the staking manager.)
-        uint256 redeemShares = aliceShares / 2;
-
-        // Calculate expected gross and net assets for alice's partial redemption
-        uint256 grossAssets =
-            redeemShares.mulDiv(totalAssetsAfterFees + 1e3, stAztec.totalSupply() + 1e3, Math.Rounding.Floor);
-        uint256 instantRedemptionFee = grossAssets * 100 / BP_DIVISOR; // 1% fee
-        uint256 expectedNet = grossAssets - instantRedemptionFee;
-
-        // Perform instant redeem
-        vm.prank(alice);
-        stAztec.approve(address(vault), redeemShares);
-        vm.prank(alice);
-        uint256 netReceived = vault.instantRedeem(redeemShares, alice, 0);
-
-        // Verify the instant redeem fee was applied on top of (not in place of) the protocol fee
-        assertEq(netReceived, expectedNet, "net received should be gross - 1% instant redemption fee");
-
-        // Alice's partial redeem value should be affected by BOTH fees:
-        // 1. Protocol fee diluted her shares (exchange rate < 1.1:1)
-        // 2. Instant redemption fee deducted from gross assets
-        // Without either fee, half of 110e18 = 55e18. With both fees, she gets less.
-        assertLt(netReceived, 55 * DECIMALS, "alice gets less than half totalAssets due to both fees");
-        // But she should still get more than half her original deposit
-        assertGt(netReceived, 50 * DECIMALS, "alice still profits from rewards");
-
-        // Verify: gross assets per share < 1.1 (protocol fee dilutes rate from 1.1 downward)
-        assertLt(grossAssets, 55 * DECIMALS, "gross per half-share < 55 due to protocol fee dilution");
-        // And net < gross (instant redemption fee takes a further cut)
-        assertLt(netReceived, grossAssets, "net < gross due to instant redemption fee");
     }
 }

@@ -136,4 +136,15 @@ contract RewardsAccumulatorUpgradeTest is Test {
         v2.setV2Value(123);
         assertEq(v2.v2Value(), 123, "v2 storage works");
     }
+
+    function test_Upgrade_SucceedsAfterCoreOwnerDrift() external {
+        RewardsAccumulatorUpgradeMock newImplementation = new RewardsAccumulatorUpgradeMock();
+
+        mockCore.setOwner(makeAddr("newCoreOwner"));
+
+        vm.prank(defaultAdmin);
+        vault.upgradeToAndCall(address(newImplementation), "");
+
+        assertEq(RewardsAccumulatorUpgradeMock(address(vault)).version(), 2, "upgrade should ignore core owner drift");
+    }
 }

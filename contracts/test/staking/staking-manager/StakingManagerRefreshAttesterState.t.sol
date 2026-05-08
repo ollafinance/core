@@ -4,7 +4,6 @@ pragma solidity >=0.8.27 <0.9.0;
 import { Vm } from "@forge-std/Test.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
@@ -64,6 +63,61 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         assertEq(exitAmount, ACTIVATION_THRESHOLD, "exitAmount should match the finalized amount");
     }
 
+    /// @notice refreshAttesterState() must not call rollup.finalizeWithdraw until the
+    ///         corresponding governance withdrawal has unlocked.
+    function test_RefreshAttesterState_SkipsFinalizationUntilGovernanceWithdrawalUnlocks() external {
+        _setupActiveAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+        uint256 unlocksAt = block.timestamp + 38 days;
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        aztecGovernance.setWithdrawal(0, ACTIVATION_THRESHOLD, unlocksAt, address(rollup), false);
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertTrue(stakingManager.isUnstakePending(attester), "attester should stay exiting while governance locked");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "pending count should remain");
+        assertEq(stakingManager.pendingUnstakes(), ACTIVATION_THRESHOLD, "pending amount should remain");
+        assertFalse(stakingManager.hasFinalizedUnstakes(), "nothing should be finalized yet");
+
+        vm.warp(unlocksAt);
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertFalse(stakingManager.isUnstakePending(attester), "attester should finalize once governance unlocks");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending count should clear");
+
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
+        assertEq(received, ACTIVATION_THRESHOLD, "funds should be received after unlock");
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exit amount should be claimable after unlock");
+    }
+
+    /// @notice If the governance withdrawal was already claimed, refresh can finalize the
+    ///         rollup exit immediately once the rollup exit delay has passed.
+    function test_RefreshAttesterState_FinalizesWhenGovernanceWithdrawalAlreadyClaimed() external {
+        _setupActiveAttester();
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        aztecGovernance.setWithdrawal(0, ACTIVATION_THRESHOLD, block.timestamp + 38 days, address(rollup), true);
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        assertFalse(stakingManager.isUnstakePending(attester), "claimed governance withdrawal should not block");
+        assertEq(stakingManager.getPendingUnstakeCount(), 0, "pending count should clear");
+
+        vm.prank(core);
+        (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
+        assertEq(received, ACTIVATION_THRESHOLD, "funds should be received");
+        assertEq(exitAmount, ACTIVATION_THRESHOLD, "exit amount should be claimable");
+    }
+
     /// @notice Multiple calls to refreshAttesterState() accumulate _pendingClaimAmount
     ///         until getUnstakedFunds() drains it.
     function test_RefreshAttesterState_AccumulatesAcrossMultipleCalls() external {
@@ -118,9 +172,9 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         assertEq(receivedSecond, 0, "second call received should be 0 with no balance remaining");
     }
 
-    /// @notice Tokens sent directly to StakingManager (donations) are swept by getUnstakedFunds()
-    ///         as `received` but are NOT counted as `exitAmount`.
-    function test_GetUnstakedFunds_DonationSweptAsReceivedNotExitAmount() external {
+    /// @notice Tokens sent directly to StakingManager (donations) are not swept by getUnstakedFunds()
+    ///         unless they correspond to accounted exits or failed-entry refunds.
+    function test_GetUnstakedFunds_DonationNotSweptWithoutAccountedFunds() external {
         uint256 donationAmount = 50 ether;
 
         // Mint tokens to alice and have alice send them directly to StakingManager (donation)
@@ -132,14 +186,14 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
 
         uint256 coreBalanceBefore = aztec.balanceOf(core);
 
-        // getUnstakedFunds should sweep the donation as `received` but exitAmount should be 0
+        // getUnstakedFunds should not sweep unaccounted donations.
         vm.prank(core);
         (uint256 received, uint256 exitAmount) = stakingManager.getUnstakedFunds();
 
-        assertEq(received, donationAmount, "received should include donated tokens");
+        assertEq(received, 0, "received should exclude unaccounted donated tokens");
         assertEq(exitAmount, 0, "exitAmount should be 0 since no exits were finalized");
-        assertEq(aztec.balanceOf(core), coreBalanceBefore + donationAmount, "core should receive donated tokens");
-        assertEq(aztec.balanceOf(address(stakingManager)), 0, "manager should have zero balance after sweep");
+        assertEq(aztec.balanceOf(core), coreBalanceBefore, "core should not receive donated tokens");
+        assertEq(aztec.balanceOf(address(stakingManager)), donationAmount, "manager should retain unaccounted donation");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -580,11 +634,14 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice refreshAttesterState() is protected by nonReentrant. Re-entering via the rollup's
-    ///         finalizeWithdraw() callback reverts with ReentrancyGuardReentrantCall.
-    function test_RevertWhen_RefreshAttesterState_Reentrancy() external {
+    ///         finalizeWithdraw() callback fails the finalize attempt, but the batch refresh catches
+    ///         that failure and leaves the attester pending.
+    function test_RefreshAttesterState_ReentrancyLeavesAttesterPending() external {
         // Deploy a malicious rollup that re-enters during finalizeWithdraw
         MaliciousAztecRollup maliciousRollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
-        MockAztecRollupRegistry maliciousRegistry = new MockAztecRollupRegistry(address(maliciousRollup));
+        MockAztecRollupRegistry maliciousRegistry =
+            new MockAztecRollupRegistry(address(maliciousRollup), IERC20(address(aztec)));
+        maliciousRegistry.setGovernance(address(aztecGovernance));
         MockRewardsAccumulator maliciousRewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy a fresh StakingManager wired to the malicious rollup
@@ -628,8 +685,142 @@ contract StakingManagerRefreshAttesterStateTest is StakingManagerBaseTest {
         );
         maliciousRollup.setReenterOnFinalizeWithdraw(true);
 
-        // The reentrancy attempt should revert
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         maliciousSM.refreshAttesterState(reentrancyAttesters);
+
+        assertTrue(maliciousSM.isUnstakePending(keys[0].attester), "attester should remain pending");
+        assertEq(maliciousSM.getPendingUnstakeCount(), 1, "pending count should remain");
+        assertFalse(maliciousSM.hasFinalizedUnstakes(), "failed finalize should not create claimable amount");
+
+        // Once the rollup stops reverting, a later refresh can finalize normally.
+        maliciousRollup.setReenterOnFinalizeWithdraw(false);
+        maliciousSM.refreshAttesterState(reentrancyAttesters);
+        assertFalse(maliciousSM.isUnstakePending(keys[0].attester), "attester should finalize after retry");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+        EXTERNALLY-FINALIZED EXIT STORAGE CLEANUP
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Reads AttesterInfo storage directly via vm.load.
+    /// @dev    The mapping `_attesterMap` lives at slot 8 in StakingManager's storage layout
+    ///         (verified via `forge inspect StakingManager storageLayout`). Each `AttesterInfo`
+    ///         struct (per Solidity packing rules) occupies 5 slots:
+    ///             slot+0: attester (lower 160 bits)
+    ///             slot+1: stakedAmount (full 256 bits)
+    ///             slot+2: queueRollup (lower 160 bits)
+    ///             slot+3: exitRollup (lower 160 bits) || pendingExitAmount (upper 96 bits)
+    ///             slot+4: status (uint8 enum at byte 0)
+    ///         exitRollup (20B) + pendingExitAmount (12B) pack into a single 32B slot;
+    ///         status starts a new slot because the previous one has no remaining room.
+    function _readAttesterInfoSlots(address attester)
+        internal
+        view
+        returns (
+            address attesterField,
+            uint256 stakedAmount,
+            address exitRollup,
+            uint96 pendingExitAmount,
+            uint8 status
+        )
+    {
+        bytes32 baseSlot = keccak256(abi.encode(attester, uint256(8)));
+        attesterField = address(uint160(uint256(vm.load(address(stakingManager), baseSlot))));
+        stakedAmount = uint256(vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 1)));
+        bytes32 packedSlot3 = vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 3));
+        exitRollup = address(uint160(uint256(packedSlot3)));
+        pendingExitAmount = uint96(uint256(packedSlot3) >> 160);
+        bytes32 statusSlot = vm.load(address(stakingManager), bytes32(uint256(baseSlot) + 4));
+        status = uint8(uint256(statusSlot));
+    }
+
+    /// @notice After an attester is removed via the externally-finalized exit branch, every
+    ///         field of its `AttesterInfo` storage slot must be fully zeroed — including
+    ///         `stakedAmount`. No subsequent write in the same call may resurrect any field.
+    /// @dev    The branch is reached when `status == Exiting && !view_.exit.exists`. To make
+    ///         the property observable we route through it with a non-zero rollup balance
+    ///         (clear the exit record but leave a non-zero stake). The branch condition
+    ///         depends only on status and exit existence, so a non-zero balance is fine.
+    function test_RefreshAttesterState_ExternallyFinalizedExit_ClearsAttesterStorage() external {
+        _setupActiveAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // Drive the externally-finalized branch with a non-zero rollup balance so any stray
+        // post-removal write to `stakedAmount` would be observable in storage.
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, ACTIVATION_THRESHOLD, address(stakingManager));
+
+        // Sanity: pre-refresh the attester is Exiting with the rollup recorded.
+        (,, address exitRollupBefore,, uint8 statusBefore) = _readAttesterInfoSlots(attester);
+        assertEq(uint256(statusBefore), uint256(IStakingManager.InternalAttesterStatus.Exiting), "pre: Exiting");
+        assertEq(exitRollupBefore, address(rollup), "pre: exitRollup recorded");
+
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+
+        // _removeAttester wipes the storage slot; no subsequent write should resurrect any field.
+        (
+            address attesterField,
+            uint256 stakedAmountAfter,
+            address exitRollupAfter,
+            uint96 pendingExitAfter,
+            uint8 statusAfter
+        ) = _readAttesterInfoSlots(attester);
+
+        assertEq(attesterField, address(0), "attester field must be zeroed");
+        assertEq(exitRollupAfter, address(0), "exitRollup field must be zeroed");
+        assertEq(uint256(pendingExitAfter), 0, "pendingExitAmount must be zeroed");
+        assertEq(uint256(statusAfter), 0, "status must be zeroed");
+        assertEq(stakedAmountAfter, 0, "stakedAmount must be zeroed");
+    }
+
+    /// @notice In the externally-finalized exit branch, `_refreshSingleAttester` must emit
+    ///         exactly one `AttesterStateRefreshed` and one `AttesterRemoved` for the attester.
+    /// @dev    A regression where the branch falls through to the function tail would cause
+    ///         the trailing `emit AttesterStateRefreshed(...)` block to run after removal,
+    ///         producing two `AttesterStateRefreshed` events for the same attester. Counting
+    ///         events is order-agnostic and aligned with the other terminal branches that
+    ///         emit `AttesterStateRefreshed` after `_removeAttester`.
+    function test_RefreshAttesterState_ExternallyFinalizedExit_EmitsOneAttesterStateRefreshed() external {
+        _setupActiveAttester();
+
+        vm.prank(core);
+        stakingManager.unstake(ACTIVATION_THRESHOLD);
+
+        IStakingManager.KeyStore[] memory keys = _createMockKeys(1);
+        address attester = keys[0].attester;
+
+        // Drive the externally-finalized branch with a non-zero rollup balance.
+        rollup.clearAttester(attester);
+        rollup.setStake(attester, ACTIVATION_THRESHOLD, address(stakingManager));
+
+        bytes32 attesterRemovedSig = keccak256(abi.encodePacked("AttesterRemoved(address)"));
+        bytes32 attesterStateRefreshedSig =
+            keccak256(abi.encodePacked("AttesterStateRefreshed(address,uint256,uint256)"));
+        bytes32 attesterTopic = bytes32(uint256(uint160(attester)));
+
+        vm.recordLogs();
+        stakingManager.refreshAttesterState(_attesterAddresses(1));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        uint256 removedCount;
+        uint256 stateRefreshedCount;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(stakingManager)) continue;
+            if (logs[i].topics.length < 2) continue;
+            if (logs[i].topics[1] != attesterTopic) continue;
+
+            if (logs[i].topics[0] == attesterRemovedSig) {
+                ++removedCount;
+            } else if (logs[i].topics[0] == attesterStateRefreshedSig) {
+                ++stateRefreshedCount;
+            }
+        }
+
+        assertEq(stateRefreshedCount, 1, "exactly one AttesterStateRefreshed event must be emitted for the attester");
+        assertEq(removedCount, 1, "exactly one AttesterRemoved event must be emitted for the attester");
     }
 }

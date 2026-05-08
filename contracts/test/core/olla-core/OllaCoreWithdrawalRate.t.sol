@@ -10,7 +10,6 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -40,7 +39,6 @@ contract OllaCoreWithdrawalRateTest is Test {
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -71,7 +69,6 @@ contract OllaCoreWithdrawalRateTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
@@ -80,7 +77,7 @@ contract OllaCoreWithdrawalRateTest is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -168,7 +165,7 @@ contract OllaCoreWithdrawalRateTest is Test {
 
         // Since there are no staking operations and buffer covers the request,
         // verify the finalization happened (check that the request was processed)
-        uint256 nextPending = withdrawalQueue.nextPendingId();
+        uint256 nextPending = uint64(vault.nextUnfinalizedWithdrawalRequestId());
         assertGt(nextPending, 1, "Withdrawal should have been finalized during rebalance");
 
         // The rate passed to finalizeWithdrawals should equal exposedWithdrawalRate
@@ -200,41 +197,24 @@ contract OllaCoreWithdrawalRateTest is Test {
 
         uint256 rateBefore = core.exposedWithdrawalRate();
 
-        // Apply slashing via accounting updates: reduce stakedPrincipal and increase slashingDelta
-        // Simulate: 50 DECIMALS staked, then 10 DECIMALS slashed
-        core.exposedApplyAccountingUpdates(
-            50 * DECIMALS, // stakedPrincipal
-            0, // rewardsAccumulatorBalance
-            0, // claimableRewards
-            0, // rewardsDelta
-            10 * DECIMALS // slashingDelta
-        );
+        // Drive slashing through the owning module: totalAssets() now reads
+        // stakingManager.totalStaked() (net of slashing) live at call time.
+        // Target: stakedPrincipal=50e18, slashingDelta=10e18.
+        // setSlashingDelta subtracts the increment from totalStakedAmount, so apply it first and
+        // then raise totalStaked to the intended net-of-slashing target.
+        stakingManager.setSlashingDelta(10 * DECIMALS);
+        stakingManager.setTotalStaked(50 * DECIMALS);
 
         uint256 rateAfter = core.exposedWithdrawalRate();
 
-        // slashingDelta reduces totalAssets (via _computeTotalAssets), so rate should drop
-        // But note that buffered assets (100 DECIMALS) + stakedPrincipal (50) - slashingDelta (10) = 140
-        // vs before: buffered (100) + 0 staked = 100. Actually stakedPrincipal and slashingDelta
-        // go through _computeTotalAssets differently. Let me check the effect:
-        // After update: totalAssets = buffered(100) + staked(50) + rewardsAcc(0) + claimable(0) - pending(0) = 150
-        // But the rate also depends on the slashingDelta deducted from stakedPrincipal already
-        // Let's just verify the rate changed appropriately
+        // Rate must remain positive after the state change; absolute movement depends on how
+        // bufferedAssets, net-of-slash staked, and pending interact.
         assertGt(rateBefore, 0, "Rate before should be positive");
         assertGt(rateAfter, 0, "Rate after should be positive");
 
-        // With higher stakedPrincipal, totalAssets increases, so rate should increase
-        // even with the slashingDelta (since staked > slashing delta here).
-        // The key test is that the rate reflects all accounting state changes.
-        // Let's verify with a scenario where slashing actually reduces assets:
-
-        // Now apply severe slashing: slashingDelta exceeds new staked amount
-        core.exposedApplyAccountingUpdates(
-            10 * DECIMALS, // stakedPrincipal (reduced from 50 to 10)
-            0, // rewardsAccumulatorBalance
-            0, // claimableRewards
-            0, // rewardsDelta
-            40 * DECIMALS // slashingDelta (40 lost)
-        );
+        // Severe slashing: net-of-slash staked collapses to 10e18 and slashingDelta climbs to 40e18.
+        stakingManager.setSlashingDelta(40 * DECIMALS);
+        stakingManager.setTotalStaked(10 * DECIMALS);
 
         uint256 rateAfterSevereSlash = core.exposedWithdrawalRate();
         assertLt(rateAfterSevereSlash, rateAfter, "Rate should drop after severe slashing");
@@ -244,14 +224,11 @@ contract OllaCoreWithdrawalRateTest is Test {
     function test_WithdrawalRate_EqualsExchangeRate_WithRewards() external {
         _deposit(alice, 100 * DECIMALS);
 
-        // Simulate rewards accrual
-        core.exposedApplyAccountingUpdates(
-            0, // stakedPrincipal
-            10 * DECIMALS, // rewardsAccumulatorBalance
-            0, // claimableRewards
-            10 * DECIMALS, // rewardsDelta
-            0 // slashingDelta
-        );
+        // Simulate rewards accrual sitting in the RewardsAccumulator. totalAssets() reads
+        // `rewardsAccumulator.balance()` live via `_liveAccountingState()`, so dealing the
+        // asset to the accumulator is the pull-model equivalent of seeding
+        // `_accountingState.rewardsAccumulatorBalance` directly.
+        deal(address(asset), address(rewardsAccumulator), 10 * DECIMALS);
 
         uint256 withdrawalRate = core.exposedWithdrawalRate();
         uint256 exchangeRate = core.exchangeRate();

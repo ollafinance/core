@@ -52,6 +52,12 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @notice Whether claiming should fail for a sequencer/coinbase.
     mapping(address sequencer => bool shouldFail) public override claimShouldFail;
 
+    /// @notice Whether getSequencerRewards should fail for a sequencer/coinbase.
+    mapping(address sequencer => bool shouldFail) public override getRewardsShouldFail;
+
+    /// @inheritdoc IMockAztecRollup
+    bool public override isRewardsClaimable;
+
     /// @notice Rewards accrued per second when `tick` is called.
     uint256 public rewardRatePerSecond;
     /// @notice Last timestamp used for reward accrual.
@@ -80,6 +86,7 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         STAKING_ASSET = stakingAsset;
         _activationThreshold = activationThreshold == 0 ? DEFAULT_ACTIVATION_THRESHOLD : activationThreshold;
         lastTick = block.timestamp;
+        isRewardsClaimable = true;
     }
 
     /// @notice Configure the call to perform during a reentrancy attempt.
@@ -234,7 +241,7 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
             reentryTarget.functionCall(reentryCalldata);
         }
 
-        if (claimShouldFail[_coinbase]) {
+        if (!isRewardsClaimable || claimShouldFail[_coinbase]) {
             revert MockAztecRollup__ClaimFailed();
         }
         amount = pendingRewards[_coinbase];
@@ -322,6 +329,16 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     }
 
     /// @inheritdoc IMockAztecRollup
+    function setGetRewardsShouldFail(address _sequencer, bool _shouldFail) external override {
+        getRewardsShouldFail[_sequencer] = _shouldFail;
+    }
+
+    /// @inheritdoc IMockAztecRollup
+    function setRewardsClaimable(bool _claimable) external override {
+        isRewardsClaimable = _claimable;
+    }
+
+    /// @inheritdoc IMockAztecRollup
     function setExitRecipient(address _attester, address _recipient) external override {
         if (_exits[_attester].exists) {
             _exits[_attester].recipientOrWithdrawer = _recipient;
@@ -353,8 +370,12 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
 
     /// @inheritdoc IMockAztecRollup
     function reduceExitAmount(address _attester, uint256 _newAmount) external override {
-        require(_exits[_attester].exists, "MaliciousAztecRollup: no exit");
-        require(_newAmount <= _exits[_attester].amount, "MaliciousAztecRollup: new amount exceeds current");
+        if (!_exits[_attester].exists) {
+            revert MockAztecRollup__NoExit();
+        }
+        if (_newAmount > _exits[_attester].amount) {
+            revert MockAztecRollup__InvalidExitAmount();
+        }
         _exits[_attester].amount = _newAmount;
     }
 
@@ -396,6 +417,9 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @param _sequencer The sequencer address.
     /// @return The pending reward amount.
     function getSequencerRewards(address _sequencer) external view override returns (uint256) {
+        if (getRewardsShouldFail[_sequencer]) {
+            revert MockAztecRollup__ClaimFailed();
+        }
         return pendingRewards[_sequencer];
     }
 

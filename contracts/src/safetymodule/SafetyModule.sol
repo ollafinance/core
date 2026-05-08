@@ -79,6 +79,12 @@ contract SafetyModule is AccessControl, ISafetyModule {
     /// @notice Last accounting update timestamp.
     uint48 public lastAccountingTimestamp;
 
+    /// @notice The breaker reason that most recently paused the module.
+    ISafetyModule.BreakerReason public lastBreakerReason;
+
+    /// @notice Latest high-water mark used for cumulative rate-drop checks.
+    uint256 public rateHighWaterMark;
+
     /*//////////////////////////////////////////////////////////////
                                  MODIFIERS
     //////////////////////////////////////////////////////////////*/
@@ -164,15 +170,27 @@ contract SafetyModule is AccessControl, ISafetyModule {
 
     /// @inheritdoc ISafetyModule
     function checkRateDrop(uint256 oldRate, uint256 nextRate) external override onlyCoreOrVault {
-        // solhint-disable-next-line gas-strict-inequalities
-        if (nextRate >= oldRate) {
+        uint256 highWaterMark = rateHighWaterMark;
+        if (highWaterMark == 0) {
+            highWaterMark = oldRate > nextRate ? oldRate : nextRate;
+            rateHighWaterMark = highWaterMark;
+            emit RateHighWaterMarkUpdated(highWaterMark);
+        }
+
+        if (nextRate > highWaterMark) {
+            rateHighWaterMark = nextRate;
+            emit RateHighWaterMarkUpdated(nextRate);
             return;
         }
 
-        uint256 dropBps = (oldRate - nextRate) * BPS_DENOMINATOR / oldRate;
-        // solhint-disable-next-line gas-strict-inequalities
-        if (dropBps >= minRateDropBps) {
-            _triggerBreaker(ISafetyModule.BreakerReason.RateDrop);
+        if (nextRate < oldRate) {
+            if (_checkRateDrop(oldRate, nextRate)) {
+                return;
+            }
+        }
+
+        if (nextRate <= oldRate && nextRate < highWaterMark) {
+            _checkRateDrop(highWaterMark, nextRate);
         }
     }
 
@@ -233,6 +251,8 @@ contract SafetyModule is AccessControl, ISafetyModule {
     ///      Increasing `withdrawalMinimum` can retroactively prevent users with fewer shares
     ///      from withdrawing. This is mitigated by the governance timelock (advance notice) and
     ///      the expectation that minimum is set conservatively at launch. Bounded by MAX_WITHDRAWAL_MINIMUM.
+    ///      The same minimum is enforced at deposit time in `OllaVault._processDeposit`, so a
+    ///      depositor cannot land in a sub-minimum state via a small initial deposit.
     function setWithdrawalMinimum(uint256 minimumShares) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (minimumShares > MAX_WITHDRAWAL_MINIMUM) {
             revert SafetyModule__InvalidParameter();
@@ -248,6 +268,13 @@ contract SafetyModule is AccessControl, ISafetyModule {
         }
         minRateDropBps = SafeCast.toUint16(minRateDropBps_);
         emit RateDropLimitUpdated(minRateDropBps_);
+    }
+
+    /// @inheritdoc ISafetyModule
+    function setRateHighWaterMark(uint256 rateHighWaterMark_) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (rateHighWaterMark_ == 0) revert SafetyModule__InvalidParameter();
+        rateHighWaterMark = rateHighWaterMark_;
+        emit RateHighWaterMarkUpdated(rateHighWaterMark_);
     }
 
     /// @inheritdoc ISafetyModule
@@ -305,6 +332,11 @@ contract SafetyModule is AccessControl, ISafetyModule {
     }
 
     /// @inheritdoc ISafetyModule
+    function isDepositPaused() external view override returns (bool pausedState) {
+        return paused && lastBreakerReason != ISafetyModule.BreakerReason.QueueRatio;
+    }
+
+    /// @inheritdoc ISafetyModule
     function checkDepositAllowed(uint256 deposit, uint256 total)
         external
         view
@@ -329,9 +361,26 @@ contract SafetyModule is AccessControl, ISafetyModule {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    function _checkRateDrop(uint256 referenceRate, uint256 nextRate) internal returns (bool triggered) {
+        uint256 dropBps = (referenceRate - nextRate) * BPS_DENOMINATOR / referenceRate;
+        // solhint-disable-next-line gas-strict-inequalities
+        if (dropBps >= minRateDropBps) {
+            bool pausedBefore = paused;
+            ISafetyModule.BreakerReason reasonBefore = lastBreakerReason;
+            _triggerBreaker(ISafetyModule.BreakerReason.RateDrop);
+            if (!pausedBefore || reasonBefore != ISafetyModule.BreakerReason.QueueRatio) {
+                rateHighWaterMark = nextRate;
+                emit RateHighWaterMarkUpdated(nextRate);
+            }
+            return true;
+        }
+        return false;
+    }
+
     /// @notice Pauses the module and emits the circuit breaker event if not already paused.
     /// @param reason The breaker reason to emit.
     function _triggerBreaker(ISafetyModule.BreakerReason reason) internal {
+        lastBreakerReason = reason;
         if (!paused) {
             paused = true;
             emit CircuitBreakerTriggered(reason);

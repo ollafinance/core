@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import { IAztecRewardDistributor } from "src/staking/interfaces/IAztecRewardDistributor.sol";
 import { IMockAztecRollupRegistry } from "src/staking/mocks/IMockAztecRollupRegistry.sol";
+import { MockAztecGovernance } from "src/staking/mocks/MockAztecGovernance.sol";
+import { MockAztecRewardDistributor } from "src/staking/mocks/MockAztecRewardDistributor.sol";
 
 /// @title MockRollupRegistry
 /// @notice Mock implementation of the Aztec Rollup Registry for testing.
@@ -14,16 +18,32 @@ contract MockAztecRollupRegistry is IMockAztecRollupRegistry {
     /// @dev The governance address.
     address private _governance;
 
-    /// @notice Constructs the MockAztecRollupRegistry.
+    /// @dev The reward distributor address.
+    IAztecRewardDistributor private _rewardDistributor;
+
+    /// @notice Constructs the MockAztecRollupRegistry with a reward asset.
     /// @param canonicalRollup_ The address of the canonical rollup.
-    constructor(address canonicalRollup_) {
+    /// @param rewardAsset_ The reward distributor asset.
+    constructor(address canonicalRollup_, IERC20 rewardAsset_) {
         _canonicalRollup = canonicalRollup_;
-        _governance = msg.sender;
+        _governance = address(new MockAztecGovernance());
+        _rewardDistributor = new MockAztecRewardDistributor(rewardAsset_);
     }
 
     /// @inheritdoc IMockAztecRollupRegistry
     function setCanonicalRollup(address canonicalRollup_) external override {
         _canonicalRollup = canonicalRollup_;
+    }
+
+    /// @inheritdoc IMockAztecRollupRegistry
+    function setRewardDistributor(IAztecRewardDistributor rewardDistributor_) external override {
+        _rewardDistributor = rewardDistributor_;
+    }
+
+    /// @inheritdoc IMockAztecRollupRegistry
+    /// @param governance_ The new governance address.
+    function setGovernance(address governance_) external override {
+        _governance = governance_;
     }
 
     /// @notice Returns the canonical (latest) rollup address.
@@ -38,9 +58,9 @@ contract MockAztecRollupRegistry is IMockAztecRollupRegistry {
         return _governance;
     }
 
-    /// @notice Sets the governance address (for testing).
-    /// @param governance_ The new governance address.
-    function _setGovernance(address governance_) internal {
-        _governance = governance_;
+    /// @notice Returns the reward distributor contract.
+    /// @return The reward distributor contract.
+    function getRewardDistributor() external view override returns (IAztecRewardDistributor) {
+        return _rewardDistributor;
     }
 }

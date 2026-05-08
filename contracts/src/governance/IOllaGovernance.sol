@@ -38,15 +38,8 @@ interface IOllaGovernance {
     /// @param core The OllaCore contract address.
     event CoreSet(address indexed core);
 
-    /// @notice Emitted when a grantRole or revokeRole call fails during admin role propagation.
-    /// @dev Governance should retry the failed operation via a timelock-scheduled call.
-    /// @param satellite The satellite contract where the call failed.
-    /// @param account The account that was being granted/revoked.
-    /// @param isGrant True if the failed call was grantRole, false if revokeRole.
-    event AdminRolePropagationFailed(address indexed satellite, address indexed account, bool indexed isGrant);
-
     /*//////////////////////////////////////////////////////////////
-                                ERRORS
+                                 ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a function is called by someone other than address(this) (timelock self-call).
@@ -100,8 +93,8 @@ interface IOllaGovernance {
 
     /// @notice Accepts governance by the pending governance address.
     /// @dev NOT timelocked - must be called directly by the pending governance address.
-    ///      Atomically transfers proposer/executor/canceller roles and propagates
-    ///      DEFAULT_ADMIN_ROLE changes across all satellite contracts.
+    ///      Atomically transfers timelock roles to the pending governance address.
+    ///      Satellite DEFAULT_ADMIN_ROLE remains on this governance contract.
     function acceptGovernance() external;
 
     /// @notice Cancels a pending governance proposal.
@@ -129,10 +122,6 @@ interface IOllaGovernance {
     /// @param newSplitBP The new split.
     function setTreasuryFeeSplitBP(uint256 newSplitBP) external;
 
-    /// @notice Sets the target buffer on OllaCore.
-    /// @param newBuffer The new target buffer.
-    function setTargetBufferedAssets(uint256 newBuffer) external;
-
     /// @notice Sets the rebalance gas threshold on OllaCore.
     /// @param newThreshold The new gas threshold.
     function setRebalanceGasThreshold(uint256 newThreshold) external;
@@ -149,10 +138,6 @@ interface IOllaGovernance {
                     OLLAVAULT PARAMETER PASSTHROUGHS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets the instant redemption fee on OllaVault.
-    /// @param newFeeBP The new fee (0-2000).
-    function setInstantRedemptionFeeBP(uint256 newFeeBP) external;
-
     /// @notice Recovers stAztec from OllaVault.
     /// @param recipient The recipient of the recovered stAztec.
     /// @param amount The amount of stAztec to recover.
@@ -160,10 +145,6 @@ interface IOllaGovernance {
 
     /// @notice Reconciles buffered assets on OllaVault.
     function reconcileBufferedAssets() external;
-
-    /// @notice Sets the gas threshold on OllaVault's withdrawal queue.
-    /// @param threshold The new gas threshold.
-    function setQueueGasThreshold(uint256 threshold) external;
 
     /*//////////////////////////////////////////////////////////////
                    SAFETY MODULE PARAMETER PASSTHROUGHS
@@ -193,14 +174,16 @@ interface IOllaGovernance {
                           UPGRADE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Upgrades the OllaCore implementation.
+    /// @notice Upgrades the OllaCore implementation and optionally executes init calldata.
     /// @param newImplementation The new implementation address.
-    function upgradeCore(address newImplementation) external;
+    /// @param data Optional calldata forwarded to `upgradeToAndCall` for atomic initialization.
+    function upgradeCore(address newImplementation, bytes calldata data) external;
 
-    /// @notice Upgrades a satellite contract implementation.
+    /// @notice Upgrades a satellite contract implementation and optionally executes init calldata.
     /// @param proxy The proxy address of the satellite.
     /// @param newImplementation The new implementation address.
-    function upgradeSatellite(address proxy, address newImplementation) external;
+    /// @param data Optional calldata forwarded to `upgradeToAndCall` for atomic initialization.
+    function upgradeSatellite(address proxy, address newImplementation, bytes calldata data) external;
 
     /*//////////////////////////////////////////////////////////////
                          EMERGENCY FUNCTIONS

@@ -12,8 +12,8 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 
@@ -25,7 +25,6 @@ contract OllaCoreAccessControlTest is Test {
     event ProtocolFeeUpdated(uint256 oldFeeBP, uint256 newFeeBP);
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
     event SafetyModuleUpdated(address oldSafetyModule, address newSafetyModule);
-    event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
@@ -47,7 +46,6 @@ contract OllaCoreAccessControlTest is Test {
     address internal governance;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
-    MockWithdrawalQueue internal withdrawalQueue;
     address internal alice;
 
     /*//////////////////////////////////////////////////////////////
@@ -72,7 +70,6 @@ contract OllaCoreAccessControlTest is Test {
         stakingManager = new MockStakingManager();
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         core.initialize(
             asset,
@@ -85,7 +82,7 @@ contract OllaCoreAccessControlTest is Test {
             address(safetyModule)
         );
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -121,10 +118,10 @@ contract OllaCoreAccessControlTest is Test {
         core.setSafetyModule(alice);
     }
 
-    function test_RevertWhen_NonOwnerSetsTargetBufferedAssets() external {
-        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, alice));
-        vm.prank(alice);
-        core.setTargetBufferedAssets(1);
+    function test_RevertWhen_RenounceOwnership() external {
+        vm.expectRevert(bytes("renouncing ownership not allowed"));
+        vm.prank(governance);
+        core.renounceOwnership();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -156,18 +153,6 @@ contract OllaCoreAccessControlTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__ZeroAddress.selector, "newSafetyModule"));
         vm.prank(governance);
         core.setSafetyModule(address(0));
-    }
-
-    function test_SetTargetBufferedAssets_AllowsZero() external {
-        uint256 oldBuffer = core.targetBufferedAssets();
-
-        vm.expectEmit(true, true, true, true, address(core));
-        emit TargetBufferedAssetsUpdated(oldBuffer, 0);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
-        assertEq(core.targetBufferedAssets(), 0, "target buffer set to zero");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -213,25 +198,26 @@ contract OllaCoreAccessControlTest is Test {
         assertEq(core.safetyModule(), address(newSafetyModule), "safety module updated");
     }
 
+    function test_SetSafetyModule_PrimesAccountingTimestampOnNewModule() external {
+        SafetyModule newSafetyModule =
+            new SafetyModule(governance, governance, address(core), address(vault), 1_000 ether, 500, 6_000, 1 days);
+
+        vm.warp(block.timestamp + 7 days);
+
+        vm.prank(governance);
+        core.setSafetyModule(address(newSafetyModule));
+
+        assertEq(
+            newSafetyModule.lastAccountingTimestamp(), block.timestamp, "new safety module timestamp should be primed"
+        );
+    }
+
     function test_RevertWhen_SafetyModuleCoreDoesNotMatch() external {
         MockSafetyModule wrongModule = new MockSafetyModule(makeAddr("wrongCore"), address(vault));
 
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSafetyModule.selector, address(wrongModule)));
         vm.prank(governance);
         core.setSafetyModule(address(wrongModule));
-    }
-
-    function test_SetTargetBufferedAssets_UpdatesAndEmits() external {
-        uint256 oldBuffer = core.targetBufferedAssets();
-        uint256 newBuffer = oldBuffer + 1;
-
-        vm.expectEmit(true, true, true, true, address(core));
-        emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(newBuffer);
-
-        assertEq(core.targetBufferedAssets(), newBuffer, "target buffer updated");
     }
 
     /*//////////////////////////////////////////////////////////////

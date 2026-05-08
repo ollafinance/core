@@ -27,6 +27,7 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public unstakedExitAmountOverride;
     bool public useUnstakedExitAmountOverride;
     uint256 public pendingUnstakeAmount;
+    uint256 public claimableUnstakedFundsAmount;
     bool public hasFinalizedUnstakesValue;
     uint256 public activatedAttesterCount;
     uint256 public pendingUnstakeCount;
@@ -39,6 +40,14 @@ contract MockAccountingStakingManager is IStakingManager {
     uint256 public stakeReturnAmount;
     bool public useStakeReturnAmount;
     bool public allowStakeReturnExceeds;
+    /// @notice Optional total-stake cap across all `stake()` calls; 0 = unlimited.
+    /// @dev When set, `stake()` caps each call so the cumulative amount staked since
+    ///      `setMaxTotalStake` was called never exceeds `maxTotalStake`, and `canStake()`
+    ///      reports false once the budget is exhausted. Counts independently from
+    ///      `totalStakedAmount` (the oracle value) so this knob composes with tests that
+    ///      prime `totalStakedAmount` via `setTotalStaked()`.
+    uint256 public maxTotalStake;
+    uint256 public stakedSinceCapSet;
 
     /*//////////////////////////////////////////////////////////////
                           TEST HELPERS
@@ -96,6 +105,10 @@ contract MockAccountingStakingManager is IStakingManager {
         pendingUnstakeAmount = value;
     }
 
+    function setClaimableUnstakedFunds(uint256 value) external {
+        claimableUnstakedFundsAmount = value;
+    }
+
     function setWithdrawableUnstakes(uint256 value) external {
         hasFinalizedUnstakesValue = value != 0;
     }
@@ -138,18 +151,30 @@ contract MockAccountingStakingManager is IStakingManager {
         allowStakeReturnExceeds = allow;
     }
 
+    function setMaxTotalStake(uint256 max) external {
+        maxTotalStake = max;
+        stakedSinceCapSet = 0;
+    }
+
     /*//////////////////////////////////////////////////////////////
                           CORE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     function setGasThreshold(uint256) external override { }
 
-    function stake(uint256 amount) external override returns (uint256 stakedAmount) {
+    function stake(uint256 amount) external virtual override returns (uint256 stakedAmount) {
         uint256 actualAmount = amount;
         if (useStakeReturnAmount) {
             actualAmount = stakeReturnAmount;
             if (!allowStakeReturnExceeds && actualAmount > amount) {
                 actualAmount = amount;
+            }
+        }
+        // Cap at the remaining total-stake budget when one is configured.
+        if (maxTotalStake != 0) {
+            uint256 remainingBudget = maxTotalStake > stakedSinceCapSet ? maxTotalStake - stakedSinceCapSet : 0;
+            if (actualAmount > remainingBudget) {
+                actualAmount = remainingBudget;
             }
         }
         if (actualAmount == 0) {
@@ -165,6 +190,9 @@ contract MockAccountingStakingManager is IStakingManager {
         }
         if (transferAmount != 0) {
             token.safeTransferFrom(msg.sender, address(this), transferAmount);
+        }
+        if (maxTotalStake != 0) {
+            stakedSinceCapSet += actualAmount;
         }
         return actualAmount;
     }
@@ -213,7 +241,7 @@ contract MockAccountingStakingManager is IStakingManager {
         return (amount, reportedExit);
     }
 
-    function harvestRewards() external override returns (uint256 harvested) {
+    function harvestRewards() external virtual override returns (uint256 harvested) {
         harvested = harvestedRewards;
         // Actually transfer tokens to rewards vault to simulate real harvest
         if (harvested > 0 && address(rewardsToken) != address(0) && rewardsAccumulator != address(0)) {
@@ -254,11 +282,16 @@ contract MockAccountingStakingManager is IStakingManager {
         return hasFinalizedUnstakesValue;
     }
 
+    function claimableUnstakedFunds() external view override returns (uint256) {
+        return claimableUnstakedFundsAmount;
+    }
+
     function core() external pure virtual override returns (address) {
         return address(0);
     }
 
     function canStake(uint256) external view override returns (bool) {
+        if (maxTotalStake != 0 && stakedSinceCapSet >= maxTotalStake) return false;
         if (useStakeReturnAmount) return stakeReturnAmount > 0;
         return true;
     }

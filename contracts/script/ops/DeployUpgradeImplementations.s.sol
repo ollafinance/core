@@ -9,7 +9,6 @@ import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title DeployUpgradeImplementations
@@ -33,8 +32,6 @@ contract DeployUpgradeImplementations is BaseScript {
         uint256 pk = _privateKey();
 
         // Read current proxy implementations for comparison
-        address queueProxy =
-            _addrOrDeployment("WITHDRAWAL_QUEUE_PROXY", "WithdrawalQueueProxy", "WITHDRAWAL_QUEUE_PROXY missing");
         address rewardsProxy = _addrOrDeployment(
             "REWARDS_ACCUMULATOR_PROXY", "RewardsAccumulatorProxy", "REWARDS_ACCUMULATOR_PROXY missing"
         );
@@ -57,7 +54,6 @@ contract DeployUpgradeImplementations is BaseScript {
 
         vm.startBroadcast(pk);
 
-        address withdrawalQueueImpl = address(new WithdrawalQueue());
         address rewardsAccumulatorImpl = address(new RewardsAccumulator());
         address sprImpl = address(new StakingProviderRegistry());
         address stakingManagerImpl = address(new StakingManager());
@@ -68,7 +64,6 @@ contract DeployUpgradeImplementations is BaseScript {
         vm.stopBroadcast();
 
         // Log deployed addresses and whether they differ from current
-        _logDeployment("WithdrawalQueue", withdrawalQueueImpl, _proxyImpl(queueProxy));
         _logDeployment("RewardsAccumulator", rewardsAccumulatorImpl, _proxyImpl(rewardsProxy));
         _logDeployment("StakingProviderRegistry", sprImpl, _proxyImpl(sprProxy));
         _logDeployment("StakingManager", stakingManagerImpl, _proxyImpl(stakingManagerProxy));
@@ -77,7 +72,6 @@ contract DeployUpgradeImplementations is BaseScript {
         _logDeployment("OllaGovernance", governanceImpl, _proxyImpl(governanceProxy));
 
         // Write to deployment artifact
-        _setDeploymentAddress(env, "WithdrawalQueueImplementation", withdrawalQueueImpl);
         _setDeploymentAddress(env, "RewardsAccumulatorImplementation", rewardsAccumulatorImpl);
         _setDeploymentAddress(env, "StakingProviderRegistryImplementation", sprImpl);
         _setDeploymentAddress(env, "StakingManagerImplementation", stakingManagerImpl);

@@ -7,11 +7,11 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -44,7 +44,6 @@ contract OllaVaultMintTest is Test {
     address internal governance;
     address internal alice;
     address internal bob;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
@@ -68,14 +67,13 @@ contract OllaVaultMintTest is Test {
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -216,6 +214,63 @@ contract OllaVaultMintTest is Test {
         assertEq(actualShares, shares, "exact shares minted at non-trivial rate");
     }
 
+    /// @notice mint() reverts when shares are below the SafetyModule withdrawal minimum.
+    /// @dev L-11 (#19): symmetric exit-side guard applied on the entry path so depositors
+    ///      cannot silently land in a state where their shares are below the redeem floor.
+    function test_RevertWhen_Mint_SharesBelowWithdrawalMinimum() external {
+        uint256 minimum = 100 * DECIMALS;
+        safetyModule.mockSetWithdrawalMinimum(minimum);
+
+        uint256 shares = minimum - 1;
+        uint256 expectedAssets = core.convertToAssetsCeil(shares);
+        asset.mint(alice, expectedAssets);
+        vm.prank(alice);
+        asset.approve(address(vault), expectedAssets);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ISafetyModule.SafetyModule__BelowWithdrawalMinimum.selector, shares, minimum)
+        );
+        vm.prank(alice);
+        vault.mint(shares, alice);
+    }
+
+    /// @notice deposit() reverts when the resulting share count is below the withdrawal minimum.
+    /// @dev L-11 (#19): companion of test_RevertWhen_Mint_SharesBelowWithdrawalMinimum on the
+    ///      asset-denominated entry path.
+    function test_RevertWhen_Deposit_SharesBelowWithdrawalMinimum() external {
+        uint256 minimum = 100 * DECIMALS;
+        safetyModule.mockSetWithdrawalMinimum(minimum);
+
+        // At 1:1 rate this deposit produces (minimum - 1) shares.
+        uint256 belowMinAssets = core.convertToAssets(minimum - 1);
+        asset.mint(alice, belowMinAssets);
+        vm.prank(alice);
+        asset.approve(address(vault), belowMinAssets);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ISafetyModule.SafetyModule__BelowWithdrawalMinimum.selector, minimum - 1, minimum)
+        );
+        vm.prank(alice);
+        vault.deposit(belowMinAssets, alice, 0);
+    }
+
+    /// @notice deposit() succeeds when the resulting share count meets the withdrawal minimum.
+    /// @dev L-11 (#19): boundary check — shares == minimum must pass.
+    function test_Deposit_AtWithdrawalMinimum_Succeeds() external {
+        uint256 minimum = 100 * DECIMALS;
+        safetyModule.mockSetWithdrawalMinimum(minimum);
+
+        uint256 atMinAssets = core.convertToAssets(minimum);
+        asset.mint(alice, atMinAssets);
+        vm.prank(alice);
+        asset.approve(address(vault), atMinAssets);
+
+        vm.prank(alice);
+        vault.deposit(atMinAssets, alice, 0);
+
+        assertEq(stAztec.balanceOf(alice), minimum, "exactly minimum shares minted");
+    }
+
     /// @notice mint() works when totalAssets < totalSupply (post-slashing).
     function test_Mint_PostSlashing_ExactShares() external {
         // Seed deposit so totalSupply > 0
@@ -224,8 +279,6 @@ contract OllaVaultMintTest is Test {
 
         // Move assets to staking so slashing actually reduces totalAssets
         vm.warp(block.timestamp + 1 hours + 1);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(initialDeposit);
         core.rebalance();
 

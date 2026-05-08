@@ -2,10 +2,9 @@
 pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
-import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { RolesLib } from "src/shared/RolesLib.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
@@ -18,7 +17,7 @@ contract StakingProviderRegistry is
     Initializable,
     AccessControlUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard,
+    ReentrancyGuardTransient,
     IStakingProviderRegistry
 {
     using QueueLib for Queue;
@@ -54,11 +53,14 @@ contract StakingProviderRegistry is
     /// @dev Tracks attester addresses currently in the queue to prevent duplicate enqueuing.
     mapping(address attester => bool inQueue) private _registeredAttesters;
 
+    /// @notice Governance contract authorized to perform UUPS upgrades.
+    address public governanceUpgradeAuthority;
+
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   MODIFIERS
@@ -107,6 +109,7 @@ contract StakingProviderRegistry is
 
         stakingManager = stakingManager_;
         _provider = IStakingManager.ProviderConfig({ rewardsRecipient: providerRewardsRecipient_ });
+        governanceUpgradeAuthority = defaultAdmin_;
 
         _providerQueue.init();
 
@@ -209,8 +212,7 @@ contract StakingProviderRegistry is
     //////////////////////////////////////////////////////////////*/
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        address core = IStakingManager(stakingManager).core();
-        if (msg.sender != OwnableUpgradeable(core).owner()) {
+        if (msg.sender != governanceUpgradeAuthority) {
             revert StakingProviderRegistry__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {

@@ -10,7 +10,7 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@oz/utils/math/Math.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
 import { GovernanceLib } from "src/core/libraries/GovernanceLib.sol";
@@ -34,7 +34,7 @@ contract OllaCore is
     AccessControlUpgradeable,
     PausableUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard,
+    ReentrancyGuardTransient,
     IOllaCore
 {
     using SafeERC20 for IERC20;
@@ -69,6 +69,12 @@ contract OllaCore is
     /// @notice Maximum allowed cooldown value.
     uint256 public constant MAX_REBALANCE_COOLDOWN = 24 hours;
 
+    /// @notice Minimum RewardsAccumulator balance considered actionable by the idle fast-path.
+    /// @dev Balances at or below this threshold are treated as dust and do not bypass the idle
+    ///      no-op short-circuit in `rebalance()`. This prevents griefers from consuming the
+    ///      cooldown by donating tiny amounts to the accumulator.
+    uint256 public constant REWARDS_ACCUMULATOR_DUST_THRESHOLD = 10_000 * 1e18;
+
     /*//////////////////////////////////////////////////////////////
                                   STATE
     //////////////////////////////////////////////////////////////*/
@@ -76,15 +82,13 @@ contract OllaCore is
     /// @notice Contract related interfaces and addresses.
     IOllaCore.CoreModules private _modules;
 
-    /// @notice Accounting and reporting values.
-    IOllaCore.AccountingState private _accountingState;
+    /// @notice Protocol-internal ledger of cumulative rewards. Every other accounting figure is
+    ///         derived live from the owning module via `_liveAccountingState()`.
+    uint256 private _cumulativeRewards;
     IOllaCore.FlowCounters private _flowCounters;
     IOllaCore.LatestReport private _latestReport;
 
     IOllaCore.RebalanceProgress private _rebalanceProgress;
-
-    /// @notice Target liquid assets to keep buffered for withdrawals.
-    uint256 public targetBufferedAssets;
 
     /// @notice Snapshot of bufferedAssets at the end of an unproductive rebalance cycle.
     uint256 private _rebalanceIdleBuffer;
@@ -104,14 +108,14 @@ contract OllaCore is
     /// @notice Timestamp of the last completed rebalance cycle.
     uint48 public lastRebalanceTimestamp;
 
-    /// @notice Snapshot of cumulative exit fees at the last accounting report.
-    uint256 private _latestReportCumulativeExitFees;
+    /// @notice Exclusive withdrawal request id upper bound for the active rebalance cycle.
+    uint256 private _rebalanceWithdrawalSnapshotEndId;
 
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -176,7 +180,6 @@ contract OllaCore is
 
         protocolFeeBP = SafeCast.toUint16(protocolFeeBP_);
         treasuryFeeSplitBP = SafeCast.toUint16(treasuryFeeSplitBP_);
-        targetBufferedAssets = 0;
         rebalanceGasThreshold = SafeCast.toUint32(_REBALANCE_GAS_THRESHOLD);
         _rebalanceProgress.step = IOllaCore.RebalanceStep.Done;
 
@@ -220,23 +223,40 @@ contract OllaCore is
         _rebalanceProgress =
             IOllaCore.RebalanceProgress({ step: IOllaCore.RebalanceStep.Done, stakeRemaining: 0, unstakeRemaining: 0 });
         _rebalanceIdleBuffer = 0;
+        _rebalanceWithdrawalSnapshotEndId = 0;
         lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
         emit RebalanceReset();
     }
 
     /// @inheritdoc IOllaCore
-    function setProtocolFeeBP(uint256 newFeeBP) external override onlyOwner whenNotPaused whenRebalanceDone {
+    function setProtocolFeeBP(uint256 newFeeBP)
+        external
+        override
+        onlyOwner
+        whenNotPaused
+        whenRebalanceDone
+        nonReentrant
+    {
         if (newFeeBP > MAX_PROTOCOL_FEE_BP) revert OllaCore__InvalidFeeBP(newFeeBP);
+        _updateAccountingInternal();
         uint256 oldFeeBP = protocolFeeBP;
         protocolFeeBP = SafeCast.toUint16(newFeeBP);
         emit ProtocolFeeUpdated(oldFeeBP, newFeeBP);
     }
 
     /// @inheritdoc IOllaCore
-    function setTreasuryFeeSplitBP(uint256 newSplitBP) external override onlyOwner whenNotPaused whenRebalanceDone {
+    function setTreasuryFeeSplitBP(uint256 newSplitBP)
+        external
+        override
+        onlyOwner
+        whenNotPaused
+        whenRebalanceDone
+        nonReentrant
+    {
         if (newSplitBP < MIN_TREASURY_SPLIT_BP || newSplitBP > MAX_TREASURY_SPLIT_BP) {
             revert OllaCore__InvalidSplitBP(newSplitBP);
         }
+        _updateAccountingInternal();
         uint256 oldSplitBP = treasuryFeeSplitBP;
         treasuryFeeSplitBP = SafeCast.toUint16(newSplitBP);
         emit TreasuryFeeSplitUpdated(oldSplitBP, newSplitBP);
@@ -246,14 +266,12 @@ contract OllaCore is
     function setSafetyModule(address newSafetyModule) external override onlyOwner whenNotPaused whenRebalanceDone {
         address oldSafetyModule = GovernanceLib.setSafetyModule(_modules, newSafetyModule);
         emit SafetyModuleUpdated(oldSafetyModule, newSafetyModule);
-    }
-
-    /// @inheritdoc IOllaCore
-    function setTargetBufferedAssets(uint256 newBuffer) external override onlyOwner whenNotPaused whenRebalanceDone {
-        uint256 oldBuffer = targetBufferedAssets;
-        targetBufferedAssets = newBuffer;
-        _rebalanceIdleBuffer = 0;
-        emit TargetBufferedAssetsUpdated(oldBuffer, newBuffer);
+        // Inlined from `_updateAccountingTimestamp` to keep that helper single-caller.
+        // A second caller flips the optimizer's inlining decision and tips
+        // `_computeAndFinalizeAccounting` past the 16-slot EVM stack limit under via_ir.
+        // Recording the current timestamp is intentional; miner manipulation is negligible here.
+        // slither-disable-next-line timestamp
+        ISafetyModule(newSafetyModule).setLatestAccountingTimestamp(block.timestamp);
     }
 
     /// @inheritdoc IOllaCore
@@ -336,6 +354,7 @@ contract OllaCore is
                 return (0, 0, 0, currentBuffer);
             }
             _rebalanceIdleBuffer = 0;
+            _rebalanceWithdrawalSnapshotEndId = 0;
             progress.step = IOllaCore.RebalanceStep.Harvest;
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
@@ -360,14 +379,24 @@ contract OllaCore is
 
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.FinalizeWithdrawals) {
+            uint256 withdrawalSnapshotEndId = _rebalanceWithdrawalSnapshotEndId;
+            // slither-disable-next-line incorrect-equality
+            if (withdrawalSnapshotEndId == 0) {
+                withdrawalSnapshotEndId = vaultRef.nextWithdrawalRequestId();
+                _rebalanceWithdrawalSnapshotEndId = withdrawalSnapshotEndId;
+            }
             if (!_hasGasForStep()) {
                 _rebalanceProgress = progress;
                 return (rewardsDelta, 0, 0, vaultRef.bufferedAssets());
             }
-            finalizedAmount = _finalizeWithdrawals();
-            uint256 pending = vaultRef.pendingWithdrawalAssets();
+            uint256 priorUnfinalized = vaultRef.nextUnfinalizedWithdrawalRequestId();
+            finalizedAmount = _finalizeWithdrawals(withdrawalSnapshotEndId);
+            uint256 nextUnfinalized = vaultRef.nextUnfinalizedWithdrawalRequestId();
             // slither-disable-next-line incorrect-equality,timestamp
-            if (pending == 0 || vaultRef.bufferedAssets() == 0 || finalizedAmount == 0) {
+            if (
+                nextUnfinalized >= withdrawalSnapshotEndId || vaultRef.bufferedAssets() == 0
+                    || nextUnfinalized == priorUnfinalized
+            ) {
                 progress.step = IOllaCore.RebalanceStep.InitiateUnstake;
             } else {
                 _rebalanceProgress = progress;
@@ -378,7 +407,7 @@ contract OllaCore is
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.InitiateUnstake) {
             {
-                (uint256 requiredBuffer,) = _computeRequiredBuffer();
+                uint256 requiredBuffer = vaultRef.pendingWithdrawalAssets();
                 progress.unstakeRemaining = _computeUnstakeRemaining(requiredBuffer);
             }
             // slither-disable-next-line incorrect-equality,timestamp
@@ -413,14 +442,18 @@ contract OllaCore is
 
         // slither-disable-next-line incorrect-equality,timestamp
         if (progress.step == IOllaCore.RebalanceStep.StakeSurplus) {
+            uint256 requiredBuffer = vaultRef.pendingWithdrawalAssets();
+            uint256 freshStakeRemaining = _computeStakeRemaining(requiredBuffer);
             // slither-disable-next-line incorrect-equality,timestamp
             if (progress.stakeRemaining == 0) {
-                (uint256 requiredBuffer,) = _computeRequiredBuffer();
-                progress.stakeRemaining = _computeStakeRemaining(requiredBuffer);
-                // slither-disable-next-line incorrect-equality,timestamp
-                if (progress.stakeRemaining == 0) {
-                    progress.step = IOllaCore.RebalanceStep.Done;
-                }
+                progress.stakeRemaining = freshStakeRemaining;
+            } else if (progress.stakeRemaining > freshStakeRemaining) {
+                progress.stakeRemaining = freshStakeRemaining;
+            }
+
+            // slither-disable-next-line incorrect-equality,timestamp
+            if (progress.stakeRemaining == 0) {
+                progress.step = IOllaCore.RebalanceStep.Done;
             } else if (!_modules.stakingManager.canStake(progress.stakeRemaining)) {
                 // Resuming a partial stake but no keys or amount below threshold.
                 progress.stakeRemaining = 0;
@@ -455,6 +488,7 @@ contract OllaCore is
         if (progress.step == IOllaCore.RebalanceStep.Done) {
             progress.stakeRemaining = 0;
             progress.unstakeRemaining = 0;
+            _rebalanceWithdrawalSnapshotEndId = 0;
             // slither-disable-next-line incorrect-equality,timestamp
             if (stakedAmount == 0 && finalizedAmount == 0 && rewardsDelta == 0) {
                 _rebalanceIdleBuffer = vaultRef.bufferedAssets();
@@ -555,13 +589,21 @@ contract OllaCore is
     }
 
     /// @inheritdoc IOllaCore
+    /// @dev Returns a freshly-assembled snapshot derived from live module reads (StakingManager,
+    ///      RewardsAccumulator). The `cumulativeRewards` field is a genuine ledger and is still
+    ///      sourced from storage. Staticcall-safe for indexers/UI.
     function accountingState() external view override returns (IOllaCore.AccountingState memory) {
-        return _accountingState;
+        return _liveAccountingState();
     }
 
     /// @inheritdoc IOllaCore
     function exchangeRate() external view override returns (uint256) {
         return _exchangeRate();
+    }
+
+    /// @inheritdoc IOllaCore
+    function withdrawalRate() external view override returns (uint256) {
+        return _withdrawalRate(IOllaVault(_modules.vault));
     }
 
     /// @inheritdoc IOllaCore
@@ -581,19 +623,26 @@ contract OllaCore is
         );
     }
 
+    function renounceOwnership() public view override onlyOwner {
+        revert("renouncing ownership not allowed");
+    }
+
     /// @inheritdoc IOllaCore
     /// @dev Includes exit fee revenue held in `_bufferedAssets`. For staking yield only
     ///      (excluding exit fee redistribution), use `_latestReport.grossRewards`.
     function totalAssets() public view override returns (uint256) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
-        return _computeTotalAssets(_accountingState, vaultRef.bufferedAssets(), vaultRef.pendingWithdrawalAssets());
+        IOllaCore.AccountingState memory buckets = _liveAccountingState();
+        uint256 bufferedAssets = vaultRef.bufferedAssets();
+        uint256 pendingAssets = _pricingPendingAssets(vaultRef, buckets, bufferedAssets);
+        return _computeTotalAssets(buckets, bufferedAssets, pendingAssets);
     }
 
     /*//////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Runs the full accounting update pipeline: reads module state, applies updates, computes fees, and emits reports.
+    /// @notice Runs the full accounting update pipeline: reads module state, computes fees, and emits reports.
     function _updateAccountingInternal() internal {
         ISafetyModule safetyModuleRef = ISafetyModule(_modules.safetyModule);
         // slither-disable-start reentrancy-no-eth
@@ -603,23 +652,14 @@ contract OllaCore is
         // callers of this path are guarded by nonReentrant.
         safetyModuleRef.checkAccountingLiveness();
 
-        (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows, uint256 exitFeesThisPeriod) = _getFlowsSnapshot();
-        (
-            uint256 currentRewards,
-            uint256 rewardsDelta,
-            uint256 slashingDelta,
-            uint256 stakedPrincipal,
-            uint256 claimableRewards
-        ) = _getStakingManagerState();
-        _validateSlashingDelta(slashingDelta);
+        (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) = _getFlowsSnapshot();
+        // Include the unrecorded RewardsAccumulator balance: out-of-band `claimSequencerRewards`
+        // calls move rollup-side rewards into the accumulator without updating `_cumulativeRewards`,
+        // so omitting this term would understate the snapshot until the next harvest.
+        uint256 currentRewards =
+            _cumulativeRewards + _modules.stakingManager.getClaimableRewards() + _getRewardsAccumulatorBalance();
 
-        uint256 rewardsAccumulatorBalance = _getRewardsAccumulatorBalance();
-
-        _applyAccountingUpdates(
-            stakedPrincipal, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
-        );
-
-        _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, exitFeesThisPeriod, currentRewards);
+        _computeAndFinalizeAccounting(safetyModuleRef, flowsSnapshot, netFlows, currentRewards);
         // slither-disable-end reentrancy-events
         // slither-disable-end reentrancy-benign
         // slither-disable-end reentrancy-no-eth
@@ -639,7 +679,7 @@ contract OllaCore is
         // slither-disable-next-line reentrancy-benign
         rewardsDelta = rewardsAccumulatorRef.recordBalance();
         if (rewardsDelta != 0) {
-            _accountingState.cumulativeRewards += rewardsDelta;
+            _cumulativeRewards += rewardsDelta;
         }
         emit RewardsDelta(rewardsDelta);
 
@@ -668,23 +708,20 @@ contract OllaCore is
         modules.asset.safeTransfer(address(vaultRef), rewardsAccumulatorBalance);
         vaultRef.receiveUnstaked(rewardsAccumulatorBalance);
 
-        _accountingState.rewardsAccumulatorBalance = 0;
         emit RewardsAccumulatorFundsPulled(rewardsAccumulatorBalance);
         return rewardsAccumulatorBalance;
     }
 
-    // Reads _modules fields and _accountingState atomically for correctness.
     /// @notice Claims exited unstaked funds from StakingManager and forwards them to the Vault.
     /// @return receivedAmount The actual token amount received.
-    // slither-disable-next-line pess-multiple-storage-read
     function _pullUnstakedFunds() internal returns (uint256 receivedAmount) {
-        IERC20 assetRef = _modules.asset;
+        IOllaCore.CoreModules memory modules = _modules;
+        IERC20 assetRef = modules.asset;
         uint256 balanceBefore = assetRef.balanceOf(address(this));
 
-        uint256 exitAmount;
         // Trusted StakingManager; transfers unstaked funds to this contract.
-        // slither-disable-next-line reentrancy-benign
-        (receivedAmount, exitAmount) = _modules.stakingManager.getUnstakedFunds();
+        // slither-disable-next-line reentrancy-benign,unused-return
+        (receivedAmount,) = modules.stakingManager.getUnstakedFunds();
 
         uint256 balanceAfter = assetRef.balanceOf(address(this));
         uint256 actualReceived = balanceAfter - balanceBefore;
@@ -695,27 +732,19 @@ contract OllaCore is
 
         // Forward received funds to Vault
         if (actualReceived > 0) {
-            IOllaVault vaultRef = IOllaVault(_modules.vault);
+            IOllaVault vaultRef = IOllaVault(modules.vault);
             assetRef.safeTransfer(address(vaultRef), actualReceived);
             vaultRef.receiveUnstaked(actualReceived);
             emit UnstakedFundsClaimed(actualReceived);
-        }
-
-        // Positive-amount guard; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        if (exitAmount > 0) {
-            if (exitAmount > _accountingState.stakedPrincipal) {
-                exitAmount = _accountingState.stakedPrincipal;
-            }
-            _accountingState.stakedPrincipal -= exitAmount;
         }
 
         return actualReceived;
     }
 
     /// @notice Instructs the Vault to finalize pending withdrawal requests using available buffered assets.
+    /// @param maxRequestId The exclusive request id upper bound for this finalization pass.
     /// @return finalizedAmount The total assets used for finalization.
-    function _finalizeWithdrawals() internal returns (uint256 finalizedAmount) {
+    function _finalizeWithdrawals(uint256 maxRequestId) internal returns (uint256 finalizedAmount) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         uint256 available = vaultRef.bufferedAssets();
 
@@ -723,8 +752,8 @@ contract OllaCore is
         // slither-disable-next-line timestamp,incorrect-equality
         if (available == 0) return 0;
 
-        uint256 queued = vaultRef.pendingWithdrawalAssets();
-        uint256 total = totalAssets();
+        uint256 queued = _pricingPendingAssets(vaultRef, _liveAccountingState(), available);
+        uint256 total = _computeTotalAssets(_liveAccountingState(), available, queued);
 
         // Trusted SafetyModule; may trigger circuit breaker but holds no funds.
         // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
@@ -734,12 +763,32 @@ contract OllaCore is
         // slither-disable-next-line timestamp,incorrect-equality
         if (queued == 0) return 0;
 
-        uint256 finalizedCount;
-        // Trusted Vault; finalizes pending withdrawal queue entries.
-        // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
-        (finalizedAmount, finalizedCount) = vaultRef.finalizeWithdrawals(available, _withdrawalRate(vaultRef));
+        uint256 initialAvailable = available;
+        // slither-disable-start calls-loop
+        // Trusted Vault/StAztec reads and Vault finalization are intentionally repeated so each
+        // queue head settles against a rate recomputed after the prior request changes pending state.
+        while (vaultRef.nextUnfinalizedWithdrawalRequestId() < maxRequestId && available > 0 && _hasGasForStep()) {
+            uint256 nextRequestId = vaultRef.nextUnfinalizedWithdrawalRequestId();
+            // Finalize only the current queue head so the next iteration's gross rate reflects
+            // the just-finalized request's pending-share and buffered-asset removal.
+            uint256 requestUpperBound = nextRequestId + 1;
 
-        emit WithdrawalFinalized(available, finalizedAmount);
+            // Trusted Vault; finalizes pending withdrawal queue entries.
+            // slither-disable-next-line reentrancy-no-eth,reentrancy-benign
+            (uint256 amount, uint256 count) =
+                vaultRef.finalizeWithdrawals(available, _withdrawalRate(vaultRef), requestUpperBound);
+
+            // slither-disable-next-line timestamp
+            if (count < 1) break;
+
+            finalizedAmount += amount;
+            available = vaultRef.bufferedAssets();
+
+            if (vaultRef.pendingWithdrawalAssets() < 1) break;
+        }
+        // slither-disable-end calls-loop
+
+        emit WithdrawalFinalized(initialAvailable, finalizedAmount);
         return finalizedAmount;
     }
 
@@ -773,24 +822,22 @@ contract OllaCore is
             if (actualStaked > stakeable) revert OllaCore__StakeFailed(actualStaked);
             totalStaked = actualStaked;
         } catch {
-            // Stake failed entirely -- return all assets to Vault
+            // Stake failed entirely -- return all assets to Vault and clear the residual
+            // allowance granted to StakingManager before the failed call.
+            assetRef.forceApprove(address(stakingManagerRef), 0);
             assetRef.safeTransfer(address(vaultRef), stakeable);
             vaultRef.receiveUnstaked(stakeable);
             return 0;
         }
 
-        // Return any excess (stakeable - actualStaked) to Vault
+        // Return any excess (stakeable - actualStaked) to Vault and clear any residual
+        // allowance left over from the partial-stake path.
         uint256 excess = stakeable - totalStaked;
         if (excess > 0) {
             assetRef.safeTransfer(address(vaultRef), excess);
             vaultRef.receiveUnstaked(excess);
         }
-
-        // Benign: calls go to trusted vault/stakingManager within nonReentrant rebalance().
-        // slither-disable-next-line timestamp,reentrancy-benign
-        if (totalStaked > 0) {
-            _accountingState.stakedPrincipal += totalStaked;
-        }
+        assetRef.forceApprove(address(stakingManagerRef), 0);
 
         return totalStaked;
     }
@@ -857,9 +904,7 @@ contract OllaCore is
         uint256 rate,
         uint256 grossRewards,
         int256 netFlows,
-        uint256 updatedCumulativeDeposits,
-        uint256 updatedCumulativeWithdrawals,
-        uint256 updatedCumulativeSlashingAdjustments,
+        IOllaCore.FlowCounters memory flowsSnapshot,
         uint256 rewardsSnapshot
     ) internal {
         IOllaCore.LatestReport storage report = _latestReport;
@@ -873,45 +918,36 @@ contract OllaCore is
         report.timestamp = block.timestamp;
 
         IOllaCore.FlowCounters storage flows = _flowCounters;
-        flows.latestReportCumulativeDeposits = updatedCumulativeDeposits;
-        flows.latestReportCumulativeWithdrawals = updatedCumulativeWithdrawals;
-        flows.latestReportCumulativeSlashingAdjustments = updatedCumulativeSlashingAdjustments;
-    }
-
-    // Writes all accounting bucket fields atomically.
-    /// @notice Writes fresh staking/reward/slashing values into the accounting state storage.
-    // slither-disable-next-line pess-multiple-storage-read
-    function _applyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) internal {
-        IOllaCore.AccountingState storage stateSnapshot = _accountingState;
-        stateSnapshot.stakedPrincipal = newStakedPrincipal;
-        stateSnapshot.rewardsAccumulatorBalance = newRewardsAccumulatorBalance;
-        stateSnapshot.claimableRewards = newClaimableRewards;
-        stateSnapshot.rewardsDelta = newRewardsDelta;
-        stateSnapshot.slashingDelta = newSlashingDelta;
+        flows.latestReportCumulativeDeposits = flowsSnapshot.cumulativeDeposits;
+        flows.latestReportCumulativeWithdrawals = flowsSnapshot.cumulativeWithdrawals;
+        flows.latestReportCumulativeSlashingAdjustments = flowsSnapshot.cumulativeSlashingAdjustments;
     }
 
     /// @notice Computes updated accounting outputs, runs safety checks, and persists the final report.
     /// @param safetyModuleRef The SafetyModule instance for rate-drop and queue-ratio checks.
     /// @param flowsSnapshot The flow counters snapshot for the current accounting cycle.
     /// @param netFlows The signed net deposit/withdrawal flows since the last report.
-    /// @param exitFeesThisPeriod The instant-redemption fees collected since the last report.
     /// @param currentRewards The cumulative rewards value used for the report snapshot.
     function _computeAndFinalizeAccounting(
         ISafetyModule safetyModuleRef,
         IOllaCore.FlowCounters memory flowsSnapshot,
         int256 netFlows,
-        uint256 exitFeesThisPeriod,
         uint256 currentRewards
     ) internal {
         (uint256 oldTotalAssets, uint256 oldRate) = _getLatestReport();
         IOllaVault vaultRef = IOllaVault(_modules.vault);
+        // Raw locked pending liabilities are used for reward/accounting deltas. `totalAssets()`
+        // intentionally uses pricing-adjusted pending liabilities for live share pricing, so the
+        // report snapshot can differ from the read-through view while withdrawals are pending.
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();
+        // Emit AttestersStateRead BEFORE `_updateReportingSnapshots` advances
+        // `_latestReport.rewardsSnapshot`, otherwise rewardsDelta would be zero.
+        // `block.timestamp` matches `_latestReport.timestamp` set later in this call.
+        // slither-disable-next-line timestamp
+        {
+            IOllaCore.AccountingState memory attesterSnapshot = _liveAccountingState();
+            emit AttestersStateRead(attesterSnapshot.rewardsDelta, attesterSnapshot.slashingDelta, block.timestamp);
+        }
         // _computeAccountingOutputs calls trusted Vault and pays fees via trusted mint path.
         // slither-disable-next-line reentrancy-no-eth
         // slither-disable-next-line reentrancy-benign
@@ -922,23 +958,18 @@ contract OllaCore is
             uint256 treasuryShares,
             uint256 providerShares,
             uint256 rate
-        ) = _computeAccountingOutputs(oldTotalAssets, netFlows, pendingWithdrawals, exitFeesThisPeriod);
+        ) = _computeAccountingOutputs(oldTotalAssets, netFlows, pendingWithdrawals);
+
+        IOllaCore.AccountingState memory pricingBuckets = _liveAccountingState();
+        uint256 bufferedAssets = vaultRef.bufferedAssets();
+        uint256 pricedPendingWithdrawals = _pricingPendingAssets(vaultRef, pricingBuckets, bufferedAssets);
+        uint256 livePricingTotalAssets = _computeTotalAssets(pricingBuckets, bufferedAssets, pricedPendingWithdrawals);
 
         // Trusted SafetyModule; may trigger circuit breaker but holds no funds.
         // slither-disable-next-line reentrancy-no-eth
-        safetyModuleRef.checkQueueRatio(pendingWithdrawals, totalAssets());
+        safetyModuleRef.checkQueueRatio(pricedPendingWithdrawals, livePricingTotalAssets);
         _validateRateDrop(safetyModuleRef, oldRate, rate);
-        _updateReportingSnapshots(
-            newTotalAssets,
-            rate,
-            grossRewards,
-            netFlows,
-            flowsSnapshot.cumulativeDeposits,
-            flowsSnapshot.cumulativeWithdrawals,
-            flowsSnapshot.cumulativeSlashingAdjustments,
-            currentRewards
-        );
-        _latestReportCumulativeExitFees = vaultRef.cumulativeExitFees();
+        _updateReportingSnapshots(newTotalAssets, rate, grossRewards, netFlows, flowsSnapshot, currentRewards);
         _updateAccountingTimestamp(safetyModuleRef);
         _emitAccountingReport(
             newTotalAssets, rate, grossRewards, netFlows, protocolFeeAssets, treasuryShares, providerShares
@@ -946,26 +977,16 @@ contract OllaCore is
     }
 
     /// @notice Derives totalAssets, gross rewards, protocol fees, and the new exchange rate.
-    /// @dev `grossRewards` excludes exit fees - they are redistribution to remaining holders,
-    ///      not new staking yield. Use `grossRewards` for yield/APR calculations.
-    ///      `totalAssets()` includes exit fee revenue implicitly via `_bufferedAssets`.
-    ///      Use `totalAssets()` for total protocol value / solvency checks.
     /// @param oldTotalAssets The previous totalAssets from the last report.
     /// @param netFlows The signed net deposit/withdrawal flows since the last report.
     /// @param pendingWithdrawals The current pending withdrawal asset amount.
-    /// @param exitFeesThisPeriod The instant-redemption fees collected since the last report.
     /// @return newTotalAssets The updated total assets value.
-    /// @return grossRewards The gross rewards earned this period (excludes exit fee revenue).
+    /// @return grossRewards The gross rewards earned this period.
     /// @return protocolFeeAssets The protocol fee amount in assets.
     /// @return treasuryShares The shares minted to treasury.
     /// @return providerShares The shares minted to the provider.
     /// @return rate The new exchange rate.
-    function _computeAccountingOutputs(
-        uint256 oldTotalAssets,
-        int256 netFlows,
-        uint256 pendingWithdrawals,
-        uint256 exitFeesThisPeriod
-    )
+    function _computeAccountingOutputs(uint256 oldTotalAssets, int256 netFlows, uint256 pendingWithdrawals)
         internal
         returns (
             uint256 newTotalAssets,
@@ -977,20 +998,13 @@ contract OllaCore is
         )
     {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
-        newTotalAssets = _computeTotalAssets(_accountingState, vaultRef.bufferedAssets(), pendingWithdrawals);
+        newTotalAssets = _computeTotalAssets(_liveAccountingState(), vaultRef.bufferedAssets(), pendingWithdrawals);
         int256 grossRewardsSigned;
         (grossRewards, grossRewardsSigned) = _computeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
         // Signed comparison for negative rewards detection; not a timestamp concern.
         // slither-disable-next-line timestamp
         if (grossRewardsSigned < 0) {
             emit NegativeRewardsPeriod(grossRewardsSigned);
-        }
-        // Exclude exit fee revenue from rewards before computing protocol fees.
-        // Exit fees are a pure redistribution to remaining holders, not staking yield.
-        if (grossRewards > exitFeesThisPeriod) {
-            grossRewards -= exitFeesThisPeriod;
-        } else {
-            grossRewards = 0;
         }
         (protocolFeeAssets, treasuryShares, providerShares) = _payoutOllaProtocolFees(grossRewards);
         rate = _exchangeRate();
@@ -1013,7 +1027,9 @@ contract OllaCore is
         safetyModuleRef.setLatestAccountingTimestamp(block.timestamp);
     }
 
-    /// @notice Emits AttestersStateRead and AccountingUpdated events for the current accounting cycle.
+    /// @notice Emits the AccountingUpdated event for the current accounting cycle.
+    /// @dev AttestersStateRead is emitted by `_computeAndFinalizeAccounting` using the pre-snapshot
+    ///      rewardsDelta/slashingDelta (captured before `_updateReportingSnapshots` runs).
     /// @param newTotalAssets The updated total assets value.
     /// @param rate The new exchange rate.
     /// @param grossRewards The gross rewards earned this period.
@@ -1030,7 +1046,6 @@ contract OllaCore is
         uint256 treasuryShares,
         uint256 providerShares
     ) internal {
-        emit AttestersStateRead(_accountingState.rewardsDelta, _accountingState.slashingDelta, _latestReport.timestamp);
         emit AccountingUpdated(
             newTotalAssets,
             rate,
@@ -1043,42 +1058,47 @@ contract OllaCore is
         );
     }
 
-    /// @notice Reads staking state from StakingManager: cumulative rewards, deltas, principal, and claimable.
-    /// @return currentRewards The cumulative rewards including claimable.
-    /// @return rewardsDelta The positive reward delta since the last report.
-    /// @return slashingDelta The cumulative slashing delta.
-    /// @return stakedPrincipal The total staked principal.
-    /// @return claimableRewards The claimable rewards from StakingManager.
-    function _getStakingManagerState()
-        internal
-        view
-        returns (
-            uint256 currentRewards,
-            uint256 rewardsDelta,
-            uint256 slashingDelta,
-            uint256 stakedPrincipal,
-            uint256 claimableRewards
-        )
-    {
+    /// @notice Assembles an `AccountingState` snapshot from live module reads.
+    /// @dev Authoritative source of accounting data for `totalAssets()`, `_withdrawalRate()`, and the
+    ///      external `accountingState()` getter. Every field except `cumulativeRewards` is derived at
+    ///      call time from the owning module -- `stakedPrincipal` and `slashingDelta` from
+    ///      `StakingManager`, `claimableRewards` from the rollup via `StakingManager`, and
+    ///      `rewardsAccumulatorBalance` from `RewardsAccumulator`. `cumulativeRewards` is a
+    ///      protocol-internal ledger maintained in storage and copied through. `rewardsDelta` is
+    ///      derived relative to `_latestReport.rewardsSnapshot` so the snapshot remains meaningful to
+    ///      indexers between accounting reports. Because all reads occur inside a single staticcall,
+    ///      callers receive a snapshot consistent as of the containing block.
+    ///
+    ///      Failure policy: if any underlying external call reverts, the revert propagates --
+    ///      this is intentional (strict-propagation policy). Halting pricing-dependent
+    ///      operations during dependency failure is preferable to serving stale rates. The
+    ///      external `accountingState()` getter inherits this behavior; integrations that
+    ///      need best-effort snapshots should handle reverts at the call site.
+    /// @return snapshot A freshly-assembled AccountingState populated from authoritative sources.
+    function _liveAccountingState() internal view returns (IOllaCore.AccountingState memory snapshot) {
         IOllaCore.CoreModules memory modules = _modules;
-        IOllaCore.AccountingState memory accountingSnapshot = _accountingState;
-        claimableRewards = modules.stakingManager.getClaimableRewards();
-        currentRewards = accountingSnapshot.cumulativeRewards + claimableRewards;
+        uint256 cumulativeRewards = _cumulativeRewards;
+        uint256 claimableRewards = modules.stakingManager.getClaimableRewards();
+        uint256 rewardsAccumulatorBalance = modules.rewardsAccumulator.balance();
 
         uint256 latestReportRewards = _latestReport.rewardsSnapshot;
-
-        // Signed arithmetic for reward delta computation; not a timestamp concern.
+        // See `_updateAccountingInternal`: include unrecorded RewardsAccumulator balance so the
+        // delta does not collapse when an out-of-band `claimSequencerRewards` call shifts rewards
+        // from `claimableRewards` into the accumulator.
+        uint256 currentRewards = cumulativeRewards + claimableRewards + rewardsAccumulatorBalance;
+        // Positive-delta guard; signed comparison is not a timestamp concern.
         // slither-disable-next-line timestamp
-        int256 rewardsDeltaSigned = SafeCast.toInt256(currentRewards) - SafeCast.toInt256(latestReportRewards);
+        uint256 rewardsDelta = currentRewards > latestReportRewards ? currentRewards - latestReportRewards : 0;
 
-        // Positive-delta guard; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        if (rewardsDeltaSigned > 0) {
-            rewardsDelta = SafeCast.toUint256(rewardsDeltaSigned);
-        }
-        slashingDelta = modules.stakingManager.getSlashingDelta();
-        stakedPrincipal = modules.stakingManager.totalStaked();
-        return (currentRewards, rewardsDelta, slashingDelta, stakedPrincipal, claimableRewards);
+        snapshot = IOllaCore.AccountingState({
+            stakedPrincipal: modules.stakingManager.totalStaked(),
+            rewardsAccumulatorBalance: rewardsAccumulatorBalance,
+            claimableRewards: claimableRewards,
+            rewardsDelta: rewardsDelta,
+            slashingDelta: modules.stakingManager.getSlashingDelta(),
+            cumulativeRewards: cumulativeRewards
+        });
+        return snapshot;
     }
 
     /// @notice Returns true if enough gas remains to execute another rebalance step.
@@ -1097,7 +1117,7 @@ contract OllaCore is
     // slither-disable-next-line timestamp,pess-multiple-storage-read
     function _hasRebalanceWorkAvailable() internal view returns (bool) {
         uint256 rewardsAccumulatorBalance = _getRewardsAccumulatorBalance();
-        if (rewardsAccumulatorBalance > 0) return true;
+        if (rewardsAccumulatorBalance > REWARDS_ACCUMULATOR_DUST_THRESHOLD) return true;
 
         if (_modules.stakingManager.getClaimableRewards() > 0) return true;
 
@@ -1105,29 +1125,16 @@ contract OllaCore is
 
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         uint256 pendingWithdrawals = vaultRef.pendingWithdrawalAssets();
-        if (pendingWithdrawals > 0 && vaultRef.bufferedAssets() > 0) return true;
+        uint256 currentBuffer = vaultRef.bufferedAssets();
+        if (pendingWithdrawals > 0 && currentBuffer > 0) return true;
 
         // Surplus buffer that can actually be staked (keys available + amount >= threshold).
-        uint256 currentBuffer = vaultRef.bufferedAssets();
-        if (currentBuffer > targetBufferedAssets) {
-            uint256 surplus = currentBuffer - targetBufferedAssets;
-            if (_modules.stakingManager.canStake(surplus)) return true;
-        }
+        if (currentBuffer > 0 && _modules.stakingManager.canStake(currentBuffer)) return true;
 
         return false;
     }
 
-    /// @notice Computes the buffer required to cover pending withdrawals plus the target buffer.
-    /// @return requiredBuffer The total buffer needed.
-    /// @return pendingWithdrawals The current pending withdrawal asset amount.
-    function _computeRequiredBuffer() internal view returns (uint256 requiredBuffer, uint256 pendingWithdrawals) {
-        pendingWithdrawals = IOllaVault(_modules.vault).pendingWithdrawalAssets();
-        uint256 targetBuffered = targetBufferedAssets;
-        requiredBuffer = pendingWithdrawals + targetBuffered;
-        return (requiredBuffer, pendingWithdrawals);
-    }
-
-    /// @notice Calculates how much more needs to be unstaked to meet the required buffer, net of pending unstakes.
+    /// @notice Calculates how much more needs to be unstaked to meet the required buffer, net of incoming funds.
     /// @param requiredBuffer The total buffer needed to cover withdrawals and target.
     /// @return remaining The additional amount to unstake.
     function _computeUnstakeRemaining(uint256 requiredBuffer) internal view returns (uint256 remaining) {
@@ -1136,11 +1143,12 @@ contract OllaCore is
         // slither-disable-next-line timestamp
         if (requiredBuffer < currentBuffer) return 0;
         uint256 amountToUnstake = requiredBuffer - currentBuffer;
-        uint256 pendingUnstakes = _modules.stakingManager.pendingUnstakes();
+        uint256 pendingIncoming =
+            _modules.stakingManager.pendingUnstakes() + _modules.stakingManager.claimableUnstakedFunds();
         // Pending unstakes already cover the deficit; not a timestamp concern.
         // slither-disable-next-line timestamp
-        if (pendingUnstakes > amountToUnstake) return 0;
-        remaining = amountToUnstake - pendingUnstakes;
+        if (pendingIncoming > amountToUnstake) return 0;
+        remaining = amountToUnstake - pendingIncoming;
         return remaining;
     }
 
@@ -1159,12 +1167,7 @@ contract OllaCore is
     /// @notice Reads cumulative deposit/withdrawal counters from the Vault and computes net flows since last report.
     /// @return flowsSnapshot The current flow counters snapshot.
     /// @return netFlows The signed net deposit/withdrawal flows since the last report.
-    /// @return exitFeesThisPeriod The instant-redemption fees collected since the last report.
-    function _getFlowsSnapshot()
-        internal
-        view
-        returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows, uint256 exitFeesThisPeriod)
-    {
+    function _getFlowsSnapshot() internal view returns (IOllaCore.FlowCounters memory flowsSnapshot, int256 netFlows) {
         IOllaVault vaultRef = IOllaVault(_modules.vault);
         flowsSnapshot = IOllaCore.FlowCounters({
             cumulativeDeposits: vaultRef.cumulativeDeposits(),
@@ -1175,11 +1178,7 @@ contract OllaCore is
             latestReportCumulativeSlashingAdjustments: _flowCounters.latestReportCumulativeSlashingAdjustments
         });
         (netFlows,,) = _computeNetFlows(flowsSnapshot);
-        uint256 currentCumulativeExitFees = vaultRef.cumulativeExitFees();
-        exitFeesThisPeriod = currentCumulativeExitFees > _latestReportCumulativeExitFees
-            ? currentCumulativeExitFees - _latestReportCumulativeExitFees
-            : 0;
-        return (flowsSnapshot, netFlows, exitFeesThisPeriod);
+        return (flowsSnapshot, netFlows);
     }
 
     /// @notice Returns the totalAssets and exchangeRate from the last accounting report.
@@ -1194,17 +1193,6 @@ contract OllaCore is
     /// @return rewardsAccumulatorBalance The token balance of the RewardsAccumulator.
     function _getRewardsAccumulatorBalance() internal view returns (uint256 rewardsAccumulatorBalance) {
         return IRewardsAccumulator(_modules.rewardsAccumulator).balance();
-    }
-
-    /// @notice Validates that the cumulative slashing delta is monotonically non-decreasing.
-    /// @param slashingDelta The new cumulative slashing delta to validate.
-    function _validateSlashingDelta(uint256 slashingDelta) internal view {
-        uint256 previousSlashingDelta = _accountingState.slashingDelta;
-        // Monotonicity check on cumulative slashing; not a timestamp concern.
-        // slither-disable-next-line timestamp
-        if (slashingDelta < previousSlashingDelta) {
-            revert OllaCore__InvalidSlashingDelta(previousSlashingDelta, slashingDelta);
-        }
     }
 
     /// @notice Calculates protocol fee in assets, then splits into treasury and provider share amounts.
@@ -1227,29 +1215,68 @@ contract OllaCore is
         return (ollaProtocolFeeAssets, treasuryShares, providerShares);
     }
 
-    /// @dev Core is the pricing authority because it owns totalAssets() (computed from _accountingState).
+    /// @dev Core is the pricing authority because it owns totalAssets() (assembled live via `_liveAccountingState`).
     ///      The Vault delegates pricing to Core via cross-contract calls to avoid circular dependencies.
-    ///      Rate reflects state as of the last `updateAccounting()` or `rebalance()` call.
-    ///      Accrued rewards and pending slashing between updates are not reflected.
-    ///      Keeper infrastructure should call `updateAccounting()` at a cadence that
-    ///      bounds the staleness window to an acceptable level for depositors.
+    ///      Rate reflects the current state of the owning modules (StakingManager, RewardsAccumulator, Vault)
+    ///      read at call time — no intermediate caching. `updateAccounting()` only advances the reporting
+    ///      snapshot (`_latestReport`); it does not gate pricing reads.
     function _exchangeRate() internal view returns (uint256) {
         return (totalAssets() + _VIRTUAL_OFFSET)
         .mulDiv(_EXCHANGE_RATE_SCALE, _modules.stAztec.totalSupply() + _VIRTUAL_OFFSET, Math.Rounding.Floor);
     }
 
+    /// @notice Computes pending withdrawal assets to subtract for live share pricing.
+    /// @dev Uses the slash-adjusted gross-rate value and caps it at locked pending assets. This prevents
+    ///      double-discounting pending withdrawals after slashing while preserving raw queue liabilities
+    ///      until finalization.
+    /// @param vaultRef The vault reference.
+    /// @param buckets The live accounting state buckets.
+    /// @param bufferedAssets The current buffered assets.
+    /// @return The pending asset amount to subtract for pricing.
+    function _pricingPendingAssets(
+        IOllaVault vaultRef,
+        IOllaCore.AccountingState memory buckets,
+        uint256 bufferedAssets
+    ) internal view returns (uint256) {
+        uint256 pendingAssets = vaultRef.pendingWithdrawalAssets();
+        if (pendingAssets == 0) return 0;
+
+        uint256 pendingShares = vaultRef.pendingWithdrawalShares();
+        if (pendingShares == 0) return pendingAssets;
+
+        uint256 virtualOffset = _VIRTUAL_OFFSET;
+        uint256 grossAssets = _computeTotalAssets(buckets, bufferedAssets, 0);
+        uint256 liveSupply = _modules.stAztec.totalSupply();
+        uint256 currentRate = (grossAssets + virtualOffset)
+        .mulDiv(_EXCHANGE_RATE_SCALE, liveSupply + pendingShares + virtualOffset, Math.Rounding.Floor);
+
+        // Price only real pending shares. The virtual offset is an anti-donation constant, not a
+        // real share, so it must not accrue rewards or absorb slashing in the pending deduction.
+        uint256 adjustedPendingAssets = pendingShares.mulDiv(currentRate, _EXCHANGE_RATE_SCALE, Math.Rounding.Floor);
+
+        return Math.min(Math.min(adjustedPendingAssets, pendingAssets), grossAssets);
+    }
+
     /// @notice Computes the exchange rate for withdrawal queue finalization.
     /// @dev Uses gross total assets (before subtracting pending withdrawals) and gross total supply
-    ///      (including shares burned for pending requests). This ensures the rate reflects the true
-    ///      backing per share for adjustment after slashing, matching the rate stored at request time.
+    ///      (including shares burned for pending requests). Pending withdrawal shares remain in this
+    ///      gross supply until finalized, so they continue to share pro-rata in both slashing losses
+    ///      and accrued rewards. Rewards can therefore restore the current rate after a slash and
+    ///      reduce or eliminate the queue adjustment, but finalized payouts remain capped at each
+    ///      request's locked `assetsExpected`.
     /// @param vaultRef The vault reference.
     /// @return The withdrawal-safe exchange rate.
     function _withdrawalRate(IOllaVault vaultRef) internal view returns (uint256) {
+        // slither-disable-start calls-loop
+        // This function is intentionally called during per-request finalization; the Vault and
+        // stAztec are trusted protocol modules and must be reread after each queue head settles.
         uint256 buffered = vaultRef.bufferedAssets();
-        uint256 grossAssets = _computeTotalAssets(_accountingState, buffered, 0);
+        uint256 grossAssets = _computeTotalAssets(_liveAccountingState(), buffered, 0);
         uint256 grossSupply = _modules.stAztec.totalSupply() + vaultRef.pendingWithdrawalShares();
-        return (grossAssets + _VIRTUAL_OFFSET)
+        uint256 rate = (grossAssets + _VIRTUAL_OFFSET)
         .mulDiv(_EXCHANGE_RATE_SCALE, grossSupply + _VIRTUAL_OFFSET, Math.Rounding.Floor);
+        // slither-disable-end calls-loop
+        return rate;
     }
 
     /// @notice Converts a share amount to assets using floor rounding.
@@ -1332,7 +1359,7 @@ contract OllaCore is
     function _computeNetFlows(IOllaCore.FlowCounters memory flows)
         internal
         pure
-        returns (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals)
+        returns (int256 netFlows, uint256 netDeposits, int256 netWithdrawals)
     {
         // Cumulative counter comparison; not a timestamp concern.
         // slither-disable-next-line timestamp
@@ -1341,17 +1368,21 @@ contract OllaCore is
             : 0;
         // Cumulative counter comparison; not a timestamp concern.
         // slither-disable-next-line timestamp
-        netWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
+        uint256 rawWithdrawals = flows.cumulativeWithdrawals > flows.latestReportCumulativeWithdrawals
             ? flows.cumulativeWithdrawals - flows.latestReportCumulativeWithdrawals
             : 0;
-        // Subtract slashing adjustments that occurred since last report.
+        // Cumulative counter comparison; not a timestamp concern.
         // slither-disable-next-line timestamp
         uint256 adjustmentsSinceReport = flows.cumulativeSlashingAdjustments
                 > flows.latestReportCumulativeSlashingAdjustments
             ? flows.cumulativeSlashingAdjustments - flows.latestReportCumulativeSlashingAdjustments
             : 0;
-        netWithdrawals = netWithdrawals > adjustmentsSinceReport ? netWithdrawals - adjustmentsSinceReport : 0;
-        netFlows = SafeCast.toInt256(netDeposits) - SafeCast.toInt256(netWithdrawals);
+        // Signed effective withdrawals: when slashing adjustments exceed user withdrawals in a
+        // period, the excess flows through as negative netWithdrawals (positive contribution to
+        // netFlows) instead of being silently dropped via an unsigned clamp. The clamp would
+        // inflate gross rewards by exactly the dropped magnitude.
+        netWithdrawals = SafeCast.toInt256(rawWithdrawals) - SafeCast.toInt256(adjustmentsSinceReport);
+        netFlows = SafeCast.toInt256(netDeposits) - netWithdrawals;
         return (netFlows, netDeposits, netWithdrawals);
     }
 

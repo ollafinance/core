@@ -16,10 +16,9 @@
  *
  * NOTE: Broad "for all functions" variants of monotonicity rules are impractical because
  * rebalance() and updateAccounting() make 5+ external calls (StakingManager,
- * RewardsAccumulator, SafetyModule, Vault, WithdrawalQueue) that would require full
- * protocol modeling. Instead, we use targeted rules that verify monotonicity for the
- * specific functions that write these fields, and stability rules that prove other
- * functions cannot modify them.
+ * RewardsAccumulator, SafetyModule, Vault) that would require full protocol modeling.
+ * Instead, we use targeted rules that verify monotonicity for the specific functions
+ * that write these fields, and stability rules that prove other functions cannot modify them.
  */
 
 using OllaCoreHarness as core;
@@ -30,7 +29,6 @@ methods {
     function treasuryFeeSplitBP() external returns (uint16) envfree;
     function rebalanceCooldown() external returns (uint32) envfree;
     function lastRebalanceTimestamp() external returns (uint48) envfree;
-    function targetBufferedAssets() external returns (uint256) envfree;
 
     // Harness getters
     function getRebalanceStep() external returns (uint8) envfree;
@@ -52,7 +50,6 @@ methods {
     function updateAccounting() external;
     function setProtocolFeeBP(uint256) external;
     function setTreasuryFeeSplitBP(uint256) external;
-    function setTargetBufferedAssets(uint256) external;
     function setRebalanceCooldown(uint256) external;
     function setRebalanceGasThreshold(uint256) external;
     function forceRebalanceReset() external;
@@ -60,48 +57,69 @@ methods {
     // External contract summaries -- all external calls return consistent arbitrary values.
     // This is sufficient for parameter-bound and state-machine rules that don't depend
     // on external return values.
+    // Vault state getters
     function _.bufferedAssets() external => PER_CALLEE_CONSTANT;
     function _.pendingWithdrawalAssets() external => PER_CALLEE_CONSTANT;
     function _.pendingWithdrawalShares() external => PER_CALLEE_CONSTANT;
+    function _.nextWithdrawalRequestId() external => PER_CALLEE_CONSTANT;
+    function _.nextUnfinalizedWithdrawalRequestId() external => PER_CALLEE_CONSTANT;
     function _.totalSupply() external => PER_CALLEE_CONSTANT;
     // Vault flow counters -- called by _updateReportingSnapshots in updateAccounting.
     // Without these, the prover havocs the return (unresolved callee) and can produce
     // counterexamples where cumulative counters appear to decrease.
     function _.cumulativeDeposits() external => PER_CALLEE_CONSTANT;
     function _.cumulativeWithdrawals() external => PER_CALLEE_CONSTANT;
-    function _.cumulativeExitFees() external => PER_CALLEE_CONSTANT;
     function _.cumulativeSlashingAdjustments() external => PER_CALLEE_CONSTANT;
-    // RewardsAccumulator view -- called during rebalance accounting
+
+    // RewardsAccumulator
     function _.balance() external => PER_CALLEE_CONSTANT;
-    // Summarize all other external calls as NONDET (rebalance calls many contracts)
-    function _.harvestRewards() external => NONDET;
     function _.recordBalance() external => NONDET;
+    function _.withdrawToCore() external => NONDET;
+
+    // StakingManager mutators
+    function _.harvestRewards() external => NONDET;
     function _.stake(uint256) external => NONDET;
+    function _.unstake(uint256) external => NONDET;
+    function _.refreshAttesterState(address[]) external => NONDET;
+    function _.setGasThreshold(uint256) external => NONDET;
+
+    // StakingManager views
     function _.totalStaked() external => PER_CALLEE_CONSTANT;
     function _.pendingUnstakes() external => PER_CALLEE_CONSTANT;
-    function _.claimUnstakedFunds() external => NONDET;
-    function _.refreshAttesterState(address[]) external => NONDET;
-    function _.finalizeWithdrawals(uint256, uint256) external => NONDET;
-    function _.transferToCore(uint256) external => NONDET;
-    function _.receiveUnstaked(uint256) external => NONDET;
-    function _.mintFees(address, uint256, address, uint256) external => NONDET;
-    function _.checkDepositAllowed(uint256, uint256) external => NONDET;
-    function _.checkQueueRatio(uint256, uint256) external => NONDET;
-    function _.checkRateDrop(uint256, uint256) external => NONDET;
-    function _.setLatestAccountingTimestamp(uint256) external => NONDET;
-    // SafetyModule checks -- called during updateAccounting/rebalance
-    function _.checkAccountingLiveness() external => NONDET;
-    // StakingManager views -- called during rebalance/updateAccounting
     function _.getClaimableRewards() external => PER_CALLEE_CONSTANT;
     function _.getSlashingDelta() external => PER_CALLEE_CONSTANT;
     function _.getProviderConfig() external => PER_CALLEE_CONSTANT;
     function _.getActivatedAttesterCount() external => PER_CALLEE_CONSTANT;
     function _.canStake(uint256) external => PER_CALLEE_CONSTANT;
     function _.getUnstakedFunds() external => PER_CALLEE_CONSTANT;
+    function _.claimableUnstakedFunds() external => PER_CALLEE_CONSTANT;
     function _.hasFinalizedUnstakes() external => PER_CALLEE_CONSTANT;
-    function _.setGasThreshold(uint256) external => NONDET;
+
+    // Vault mutators -- finalizeWithdrawals signature is (available, currentRate, maxRequestId)
+    // post-M10 (was 2 args before the queue/vault merge).
+    function _.finalizeWithdrawals(uint256, uint256, uint256) external => NONDET;
+    function _.transferToCore(uint256) external => NONDET;
+    function _.receiveUnstaked(uint256) external => NONDET;
+    function _.mintFees(address, uint256, address, uint256) external => NONDET;
+
+    // SafetyModule
+    function _.checkDepositAllowed(uint256, uint256) external => NONDET;
+    function _.checkQueueRatio(uint256, uint256) external => NONDET;
+    function _.checkRateDrop(uint256, uint256) external => NONDET;
+    function _.setLatestAccountingTimestamp(uint256) external => NONDET;
+    function _.checkAccountingLiveness() external => NONDET;
+
     // Governance treasury address -- called during fee distribution
     function _.treasury() external => PER_CALLEE_CONSTANT;
+
+    // SafeERC20 internal helpers compile to inline-assembly low-level calls.
+    // Direct asset transfers from OllaCore (line 708/736/828/837 -- rebalance step:
+    // pull-unstaked / stake-surplus paths) cannot be summarized at the high-level
+    // _.transfer signature because the bytecode is inline assembly. Summarize the
+    // SafeERC20 wrappers themselves so the prover never descends into the assembly
+    // (avoids pointer-analysis failure 1277565207).
+    function SafeERC20.safeTransfer(address, address, uint256) internal => NONDET;
+    function SafeERC20.safeTransferFrom(address, address, address, uint256) internal => NONDET;
 }
 
 /*//////////////////////////////////////////////////////////////

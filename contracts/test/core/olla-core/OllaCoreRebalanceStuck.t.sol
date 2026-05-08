@@ -8,7 +8,6 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
@@ -31,7 +30,6 @@ contract OllaCoreRebalanceStuck is Test {
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
-    WithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -55,12 +53,6 @@ contract OllaCoreRebalanceStuck is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation),
-            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
-        );
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
@@ -70,7 +62,7 @@ contract OllaCoreRebalanceStuck is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -96,13 +88,8 @@ contract OllaCoreRebalanceStuck is Test {
 
     /// @notice Reproduces the bug: rebalance gets stuck when staking manager
     /// can only stake part of the surplus, leaving remainder that can't be staked.
-    /// This matches the mock-loop scenario: target buffer = 0, 200k deposit.
+    /// This matches the mock-loop scenario: 200k deposit.
     function test_Rebalance_StuckInStakeSurplus_WhenPartialStakeCapacity() external {
-        // Setup to match mock-loop scenario: target buffer = 0
-        uint256 targetBuffer = 0;
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBuffer);
-
         // Deposit 200k ETH (like mock-loop)
         uint256 depositAmount = 200_000 * DECIMALS;
         _performDeposit(alice, depositAmount);
@@ -163,67 +150,39 @@ contract OllaCoreRebalanceStuck is Test {
         assertEq(progressFinal.stakeRemaining, 0, "stakeRemaining should be 0");
     }
 
-    /// @notice Original test case with 1 ETH target buffer for comparison
-    function test_Rebalance_WithTargetBuffer_OneEther() external {
-        uint256 targetBuffer = 1 * DECIMALS;
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBuffer);
-
-        uint256 depositAmount = 10 * DECIMALS;
-        _performDeposit(alice, depositAmount);
-
-        // First stake: 8 ETH (leaving 1 ETH to stake + 1 ETH buffer = 2 ETH in contract)
-        stakingManager.setStakeReturnAmount(8 * DECIMALS);
-        stakingManager.setAllowStakeReturnExceeds(true);
-
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progress1 = core.rebalanceProgress();
-        assertEq(uint256(progress1.step), uint256(IOllaCore.RebalanceStep.StakeSurplus), "After first rebalance");
-        assertEq(progress1.stakeRemaining, 1 * DECIMALS, "1 ETH remaining");
-
-        // Set stake to return 0
-        stakingManager.setStakeReturnAmount(0);
-
-        // Second rebalance
-        vm.prank(operator);
-        core.rebalance();
-
-        IOllaCore.RebalanceProgress memory progress2 = core.rebalanceProgress();
-        // With target buffer, it should complete correctly
-        assertEq(uint256(progress2.step), uint256(IOllaCore.RebalanceStep.Done), "Should complete");
-        assertEq(progress2.stakeRemaining, 0, "stakeRemaining should be 0");
-    }
-
-    /// @notice Verifies that when stake() returns 0 for the remainder, rebalance should complete.
+    /// @notice Liveness path: when a rebalance is resumed at StakeSurplus with non-zero
+    ///         stakeRemaining and the staking manager subsequently returns 0 from stake(),
+    ///         the cycle must converge to Done instead of deadlocking.
     function test_Rebalance_ShouldComplete_WhenStakeReturnsZero() external {
-        // Setup similar scenario but verify expected behavior
-        uint256 targetBuffer = 1 * DECIMALS;
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBuffer);
-
         uint256 depositAmount = 5 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // First stake: 3 ETH
+        // First stake call: mock returns 3 ETH (allowing return > requested so the mock
+        // actually transfers 3 even though amount=5). Stakeable = 5 (no withdrawals,
+        // no target). Result: stakedAmount = 3, stakeRemaining = 2, parks at StakeSurplus.
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
         vm.prank(operator);
         core.rebalance();
 
-        // Second stake: 0 (no capacity)
+        IOllaCore.RebalanceProgress memory progressMid = core.rebalanceProgress();
+        assertEq(
+            uint256(progressMid.step),
+            uint256(IOllaCore.RebalanceStep.StakeSurplus),
+            "should park at StakeSurplus after partial stake"
+        );
+        assertGt(progressMid.stakeRemaining, 0, "stakeRemaining should be non-zero after partial stake");
+
+        // Second stake call: mock returns 0 → canStake() returns false on resume →
+        // `_runRebalance` zeroes stakeRemaining and advances step to Done.
         stakingManager.setStakeReturnAmount(0);
 
         vm.prank(operator);
         core.rebalance();
 
-        // At this point, rebalance should detect that stake() returned 0
-        // and advance to Done since no more progress can be made
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
 
-        // Verify that rebalance completes correctly when stake() returns 0
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "should complete when stake returns 0");
         assertEq(progress.stakeRemaining, 0, "stakeRemaining should be 0");
     }

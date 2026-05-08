@@ -4,7 +4,6 @@ pragma solidity ^0.8.27;
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { E2EBaseWithRealStaking } from "./E2EBaseWithRealStaking.sol";
 
@@ -38,11 +37,6 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
 
     function setUp() external {
         _deployFullStack();
-
-        // Set target buffer to 0 so all deposited funds go to staking
-        _scheduleAndExecute(
-            address(gov), abi.encodeCall(gov.setTargetBufferedAssets, (0)), keccak256("setTargetBufferedAssets-0")
-        );
 
         // Add attester keys
         _addKeys(10);
@@ -97,7 +91,7 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
 
         // 2. Request redeem
         uint256 requestId = _requestRedeem(alice, shares);
-        IWithdrawalQueue.WithdrawalRequest memory reqBefore = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqBefore = vault.getWithdrawalRequest(requestId);
         assertEq(reqBefore.assetsExpected, depositAmount, "request at full value");
 
         // 3. Rebalance → unstake (exits created with delay)
@@ -121,7 +115,7 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 7. Claim — should receive full amount (no slashing)
-        IWithdrawalQueue.WithdrawalRequest memory reqAfter = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqAfter = vault.getWithdrawalRequest(requestId);
         assertTrue(reqAfter.finalized, "request should be finalized");
 
         vm.prank(alice);
@@ -184,7 +178,7 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
         _completeRebalance();
 
         // 8. Withdrawal should now be finalized
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertTrue(req.finalized, "request finalized after exit delay");
 
         vm.prank(alice);
@@ -247,7 +241,7 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 9. Verify withdrawal finalized
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertTrue(req.finalized, "request must be finalized");
 
         // 10. Claim — user receives less due to slash during exit delay
@@ -304,8 +298,8 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 7. Both requests should be finalized
-        IWithdrawalQueue.WithdrawalRequest memory reqA = withdrawalQueue.getRequest(requestIdA);
-        IWithdrawalQueue.WithdrawalRequest memory reqB = withdrawalQueue.getRequest(requestIdB);
+        IOllaVault.WithdrawalRequest memory reqA = vault.getWithdrawalRequest(requestIdA);
+        IOllaVault.WithdrawalRequest memory reqB = vault.getWithdrawalRequest(requestIdB);
         assertTrue(reqA.finalized, "Alice's request finalized");
         assertTrue(reqB.finalized, "Bob's request finalized");
 
@@ -379,7 +373,7 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 10. Verify withdrawal is finalized
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertTrue(req.finalized, "request finalized after double slash");
 
         vm.prank(alice);
@@ -415,12 +409,12 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
         _rebalance();
 
         // 3. Verify queue is pending (not finalized)
-        IWithdrawalQueue.WithdrawalRequest memory reqPending = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqPending = vault.getWithdrawalRequest(requestId);
         assertFalse(reqPending.finalized, "request should be pending during exit delay");
 
         // 4. Try to complete rebalance — should not finalize queue (no funds yet)
         _completeRebalance();
-        reqPending = withdrawalQueue.getRequest(requestId);
+        reqPending = vault.getWithdrawalRequest(requestId);
         assertFalse(reqPending.finalized, "request still pending - exits not exitable");
 
         // 5. Warp past delay → finalize exits → complete rebalance
@@ -432,7 +426,7 @@ contract SlashingExitDelayE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 6. Queue should now be finalized
-        IWithdrawalQueue.WithdrawalRequest memory reqFinal = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqFinal = vault.getWithdrawalRequest(requestId);
         assertTrue(reqFinal.finalized, "request finalized after exit delay passes");
 
         vm.prank(alice);

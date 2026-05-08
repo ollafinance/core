@@ -10,7 +10,6 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
@@ -47,7 +46,6 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
     OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
-    WithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     MockAccountingStakingManager internal stakingManager;
     MockRewardsAccumulator internal rewardsAccumulator;
@@ -111,12 +109,6 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
             7 days // maxAccountingDelay — generous to avoid liveness triggers during governance warps
         );
 
-        // ---- Deploy WithdrawalQueue (proxy) ----
-        WithdrawalQueue queueImpl = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), address(gov), 180_000);
-
         // ---- Configure mock staking manager ----
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
@@ -136,12 +128,12 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
         );
 
         // ---- Initialize OllaVault ----
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
+        vault.initialize(asset, stAztec, address(core), address(gov));
 
         // ---- Wire contracts ----
         vm.prank(address(gov));
         core.setVault(address(vault));
-        vm.prank(admin);
+        vm.prank(address(gov));
         gov.setCore(address(core));
 
         // ---- Unpause ----
@@ -199,10 +191,7 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
         _performDeposit(alice, 100 * DECIMALS);
 
         // Stall at StakeSurplus by making the mock stake() return a partial amount.
-        // With target buffer = 0 (default from setUp isn't overridden here), rebalance
-        // will try to stake 100e18 but the mock only stakes 10e18, saving progress.
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(0);
+        // Rebalance will try to stake 100e18 but the mock only stakes 10e18, saving progress.
         stakingManager.setHarvestedRewards(0);
         stakingManager.setUnstakedAmount(0);
         stakingManager.setStakeReturnAmount(10 * DECIMALS);
@@ -230,21 +219,13 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-         TEST 1B: GOVERNANCE FEE CHANGE BETWEEN REBALANCE CYCLES
+              TEST 1B: FEE CHANGE BETWEEN REBALANCE CYCLES
     //////////////////////////////////////////////////////////////*/
 
     function test_GovernanceCanChangeFeeBetweenRebalanceCycles() external {
-        // --- Setup: deposit, keep all buffered, complete first rebalance ---
+        // --- Setup: deposit, run a baseline rebalance that does no work ---
         _performDeposit(alice, 100 * DECIMALS);
-
-        // High target buffer so nothing gets staked
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(1_000 * DECIMALS);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-
-        _fullRebalance();
+        _baselineRebalance();
 
         // First rebalance establishes baseline accounting. Verify it completed.
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
@@ -297,64 +278,13 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-       TEST 1C: TARGET BUFFER CHANGE AFFECTS NEXT REBALANCE
-    //////////////////////////////////////////////////////////////*/
-
-    function test_GovernanceSetTargetBufferBetweenCycles_AffectsNextRebalance() external {
-        // --- Setup: deposit 200e18, keep all buffered, complete first rebalance ---
-        _performDeposit(alice, 200 * DECIMALS);
-
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(200 * DECIMALS);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-
-        _fullRebalance();
-
-        // After first rebalance: everything is buffered, nothing staked
-        assertEq(vault.bufferedAssets(), 200 * DECIMALS, "initial buffer should be 200e18");
-
-        // --- Change targetBufferedAssets from 200e18 to 10e18 via governance ---
-        _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.setTargetBufferedAssets, (10 * DECIMALS)));
-        assertEq(core.targetBufferedAssets(), 10 * DECIMALS, "target buffer should be 10e18");
-
-        // --- Configure staking mock: the mock will accept 190e18 stake ---
-        stakingManager.setStakeReturnAmount(190 * DECIMALS);
-        // Set totalStaked so accounting update reads the correct staked principal
-        stakingManager.setTotalStaked(190 * DECIMALS);
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-
-        // --- Rebalance: should stake 190e18 (200 - 10) ---
-        _warpPastCooldown();
-        (,, uint256 stakedAmount, uint256 resultingBuffer) = _fullRebalance();
-
-        // Verify staking occurred per the new buffer target
-        assertEq(stakedAmount, 190 * DECIMALS, "should stake 190e18");
-        assertEq(resultingBuffer, 10 * DECIMALS, "buffer should be 10e18 after rebalance");
-        assertEq(vault.bufferedAssets(), 10 * DECIMALS, "vault buffer should match target");
-
-        // Rebalance should complete to Done
-        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
-        assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-        TEST 1D: TREASURY FEE SPLIT CHANGE AFFECTS DISTRIBUTION
+              TEST 1C: TREASURY SPLIT CHANGE BETWEEN CYCLES
     //////////////////////////////////////////////////////////////*/
 
     function test_GovernanceTreasuryFeeSplitChange_AffectsDistribution() external {
         // --- Setup: deposit 100e18, complete baseline rebalance ---
         _performDeposit(alice, 100 * DECIMALS);
-
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(1_000 * DECIMALS);
-
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-
-        _fullRebalance();
+        _baselineRebalance();
 
         // --- Change protocolFeeBP to 1000 (10%) for clearer fee calculations ---
         _scheduleAndExecute(address(gov), abi.encodeCall(IOllaGovernance.setProtocolFeeBP, (1_000)));
@@ -371,8 +301,7 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
         assertGt(treasuryBal1, 0, "cycle1: treasury should have shares");
         assertGt(providerBal1, 0, "cycle1: provider should have shares");
 
-        // With 50/50 split, treasury and provider should be equal
-        // Treasury gets floor(total * 5000 / 10000), provider gets remainder -- may differ by 1 wei
+        // With 50/50 split, treasury and provider should be equal — allow 1 wei rounding.
         assertApproxEqAbs(treasuryBal1, providerBal1, 1, "cycle1: 50/50 split should yield equal shares");
 
         // --- Change treasuryFeeSplitBP from 5000 to 9000 (90/10) via governance ---
@@ -398,8 +327,22 @@ contract GovernanceRebalanceInteractionE2ETest is Test {
         // With 90/10 split: treasuryDelta should be ~9x providerDelta (allow 1 wei rounding)
         assertApproxEqAbs(treasuryDelta, providerDelta * 9, 1, "cycle2: treasury should get ~9x provider shares");
 
-        // Total fee shares per cycle should match expected protocol fee (10% of rewards in shares)
+        // Total fee shares are minted from the configured fee assets using pre-mint share pricing.
         uint256 totalFeeSharesCycle2 = treasuryDelta + providerDelta;
         assertGt(totalFeeSharesCycle2, 0, "cycle2: total fee shares should be > 0");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          INTERNAL HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _baselineRebalance() private {
+        // Suppress staking, harvest, and unstake so the baseline rebalance is a no-op
+        // that simply advances the cycle to Done with the entire deposit held in buffer.
+        // With stakeReturnAmount = 0, canStake() returns false, so no surplus is staked.
+        stakingManager.setStakeReturnAmount(0);
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        _fullRebalance();
     }
 }

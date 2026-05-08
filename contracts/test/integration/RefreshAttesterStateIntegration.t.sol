@@ -6,7 +6,6 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { RewardsAccumulator } from "src/core/RewardsAccumulator.sol";
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
@@ -32,7 +31,6 @@ contract RefreshAttesterStateIntegration is Test {
     StAztec internal stAztec;
     StakingManager internal stakingManager;
     StakingProviderRegistry internal stakingProviderRegistry;
-    WithdrawalQueue internal withdrawalQueue;
     RewardsAccumulator internal rewardsAccumulator;
     SafetyModule internal safetyModule;
     MockAztecRollup internal mockRollup;
@@ -58,10 +56,6 @@ contract RefreshAttesterStateIntegration is Test {
         stAztec = new StAztec(address(vault));
 
         // Deploy WithdrawalQueue
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         // Deploy RewardsAccumulator
         RewardsAccumulator rewardsImplementation = new RewardsAccumulator();
@@ -71,7 +65,7 @@ contract RefreshAttesterStateIntegration is Test {
 
         // Deploy Mock Rollup and Registry
         mockRollup = new MockAztecRollup(IERC20(asset), 0);
-        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup));
+        mockRollupRegistry = new MockAztecRollupRegistry(address(mockRollup), IERC20(asset));
 
         // Deploy StakingProviderRegistry (before StakingManager)
         StakingProviderRegistry registryImplementation = new StakingProviderRegistry();
@@ -110,7 +104,7 @@ contract RefreshAttesterStateIntegration is Test {
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
         // Initialize OllaVault
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -190,9 +184,6 @@ contract RefreshAttesterStateIntegration is Test {
         uint256 activationThreshold = 200_000 * DECIMALS;
         mockRollup.setActivationThreshold(activationThreshold);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _addKeys(5);
 
         uint256 depositAmount = 200_006 * DECIMALS;
@@ -218,9 +209,6 @@ contract RefreshAttesterStateIntegration is Test {
     function test_fullFlow_stakedPrincipalUpdatedAfterRebalance() external {
         uint256 activationThreshold = 200_000 * DECIMALS;
         mockRollup.setActivationThreshold(activationThreshold);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
 
         _addKeys(3);
 
@@ -251,9 +239,6 @@ contract RefreshAttesterStateIntegration is Test {
         uint256 activationThreshold = 50 * DECIMALS;
         mockRollup.setActivationThreshold(activationThreshold);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 numAttesters = 5;
         _addKeys(numAttesters);
 
@@ -274,56 +259,13 @@ contract RefreshAttesterStateIntegration is Test {
         assertEq(totalStaked, activationThreshold * numAttesters, "totalStaked should be sum of all attester stakes");
     }
 
-    /// @notice Completes a full rebalance cycle, then calls updateAccounting
-    ///         to verify the steady-state refresh path still works.
-    function test_standaloneUpdateAccounting_afterRebalance() external {
-        uint256 activationThreshold = 100 * DECIMALS;
-        mockRollup.setActivationThreshold(activationThreshold);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
-        _addKeys(2);
-
-        uint256 depositAmount = activationThreshold * 2;
-        _performDeposit(alice, depositAmount);
-
-        vm.prank(operator);
-        core.rebalance();
-        _completeRebalance();
-
-        assertEq(
-            uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
-        );
-
-        IOllaCore.AccountingState memory stateAfterRebalance = core.accountingState();
-        assertEq(
-            stateAfterRebalance.stakedPrincipal, activationThreshold * 2, "stakedPrincipal should match after rebalance"
-        );
-
-        vm.warp(block.timestamp + 1 hours);
-
-        vm.prank(operator);
-        core.updateAccounting();
-
-        IOllaCore.AccountingState memory stateAfterAccounting = core.accountingState();
-        assertEq(
-            stateAfterAccounting.stakedPrincipal,
-            activationThreshold * 2,
-            "stakedPrincipal should be correct after standalone updateAccounting"
-        );
-    }
-
-    /// @notice Verifies that totalAssets (and exchange rate) never drops during the
-    ///         unstake lifecycle: rebalance(InitiateUnstake) -> refreshAttesterState -> accounting -> rebalance(PullUnstaked).
-    ///         Regression test for a bug where _processUnstakeAttester eagerly reduced stakedAmount
-    ///         but the pending exit wasn't reflected in totalAssets until PullUnstaked.
+    /// @notice totalAssets() and exchangeRate() must never drop across the unstake →
+    ///         refreshAttesterState → finalize lifecycle. This is a critical accounting
+    ///         invariant: pricing inputs must remain monotonic from a holder's perspective
+    ///         even as funds transit between staked, exiting, unstaked, and buffered states.
     function test_totalAssets_neverDrops_duringUnstakeLifecycle() external {
         uint256 activationThreshold = 200_000 * DECIMALS;
         mockRollup.setActivationThreshold(activationThreshold);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
 
         _addKeys(2);
 
@@ -331,7 +273,7 @@ contract RefreshAttesterStateIntegration is Test {
         uint256 depositAmount = activationThreshold * 2;
         _performDeposit(alice, depositAmount);
 
-        // Stake via rebalance
+        // Stake via rebalance — both attesters become activated, buffer drops to 0.
         vm.prank(operator);
         core.rebalance();
         _completeRebalance();
@@ -341,17 +283,23 @@ contract RefreshAttesterStateIntegration is Test {
 
         assertEq(stakingManager.getActivatedAttesterCount(), 2, "should have 2 attesters");
 
-        // The completed rebalance already ran _updateAccountingInternal.
-        // Record baseline.
+        // Trigger an unstake by submitting a redeem request equal to one attester's
+        // activation threshold. With buffer=0 and pendingWithdrawals=activationThreshold,
+        // requiredBuffer > currentBuffer → next rebalance unstakes one attester.
+        // The baseline is captured AFTER the redeem so the lifecycle assertions
+        // isolate the rebalance/refresh/pull steps from the share-burn/pending-creation
+        // mechanics of redeem (which intentionally reduces totalAssets via the
+        // pending-withdrawal subtraction in _pricingPendingAssets — not a value loss
+        // since supply is reduced in lockstep).
+        uint256 redeemShares = core.convertToShares(activationThreshold);
+        vm.prank(alice);
+        vault.requestRedeem(redeemShares, alice, alice);
+
+        // Record baseline AFTER the redeem.
         uint256 totalAssetsBefore = core.totalAssets();
         uint256 exchangeRateBefore = core.exchangeRate();
-        assertEq(totalAssetsBefore, depositAmount, "totalAssets should equal deposit");
 
         // --- Phase 1: Rebalance that initiates unstake ---
-        // Raise targetBufferedAssets to force unstaking of one attester
-        vm.prank(governance);
-        core.setTargetBufferedAssets(activationThreshold);
-
         uint256 t1 = block.timestamp + 2 hours;
         vm.warp(t1);
         vm.prank(operator);
@@ -403,5 +351,42 @@ contract RefreshAttesterStateIntegration is Test {
 
         uint256 exchangeRateAfterPull = core.exchangeRate();
         assertGe(exchangeRateAfterPull, exchangeRateBefore, "exchange rate must be monotonically non-decreasing");
+    }
+
+    /// @notice Completes a full rebalance cycle, then calls updateAccounting
+    ///         to verify the steady-state refresh path still works.
+    function test_standaloneUpdateAccounting_afterRebalance() external {
+        uint256 activationThreshold = 100 * DECIMALS;
+        mockRollup.setActivationThreshold(activationThreshold);
+
+        _addKeys(2);
+
+        uint256 depositAmount = activationThreshold * 2;
+        _performDeposit(alice, depositAmount);
+
+        vm.prank(operator);
+        core.rebalance();
+        _completeRebalance();
+
+        assertEq(
+            uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete"
+        );
+
+        IOllaCore.AccountingState memory stateAfterRebalance = core.accountingState();
+        assertEq(
+            stateAfterRebalance.stakedPrincipal, activationThreshold * 2, "stakedPrincipal should match after rebalance"
+        );
+
+        vm.warp(block.timestamp + 1 hours);
+
+        vm.prank(operator);
+        core.updateAccounting();
+
+        IOllaCore.AccountingState memory stateAfterAccounting = core.accountingState();
+        assertEq(
+            stateAfterAccounting.stakedPrincipal,
+            activationThreshold * 2,
+            "stakedPrincipal should be correct after standalone updateAccounting"
+        );
     }
 }

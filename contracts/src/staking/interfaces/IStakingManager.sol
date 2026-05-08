@@ -36,12 +36,14 @@ interface IStakingManager {
     /// @notice Tracks an attester with their originally staked amount and last seen status.
     /// @param attester The attester address.
     /// @param stakedAmount The amount originally staked (activation threshold at stake time).
+    /// @param queueRollup The rollup instance where a queued deposit was submitted.
     /// @param exitRollup The rollup instance where the attester's exit was initiated.
     /// @param pendingExitAmount The amount added to aggregate pendingUnstakeAmount for this attester (uint96).
     /// @param status The local registry status.
     struct AttesterInfo {
         address attester;
         uint256 stakedAmount;
+        address queueRollup;
         address exitRollup;
         uint96 pendingExitAmount;
         InternalAttesterStatus status;
@@ -94,6 +96,19 @@ interface IStakingManager {
     /// @param reason The low-level revert reason.
     event RewardsHarvestFailed(bytes reason);
 
+    /// @notice Emitted when a rollup is added to sequencer reward tracking.
+    /// @param rollup The tracked rollup address.
+    event RewardRollupTracked(address indexed rollup);
+
+    /// @notice Emitted when a drained legacy rollup is removed from sequencer reward tracking.
+    /// @param rollup The removed rollup address.
+    event RewardRollupRemoved(address indexed rollup);
+
+    /// @notice Emitted when rewards are harvested from a specific rollup.
+    /// @param rollup The rollup harvested from.
+    /// @param amount The amount harvested.
+    event RewardsHarvestedFromRollup(address indexed rollup, uint256 amount);
+
     /// @notice Emitted when an attester is removed from the registry.
     /// @param attester The removed attester address.
     event AttesterRemoved(address indexed attester);
@@ -104,13 +119,28 @@ interface IStakingManager {
     /// @param newBalance The new balance from rollup.
     event AttesterStateRefreshed(address indexed attester, uint256 indexed oldBalance, uint256 indexed newBalance);
 
+    /// @notice Emitted when an unstake observes a fully slashed attester and removes stale local state.
+    /// @param attester The purged attester address.
+    /// @param cachedStake The locally cached stake recorded as slashed.
+    /// @param reason The low-level revert reason from the rollup withdraw attempt.
+    event FullySlashedAttesterPurged(address indexed attester, uint256 indexed cachedStake, bytes reason);
+
     /// @notice Emitted when a failed queue entry is purged by governance.
     /// @param attester The purged attester address.
     /// @param recoveredAmount The stake amount removed from stakedAmount accounting.
     event FailedQueueEntryPurged(address indexed attester, uint256 indexed recoveredAmount);
 
+    /// @notice Emitted when aggregate accounting is clamped after an underflow would occur.
+    /// @param attester The attester being reconciled when the underflow was detected.
+    /// @param field The aggregate state field that was clamped.
+    /// @param currentAmount The aggregate amount before clamping.
+    /// @param requestedDecrease The requested decrement that exceeded currentAmount.
+    event AggregateStateUnderflowClamped(
+        address indexed attester, bytes32 indexed field, uint256 currentAmount, uint256 requestedDecrease
+    );
+
     /*//////////////////////////////////////////////////////////////
-                                   ERRORS
+                                    ERRORS
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when an address is zero.
@@ -148,6 +178,15 @@ interface IStakingManager {
 
     /// @notice Thrown when purgeFailedQueueEntry is called for an attester that is not a failed queue entry.
     error StakingManager__NotFailedQueueEntry(address attester);
+
+    /// @notice Thrown when a reward rollup is not tracked.
+    error StakingManager__RewardRollupNotTracked(address rollup);
+
+    /// @notice Thrown when attempting to remove the current canonical reward rollup.
+    error StakingManager__CannotRemoveCanonicalRewardRollup(address rollup);
+
+    /// @notice Thrown when attempting to remove a reward rollup that still has pending rewards.
+    error StakingManager__RewardRollupHasPendingRewards(address rollup, uint256 rewards);
 
     /*//////////////////////////////////////////////////////////////
                                INITIALIZER
@@ -249,6 +288,10 @@ interface IStakingManager {
     /// @return True if there are funds sitting in StakingManager after rollup finalization.
     function hasFinalizedUnstakes() external view returns (bool);
 
+    /// @notice Returns finalized unstake/refund funds ready to be claimed via getUnstakedFunds().
+    /// @return amount The amount sitting in StakingManager after rollup finalization.
+    function claimableUnstakedFunds() external view returns (uint256 amount);
+
     /// @notice Returns the provider configuration.
     /// @dev Delegates to the StakingProviderRegistry.
     /// @return The provider config struct.
@@ -279,4 +322,12 @@ interface IStakingManager {
     /// @notice Returns the staking provider registry address.
     /// @return The staking provider registry contract.
     function stakingProviderRegistry() external view returns (IStakingProviderRegistry);
+}
+
+/// @title IStakingManagerRewardRollupAdmin
+/// @notice Governance surface for reward rollup tracking cleanup.
+interface IStakingManagerRewardRollupAdmin {
+    /// @notice Removes a tracked non-canonical reward rollup after confirming it has no pending rewards.
+    /// @param rollup The rollup address to remove.
+    function removeDrainedRewardRollup(address rollup) external;
 }

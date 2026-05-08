@@ -2,17 +2,17 @@
 pragma solidity 0.8.27;
 
 import { AccessControlUpgradeable } from "@oz-upgradeable/access/AccessControlUpgradeable.sol";
-import { OwnableUpgradeable } from "@oz-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@oz-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@oz-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@oz/token/ERC20/utils/SafeERC20.sol";
 import { SafeCast } from "@oz/utils/math/SafeCast.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
+import { ReentrancyGuardTransient } from "@oz/utils/ReentrancyGuardTransient.sol";
 import { EnumerableSet } from "@oz/utils/structs/EnumerableSet.sol";
+import { IAztecGovernance } from "src/staking/interfaces/IAztecGovernance.sol";
 import { IAztecRollup } from "src/staking/interfaces/IAztecRollup.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IStakingManager, IStakingManagerRewardRollupAdmin } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecTypes.sol";
 
@@ -22,7 +22,14 @@ import { AttesterView, Status, Timestamp } from "src/staking/libraries/AztecType
 /// @dev Uses mapping-based attester registry with an EnumerableSet for active attesters
 ///      and an incremental running state accumulator.
 /// @author Olla Core contributors
-contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuard, IStakingManager {
+contract StakingManager is
+    Initializable,
+    AccessControlUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuardTransient,
+    IStakingManager,
+    IStakingManagerRewardRollupAdmin
+{
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -32,6 +39,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @notice Maximum allowed gas threshold (30 million).
     uint256 private constant _MAX_GAS_THRESHOLD = 30_000_000;
+
+    /// @notice Event field value for aggregate stakedAmount underflow clamps.
+    bytes32 private constant _AGGREGATE_FIELD_STAKED_AMOUNT = keccak256("stakedAmount");
+
+    /// @notice Event field value for aggregate pendingUnstakeAmount underflow clamps.
+    bytes32 private constant _AGGREGATE_FIELD_PENDING_UNSTAKE_AMOUNT = keccak256("pendingUnstakeAmount");
 
     /*//////////////////////////////////////////////////////////////
                                     STATE
@@ -67,6 +80,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Gas threshold for bounded staking batch work.
     uint32 private _gasThreshold;
 
+    /// @notice Governance contract authorized to perform UUPS upgrades.
+    address public governanceUpgradeAuthority;
+
     /// @dev Mapping-based attester registry. O(1) access by address.
     mapping(address attester => AttesterInfo info) private _attesterMap;
 
@@ -76,11 +92,20 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Enumerable set of active attester addresses for internal iteration (unstake).
     EnumerableSet.AddressSet private _activeAttesterSet;
 
+    /// @dev Tracks purged failed-entry refunds that can be swept without double-counting principal.
+    uint256 private _pendingRefundAmount;
+
+    /// @dev Rollups still relevant for sequencer reward reads and harvesting.
+    address[] private _rewardRollups;
+
+    /// @dev Membership guard for _rewardRollups.
+    mapping(address rollup => bool tracked) private _isRewardRollup;
+
     /// @notice Storage gap for future upgrades.
     /// @dev When adding new state variables, append them above this gap and reduce its length
     ///      by the number of slots consumed. Target: 50 gap slots across all upgradeable contracts.
     // slither-disable-next-line unused-state
-    uint256[50] private __gap;
+    uint256[45] private __gap;
 
     /*//////////////////////////////////////////////////////////////
                                   EVENTS
@@ -157,8 +182,11 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         core = core_;
         stakingProviderRegistry = IStakingProviderRegistry(stakingProviderRegistry_);
         _gasThreshold = 50_000;
+        governanceUpgradeAuthority = defaultAdmin_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin_);
+
+        _trackRewardRollup(rollupRegistry.getCanonicalRollup());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -201,6 +229,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         for (uint256 i = length; i > 0;) {
             --i;
             if (unstakedAmount >= amount) break;
+            if (gasleft() < _gasThreshold) break;
 
             address attester = _activeAttesterSet.at(i);
             AttesterInfo storage info = _attesterMap[attester];
@@ -223,28 +252,78 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     function getUnstakedFunds() external override onlyCore nonReentrant returns (uint256 received, uint256 exitAmount) {
         exitAmount = _pendingClaimAmount;
         _pendingClaimAmount = 0;
+        uint256 refundAmount = _pendingRefundAmount;
+        _pendingRefundAmount = 0;
 
         uint256 balance = stakingAsset.balanceOf(address(this));
-        if (balance > 0) {
-            stakingAsset.safeTransfer(core, balance);
-            emit UnstakedFundsClaimed(balance);
+        uint256 accountedAmount = exitAmount + refundAmount;
+        uint256 transferAmount = balance < accountedAmount ? balance : accountedAmount;
+
+        if (transferAmount > 0) {
+            stakingAsset.safeTransfer(core, transferAmount);
+            emit UnstakedFundsClaimed(transferAmount);
         }
-        received = balance;
+        received = transferAmount;
         return (received, exitAmount);
     }
 
+    // slither-disable-start calls-loop
+    // slither-disable-start costly-loop
+    // slither-disable-start reentrancy-no-eth
     /// @inheritdoc IStakingManager
     function harvestRewards() external override onlyCore nonReentrant returns (uint256 harvested) {
-        (, IAztecRollup rollup) = _getRollup();
-        try rollup.claimSequencerRewards(rewardsAccumulator) returns (uint256 claimed) {
-            harvested = claimed;
-        } catch (bytes memory reason) {
-            emit RewardsHarvestFailed(reason);
-            return 0;
+        address canonicalRollup = _ensureCanonicalRewardRollup();
+        bool claimSucceeded = false;
+        uint256 length = _rewardRollups.length;
+
+        for (uint256 i; i < length;) {
+            address rollupAddress = _rewardRollups[i];
+            bool removeRollup = false;
+
+            try IAztecRollup(rollupAddress).claimSequencerRewards(rewardsAccumulator) returns (uint256 claimed) {
+                claimSucceeded = true;
+                harvested += claimed;
+                emit RewardsHarvestedFromRollup(rollupAddress, claimed);
+                uint256 remaining = IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator));
+                removeRollup = rollupAddress != canonicalRollup && remaining == 0;
+            } catch (bytes memory reason) {
+                emit RewardsHarvestFailed(reason);
+            }
+
+            if (removeRollup) {
+                _removeRewardRollupAt(i);
+                --length;
+            } else {
+                ++i;
+            }
         }
-        emit RewardsHarvested(harvested);
+
+        if (claimSucceeded) {
+            emit RewardsHarvested(harvested);
+        }
         return harvested;
     }
+
+    /// @inheritdoc IStakingManagerRewardRollupAdmin
+    function removeDrainedRewardRollup(address rollup) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (!_isRewardRollup[rollup]) {
+            revert StakingManager__RewardRollupNotTracked(rollup);
+        }
+        if (rollup == rollupRegistry.getCanonicalRollup()) {
+            revert StakingManager__CannotRemoveCanonicalRewardRollup(rollup);
+        }
+
+        uint256 rewards = IAztecRollup(rollup).getSequencerRewards(address(rewardsAccumulator));
+        if (rewards != 0) {
+            revert StakingManager__RewardRollupHasPendingRewards(rollup, rewards);
+        }
+
+        _removeRewardRollup(rollup);
+    }
+
+    // slither-disable-end reentrancy-no-eth
+    // slither-disable-end costly-loop
+    // slither-disable-end calls-loop
 
     /*//////////////////////////////////////////////////////////////
                         PERMISSIONLESS FUNCTIONS
@@ -277,11 +356,21 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             revert StakingManager__NotFailedQueueEntry(attester);
         }
 
-        // Query the rollup — the attester must be NONE (never activated or queue flush failed)
-        (, IAztecRollup rollup) = _getRollup();
+        // Query the rollup where the deposit was queued. Canonical may have changed before flush.
+        address queueRollupAddress = info.queueRollup;
+        IAztecRollup rollup = IAztecRollup(queueRollupAddress);
         AttesterView memory view_ = rollup.getAttesterView(attester);
         if (view_.status != Status.NONE || view_.exit.exists || view_.effectiveBalance > 0) {
             revert StakingManager__NotFailedQueueEntry(attester);
+        }
+
+        (address canonicalRollupAddress, IAztecRollup canonicalRollup) = _getRollup();
+        if (canonicalRollupAddress != queueRollupAddress) {
+            AttesterView memory canonicalView = canonicalRollup.getAttesterView(attester);
+            if (canonicalView.status != Status.NONE || canonicalView.exit.exists || canonicalView.effectiveBalance > 0)
+            {
+                revert StakingManager__NotFailedQueueEntry(attester);
+            }
         }
 
         // Verify the attester is NOT still in the rollup's entry queue (waiting for flush).
@@ -294,13 +383,10 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             }
         }
 
-        // Correct the accounting: remove the attester's cached stake from the aggregate
+        // Correct the accounting: reclassify cached stake from queued principal to sweepable refund.
         uint256 cachedStake = info.stakedAmount;
-        if (_aggregateState.stakedAmount >= cachedStake) {
-            _aggregateState.stakedAmount -= cachedStake;
-        } else {
-            _aggregateState.stakedAmount = 0;
-        }
+        _removeStakedAmount(attester, cachedStake);
+        _pendingRefundAmount += cachedStake;
 
         // Transition to Exiting then remove (reuses existing cleanup path)
         _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
@@ -324,9 +410,29 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @notice Internal helper to get the claimable rewards.
     /// @dev Internal helper to get the claimable rewards.
     /// @return claimableRewards The total rewards claimable to rewards recipient.
+    // slither-disable-next-line calls-loop
     function getClaimableRewards() external view override onlyCore returns (uint256 claimableRewards) {
-        (, IAztecRollup rollup) = _getRollup();
-        return rollup.getSequencerRewards(address(rewardsAccumulator));
+        address canonicalRollup = rollupRegistry.getCanonicalRollup();
+        bool includedCanonical = false;
+        uint256 length = _rewardRollups.length;
+
+        for (uint256 i; i < length; ++i) {
+            address rollupAddress = _rewardRollups[i];
+            if (rollupAddress == canonicalRollup) {
+                includedCanonical = true;
+            }
+            if (!IAztecRollup(rollupAddress).isRewardsClaimable()) {
+                continue;
+            }
+            uint256 unclaimedRewards = IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator));
+            claimableRewards += unclaimedRewards;
+        }
+
+        if (!includedCanonical && _isExpectedRewardAsset() && IAztecRollup(canonicalRollup).isRewardsClaimable()) {
+            claimableRewards += IAztecRollup(canonicalRollup).getSequencerRewards(address(rewardsAccumulator));
+        }
+
+        return claimableRewards;
     }
 
     /// @inheritdoc IStakingManager
@@ -341,7 +447,12 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function hasFinalizedUnstakes() external view override returns (bool) {
-        return _pendingClaimAmount > 0;
+        return _pendingClaimAmount > 0 || _pendingRefundAmount > 0;
+    }
+
+    /// @inheritdoc IStakingManager
+    function claimableUnstakedFunds() external view override returns (uint256 amount) {
+        return _pendingClaimAmount + _pendingRefundAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -355,7 +466,8 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
     /// @inheritdoc IStakingManager
     function totalStaked() external view override returns (uint256 stakedTotal) {
-        return _aggregateState.stakedAmount + _aggregateState.pendingUnstakeAmount + _pendingClaimAmount;
+        return _aggregateState.stakedAmount + _aggregateState.pendingUnstakeAmount + _pendingClaimAmount
+            + _pendingRefundAmount;
     }
 
     /// @inheritdoc IStakingManager
@@ -482,16 +594,56 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     ///      added to _activeAttesterSet or _activeCount until promoted via refreshAttesterState.
     /// @param attester The attester address.
     /// @param stakedAmount The amount staked for this attester.
-    function _setQueued(address attester, uint256 stakedAmount) internal {
+    /// @param queueRollup The rollup where the deposit was submitted.
+    function _setQueued(address attester, uint256 stakedAmount, address queueRollup) internal {
         AttesterInfo storage info = _attesterMap[attester];
         if (info.attester != address(0)) {
             revert StakingManager__AttesterAlreadyActive(attester);
         }
         info.attester = attester;
         info.stakedAmount = stakedAmount;
+        info.queueRollup = queueRollup;
         ++_attesterCount;
         _setAttesterStatus(attester, info, InternalAttesterStatus.Queued);
         _aggregateState.stakedAmount += stakedAmount;
+    }
+
+    /// @notice Removes principal from aggregate staked amount with saturation.
+    /// @param attester The attester whose reconciliation is removing the amount.
+    /// @param amount The amount to remove.
+    function _removeStakedAmount(address attester, uint256 amount) internal {
+        _decreaseAggregateField(attester, _AGGREGATE_FIELD_STAKED_AMOUNT, amount);
+    }
+
+    /// @notice Removes principal from aggregate pending unstake amount with saturation.
+    /// @param attester The attester whose reconciliation is removing the amount.
+    /// @param amount The amount to remove.
+    function _removePendingUnstakeAmount(address attester, uint256 amount) internal {
+        _decreaseAggregateField(attester, _AGGREGATE_FIELD_PENDING_UNSTAKE_AMOUNT, amount);
+    }
+
+    /// @notice Decreases an aggregate state field, emitting when saturation masks an underflow.
+    /// @param attester The attester whose reconciliation is removing the amount.
+    /// @param field The aggregate state field to decrement.
+    /// @param amount The amount to remove.
+    function _decreaseAggregateField(address attester, bytes32 field, uint256 amount) internal {
+        if (field == _AGGREGATE_FIELD_STAKED_AMOUNT) {
+            uint256 currentAmount = _aggregateState.stakedAmount;
+            if (currentAmount >= amount) {
+                _aggregateState.stakedAmount = currentAmount - amount;
+            } else {
+                emit AggregateStateUnderflowClamped(attester, field, currentAmount, amount);
+                _aggregateState.stakedAmount = 0;
+            }
+        } else {
+            uint256 currentAmount = _aggregateState.pendingUnstakeAmount;
+            if (currentAmount >= amount) {
+                _aggregateState.pendingUnstakeAmount = currentAmount - amount;
+            } else {
+                emit AggregateStateUnderflowClamped(attester, field, currentAmount, amount);
+                _aggregateState.pendingUnstakeAmount = 0;
+            }
+        }
     }
 
     // slither-disable-end pess-multiple-storage-read
@@ -509,18 +661,61 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         returns (uint256 exitAmount)
     {
         AttesterView memory view_ = rollup.getAttesterView(attester);
-        exitAmount = view_.effectiveBalance;
 
-        // slither-disable-next-line reentrancy-no-eth
-        bool isInitiated = rollup.initiateWithdraw(attester, address(this));
-        if (!isInitiated) {
-            if (view_.exit.exists) {
-                _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
-                return 0;
+        if (!view_.exit.exists) {
+            exitAmount = view_.effectiveBalance;
+
+            // slither-disable-next-line reentrancy-no-eth
+            try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                if (!isInitiated) {
+                    revert StakingManager__UnstakeFailed(attester);
+                }
+            } catch (bytes memory reason) {
+                if (exitAmount == 0) {
+                    uint256 cachedStake = info.stakedAmount;
+                    // Aztec fully slashed this attester when it reports no exit and no effective balance.
+                    // The withdraw revert data is emitted so operators can audit each local purge.
+                    _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
+                    _removeStakedAmount(attester, cachedStake);
+                    _aggregateState.slashingDelta += cachedStake;
+                    emit FullySlashedAttesterPurged(attester, cachedStake, reason);
+                    _removeAttester(attester);
+                    return 0;
+                }
+                revert StakingManager__UnstakeFailed(attester);
             }
-            revert StakingManager__UnstakeFailed(attester);
+        } else {
+            // Existing exits may be zombie exits where the recoverable stake is in exit.amount
+            exitAmount = view_.exit.amount;
+
+            if (!view_.exit.isRecipient) {
+                // slither-disable-next-line reentrancy-no-eth
+                try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                    if (!isInitiated) {
+                        revert StakingManager__UnstakeFailed(attester);
+                    }
+                    return _finalizeUnstakeInitiation(rollup, attester, info, exitAmount);
+                } catch {
+                    revert StakingManager__UnstakeFailed(attester);
+                }
+            }
         }
 
+        return _finalizeUnstakeInitiation(rollup, attester, info, exitAmount);
+    }
+
+    /// @notice Finalizes local accounting after a rollup unstake has been initiated.
+    /// @param rollup The rollup staking interface.
+    /// @param attester The attester address to process.
+    /// @param info The attester info storage reference.
+    /// @param exitAmount The unstake amount initiated for the attester.
+    /// @return The unstake amount initiated for the attester.
+    function _finalizeUnstakeInitiation(
+        IAztecRollup rollup,
+        address attester,
+        AttesterInfo storage info,
+        uint256 exitAmount
+    ) internal returns (uint256) {
         _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
         uint256 cachedStake = info.stakedAmount;
         info.stakedAmount = 0;
@@ -529,11 +724,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
 
         // Update running state: subtract the full cached balance (not just the exit amount)
         // to avoid leaving a phantom when the attester was slashed before unstaking.
-        if (_aggregateState.stakedAmount >= cachedStake) {
-            _aggregateState.stakedAmount -= cachedStake;
-        } else {
-            _aggregateState.stakedAmount = 0;
-        }
+        _removeStakedAmount(attester, cachedStake);
         _aggregateState.pendingUnstakeAmount += exitAmount;
 
         // Record the slashing gap so OllaCore's accounting sees it.
@@ -553,6 +744,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     /// @dev Reads rollup state (source of truth), delta-updates the aggregate accumulator,
     ///      and finalizes exits when exitable. Silently skips unknown attesters.
     ///      Active attesters are queried on the canonical rollup (they follow upgrades via GSE).
+    ///      Queued attesters are queried on queueRollup first, then canonical if queueRollup reports no state.
     ///      Exiting attesters are queried on their stored exitRollup to prevent phantom credits
     ///      after a rollup upgrade (exit state is local to the rollup instance that initiated it).
     /// @param canonicalRollup The current canonical rollup interface.
@@ -567,24 +759,36 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
         AttesterInfo storage info = _attesterMap[attester];
         if (info.attester == address(0)) return; // Unknown attester -- skip silently
 
-        // Exiting attesters must be queried on the rollup where their exit was initiated,
-        // because exit state is local to each rollup instance and does not migrate on upgrade.
-        IAztecRollup rollup = (info.status == InternalAttesterStatus.Exiting && info.exitRollup != address(0))
-            ? IAztecRollup(info.exitRollup)
-            : canonicalRollup;
+        // Exiting/queued attesters must be queried on the rollup where that local state lives.
+        IAztecRollup rollup = canonicalRollup;
+        if (info.status == InternalAttesterStatus.Exiting && info.exitRollup != address(0)) {
+            rollup = IAztecRollup(info.exitRollup);
+        } else if (info.status == InternalAttesterStatus.Queued && info.queueRollup != address(0)) {
+            rollup = IAztecRollup(info.queueRollup);
+        }
 
         // slither-disable-next-line calls-loop
         AttesterView memory view_ = rollup.getAttesterView(attester);
+        bool zombieExitClaimed = false;
 
         // Handle Queued attesters: check if the rollup has activated them.
         if (info.status == InternalAttesterStatus.Queued) {
-            if (view_.status == Status.VALIDATING && view_.effectiveBalance > 0) {
-                // Attester has been activated on the rollup -- promote to Active.
-                _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
-                emit AttesterStateRefreshed(attester, info.stakedAmount, view_.effectiveBalance);
+            if (view_.status == Status.NONE && !view_.exit.exists && view_.effectiveBalance == 0) {
+                if (address(rollup) == address(canonicalRollup)) return;
+
+                AttesterView memory canonicalView = canonicalRollup.getAttesterView(attester);
+                if (
+                    canonicalView.status == Status.NONE && !canonicalView.exit.exists
+                        && canonicalView.effectiveBalance == 0
+                ) {
+                    return;
+                }
+
+                rollup = canonicalRollup;
+                view_ = canonicalView;
             }
-            // Still queued (NONE on rollup) -- nothing to reconcile yet.
-            return;
+            info.queueRollup = address(0);
+            _setAttesterStatus(attester, info, InternalAttesterStatus.Active);
         }
 
         uint256 oldBalance = info.stakedAmount;
@@ -595,11 +799,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             _aggregateState.stakedAmount += (newBalance - oldBalance);
         } else if (newBalance < oldBalance) {
             uint256 decrease = oldBalance - newBalance;
-            if (_aggregateState.stakedAmount >= decrease) {
-                _aggregateState.stakedAmount -= decrease;
-            } else {
-                _aggregateState.stakedAmount = 0;
-            }
+            _removeStakedAmount(attester, decrease);
 
             // Detect slashing: balance decreased but no exit initiated
             if (info.status == InternalAttesterStatus.Active && !view_.exit.exists) {
@@ -612,7 +812,9 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
             // Zombie exit (isRecipient=false): claim it by calling initiateWithdraw to set recipient
             if (!view_.exit.isRecipient) {
                 // slither-disable-next-line calls-loop,unused-return
-                rollup.initiateWithdraw(attester, address(this));
+                try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                    zombieExitClaimed = isInitiated;
+                } catch { }
             }
             _setAttesterStatus(attester, info, InternalAttesterStatus.Exiting);
             uint256 exitAmount = view_.exit.amount;
@@ -658,36 +860,55 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 //     captures exit-delay slashes in slashingDelta, so this externally-finalized
                 //     edge case is the only remaining gap.
                 uint256 pendingExit = info.pendingExitAmount;
-                if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
-                    _aggregateState.pendingUnstakeAmount -= pendingExit;
-                } else {
-                    _aggregateState.pendingUnstakeAmount = 0;
-                }
+                _removePendingUnstakeAmount(attester, pendingExit);
                 _pendingClaimAmount += pendingExit;
+
                 _removeAttester(attester);
-            } else if (_isExitExitable(view_)) {
+                emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                return;
+            } else {
+                if (!view_.exit.isRecipient && !zombieExitClaimed) {
+                    // Retry zombie-exit claiming on each refresh. A revert here should not DoS the batch;
+                    // the exit remains tracked on exitRollup and can be claimed by a later refresh.
+                    // slither-disable-next-line calls-loop,unused-return
+                    try rollup.initiateWithdraw(attester, address(this)) returns (bool isInitiated) {
+                        if (!isInitiated) {
+                            info.stakedAmount = newBalance;
+                            emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                            return;
+                        }
+                    } catch {
+                        info.stakedAmount = newBalance;
+                        emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                        return;
+                    }
+                }
+
+                _reconcileExitingExitAmount(attester, info, view_.exit.amount);
+
+                if (!_isExitFinalizable(view_)) {
+                    info.stakedAmount = newBalance;
+                    emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                    return;
+                }
+
                 // Exitable -- finalize the exit
                 uint256 exitAmount = view_.exit.amount;
                 uint256 pendingExit = info.pendingExitAmount;
 
+                // slither-disable-next-line calls-loop
+                try rollup.finalizeWithdraw(attester) { }
+                catch {
+                    info.stakedAmount = newBalance;
+                    emit AttesterStateRefreshed(attester, oldBalance, newBalance);
+                    return;
+                }
+
                 _removeAttester(attester);
                 emit UnstakeFinalized(attester, exitAmount);
-                // slither-disable-next-line calls-loop
-                rollup.finalizeWithdraw(attester);
-
                 _pendingClaimAmount += exitAmount;
 
-                // Track slashing that occurred during the exit delay: the difference between
-                // what was snapshotted at exit initiation and what the rollup actually holds.
-                if (pendingExit > exitAmount) {
-                    _aggregateState.slashingDelta += (pendingExit - exitAmount);
-                }
-
-                if (_aggregateState.pendingUnstakeAmount >= pendingExit) {
-                    _aggregateState.pendingUnstakeAmount -= pendingExit;
-                } else {
-                    _aggregateState.pendingUnstakeAmount = 0;
-                }
+                _removePendingUnstakeAmount(attester, pendingExit);
 
                 // Attester removed -- skip balance update below
                 emit AttesterStateRefreshed(attester, oldBalance, newBalance);
@@ -705,6 +926,28 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end reentrancy-benign
     // slither-disable-end costly-loop
     // slither-disable-end calls-loop
+
+    // slither-disable-start pess-multiple-storage-read
+    /// @notice Reconciles a pending exit snapshot against the current rollup exit amount.
+    /// @dev Used while an attester remains in the Exiting state and the rollup exit record still
+    ///      exists, so slashes during the exit delay are reflected before finalization.
+    /// @param attester The attester being reconciled.
+    /// @param info The attester info storage reference.
+    /// @param exitAmount The current exit amount reported by the rollup.
+    function _reconcileExitingExitAmount(address attester, AttesterInfo storage info, uint256 exitAmount) internal {
+        uint256 pendingExit = info.pendingExitAmount;
+        if (pendingExit <= exitAmount) {
+            return;
+        }
+
+        uint256 decrease = pendingExit - exitAmount;
+        info.pendingExitAmount = SafeCast.toUint96(exitAmount);
+
+        _removePendingUnstakeAmount(attester, decrease);
+        _aggregateState.slashingDelta += decrease;
+    }
+
+    // slither-disable-end pess-multiple-storage-read
 
     /// @notice Transfers assets from core and approves the rollup.
     /// @param rollupAddress The rollup address to approve.
@@ -732,7 +975,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
                 break;
             }
             KeyStore memory keyStore = stakingProviderRegistry.getAttesterKeystore();
-            _setQueued(keyStore.attester, activationThresholdValue);
+            _setQueued(keyStore.attester, activationThresholdValue, address(rollup));
             emit StakedWithProvider(keyStore.attester, activationThresholdValue);
             // External call is safe:
             // - Caller has nonReentrant modifier
@@ -754,16 +997,85 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     // slither-disable-end reentrancy-benign
     // slither-disable-end calls-loop
 
-    /// @notice Returns true if an exit is present and exitable.
+    /// @notice Ensures the current canonical rollup is persisted for reward tracking.
+    /// @return canonicalRollup The current canonical rollup address.
+    function _ensureCanonicalRewardRollup() internal returns (address canonicalRollup) {
+        canonicalRollup = rollupRegistry.getCanonicalRollup();
+        _trackRewardRollup(canonicalRollup);
+        return canonicalRollup;
+    }
+
+    /// @notice Adds a rollup to reward tracking if absent.
+    /// @param rollupAddress The rollup address to track.
+    function _trackRewardRollup(address rollupAddress) internal {
+        if (_isRewardRollup[rollupAddress]) return;
+        if (!_isExpectedRewardAsset()) return;
+        _isRewardRollup[rollupAddress] = true;
+        _rewardRollups.push(rollupAddress);
+        emit RewardRollupTracked(rollupAddress);
+    }
+
+    /// @notice Removes a tracked reward rollup by index.
+    /// @param index The index to remove.
+    // slither-disable-next-line pess-multiple-storage-read
+    function _removeRewardRollupAt(uint256 index) internal {
+        address[] storage rewardRollups = _rewardRollups;
+        address rollupAddress = rewardRollups[index];
+        uint256 lastIndex = rewardRollups.length - 1;
+        if (index != lastIndex) {
+            rewardRollups[index] = rewardRollups[lastIndex];
+        }
+        rewardRollups.pop();
+        // slither-disable-next-line costly-loop
+        delete _isRewardRollup[rollupAddress];
+        emit RewardRollupRemoved(rollupAddress);
+    }
+
+    /// @notice Removes a tracked reward rollup by address.
+    /// @param rollupAddress The rollup address to remove.
+    function _removeRewardRollup(address rollupAddress) internal {
+        address[] storage rewardRollups = _rewardRollups;
+        uint256 length = rewardRollups.length;
+        for (uint256 i; i < length; ++i) {
+            if (rewardRollups[i] == rollupAddress) {
+                _removeRewardRollupAt(i);
+                return;
+            }
+        }
+        revert StakingManager__RewardRollupNotTracked(rollupAddress);
+    }
+
+    /// @notice Returns true when Aztec sequencer rewards are paid in the configured staking asset.
+    /// @return True if the registry reward distributor uses the expected reward asset.
+    function _isExpectedRewardAsset() internal view returns (bool) {
+        return rollupRegistry.getRewardDistributor().ASSET() == stakingAsset;
+    }
+
+    /// @notice Returns true if an exit is present and finalizable through governance.
     /// @param view_ The attester view data.
     /// @return True if the exit is available to finalize.
-    function _isExitExitable(AttesterView memory view_) internal view returns (bool) {
+    function _isExitFinalizable(AttesterView memory view_) internal view returns (bool) {
         if (!view_.exit.exists) {
             return false;
         }
-        // Timestamp used only to gate exit readiness from the rollup state.
+        // Timestamp used only to gate exit readiness from rollup and governance state.
         // slither-disable-next-line timestamp
-        return Timestamp.unwrap(view_.exit.exitableAt) < block.timestamp + 1;
+        if (Timestamp.unwrap(view_.exit.exitableAt) > block.timestamp) {
+            return false;
+        }
+
+        // slither-disable-next-line calls-loop
+        IAztecGovernance.Withdrawal memory withdrawal =
+            IAztecGovernance(rollupRegistry.getGovernance()).getWithdrawal(view_.exit.withdrawalId);
+        if (withdrawal.claimed) {
+            return true;
+        }
+        if (withdrawal.recipient == address(0)) {
+            return false;
+        }
+
+        // slither-disable-next-line timestamp
+        return Timestamp.unwrap(withdrawal.unlocksAt) <= block.timestamp;
     }
 
     /// @notice Returns the canonical rollup address and interface.
@@ -776,7 +1088,7 @@ contract StakingManager is Initializable, AccessControlUpgradeable, UUPSUpgradea
     }
 
     function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (msg.sender != OwnableUpgradeable(core).owner()) {
+        if (msg.sender != governanceUpgradeAuthority) {
             revert StakingManager__UnauthorizedGovernance(msg.sender);
         }
         if (newImplementation == address(0)) {

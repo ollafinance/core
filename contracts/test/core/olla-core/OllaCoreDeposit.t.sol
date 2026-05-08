@@ -14,7 +14,6 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { MockOllaGovernance } from "test/mocks/MockOllaGovernance.sol";
@@ -53,7 +52,6 @@ contract OllaCoreDepositTest is Test {
     address internal permitOwner;
     uint256 internal permitOwnerKey;
     uint256 internal permitAttackerKey;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
@@ -79,7 +77,6 @@ contract OllaCoreDepositTest is Test {
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setProviderRewardsRecipient(makeAddr("providerRewardsRecipient"));
         stakingManager.setRewardsToken(asset);
@@ -89,7 +86,7 @@ contract OllaCoreDepositTest is Test {
             asset, stAztec, stakingManager, 500, 5_000, governance, rewardsAccumulator, address(safetyModule)
         );
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -156,7 +153,10 @@ contract OllaCoreDepositTest is Test {
         uint256 firstShares = _performDeposit(alice, depositAssetAmountAlice);
         assertEq(firstShares, depositAssetAmountAlice, "first deposit: 1:1 shares at zero supply");
 
-        core.exposedApplyAccountingUpdates(0, 50 * DECIMALS, 0, 0, 0);
+        // `totalAssets()` reads the accumulator balance live from `rewardsAccumulator.balance()`,
+        // so funding the accumulator directly with `deal` is the way to prime a non-zero
+        // exchange rate for the next depositor.
+        deal(address(asset), address(rewardsAccumulator), 50 * DECIMALS);
 
         uint256 totalAssetsBeforeSecondDeposit = core.totalAssets();
         uint256 totalSharesBeforeSecondDeposit = stAztec.totalSupply();

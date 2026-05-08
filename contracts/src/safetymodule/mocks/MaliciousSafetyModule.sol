@@ -88,6 +88,12 @@ contract MaliciousSafetyModule is IMaliciousSafetyModule, ISafetyModule {
         return _paused;
     }
 
+    /// @notice Returns whether deposits should be blocked by the mock pause.
+    /// @return pausedState True if paused.
+    function isDepositPaused() external view override returns (bool pausedState) {
+        return _paused;
+    }
+
     // solhint-disable func-name-mixedcase
     /// @notice Returns the core address.
     /// @return The core contract address.
@@ -123,6 +129,12 @@ contract MaliciousSafetyModule is IMaliciousSafetyModule, ISafetyModule {
     /// @param minRateDropBps The minimum rate-drop in basis points.
     function setMinRateDropBps(uint256 minRateDropBps) external pure override {
         _noop(minRateDropBps);
+    }
+
+    /// @notice No-op high-water mark setter for tests.
+    /// @param rateHighWaterMark The new high-water mark.
+    function setRateHighWaterMark(uint256 rateHighWaterMark) external pure override {
+        _noop(rateHighWaterMark);
     }
 
     /// @notice No-op queue ratio threshold setter for tests.

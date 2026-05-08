@@ -8,9 +8,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
@@ -39,7 +37,6 @@ contract RebalanceIntegrationTest is Test {
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     SafetyModule internal safetyModule;
     address internal governance;
@@ -76,19 +73,13 @@ contract RebalanceIntegrationTest is Test {
         operator = makeAddr("operator");
         user = makeAddr("user");
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setUnstakedToken(asset);
 
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
-
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -120,7 +111,7 @@ contract RebalanceIntegrationTest is Test {
     {
         vm.prank(owner);
         requestId = vault.requestRedeem(shares, recipient, owner);
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);
     }
@@ -133,34 +124,47 @@ contract RebalanceIntegrationTest is Test {
         stakingManager.setUnstakedAmount(0);
     }
 
+    function _suppressStaking() internal {
+        // stakeReturnAmount = 0 → mock's canStake() returns false → no surplus is staked.
+        stakingManager.setStakeReturnAmount(0);
+    }
+
     /*//////////////////////////////////////////////////////////////
                                REBALANCE
     //////////////////////////////////////////////////////////////*/
 
-    function test_Rebalance_WithdrawalsBeforeStaking() external {
+    function test_Rebalance_FullFlow() external {
+        uint256 harvestAmount = 5 * DECIMALS;
+        uint256 unstakedAmount = 10 * DECIMALS;
         uint256 depositAmount = 100 * DECIMALS;
-        uint256 withdrawalAmount = 40 * DECIMALS;
-        uint256 targetBufferAmount = 10 * DECIMALS;
+        uint256 withdrawalAmount = 30 * DECIMALS;
 
         _performDeposit(user, depositAmount);
 
         uint256 withdrawalShares = core.convertToShares(withdrawalAmount);
         _requestRedeem(user, withdrawalShares, user);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferAmount);
+        // Prime StakingManager.totalStaked() so the live-read pricing path reflects the staked
+        // amount the rebalance will subsequently pull out.
+        stakingManager.setTotalStaked(unstakedAmount);
+        vm.prank(operator);
+        core.updateAccounting();
 
-        _mockZeroHarvest();
-        _mockZeroUnstaked();
+        stakingManager.setHarvestedRewards(harvestAmount);
+        stakingManager.setUnstakedAmount(unstakedAmount);
+        asset.mint(address(stakingManager), unstakedAmount);
+        // Mock stake returns 32 (allowStakeReturnExceeds=false default → capped at min(amount, 32))
         stakingManager.setStakeReturnAmount(32 * DECIMALS);
 
+        vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(operator);
         (uint256 harvested, uint256 finalized, uint256 staked, uint256 buffer) = core.rebalance();
 
-        assertEq(harvested, 0, "harvested should be zero");
-        assertEq(finalized, withdrawalAmount, "should finalize all pending withdrawals first");
-        assertEq(staked, 32 * DECIMALS, "should stake 1 unit after withdrawals");
-        assertEq(buffer, 28 * DECIMALS, "buffer should be 60 - 32 = 28");
+        assertEq(harvested, harvestAmount, "harvest mismatch");
+        assertEq(finalized, withdrawalAmount, "finalize mismatch");
+        assertEq(staked, 32 * DECIMALS, "stake mismatch");
+        // Buffer = deposit(100) + harvest(5) + unstaked(10) - finalized(30) - staked(32) = 53
+        assertEq(buffer, 53 * DECIMALS, "final buffer mismatch");
     }
 
     function test_Rebalance_Idempotent() external {
@@ -168,14 +172,18 @@ contract RebalanceIntegrationTest is Test {
 
         _performDeposit(user, depositAmount);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(10 * DECIMALS);
-
         _mockZeroHarvest();
         _mockZeroUnstaked();
+        // Pin the first stake to a deterministic value so s1 > 0 is guaranteed regardless
+        // of mock defaults; then suppress staking before the second cycle.
+        stakingManager.setStakeReturnAmount(50 * DECIMALS);
+        stakingManager.setAllowStakeReturnExceeds(false);
 
         vm.prank(operator);
         (uint256 h1, uint256 f1, uint256 s1, uint256 b1) = core.rebalance();
+
+        // Suppress staking before the second cycle so it observes no work available.
+        _suppressStaking();
 
         vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(operator);
@@ -208,74 +216,59 @@ contract RebalanceIntegrationTest is Test {
 
         _mockZeroHarvest();
         _mockZeroUnstaked();
+        // Suppress staking so the rebalance only finalises pending withdrawals from the buffer.
+        _suppressStaking();
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(100 * DECIMALS);
-
-        uint256 totalPendingBefore = withdrawalQueue.totalPendingAssets();
+        uint256 totalPendingBefore = vault.pendingWithdrawalAssets();
         assertEq(totalPendingBefore, expectedPending, "should have expected pending assets");
 
         vm.prank(operator);
         core.rebalance();
 
-        uint256 totalPendingAfter = withdrawalQueue.totalPendingAssets();
+        uint256 totalPendingAfter = vault.pendingWithdrawalAssets();
         assertEq(totalPendingAfter, 0, "queue should be empty after draining");
     }
 
-    function test_Rebalance_FullFlow() external {
-        uint256 harvestAmount = 5 * DECIMALS;
-        uint256 unstakedAmount = 10 * DECIMALS;
+    function test_Rebalance_WithdrawalsBeforeStaking() external {
         uint256 depositAmount = 100 * DECIMALS;
-        uint256 withdrawalAmount = 30 * DECIMALS;
-        uint256 targetBufferAmount = 20 * DECIMALS;
+        uint256 withdrawalAmount = 40 * DECIMALS;
 
         _performDeposit(user, depositAmount);
 
         uint256 withdrawalShares = core.convertToShares(withdrawalAmount);
         _requestRedeem(user, withdrawalShares, user);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferAmount);
-
-        // Set staked principal in accounting to cover the unstaked funds that will be pulled.
-        // getUnstakedFunds() returns exitAmount which is subtracted from stakedPrincipal,
-        // so stakedPrincipal must be >= exitAmount to avoid underflow.
-        stakingManager.setTotalStaked(unstakedAmount);
-        vm.prank(operator);
-        core.updateAccounting();
-
-        stakingManager.setHarvestedRewards(harvestAmount);
-        stakingManager.setUnstakedAmount(unstakedAmount);
-        asset.mint(address(stakingManager), unstakedAmount);
+        _mockZeroHarvest();
+        _mockZeroUnstaked();
+        // Mock stake returns 32 (allowStakeReturnExceeds=false default → capped to amount).
         stakingManager.setStakeReturnAmount(32 * DECIMALS);
 
-        vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(operator);
         (uint256 harvested, uint256 finalized, uint256 staked, uint256 buffer) = core.rebalance();
 
-        assertEq(harvested, harvestAmount, "harvest mismatch");
-        assertEq(finalized, withdrawalAmount, "finalize mismatch");
-        assertEq(staked, 32 * DECIMALS, "stake mismatch");
-        // Buffer = deposit(100) + harvest(5) + unstaked(10) - finalized(30) - staked(32) = 53
-        assertEq(buffer, 53 * DECIMALS, "final buffer mismatch");
+        // Stakeable post-finalize = deposit(100) - withdrawal(40) = 60. Mock stakes 32 of it.
+        assertEq(harvested, 0, "harvested should be zero");
+        assertEq(finalized, withdrawalAmount, "should finalize all pending withdrawals first");
+        assertEq(staked, 32 * DECIMALS, "should stake 32 after withdrawals");
+        assertEq(buffer, 28 * DECIMALS, "buffer should be 60 - 32 = 28");
     }
 
     function test_Rebalance_MultiCallAccountingConsistency() external {
         uint256 depositAmount = 200 * DECIMALS;
         uint256 withdrawalAmount = 60 * DECIMALS;
-        uint256 targetBufferAmount = 20 * DECIMALS;
 
         _performDeposit(user, depositAmount);
 
         uint256 withdrawalShares = core.convertToShares(withdrawalAmount);
         _requestRedeem(user, withdrawalShares, user);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(targetBufferAmount);
-
         _mockZeroHarvest();
         _mockZeroUnstaked();
+
+        // Cap the mock's cumulative stake at 120 across all calls (the test runs across
+        // multiple resumed rebalance() calls, so a per-call return amount is not enough).
         stakingManager.setStakeReturnAmount(120 * DECIMALS);
+        stakingManager.setMaxTotalStake(120 * DECIMALS);
         stakingManager.setTotalStaked(120 * DECIMALS);
 
         uint256 snapshotId = vm.snapshotState();
@@ -319,8 +312,10 @@ contract RebalanceIntegrationTest is Test {
         assertEq(uint256(progressFinal.step), uint256(IOllaCore.RebalanceStep.Done), "rebalance should complete");
 
         IOllaCore.AccountingState memory accounting = core.accountingState();
-        assertEq(withdrawalQueue.totalPendingAssets(), 0, "withdrawal queue should be empty");
-        assertEq(vault.bufferedAssets(), targetBufferAmount, "buffer should match target after rebalance");
+        // Stakeable post-finalize = deposit(200) - withdrawal(60) = 140; mock caps total
+        // stake at 120 via setMaxTotalStake; residual buffer = 140 - 120 = 20.
+        assertEq(vault.pendingWithdrawalAssets(), 0, "withdrawal queue should be empty");
+        assertEq(vault.bufferedAssets(), 20 * DECIMALS, "buffer should match residual after rebalance");
         assertEq(accounting.stakedPrincipal, 120 * DECIMALS, "staked principal should match stake total");
         assertEq(
             vault.bufferedAssets() + accounting.stakedPrincipal,
@@ -333,16 +328,17 @@ contract RebalanceIntegrationTest is Test {
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(user, depositAmount);
 
-        vm.prank(governance);
-        core.setTargetBufferedAssets(10 * DECIMALS);
-
         _mockZeroHarvest();
         _mockZeroUnstaked();
+        // Mock stake returns 64 (allowStakeReturnExceeds=false default → capped at amount).
         stakingManager.setStakeReturnAmount(64 * DECIMALS);
 
+        // First cycle: stakeable=100, mock stakes 64, parks at StakeSurplus with stakeRemaining=36.
         vm.prank(operator);
         core.rebalance();
 
+        // Second cycle (no cooldown wait — still mid-cycle): stakeable=36, mock stakes 36
+        // (capped at amount=36 since allowStakeReturnExceeds=false). Final buffer = 0.
         vm.recordLogs();
         vm.prank(operator);
         core.rebalance();
@@ -361,7 +357,7 @@ contract RebalanceIntegrationTest is Test {
         }
 
         assertTrue(found, "Rebalanced event should be emitted");
-        assertEq(eventStaked, 26 * DECIMALS, "staked amount mismatch");
-        assertEq(eventBuffer, 10 * DECIMALS, "buffer mismatch");
+        assertEq(eventStaked, 36 * DECIMALS, "staked amount mismatch");
+        assertEq(eventBuffer, 0, "buffer mismatch");
     }
 }

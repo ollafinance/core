@@ -15,13 +15,11 @@ import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { MockCacheCoherentStakingManager } from "test/core/olla-core/OllaCoreCacheCoherence.t.sol";
 
 contract OllaCoreHandler is Test {
     using Math for uint256;
@@ -270,7 +268,6 @@ contract OllaCoreInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreAccountingHandler internal handler;
@@ -294,7 +291,6 @@ contract OllaCoreInvariantTest is Test {
         address governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
-        withdrawalQueue = new MockWithdrawalQueue();
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         address providerRewardsRecipient = makeAddr("providerRewardsRecipient");
@@ -309,7 +305,7 @@ contract OllaCoreInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -327,21 +323,6 @@ contract OllaCoreInvariantTest is Test {
     /*//////////////////////////////////////////////////////////////
                         ACCOUNTING INVARIANTS
     //////////////////////////////////////////////////////////////*/
-
-    function invariant_TotalAssetsEqualBuckets() external view {
-        IOllaCore.AccountingState memory accounting = core.accountingState();
-
-        uint256 positiveTotal =
-            vault.bufferedAssets() + accounting.stakedPrincipal + accounting.rewardsAccumulatorBalance
-            + accounting.claimableRewards;
-        uint256 expectedTotal = positiveTotal;
-
-        // totalAssets() subtracts pending withdrawals (shares already burned)
-        uint256 pendingWithdrawals = withdrawalQueue.totalPendingAssets();
-        expectedTotal = pendingWithdrawals >= expectedTotal ? 0 : expectedTotal - pendingWithdrawals;
-
-        assertEq(core.totalAssets(), expectedTotal, "total assets sum");
-    }
 
     function invariant_TotalAssetsNeverReverts() external view {
         // totalAssets() must always be callable regardless of slashing state
@@ -479,7 +460,6 @@ contract OllaCoreDepositInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockStakingManager internal stakingManager;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     OllaCoreDepositHandler internal handler;
 
@@ -501,8 +481,7 @@ contract OllaCoreDepositInvariantTest is Test {
         address governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
-        withdrawalQueue = new MockWithdrawalQueue();
-        address rewardsAccumulator = makeAddr("rewardsAccumulator");
+        MockRewardsAccumulator rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         core.initialize(
             asset,
@@ -511,10 +490,10 @@ contract OllaCoreDepositInvariantTest is Test {
             0,
             5_000,
             governance,
-            IRewardsAccumulator(rewardsAccumulator),
+            IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -554,7 +533,6 @@ contract OllaCoreLifecycleHandler is Test {
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsAccumulator public rewardsAccumulator;
-    WithdrawalQueue public withdrawalQueue;
     address public operator;
 
     address[] public actors;
@@ -565,7 +543,6 @@ contract OllaCoreLifecycleHandler is Test {
 
     uint256 public ghost_totalDeposited;
     uint256 public ghost_totalWithdrawn;
-    uint256 public ghost_totalInstantRedeemed;
     bool public ghost_rebalanceMonotonic;
     uint256 public ghost_rateBeforeAccounting;
     uint256 public ghost_rateAfterAccounting;
@@ -588,7 +565,6 @@ contract OllaCoreLifecycleHandler is Test {
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsAccumulator _rewardsAccumulator,
-        WithdrawalQueue _withdrawalQueue,
         address _operator
     ) {
         asset = _asset;
@@ -597,7 +573,6 @@ contract OllaCoreLifecycleHandler is Test {
         stAztec = _stAztec;
         stakingManager = _stakingManager;
         rewardsAccumulator = _rewardsAccumulator;
-        withdrawalQueue = _withdrawalQueue;
         operator = _operator;
 
         ghost_rebalanceMonotonic = true;
@@ -697,40 +672,12 @@ contract OllaCoreLifecycleHandler is Test {
         _finalizedRequestIds[idx] = _finalizedRequestIds[_finalizedRequestIds.length - 1];
         _finalizedRequestIds.pop();
 
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         uint256 assetsExpected = request.assetsExpected;
 
         vault.claimRequestById(requestId);
 
         ghost_totalWithdrawn += assetsExpected;
-    }
-
-    function instantRedeem(uint256 actorSeed) external {
-        address actor = address(0);
-        uint256 actorShares = 0;
-        uint256 base = actorSeed % actors.length;
-        for (uint256 i = 0; i < actors.length; i++) {
-            uint256 idx = (base + i) % actors.length;
-            uint256 bal = stAztec.balanceOf(actors[idx]);
-            if (bal > 0) {
-                actor = actors[idx];
-                actorShares = bal;
-                break;
-            }
-        }
-        if (actor == address(0)) return;
-
-        uint256 sharesToRedeem = actorShares / 2;
-        if (sharesToRedeem == 0) sharesToRedeem = actorShares;
-
-        vm.startPrank(actor);
-        stAztec.approve(address(vault), sharesToRedeem);
-        try vault.instantRedeem(sharesToRedeem, actor, 0) returns (uint256 netAssets) {
-            ghost_totalInstantRedeemed += netAssets;
-        } catch {
-            // May revert if insufficient buffer or instant redemption disabled
-        }
-        vm.stopPrank();
     }
 
     function updateAccounting() external {
@@ -758,8 +705,8 @@ contract OllaCoreLifecycleHandler is Test {
         uint256 i = 0;
         while (i < length) {
             uint256 reqId = _pendingRequestIds[i];
-            try withdrawalQueue.getRequest(reqId) returns (IWithdrawalQueue.WithdrawalRequest memory req) {
-                if (req.finalized && !req.claimed) {
+            try vault.getWithdrawalRequest(reqId) returns (IOllaVault.WithdrawalRequest memory req) {
+                if (req.finalized) {
                     _finalizedRequestIds.push(reqId);
                     _pendingRequestIds[i] = _pendingRequestIds[length - 1];
                     _pendingRequestIds.pop();
@@ -786,7 +733,6 @@ contract OllaCoreLifecycleInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreLifecycleHandler internal handler;
@@ -815,17 +761,11 @@ contract OllaCoreLifecycleInvariantTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setUnstakedToken(asset);
         address providerRewardsRecipient = makeAddr("lifecycle_providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
-
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         core.initialize(
             asset,
@@ -837,7 +777,7 @@ contract OllaCoreLifecycleInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -845,13 +785,8 @@ contract OllaCoreLifecycleInvariantTest is Test {
         vm.prank(governance);
         vault.unpause();
 
-        // Enable instant redemption fee (1% = 100 BP)
-        vm.prank(governance);
-        vault.setInstantRedemptionFeeBP(100);
-
-        handler = new OllaCoreLifecycleHandler(
-            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator
-        );
+        handler =
+            new OllaCoreLifecycleHandler(asset, core, vault, stAztec, stakingManager, rewardsAccumulator, operator);
 
         targetContract(address(handler));
     }
@@ -880,17 +815,8 @@ contract OllaCoreLifecycleInvariantTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function invariant_FinalizedUnclaimedAssetsLeqBalance() external view {
-        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(30))));
+        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(4))));
         assertLe(finalizedUnclaimed, asset.balanceOf(address(vault)), "finalized unclaimed <= balance");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-            D3 - STAKED PRINCIPAL <= TOTAL STAKED
-    //////////////////////////////////////////////////////////////*/
-
-    function invariant_StakedPrincipalLeqTotalStaked() external view {
-        IOllaCore.AccountingState memory accounting = core.accountingState();
-        assertLe(accounting.stakedPrincipal, stakingManager.totalStakedAmount(), "stakedPrincipal <= totalStaked");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -935,7 +861,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
     StAztec public stAztec;
     MockAccountingStakingManager public stakingManager;
     MockRewardsAccumulator public rewardsAccumulator;
-    WithdrawalQueue public withdrawalQueue;
     address public operator;
     address public governance;
 
@@ -988,7 +913,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
         StAztec _stAztec,
         MockAccountingStakingManager _stakingManager,
         MockRewardsAccumulator _rewardsAccumulator,
-        WithdrawalQueue _withdrawalQueue,
         address _operator,
         address _governance
     ) {
@@ -998,7 +922,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
         stAztec = _stAztec;
         stakingManager = _stakingManager;
         rewardsAccumulator = _rewardsAccumulator;
-        withdrawalQueue = _withdrawalQueue;
         operator = _operator;
         governance = _governance;
 
@@ -1085,46 +1008,6 @@ contract OllaCoreProtocolPropertyHandler is Test {
         try vault.requestRedeem(sharesToRedeem, actor, actor) returns (uint256 requestId) {
             _pendingRequestIds.push(requestId);
         } catch {
-            return;
-        }
-
-        // Update rate after
-        ghost_latestExchangeRate = core.exchangeRate();
-    }
-
-    function instantRedeem(uint256 actorSeed) external {
-        address actor = address(0);
-        uint256 actorShares = 0;
-        uint256 base = actorSeed % actors.length;
-        for (uint256 i = 0; i < actors.length; i++) {
-            uint256 idx = (base + i) % actors.length;
-            uint256 bal = stAztec.balanceOf(actors[idx]);
-            if (bal > 0) {
-                actor = actors[idx];
-                actorShares = bal;
-                break;
-            }
-        }
-        if (actor == address(0)) return;
-
-        // Only redeem a small portion to avoid InsufficientLiquidity
-        uint256 sharesToRedeem = actorShares / 4;
-        if (sharesToRedeem == 0) sharesToRedeem = 1;
-
-        uint256 grossAssets = core.convertToAssets(sharesToRedeem);
-        if (grossAssets == 0) return;
-        if (grossAssets > vault.availableForInstantRedemption()) return;
-
-        // Snapshot counters before
-        _snapshotFlowCounters();
-        // Snapshot rate before (instantRedeem is a protocol op)
-        ghost_previousExchangeRate = ghost_latestExchangeRate;
-        ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
-
-        vm.prank(actor);
-        try vault.instantRedeem(sharesToRedeem, actor, 0) { }
-        catch {
             return;
         }
 
@@ -1254,8 +1137,8 @@ contract OllaCoreProtocolPropertyHandler is Test {
         uint256 i = 0;
         while (i < length) {
             uint256 reqId = _pendingRequestIds[i];
-            try withdrawalQueue.getRequest(reqId) returns (IWithdrawalQueue.WithdrawalRequest memory req) {
-                if (req.finalized && !req.claimed) {
+            try vault.getWithdrawalRequest(reqId) returns (IOllaVault.WithdrawalRequest memory req) {
+                if (req.finalized) {
                     _finalizedRequestIds.push(reqId);
                     _pendingRequestIds[i] = _pendingRequestIds[length - 1];
                     _pendingRequestIds.pop();
@@ -1303,7 +1186,6 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     StAztec internal stAztec;
     MockAztec internal asset;
     MockAccountingStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockSafetyModule internal safetyModule;
     MockRewardsAccumulator internal rewardsAccumulator;
     OllaCoreProtocolPropertyHandler internal handler;
@@ -1332,17 +1214,11 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
         stakingManager.setUnstakedToken(asset);
         address providerRewardsRecipient = makeAddr("protprop_providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
-
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
 
         core.initialize(
             asset,
@@ -1354,7 +1230,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             IRewardsAccumulator(address(rewardsAccumulator)),
             address(safetyModule)
         );
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
         vm.prank(governance);
         core.setVault(address(vault));
         vm.prank(governance);
@@ -1363,7 +1239,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
         vault.unpause();
 
         handler = new OllaCoreProtocolPropertyHandler(
-            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, withdrawalQueue, operator, governance
+            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, operator, governance
         );
 
         targetContract(address(handler));
@@ -1376,7 +1252,7 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     /// @notice asset.balanceOf(vault) >= bufferedAssets + _finalizedUnclaimedAssets
     function invariant_VaultSolvency() external view {
         IOllaCore.AccountingState memory accounting = core.accountingState();
-        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(30))));
+        uint256 finalizedUnclaimed = uint256(vm.load(address(vault), bytes32(uint256(4))));
         uint256 vaultBalance = asset.balanceOf(address(vault));
 
         assertGe(
@@ -1489,23 +1365,6 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
-            INSTANT REDEMPTION FEE CONSERVATION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice fee + netAssets == grossAssets (no value created or lost in fee split).
-    function invariant_InstantRedemptionFeeConservation() external view {
-        uint256 shares = bound(uint256(block.timestamp), 1, type(uint96).max);
-        uint256 grossAssets = core.convertToAssets(shares);
-
-        uint256 feeBP = vault.instantRedemptionFeeBP();
-        uint256 bpDivisor = vault.BP_DIVISOR();
-        uint256 fee = grossAssets * feeBP / bpDivisor;
-        uint256 netAssets = grossAssets - fee;
-
-        assertEq(fee + netAssets, grossAssets, "fee + netAssets must equal grossAssets exactly");
-    }
-
-    /*//////////////////////////////////////////////////////////////
             CUMULATIVE REWARDS NEVER DECREASE
     //////////////////////////////////////////////////////////////*/
 
@@ -1558,4 +1417,282 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             assertEq(smallShares, smallAmount, "empty vault small deposit should give 1:1 shares");
         }
     }
+}
+
+/*//////////////////////////////////////////////////////////////
+            CACHE COHERENCE HANDLER (PRE PULL-MODEL)
+//////////////////////////////////////////////////////////////*/
+
+/// @notice Invariant handler that exercises cache-coherence failure paths:
+///         mid-rebalance pauses, validator accrual between rebalances, slashing via
+///         rollup-side attester refresh, and tight-gas rebalance probing. Uses the
+///         custom `MockCacheCoherentStakingManager` so `harvestRewards` drains the
+///         live claimable value and `stake` updates live `totalStaked`, matching the
+///         real rollup's post-claim behavior.
+contract OllaCoreCacheCoherenceHandler is Test {
+    using Math for uint256;
+
+    MockAztec public asset;
+    OllaCore public core;
+    OllaVault public vault;
+    StAztec public stAztec;
+    MockCacheCoherentStakingManager public stakingManager;
+    MockRewardsAccumulator public rewardsAccumulator;
+    address public operator;
+    address public governance;
+
+    address[] public actors;
+
+    constructor(
+        MockAztec _asset,
+        OllaCore _core,
+        OllaVault _vault,
+        StAztec _stAztec,
+        MockCacheCoherentStakingManager _stakingManager,
+        MockRewardsAccumulator _rewardsAccumulator,
+        address _operator,
+        address _governance
+    ) {
+        asset = _asset;
+        core = _core;
+        vault = _vault;
+        stAztec = _stAztec;
+        stakingManager = _stakingManager;
+        rewardsAccumulator = _rewardsAccumulator;
+        operator = _operator;
+        governance = _governance;
+
+        for (uint256 i = 0; i < 5; i++) {
+            actors.push(makeAddr(string(abi.encode("cc_actor", i))));
+        }
+    }
+
+    function actorsLength() external view returns (uint256) {
+        return actors.length;
+    }
+
+    function actorAt(uint256 index) external view returns (address) {
+        return actors[index];
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             CORE ACTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    function deposit(uint96 amount, uint256 actorSeed) external {
+        uint256 assets = uint256(bound(amount, 1, type(uint96).max));
+        address actor = actors[bound(actorSeed, 0, actors.length - 1)];
+
+        asset.mint(actor, assets);
+        vm.startPrank(actor);
+        asset.approve(address(vault), assets);
+        try vault.deposit(assets, actor, 0) { }
+        catch {
+            vm.stopPrank();
+            return;
+        }
+        vm.stopPrank();
+    }
+
+    function handler_accrueRollupRewards(uint256 amt) external {
+        uint256 accrual = bound(amt, 0, 1e24);
+        if (accrual == 0) return;
+        stakingManager.addClaimable(accrual);
+    }
+
+    function handler_slashViaRefreshAttester(uint256 amt) external {
+        uint256 slash = bound(amt, 0, stakingManager.totalStaked() / 4);
+        if (slash == 0) return;
+        stakingManager.applySlashing(slash);
+    }
+
+    function handler_tickTime(uint256 dt) external {
+        uint256 warpBy = bound(dt, 1, 30 days);
+        vm.warp(block.timestamp + warpBy);
+    }
+
+    function handler_startRebalanceWithTightGas(uint256 gasSeed) external {
+        // Warp so cooldown is satisfied (cooldown is 1 hour; warp enough to clear).
+        vm.warp(block.timestamp + 1 hours + bound(gasSeed, 0, 59 minutes));
+        uint256 gasLimit = bound(gasSeed, 250_000, 800_000);
+        vm.prank(operator);
+        // solhint-disable-next-line avoid-low-level-calls
+        (bool ok,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
+        ok; // ignore outcome — tight gas may partially progress or revert
+    }
+
+    function rebalance() external {
+        vm.warp(block.timestamp + 1 hours + 1);
+        vm.prank(operator);
+        try core.rebalance() { }
+        catch {
+            return;
+        }
+    }
+
+    function updateAccounting() external {
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
+        if (progress.step != IOllaCore.RebalanceStep.Done) return;
+        vm.prank(operator);
+        try core.updateAccounting() { }
+        catch {
+            return;
+        }
+    }
+}
+
+/*//////////////////////////////////////////////////////////////
+          CACHE COHERENCE INVARIANT TEST CONTRACT
+//////////////////////////////////////////////////////////////*/
+
+/// @title OllaCoreCacheCoherenceInvariantTest
+/// @notice Invariant suite that guards the `_accountingState` pull-model contract:
+///         `totalAssets()` must equal the live read-through sum of the owning modules,
+///         and exchange-rate accrual must be non-decreasing across handler actions that
+///         do not involve slashing.
+contract OllaCoreCacheCoherenceInvariantTest is Test {
+    using Math for uint256;
+
+    OllaCore internal core;
+    OllaVault internal vault;
+    StAztec internal stAztec;
+    MockAztec internal asset;
+    MockCacheCoherentStakingManager internal stakingManager;
+    MockSafetyModule internal safetyModule;
+    MockRewardsAccumulator internal rewardsAccumulator;
+    OllaCoreCacheCoherenceHandler internal handler;
+    address internal operator;
+    address internal governance;
+
+    uint256 internal _previousRate;
+    bool internal _rateWasCaptured;
+
+    /*//////////////////////////////////////////////////////////////
+                                SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    function setUp() external {
+        asset = new MockAztec(address(this));
+        governance = makeAddr("cc_governance");
+        operator = makeAddr("cc_operator");
+
+        OllaCore implementation = new OllaCore();
+        ERC1967Proxy coreProxy = new ERC1967Proxy(address(implementation), "");
+        core = OllaCore(address(coreProxy));
+
+        OllaVault vaultImplementation = new OllaVault();
+        ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
+        vault = OllaVault(address(vaultProxy));
+
+        stAztec = new StAztec(address(vault));
+        stakingManager = new MockCacheCoherentStakingManager();
+        rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
+        safetyModule = new MockSafetyModule(address(core), address(vault));
+
+        stakingManager.setRewardsToken(asset);
+        stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
+        stakingManager.setUnstakedToken(asset);
+        address providerRewardsRecipient = makeAddr("cc_providerRewardsRecipient");
+        stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
+
+        core.initialize(
+            asset,
+            stAztec,
+            stakingManager,
+            0,
+            5_000,
+            governance,
+            IRewardsAccumulator(address(rewardsAccumulator)),
+            address(safetyModule)
+        );
+        vault.initialize(asset, stAztec, address(core), governance);
+        vm.prank(governance);
+        core.setVault(address(vault));
+        vm.prank(governance);
+        core.unpause();
+        vm.prank(governance);
+        vault.unpause();
+
+        handler = new OllaCoreCacheCoherenceHandler(
+            asset, core, vault, stAztec, stakingManager, rewardsAccumulator, operator, governance
+        );
+
+        targetContract(address(handler));
+
+        bytes4[] memory selectors = new bytes4[](6);
+        selectors[0] = handler.deposit.selector;
+        selectors[1] = handler.handler_accrueRollupRewards.selector;
+        selectors[2] = handler.handler_slashViaRefreshAttester.selector;
+        selectors[3] = handler.handler_tickTime.selector;
+        selectors[4] = handler.handler_startRebalanceWithTightGas.selector;
+        selectors[5] = handler.rebalance.selector;
+        targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _readThroughTotalAssets() internal view returns (uint256) {
+        uint256 buffered = vault.bufferedAssets();
+        uint256 staked = stakingManager.totalStaked();
+        uint256 claimable = stakingManager.getClaimableRewards();
+        uint256 raBalance = rewardsAccumulator.balance();
+        uint256 pending = vault.pendingWithdrawalAssets();
+        uint256 total = buffered + staked + claimable + raBalance;
+        return pending >= total ? 0 : total - pending;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+              INVARIANT: totalAssets MATCHES LIVE READ-THROUGH
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice `totalAssets()` must equal the live read-through sum of the owning
+    ///         modules at every protocol state reachable by the handler —
+    ///         including rollup accrual between `updateAccounting` calls and
+    ///         mid-rebalance pause windows, where any divergence between the
+    ///         exposed totalAssets and the authoritative module balances would
+    ///         mispricing user operations.
+    function invariant_TotalAssetsMatchesLiveReadThrough() external view {
+        assertEq(core.totalAssets(), _readThroughTotalAssets(), "totalAssets drift from live sources");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+          INVARIANT: exchangeRate REFLECTS CONTINUOUS ACCRUAL
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The exchange rate computed from live sources must be non-decreasing
+    ///         across any sequence of handler actions that involve validator accrual
+    ///         (excluding explicit slashing). Because the handler is mock-aware, we
+    ///         skip the check when `slashingDelta` changed since the last tick.
+    ///         The rate is derived from live module state so accrual between
+    ///         `updateAccounting` calls is visible immediately — the invariant
+    ///         holds without any interim reconciliation call.
+    function invariant_ExchangeRateReflectsContinuousAccrual() external {
+        // Only meaningful once supply exists.
+        uint256 supply = stAztec.totalSupply();
+        if (supply == 0) {
+            return;
+        }
+
+        // Skip when slashing caused a legitimate rate drop this tick.
+        uint256 slashNow = core.accountingState().slashingDelta;
+        uint256 slashPrev = _previousSlashingDelta;
+        if (slashNow > slashPrev) {
+            _previousSlashingDelta = slashNow;
+            _rateWasCaptured = false;
+            return;
+        }
+
+        uint256 liveTotal = _readThroughTotalAssets();
+        uint256 liveRate = (liveTotal + 1e3).mulDiv(1e18, supply + 1e3, Math.Rounding.Floor);
+
+        if (_rateWasCaptured) {
+            assertGe(liveRate, _previousRate, "live exchange rate must be non-decreasing between ticks");
+        }
+        _previousRate = liveRate;
+        _rateWasCaptured = true;
+    }
+
+    uint256 internal _previousSlashingDelta;
 }

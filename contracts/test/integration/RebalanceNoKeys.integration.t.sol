@@ -9,7 +9,6 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
@@ -33,7 +32,6 @@ contract RebalanceNoKeysIntegrationTest is Test {
     StakingProviderRegistry internal stakingProviderRegistry;
     MockAztecRollup internal rollup;
     MockAztecRollupRegistry internal rollupRegistry;
-    WithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
@@ -62,12 +60,8 @@ contract RebalanceNoKeysIntegrationTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         rollup = new MockAztecRollup(IERC20(address(asset)), ACTIVATION_THRESHOLD);
-        rollupRegistry = new MockAztecRollupRegistry(address(rollup));
+        rollupRegistry = new MockAztecRollupRegistry(address(rollup), IERC20(address(asset)));
 
         StakingManager stakingImplementation = new StakingManager();
         ERC1967Proxy stakingProxy = new ERC1967Proxy(address(stakingImplementation), "");
@@ -87,11 +81,9 @@ contract RebalanceNoKeysIntegrationTest is Test {
             defaultAdmin
         );
 
-        withdrawalQueue.initialize(address(vault), governance, 180_000);
-
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -112,9 +104,6 @@ contract RebalanceNoKeysIntegrationTest is Test {
         asset.approve(address(vault), depositAmount);
         vm.prank(user);
         vault.deposit(depositAmount, user, 0);
-
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
 
         // Advance past rebalance cooldown (1 hour) so rebalance() can start a new cycle
         vm.warp(block.timestamp + 1 hours);

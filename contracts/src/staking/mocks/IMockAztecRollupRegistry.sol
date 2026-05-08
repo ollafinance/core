@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.27;
 
+import { IAztecRewardDistributor } from "src/staking/interfaces/IAztecRewardDistributor.sol";
 import { IAztecRollupRegistry } from "src/staking/interfaces/IAztecRollupRegistry.sol";
 
 /// @title IMockAztecRollupRegistry
@@ -11,4 +12,12 @@ interface IMockAztecRollupRegistry is IAztecRollupRegistry {
     /// @notice Sets the canonical rollup address (for testing).
     /// @param canonicalRollup The new canonical rollup address.
     function setCanonicalRollup(address canonicalRollup) external;
+
+    /// @notice Sets the reward distributor address (for testing).
+    /// @param rewardDistributor The new reward distributor contract.
+    function setRewardDistributor(IAztecRewardDistributor rewardDistributor) external;
+
+    /// @notice Sets the governance address (for testing).
+    /// @param governance The new governance address.
+    function setGovernance(address governance) external;
 }

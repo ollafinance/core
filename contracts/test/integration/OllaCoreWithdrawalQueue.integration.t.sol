@@ -11,9 +11,7 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IStakingProviderRegistry } from "src/staking/interfaces/IStakingProviderRegistry.sol";
 import { StAztec } from "src/vault/StAztec.sol";
@@ -22,24 +20,6 @@ import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.so
 import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-
-contract OllaCoreWithdrawalQueueHarness is OllaCore {
-    /*//////////////////////////////////////////////////////////////
-                            CORE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function exposedApplyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) external {
-        _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
-        );
-    }
-}
 
 contract OllaCoreWithdrawalQueueTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -56,11 +36,10 @@ contract OllaCoreWithdrawalQueueTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreWithdrawalQueueHarness internal core;
+    OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
     MockStakingManager internal stakingManager;
-    WithdrawalQueue internal queue;
     address internal governance;
     MockRewardsAccumulator internal rewardsAccumulator;
     SafetyModule internal safetyModule;
@@ -76,9 +55,9 @@ contract OllaCoreWithdrawalQueueTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreWithdrawalQueueHarness coreImplementation = new OllaCoreWithdrawalQueueHarness();
+        OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        core = OllaCoreWithdrawalQueueHarness(address(coreProxy));
+        core = OllaCore(address(coreProxy));
 
         OllaVault vaultImplementation = new OllaVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
@@ -95,15 +74,9 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vm.prank(admin);
         safetyModule.setWithdrawalMinimum(0);
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        queue = WithdrawalQueue(address(queueProxy));
-
-        queue.initialize(address(vault), governance, 180_000);
-
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(queue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -142,14 +115,15 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, alice, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assertEq(request.assetsExpected, expectedAssets, "assetsExpected locked at request rate");
         assertEq(request.rate, rate, "rate locked at request time");
 
-        core.exposedApplyAccountingUpdates(0, 3 ether, 0, 0, 0);
+        // Simulate rewards accrual by funding the accumulator; exchange rate reads its balance live.
+        deal(address(asset), address(rewardsAccumulator), 3 ether);
         uint256 updatedRate = core.exchangeRate();
         assertGt(updatedRate, rate, "exchange rate should increase after rewards");
-        request = queue.getRequest(requestId);
+        request = vault.getWithdrawalRequest(requestId);
         assertEq(request.assetsExpected, expectedAssets, "assetsExpected unchanged after rate update");
         assertEq(request.rate, rate, "rate remains locked after update");
     }
@@ -166,8 +140,8 @@ contract OllaCoreWithdrawalQueueTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, bob, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
-        assertEq(request.recipient, bob, "queue stores recipient");
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
+        assertEq(vault.requestOwner(requestId), bob, "request owner stored");
         assertEq(request.shares, shares, "queue stores share amount");
         assertEq(request.assetsExpected, expectedAssets, "queue stores assets expected");
         assertEq(request.rate, rate, "queue stores request rate");
@@ -178,33 +152,35 @@ contract OllaCoreWithdrawalQueueTest is Test {
         _deposit(bob, 15 ether);
 
         (, uint256 assetsExpectedAlice) = _requestRedeem(alice, 8 ether, alice);
-        assertEq(queue.totalPendingAssets(), assetsExpectedAlice, "pending assets tracks first request");
-        assertEq(queue.nextRequestId(), 2, "next request id increments after first request");
-        assertEq(queue.nextPendingId(), 1, "next pending id stays at first request");
+        assertEq(vault.pendingWithdrawalAssets(), assetsExpectedAlice, "pending assets tracks first request");
+        assertEq(vault.nextWithdrawalRequestId(), 2, "next request id increments after first request");
+        assertEq(vault.nextUnfinalizedWithdrawalRequestId(), 1, "next pending id stays at first request");
 
         (, uint256 assetsExpectedBob) = _requestRedeem(bob, 5 ether, bob);
         assertEq(
-            queue.totalPendingAssets(), assetsExpectedAlice + assetsExpectedBob, "pending assets accumulates requests"
+            vault.pendingWithdrawalAssets(),
+            assetsExpectedAlice + assetsExpectedBob,
+            "pending assets accumulates requests"
         );
-        assertEq(queue.nextRequestId(), 3, "next request id increments after second request");
-        assertEq(queue.nextPendingId(), 1, "next pending id remains earliest request");
+        assertEq(vault.nextWithdrawalRequestId(), 3, "next request id increments after second request");
+        assertEq(vault.nextUnfinalizedWithdrawalRequestId(), 1, "next pending id remains earliest request");
     }
 
     function test_RequestRedeem_AssetsExpectedMatchesRate() external {
         _deposit(alice, 18 ether);
-        core.exposedApplyAccountingUpdates(0, 6 ether, 0, 0, 0);
+        // Fund the accumulator so the rate reflects reward backing.
+        deal(address(asset), address(rewardsAccumulator), 6 ether);
 
         uint256 shares = 9 ether;
-        uint256 totalAssets = core.totalAssets();
-        uint256 supply = stAztec.totalSupply();
-        uint256 expectedAssets = Math.mulDiv(shares, totalAssets + 1e3, supply + 1e3, Math.Rounding.Floor);
-        uint256 rate = core.exchangeRate();
+        uint256 expectedRate = core.exchangeRate();
+        // Hand-formula spec: shares * rate / 1e18. Tolerance absorbs floor-rounding differences.
+        uint256 expectedAssets = shares * expectedRate / 1e18;
 
         (uint256 requestId,) = _requestRedeem(alice, shares, alice);
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
 
-        assertEq(request.assetsExpected, expectedAssets, "assetsExpected should match rate at request time");
-        assertEq(request.rate, rate, "request rate should match current rate");
+        assertApproxEqAbs(request.assetsExpected, expectedAssets, 10, "assetsExpected matches shares * rate / 1e18");
+        assertEq(request.rate, expectedRate, "request rate matches core.exchangeRate");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -221,7 +197,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
 
         assertEq(firstRequestId, 1, "first request id");
         assertEq(secondRequestId, 2, "second request id");
-        assertEq(queue.nextRequestId(), 3, "next request id increments");
+        assertEq(vault.nextWithdrawalRequestId(), 3, "next request id increments");
     }
 
     function test_RevertWhen_RequestRedeemWhilePaused() external {
@@ -296,6 +272,35 @@ contract OllaCoreWithdrawalQueueTest is Test {
         assertEq(receiverBalanceAfter - receiverBalanceBefore, assetsExpected, "redeem claims full assetsExpected");
     }
 
+    function test_Finalize_RecomputesRateBetweenHeterogeneousRequests() external {
+        _deposit(alice, 1_000 ether);
+        uint256 shares = 100 ether;
+
+        vm.prank(alice);
+        uint256 firstRequestId = vault.requestRedeem(shares, alice, alice);
+        IOllaVault.WithdrawalRequest memory firstRequest = vault.getWithdrawalRequest(firstRequestId);
+        assertEq(firstRequest.assetsExpected, 100 ether, "first request locks initial rate");
+
+        deal(address(asset), address(rewardsAccumulator), 100 ether);
+        uint256 secondExpectedAssets = core.convertToAssets(shares);
+        assertGt(secondExpectedAssets, 111 ether, "second request should use reward-increased live rate");
+
+        vm.prank(alice);
+        uint256 secondRequestId = vault.requestRedeem(shares, alice, alice);
+        IOllaVault.WithdrawalRequest memory secondRequest = vault.getWithdrawalRequest(secondRequestId);
+        assertEq(secondRequest.assetsExpected, secondExpectedAssets, "second request locks higher net rate");
+
+        core.rebalance();
+
+        firstRequest = vault.getWithdrawalRequest(firstRequestId);
+        secondRequest = vault.getWithdrawalRequest(secondRequestId);
+        assertTrue(firstRequest.finalized, "first request finalized");
+        assertTrue(secondRequest.finalized, "second request finalized");
+        assertEq(firstRequest.assetsExpected, 100 ether, "first request not reward-adjusted");
+        assertEq(secondRequest.assetsExpected, secondExpectedAssets, "second request not phantom-slashed");
+        assertEq(vault.pendingWithdrawalAssets(), 0, "queue fully drained");
+    }
+
     function test_RevertWhen_ClaimWhilePaused() external {
         _deposit(alice, 10 ether);
 
@@ -329,7 +334,7 @@ contract OllaCoreWithdrawalQueueTest is Test {
     {
         vm.prank(owner);
         requestId = vault.requestRedeem(shares, recipient, owner);
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);
     }
@@ -395,6 +400,10 @@ contract RealisticStakingManager is IStakingManager {
         return _hasFinalizedUnstakes;
     }
 
+    function claimableUnstakedFunds() external view override returns (uint256) {
+        return _hasFinalizedUnstakes ? pendingUnstakeAmount : 0;
+    }
+
     function getStakingState() external view override returns (StakingState memory) {
         return
             StakingState({
@@ -455,11 +464,10 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreWithdrawalQueueHarness internal core;
+    OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
     RealisticStakingManager internal stakingManager;
-    WithdrawalQueue internal queue;
     address internal governance;
     MockRewardsAccumulator internal rewardsAccumulator;
     SafetyModule internal safetyModule;
@@ -474,9 +482,9 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreWithdrawalQueueHarness coreImplementation = new OllaCoreWithdrawalQueueHarness();
+        OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        core = OllaCoreWithdrawalQueueHarness(address(coreProxy));
+        core = OllaCore(address(coreProxy));
 
         OllaVault vaultImplementation = new OllaVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
@@ -493,15 +501,9 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         vm.prank(admin);
         safetyModule.setWithdrawalMinimum(0);
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImplementation), "");
-        queue = WithdrawalQueue(address(queueProxy));
-
-        queue.initialize(address(vault), governance, 180_000);
-
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(queue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -563,7 +565,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, alice, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         uint256 expectedAssets = request.assetsExpected;
         assertEq(expectedAssets, depositAmount, "expected assets should match deposit");
 
@@ -582,9 +584,8 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         core.rebalance();
 
         // Verify withdrawal is finalized
-        request = queue.getRequest(requestId);
+        request = vault.getWithdrawalRequest(requestId);
         assertTrue(request.finalized, "withdrawal should be finalized");
-        assertFalse(request.claimed, "withdrawal should not be claimed yet");
 
         // Funds should be back in vault, reserved for the claim
         uint256 vaultBalanceAfterFinalize = asset.balanceOf(address(vault));
@@ -631,7 +632,7 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.requestRedeem(shares, alice, alice);
 
-        IWithdrawalQueue.WithdrawalRequest memory request = queue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         uint256 expectedAssets = request.assetsExpected;
 
         vm.warp(block.timestamp + 1 hours + 1);
@@ -642,9 +643,8 @@ contract OllaCoreFinalizedWithdrawalBugTest is Test {
         }
         core.rebalance();
 
-        request = queue.getRequest(requestId);
+        request = vault.getWithdrawalRequest(requestId);
         assertTrue(request.finalized, "withdrawal should be finalized");
-        assertFalse(request.claimed, "withdrawal should not be claimed");
 
         uint256 vaultBalanceBeforeRebalance = asset.balanceOf(address(vault));
         assertEq(vaultBalanceBeforeRebalance, expectedAssets, "vault should hold finalized assets");

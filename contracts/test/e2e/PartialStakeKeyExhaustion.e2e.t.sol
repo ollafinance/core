@@ -5,7 +5,6 @@ import { Test, Vm } from "@forge-std/Test.sol";
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { E2EBaseWithRealStaking } from "./E2EBaseWithRealStaking.sol";
 
 /// @title PartialStakeKeyExhaustionE2E
@@ -25,11 +24,6 @@ contract PartialStakeKeyExhaustionE2E is E2EBaseWithRealStaking {
 
     function setUp() external {
         _deployFullStack();
-
-        // Set target buffer to 0 so all deposited funds go to staking
-        _scheduleAndExecute(
-            address(gov), abi.encodeCall(gov.setTargetBufferedAssets, (0)), keccak256("setTargetBufferedAssets-0")
-        );
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -162,7 +156,7 @@ contract PartialStakeKeyExhaustionE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 4. Check withdrawal was finalized
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertTrue(req.finalized, "Withdrawal should be finalized using excess buffer");
 
         // 5. User can claim

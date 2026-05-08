@@ -9,7 +9,6 @@ import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
@@ -33,7 +32,6 @@ contract OllaCorePermissionlessRebalance is Test {
     address internal governance;
     address internal alice;
     address internal bob;
-    WithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -61,12 +59,6 @@ contract OllaCorePermissionlessRebalance is Test {
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
         guardian = makeAddr("guardian");
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation),
-            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, DEFAULT_REBALANCE_GAS_THRESHOLD))
-        );
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
@@ -76,7 +68,7 @@ contract OllaCorePermissionlessRebalance is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -113,10 +105,6 @@ contract OllaCorePermissionlessRebalance is Test {
     /// @notice Anyone can start a new rebalance cycle
     /// after the cooldown has elapsed.
     function test_Rebalance_AnyoneCanStartNewCycle() external {
-        // Set a target buffer so not all assets are staked (some remain in buffer)
-        vm.prank(governance);
-        core.setTargetBufferedAssets(2 * DECIMALS);
-
         _performDeposit(alice, 10 * DECIMALS);
 
         address randomCaller = makeAddr("randomCaller");
@@ -133,10 +121,9 @@ contract OllaCorePermissionlessRebalance is Test {
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         assertEq(uint256(progress.step), uint256(IOllaCore.RebalanceStep.Done), "Rebalance should complete");
 
-        // The cycle ran: resultingBuffer should reflect target buffer
-        assertEq(resultingBuffer, 2 * DECIMALS, "resultingBuffer should equal target buffer");
-        // Some assets should have been staked
-        assertEq(stakedAmount, 8 * DECIMALS, "stakedAmount should be deposit minus target buffer");
+        // With no pending withdrawals, the entire deposit is surplus and gets staked
+        assertEq(resultingBuffer, 0, "resultingBuffer should be zero after staking surplus");
+        assertEq(stakedAmount, 10 * DECIMALS, "stakedAmount should equal entire deposit");
     }
 
     /// @notice Rebalance reverts when the cooldown period has not elapsed since last report.
@@ -155,10 +142,6 @@ contract OllaCorePermissionlessRebalance is Test {
 
     /// @notice An in-progress rebalance cycle can be continued by any address without cooldown.
     function test_Rebalance_AnyoneCanContinueInProgressCycle() external {
-        // Setup: target buffer = 0 so everything gets staked
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _performDeposit(alice, 10 * DECIMALS);
 
         // Configure staking manager to only stake a partial amount per call,
@@ -315,10 +298,6 @@ contract OllaCorePermissionlessRebalance is Test {
 
     /// @notice Deposit and redeem work even while a rebalance is in progress.
     function test_UserOps_DuringInProgressRebalance() external {
-        // Setup: target buffer = 0, partial staking
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 aliceShares = _performDeposit(alice, 10 * DECIMALS);
 
         // Configure partial staking to leave rebalance in-progress
@@ -334,12 +313,12 @@ contract OllaCorePermissionlessRebalance is Test {
         uint256 bobShares = _performDeposit(bob, 5 * DECIMALS);
         assertGt(bobShares, 0, "Bob should receive shares");
 
-        // Redeem from alice should succeed (instant redemption from buffer)
-        // Alice has shares and there should be assets in the buffer from the deposit
+        // Redeem request from alice should succeed during in-progress rebalance.
+        // The async path queues the request; we only verify it doesn't revert here.
         uint256 redeemShares = aliceShares / 10; // redeem a small portion
         vm.prank(alice);
-        uint256 assetsRedeemed = vault.instantRedeem(redeemShares, alice, 0);
-        assertGt(assetsRedeemed, 0, "Alice should receive assets from instant redemption");
+        uint256 requestId = vault.requestRedeem(redeemShares, alice, alice);
+        assertGt(requestId, 0, "Alice should receive a redeem request id");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -348,10 +327,6 @@ contract OllaCorePermissionlessRebalance is Test {
 
     /// @notice setRebalanceCooldown reverts with OllaCore__RebalanceInProgress during an in-progress rebalance.
     function test_RevertWhen_AdminOps_DuringInProgressRebalance() external {
-        // Setup: target buffer = 0, partial staking
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _performDeposit(alice, 10 * DECIMALS);
 
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
@@ -366,11 +341,6 @@ contract OllaCorePermissionlessRebalance is Test {
         vm.prank(governance);
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
         core.setRebalanceCooldown(30 minutes);
-
-        // setTargetBufferedAssets should also revert
-        vm.prank(governance);
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
-        core.setTargetBufferedAssets(1 * DECIMALS);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -400,9 +370,6 @@ contract OllaCorePermissionlessRebalance is Test {
 
     /// @notice updateAccounting() reverts with OllaCore__RebalanceInProgress during an in-progress rebalance.
     function test_RevertWhen_UpdateAccounting_DuringRebalance() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _performDeposit(alice, 10 * DECIMALS);
 
         // Configure partial staking to leave rebalance in-progress
@@ -424,9 +391,6 @@ contract OllaCorePermissionlessRebalance is Test {
 
     /// @notice Guardian can force reset the rebalance state machine. Non-guardian reverts.
     function test_ForceRebalanceReset_GuardianOnly() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _performDeposit(alice, 10 * DECIMALS);
 
         // Put rebalance in-progress
@@ -560,8 +524,6 @@ contract OllaCorePermissionlessRebalance is Test {
         vm.warp(block.timestamp + 1 hours + 1);
 
         // Step 3: Start a new cycle but leave it in-progress (partial staking)
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
 
@@ -608,8 +570,6 @@ contract OllaCorePermissionlessRebalance is Test {
 
         // Warp past cooldown and start an in-progress cycle
         vm.warp(block.timestamp + 1 hours + 1);
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         _performDeposit(alice, 10 * DECIMALS);
         stakingManager.setStakeReturnAmount(3 * DECIMALS);
         stakingManager.setAllowStakeReturnExceeds(true);
@@ -635,10 +595,6 @@ contract OllaCorePermissionlessRebalance is Test {
     /// the current cycle completes with the original stakeRemaining. The concurrent deposit
     /// lands in the buffer and is available for the next cycle.
     function test_Rebalance_ConcurrentDeposit_StakeRemainingRecomputed() external {
-        // Setup: target buffer = 0 so all assets should be staked
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Initial deposit of 10 ETH
         _performDeposit(alice, 10 * DECIMALS);
 

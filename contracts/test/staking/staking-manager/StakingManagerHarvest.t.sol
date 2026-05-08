@@ -302,6 +302,17 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         assertEq(claimable, rewardAmount, "Should return correct reward amount");
     }
 
+    function test_GetClaimableRewards_ReturnsZeroWhenRewardsNotClaimable() external {
+        uint256 rewardAmount = 10 ether;
+        _setupAttestersWithRewards(1, rewardAmount);
+        rollup.setRewardsClaimable(false);
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, 0, "Should return zero while rollup rewards are not claimable");
+    }
+
     function test_GetClaimableRewards_SumsMultipleAttesters() external {
         uint256 attesterCount = 3;
         uint256 rewardPerAttester = 5 ether;

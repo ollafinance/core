@@ -13,7 +13,6 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
@@ -62,7 +61,6 @@ contract OllaCoreAccountingTest is Test {
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -91,7 +89,6 @@ contract OllaCoreAccountingTest is Test {
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
         providerRewardsRecipient = makeAddr("providerRewardsRecipient");
         stakingManager.setProviderRewardsRecipient(providerRewardsRecipient);
 
@@ -109,7 +106,7 @@ contract OllaCoreAccountingTest is Test {
             address(safetyModule)
         );
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -147,13 +144,21 @@ contract OllaCoreAccountingTest is Test {
         uint256 staked = 6 * DECIMALS;
         uint256 rewardsAccumulatorBalance = 4 * DECIMALS;
         uint256 claimableRewards = 3 * DECIMALS;
-        uint256 rewardsDelta = 2 * DECIMALS;
         uint256 slashingDelta = 1 * DECIMALS;
 
         _performDeposit(alice, assets);
-        core.exposedApplyAccountingUpdates(
-            staked, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
-        );
+
+        // Under pull-model accounting, bucket fields on accountingState() are derived at call
+        // time from the owning modules. Drive each field through its live source: stakingManager
+        // owns stakedPrincipal/claimableRewards/slashingDelta, and the accumulator's balance() is
+        // the single source of truth for rewardsAccumulatorBalance.
+        stakingManager.setTotalStaked(staked);
+        stakingManager.setClaimableRewards(claimableRewards);
+        stakingManager.setSlashingDelta(slashingDelta);
+        // setSlashingDelta subtracts (slashingDelta - prior) from totalStakedAmount; restore the
+        // target staked amount so the test sees the intended composition.
+        stakingManager.setTotalStaked(staked);
+        deal(address(asset), address(rewardsAccumulator), rewardsAccumulatorBalance);
 
         IOllaCore.AccountingState memory accounting = core.accountingState();
         assertEq(vault.bufferedAssets(), assets, "bufferedAssets matches deposited assets");
@@ -164,7 +169,6 @@ contract OllaCoreAccountingTest is Test {
             "rewardsAccumulatorBalance matches rewards vault"
         );
         assertEq(accounting.claimableRewards, claimableRewards, "claimableRewards matches claimable rewards");
-        assertEq(accounting.rewardsDelta, rewardsDelta, "rewardsDelta matches rewards delta");
         assertEq(accounting.slashingDelta, slashingDelta, "slashingDelta matches slashing delta");
 
         assertEq(
@@ -188,10 +192,10 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 0
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         assertEq(netDeposits, 7 * DECIMALS, "net deposits");
-        assertEq(netWithdrawals, 3 * DECIMALS, "net withdrawals");
+        assertEq(netWithdrawals, int256(3 * DECIMALS), "net withdrawals");
         assertEq(netFlows, int256(4 * DECIMALS), "net flows");
     }
 
@@ -206,17 +210,19 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 1 * DECIMALS
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         // netDeposits = 12 - 5 = 7
         assertEq(netDeposits, 7 * DECIMALS, "net deposits with adjustments");
         // rawNetWithdrawals = 10 - 2 = 8, adjustmentDelta = 3 - 1 = 2, netWithdrawals = 8 - 2 = 6
-        assertEq(netWithdrawals, 6 * DECIMALS, "net withdrawals reduced by slashing adjustment delta");
+        assertEq(netWithdrawals, int256(6 * DECIMALS), "net withdrawals reduced by slashing adjustment delta");
         // netFlows = 7 - 6 = 1
         assertEq(netFlows, int256(1 * DECIMALS), "net flows with slashing adjustments");
     }
 
-    /// @notice When slashing adjustment delta exceeds raw netWithdrawals, netWithdrawals floors at zero.
+    /// @notice When slashing adjustment delta exceeds raw netWithdrawals, signed netWithdrawals
+    ///         goes negative -- preserving the excess as a positive contribution to netFlows
+    ///         instead of dropping it via the previous unsigned clamp.
     function test_ComputeNetFlows_SlashingAdjustmentExceedsWithdrawals() external view {
         IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
             cumulativeDeposits: 10 * DECIMALS,
@@ -227,14 +233,14 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 0
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         // netDeposits = 10 - 5 = 5
         assertEq(netDeposits, 5 * DECIMALS, "net deposits");
-        // rawNetWithdrawals = 5 - 2 = 3, adjustmentDelta = 4 - 0 = 4, 3 < 4 → floor at 0
-        assertEq(netWithdrawals, 0, "net withdrawals floored at zero when adjustment exceeds raw");
-        // netFlows = 5 - 0 = 5
-        assertEq(netFlows, int256(5 * DECIMALS), "net flows when withdrawals floored");
+        // rawNetWithdrawals = 5 - 2 = 3, adjustmentDelta = 4 - 0 = 4, signed = 3 - 4 = -1
+        assertEq(netWithdrawals, -int256(1 * DECIMALS), "net withdrawals negative when adjustment exceeds raw");
+        // netFlows = 5 - (-1) = 6 -- excess slashing flows through, no phantom rewards downstream
+        assertEq(netFlows, int256(6 * DECIMALS), "net flows preserves excess slashing adjustment");
     }
 
     /// @notice When slashing adjustment delta equals raw netWithdrawals exactly, netWithdrawals is zero.
@@ -248,12 +254,12 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 0
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         // netDeposits = 10 - 5 = 5
         assertEq(netDeposits, 5 * DECIMALS, "net deposits");
         // rawNetWithdrawals = 5 - 2 = 3, adjustmentDelta = 3 - 0 = 3, 3 == 3 → exactly zero
-        assertEq(netWithdrawals, 0, "net withdrawals exactly zero when adjustment equals raw");
+        assertEq(netWithdrawals, int256(0), "net withdrawals exactly zero when adjustment equals raw");
         // netFlows = 5 - 0 = 5
         assertEq(netFlows, int256(5 * DECIMALS), "net flows when withdrawals exactly cancelled");
     }
@@ -289,6 +295,65 @@ contract OllaCoreAccountingTest is Test {
 
         assertEq(grossRewards, 0, "gross rewards clamped to zero");
         assertEq(grossRewardsSigned, -int256(15 * DECIMALS), "gross rewards signed negative");
+    }
+
+    /// @notice When slashing adjustments exceed withdrawals, the period's totalAssets growth is
+    ///         fully explained by netDeposits + the excess slashing impact, so gross rewards must
+    ///         remain zero. The clamp-to-zero pattern in `_computeNetFlows` violates this and
+    ///         silently drops the excess, producing phantom rewards.
+    function test_ComputeGrossRewards_NoPhantomRewardsWhenSlashingExceedsWithdrawals() external view {
+        uint256 netDeposits = 5 * DECIMALS;
+        uint256 rawNetWithdrawals = 3 * DECIMALS;
+        uint256 adjustmentsSinceReport = 4 * DECIMALS;
+        uint256 oldTotalAssets = 100 * DECIMALS;
+        uint256 newTotalAssets = 106 * DECIMALS;
+
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
+            cumulativeDeposits: netDeposits,
+            cumulativeWithdrawals: rawNetWithdrawals,
+            cumulativeSlashingAdjustments: adjustmentsSinceReport,
+            latestReportCumulativeDeposits: 0,
+            latestReportCumulativeWithdrawals: 0,
+            latestReportCumulativeSlashingAdjustments: 0
+        });
+
+        (int256 netFlows,,) = core.exposedComputeNetFlows(flows);
+        (uint256 grossRewards, int256 grossRewardsSigned) =
+            core.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+
+        // changeInAssets (+6e18) = netDeposits (+5e18) + droppedExcess (+1e18). No real yield.
+        assertEq(grossRewards, 0, "slashing-adjustment excess must not inflate gross rewards");
+        assertEq(grossRewardsSigned, 0, "signed gross rewards reflect zero true yield");
+    }
+
+    /// @notice Phantom rewards from the slashing-adjustment clamp must not produce protocol fees.
+    function test_CalculateProtocolFees_NoExcessFeesWhenSlashingExceedsWithdrawals() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 netDeposits = 5 * DECIMALS;
+        uint256 rawNetWithdrawals = 3 * DECIMALS;
+        uint256 adjustmentsSinceReport = 4 * DECIMALS;
+        uint256 oldTotalAssets = 100 * DECIMALS;
+        uint256 newTotalAssets = 106 * DECIMALS;
+
+        _performDeposit(alice, depositAmount);
+
+        IOllaCore.FlowCounters memory flows = IOllaCore.FlowCounters({
+            cumulativeDeposits: netDeposits,
+            cumulativeWithdrawals: rawNetWithdrawals,
+            cumulativeSlashingAdjustments: adjustmentsSinceReport,
+            latestReportCumulativeDeposits: 0,
+            latestReportCumulativeWithdrawals: 0,
+            latestReportCumulativeSlashingAdjustments: 0
+        });
+
+        (int256 netFlows,,) = core.exposedComputeNetFlows(flows);
+        (uint256 grossRewards,) = core.exposedComputeGrossRewards(oldTotalAssets, newTotalAssets, netFlows);
+        (uint256 feeAssets, uint256 treasuryShares, uint256 providerShares) =
+            core.exposedCalculateProtocolFees(grossRewards);
+
+        assertEq(feeAssets, 0, "no fees when no real rewards accrued");
+        assertEq(treasuryShares, 0, "no treasury shares from phantom rewards");
+        assertEq(providerShares, 0, "no provider shares from phantom rewards");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -425,8 +490,6 @@ contract OllaCoreAccountingTest is Test {
         core.setProtocolFeeBP(1_000);
 
         // Move all assets to staking so buffer is empty, then slash everything
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         vm.prank(operator);
         core.rebalance();
@@ -474,74 +537,6 @@ contract OllaCoreAccountingTest is Test {
         assertGt(secondTimestamp, firstTimestamp, "report timestamp should increase");
     }
 
-    function test_UpdateAccountingIncludesRewardsAndSlashing() external {
-        uint256 depositAmount = 20 * DECIMALS;
-        uint256 harvestedRewards = 5 * DECIMALS;
-        uint256 claimableRewards = 7 * DECIMALS;
-        uint256 slashing = 2 * DECIMALS;
-        uint256 stakedPrincipal = 11 * DECIMALS;
-
-        _performDeposit(alice, depositAmount);
-        stakingManager.setTotalStaked(stakedPrincipal);
-        stakingManager.setHarvestedRewards(harvestedRewards);
-        vm.prank(operator);
-        core.rebalance();
-        stakingManager.setClaimableRewards(claimableRewards);
-        stakingManager.setSlashingDelta(slashing);
-
-        // After setSlashingDelta, mock mirrors real StakingManager: totalStaked is reduced
-        // by slashing (11 - 2 = 9). Core reads totalStaked() for stakedPrincipal, so
-        // totalAssets = buffered + netStaked(9) + rvBalance + claimable. slashingDelta is
-        // NOT subtracted from totalAssets — it's informational only.
-        uint256 netStaked = stakingManager.totalStaked();
-        assertEq(netStaked, stakedPrincipal - slashing, "mock totalStaked should be net-of-slashing");
-
-        IOllaCore.AccountingState memory accountingAfterRebalance = core.accountingState();
-        IOllaCore.LatestReport memory reportBefore = core.latestReport();
-        IOllaCore.FlowCounters memory flowsBefore = core.flowCounters();
-        uint256 rvBalance = rewardsAccumulator.balance();
-        uint256 currentRewards = accountingAfterRebalance.cumulativeRewards + claimableRewards;
-        uint256 expectedTotalAssets = vault.bufferedAssets() + netStaked + rvBalance + claimableRewards;
-        uint256 expectedRate =
-            (expectedTotalAssets + 1e3).mulDiv(DECIMALS, stAztec.totalSupply() + 1e3, Math.Rounding.Floor);
-        (int256 expectedNetFlows,,) = core.exposedComputeNetFlows(flowsBefore);
-        (uint256 expectedGrossRewards,) =
-            core.exposedComputeGrossRewards(reportBefore.totalAssets, expectedTotalAssets, expectedNetFlows);
-
-        // Compute expected protocol fees and post-fee exchange rate
-        uint256 expectedFeeAssets = expectedGrossRewards * PROTOCOL_FEE_BP / BP_DIVISOR;
-        uint256 preFeeSupply = stAztec.totalSupply();
-        uint256 preFeeRate = (expectedTotalAssets + 1e3).mulDiv(DECIMALS, preFeeSupply + 1e3, Math.Rounding.Floor);
-        uint256 feeSharesTotal = expectedFeeAssets.mulDiv(DECIMALS, preFeeRate, Math.Rounding.Floor);
-        uint256 expectedTreasuryShares = feeSharesTotal * TREASURY_FEE_SPLIT_BP / BP_DIVISOR;
-        uint256 expectedProviderShares = feeSharesTotal - expectedTreasuryShares;
-        uint256 postFeeRate =
-            (expectedTotalAssets + 1e3).mulDiv(DECIMALS, preFeeSupply + feeSharesTotal + 1e3, Math.Rounding.Floor);
-
-        uint256 expectedTimestamp = block.timestamp;
-        vm.expectEmit(true, true, true, true, address(core));
-        emit AccountingUpdated(
-            expectedTotalAssets,
-            postFeeRate,
-            expectedGrossRewards,
-            expectedNetFlows,
-            expectedFeeAssets,
-            expectedTreasuryShares,
-            expectedProviderShares,
-            expectedTimestamp
-        );
-        vm.prank(operator);
-        core.updateAccounting();
-
-        IOllaCore.LatestReport memory reportAfter = core.latestReport();
-        IOllaCore.FlowCounters memory flowsAfter = core.flowCounters();
-        assertEq(reportAfter.totalAssets, expectedTotalAssets, "lastTotalAssets updated");
-        assertEq(reportAfter.exchangeRate, postFeeRate, "stored exchange rate updated");
-        assertEq(reportAfter.rewardsSnapshot, currentRewards, "rewards snapshot updated");
-        assertEq(flowsAfter.latestReportCumulativeDeposits, depositAmount, "latestReportCumulativeDeposits updated");
-        assertEq(flowsAfter.latestReportCumulativeWithdrawals, 0, "latestReportCumulativeWithdrawals updated");
-    }
-
     function test_UpdateAccounting_RewardDeltaUsesCumulativeAndClaimableRewards() external {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
@@ -563,18 +558,26 @@ contract OllaCoreAccountingTest is Test {
         core.rebalance();
         stakingManager.setClaimableRewards(9 * DECIMALS);
 
+        // Under pull-model accounting, `accountingState().rewardsDelta` is derived relative to the
+        // latest report's rewardsSnapshot. Snapshot the LIVE delta BEFORE updateAccounting() runs
+        // to capture what the delta computation consumed, since the report will then advance the
+        // rewardsSnapshot and collapse the live delta back to zero.
         IOllaCore.AccountingState memory accountingBefore = core.accountingState();
         IOllaCore.LatestReport memory reportBefore = core.latestReport();
         uint256 currentRewards = accountingBefore.cumulativeRewards + 9 * DECIMALS;
         uint256 expectedDelta =
             currentRewards > reportBefore.rewardsSnapshot ? currentRewards - reportBefore.rewardsSnapshot : 0;
+        assertEq(accountingBefore.rewardsDelta, expectedDelta, "live rewards delta reflects cumulative+claimable");
         vm.prank(operator);
         core.updateAccounting();
 
         IOllaCore.LatestReport memory secondReport = core.latestReport();
-        IOllaCore.AccountingState memory accounting = core.accountingState();
-        assertEq(accounting.rewardsDelta, expectedDelta, "rewards delta stored");
         assertEq(secondReport.rewardsSnapshot, 14 * DECIMALS, "rewards snapshot advanced");
+        assertEq(
+            secondReport.rewardsSnapshot - reportBefore.rewardsSnapshot,
+            expectedDelta,
+            "snapshot advancement matches computed delta"
+        );
     }
 
     function test_UpdateAccounting_RewardsDeltaClampsWhenClaimableDecreases() external {
@@ -595,44 +598,45 @@ contract OllaCoreAccountingTest is Test {
         assertEq(reportAfter.rewardsSnapshot, 5 * DECIMALS, "rewards snapshot tracks current rewards");
     }
 
-    function test_UpdateAccounting_ClaimableRewardsPersistWithoutHarvest() external {
+    /// @notice When `claimSequencerRewards` is invoked out-of-band, claimable rewards on the rollup
+    ///         are transferred into RewardsAccumulator without going through Olla's harvest flow.
+    ///         updateAccounting must include the unrecorded RewardsAccumulator balance in
+    ///         `currentRewards`, otherwise the rewards snapshot is understated by exactly the
+    ///         amount that was moved (causing the next harvest's recordBalance to look like an
+    ///         inflated reward and producing inconsistent reward reporting).
+    function test_UpdateAccounting_IncludesUnrecordedRewardsAccumulatorBalance() external {
         uint256 depositAmount = 10 * DECIMALS;
-        uint256 claimableRewards = 5 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        stakingManager.setClaimableRewards(claimableRewards);
+        uint256 rewardsAmount = 100 * DECIMALS;
+
+        // --- Baseline: rewards are still claimable on the rollup. ---
+        stakingManager.setClaimableRewards(rewardsAmount);
         vm.prank(operator);
         core.updateAccounting();
 
-        IOllaCore.AccountingState memory accountingAfterFirst = core.accountingState();
-        assertEq(accountingAfterFirst.claimableRewards, claimableRewards, "claimable rewards stored");
-        assertEq(core.totalAssets(), depositAmount + claimableRewards, "total assets include claimable rewards");
+        IOllaCore.LatestReport memory baselineReport = core.latestReport();
+        assertEq(baselineReport.rewardsSnapshot, rewardsAmount, "baseline snapshot reflects claimable");
 
-        stakingManager.setClaimableRewards(claimableRewards);
+        // --- Out-of-band claim: rollup-side rewards move into the accumulator,
+        //     bypassing Olla's harvest flow (no recordBalance, no cumulativeRewards update). ---
+        stakingManager.setClaimableRewards(0);
+        deal(address(asset), address(rewardsAccumulator), rewardsAmount);
+
+        // Sanity: the balance is visible to the accumulator but unrecorded by core.
+        assertEq(rewardsAccumulator.balance(), rewardsAmount, "accumulator holds the claimed amount");
+        assertEq(core.accountingState().cumulativeRewards, 0, "cumulativeRewards still zero pre-harvest");
+
+        // --- updateAccounting must keep the rewards snapshot whole (cumulative + claimable + accumulator). ---
         vm.prank(operator);
         core.updateAccounting();
 
-        IOllaCore.AccountingState memory accountingAfterSecond = core.accountingState();
-        IOllaCore.LatestReport memory reportAfterSecond = core.latestReport();
-        assertEq(accountingAfterSecond.claimableRewards, claimableRewards, "claimable rewards persist");
-        assertEq(accountingAfterSecond.rewardsDelta, 0, "rewards delta resets to zero");
-        assertEq(reportAfterSecond.rewardsSnapshot, claimableRewards, "rewards snapshot unchanged");
-        assertEq(core.totalAssets(), depositAmount + claimableRewards, "total assets remain stable");
-    }
-
-    function test_RevertWhen_UpdateAccountingSlashingDeltaDecreases() external {
-        _performDeposit(alice, 5 * DECIMALS);
-
-        stakingManager.setSlashingDelta(2 * DECIMALS);
-        vm.prank(operator);
-        core.updateAccounting();
-
-        stakingManager.setSlashingDelta(1 * DECIMALS);
-        vm.expectRevert(
-            abi.encodeWithSelector(IOllaCore.OllaCore__InvalidSlashingDelta.selector, 2 * DECIMALS, 1 * DECIMALS)
+        IOllaCore.LatestReport memory postClaimReport = core.latestReport();
+        assertEq(
+            postClaimReport.rewardsSnapshot,
+            rewardsAmount,
+            "rewards snapshot must include unrecorded accumulator balance"
         );
-        vm.prank(operator);
-        core.updateAccounting();
     }
 
     function test_UpdateAccounting_InvokesSafetyChecks() external {
@@ -719,30 +723,32 @@ contract OllaCoreAccountingTest is Test {
         uint96 staked,
         uint96 rewardsAccumulatorBalance,
         uint96 claimableRewards,
-        uint96 rewardsDelta,
         uint96 slashingDeltaSeed
     ) external {
         buffered = uint96(bound(buffered, 1, type(uint96).max));
         staked = uint96(bound(staked, 1, type(uint96).max));
         rewardsAccumulatorBalance = uint96(bound(rewardsAccumulatorBalance, 1, type(uint96).max));
         claimableRewards = uint96(bound(claimableRewards, 0, type(uint96).max));
-        rewardsDelta = uint96(bound(rewardsDelta, 0, type(uint96).max));
 
         uint256 positiveTotal =
             uint256(buffered) + uint256(staked) + uint256(rewardsAccumulatorBalance) + uint256(claimableRewards);
         uint256 slashingDelta = bound(uint256(slashingDeltaSeed), 0, positiveTotal);
 
-        // Mint assets to vault to simulate buffered assets
+        // Drive each composition term through its live source so the pull-model totalAssets() reads
+        // the intended value at call time: vault owns buffered, stakingManager owns staked +
+        // claimable + slashingDelta, and the accumulator contract owns rewardsAccumulatorBalance.
         asset.mint(address(vault), buffered);
-        // Use reconcileBufferedAssets to sync the vault's buffer
         vm.prank(governance);
         vault.reconcileBufferedAssets();
-        core.exposedApplyAccountingUpdates(
-            staked, rewardsAccumulatorBalance, claimableRewards, rewardsDelta, slashingDelta
-        );
+        stakingManager.setTotalStaked(staked);
+        stakingManager.setClaimableRewards(claimableRewards);
+        // setSlashingDelta subtracts the increment from totalStakedAmount; restore staked after.
+        stakingManager.setSlashingDelta(slashingDelta);
+        stakingManager.setTotalStaked(staked);
+        deal(address(asset), address(rewardsAccumulator), rewardsAccumulatorBalance);
 
-        // exposedApplyAccountingUpdates sets stakedPrincipal directly (not via mock),
-        // so stakedPrincipal is already the value we passed. slashingDelta is informational only.
+        // totalAssets() is net-of-slashing via stakingManager.totalStaked(); slashingDelta is
+        // informational in the accountingState() view only.
         assertEq(
             core.totalAssets(), positiveTotal, "totalAssets equals positive total (slashingDelta is informational)"
         );
@@ -763,16 +769,17 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: 0
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         uint256 expectedNetDeposits =
             cumulativeDeposits > latestReportCumulativeDeposits
             ? cumulativeDeposits - latestReportCumulativeDeposits
             : 0;
-        uint256 expectedNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals
+        uint256 expectedRawNetWithdrawals = cumulativeWithdrawals > latestReportCumulativeWithdrawals
             ? cumulativeWithdrawals - latestReportCumulativeWithdrawals
             : 0;
-        int256 expectedNetFlows = int256(expectedNetDeposits) - int256(expectedNetWithdrawals);
+        int256 expectedNetWithdrawals = int256(expectedRawNetWithdrawals);
+        int256 expectedNetFlows = int256(expectedNetDeposits) - expectedNetWithdrawals;
 
         assertEq(netDeposits, expectedNetDeposits, "net deposits fuzz");
         assertEq(netWithdrawals, expectedNetWithdrawals, "net withdrawals fuzz");
@@ -797,7 +804,7 @@ contract OllaCoreAccountingTest is Test {
             latestReportCumulativeSlashingAdjustments: latestReportCumulativeSlashingAdj
         });
 
-        (int256 netFlows, uint256 netDeposits, uint256 netWithdrawals) = core.exposedComputeNetFlows(flows);
+        (int256 netFlows, uint256 netDeposits, int256 netWithdrawals) = core.exposedComputeNetFlows(flows);
 
         uint256 expectedNetDeposits =
             cumulativeDeposits > latestReportCumulativeDeposits
@@ -809,8 +816,9 @@ contract OllaCoreAccountingTest is Test {
         uint256 adjustmentDelta = cumulativeSlashingAdj > latestReportCumulativeSlashingAdj
             ? cumulativeSlashingAdj - latestReportCumulativeSlashingAdj
             : 0;
-        uint256 expectedNetWithdrawals = rawNetWithdrawals > adjustmentDelta ? rawNetWithdrawals - adjustmentDelta : 0;
-        int256 expectedNetFlows = int256(expectedNetDeposits) - int256(expectedNetWithdrawals);
+        // Signed: excess slashing adjustment becomes negative netWithdrawals (no clamp).
+        int256 expectedNetWithdrawals = int256(rawNetWithdrawals) - int256(adjustmentDelta);
+        int256 expectedNetFlows = int256(expectedNetDeposits) - expectedNetWithdrawals;
 
         assertEq(netDeposits, expectedNetDeposits, "net deposits fuzz with adj");
         assertEq(netWithdrawals, expectedNetWithdrawals, "net withdrawals fuzz with adj");
@@ -930,8 +938,6 @@ contract OllaCoreAccountingTest is Test {
         _performDeposit(alice, depositAmount);
 
         // Move all to staked so buffer is empty
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         vm.prank(operator);
         core.rebalance();
@@ -951,7 +957,7 @@ contract OllaCoreAccountingTest is Test {
         uint256 depositAmount = 10 * DECIMALS;
         _performDeposit(alice, depositAmount);
 
-        // All assets in buffer, nothing staked — slashing doesn't affect buffered assets
+        // All assets in buffer, nothing staked -- slashing doesn't affect buffered assets
         stakingManager.setTotalStaked(0);
         stakingManager.setSlashingDelta(5 * DECIMALS);
 
@@ -983,8 +989,6 @@ contract OllaCoreAccountingTest is Test {
         _performDeposit(alice, depositAmount);
 
         // Move all to staked so buffer is empty
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
         stakingManager.setStakeReturnAmount(depositAmount);
         vm.prank(operator);
         core.rebalance();
@@ -1093,7 +1097,7 @@ contract OllaCoreAccountingTest is Test {
         stakingManager.setSlashingDelta(30 * DECIMALS);
         assertEq(stakingManager.totalStaked(), 70 * DECIMALS);
 
-        // setTotalStaked directly overrides — caller is responsible for consistency
+        // setTotalStaked directly overrides -- caller is responsible for consistency
         stakingManager.setTotalStaked(200 * DECIMALS);
         assertEq(stakingManager.totalStaked(), 200 * DECIMALS, "setTotalStaked should override");
     }

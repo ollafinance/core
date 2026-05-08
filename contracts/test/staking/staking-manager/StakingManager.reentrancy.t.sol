@@ -5,7 +5,6 @@ import { Test } from "@forge-std/Test.sol";
 
 import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { ReentrancyGuard } from "@oz/utils/ReentrancyGuard.sol";
 
 import { StakingManager } from "src/staking/StakingManager.sol";
 import { StakingProviderRegistry } from "src/staking/StakingProviderRegistry.sol";
@@ -37,7 +36,7 @@ contract StakingManagerReentrancyTest is Test {
 
         aztec = new MockAztec(address(this));
         rollup = new MaliciousAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
-        rollupRegistry = new MockAztecRollupRegistry(address(rollup));
+        rollupRegistry = new MockAztecRollupRegistry(address(rollup), IERC20(address(aztec)));
         rewardsAccumulator = new MaliciousRewardsAccumulator(IERC20(address(aztec)), core);
 
         // Deploy StakingManager behind proxy
@@ -129,12 +128,12 @@ contract StakingManagerReentrancyTest is Test {
 
         vm.prank(core);
         vm.expectRevert(
-            abi.encodeWithSelector(IStakingManager.StakingManager__UnauthorizedCore.selector, address(rollup))
+            abi.encodeWithSelector(IStakingManager.StakingManager__UnstakeFailed.selector, address(uint160(1)))
         );
         stakingManager.unstake(ACTIVATION_THRESHOLD);
     }
 
-    function test_RevertWhen_RefreshAttesterState_ReenteredFromRollupFinalizeWithdraw() external {
+    function test_RefreshAttesterState_ReenteredFromRollupFinalizeWithdrawLeavesPending() external {
         _stakeOne();
 
         vm.prank(core);
@@ -147,7 +146,10 @@ contract StakingManagerReentrancyTest is Test {
         rollup.setReentry(address(stakingManager), abi.encodeCall(stakingManager.refreshAttesterState, (attesters)));
         rollup.setReenterOnFinalizeWithdraw(true);
 
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         stakingManager.refreshAttesterState(attesters);
+
+        assertTrue(stakingManager.isUnstakePending(attesters[0]), "attester should remain pending");
+        assertEq(stakingManager.getPendingUnstakeCount(), 1, "pending count should remain");
+        assertFalse(stakingManager.hasFinalizedUnstakes(), "failed finalize should not create claimable amount");
     }
 }

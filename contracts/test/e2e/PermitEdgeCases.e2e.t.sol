@@ -4,14 +4,13 @@ pragma solidity ^0.8.27;
 import { Test } from "@forge-std/Test.sol";
 
 import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { IERC20Errors } from "@oz/interfaces/draft-IERC6093.sol";
 import { IERC20Permit } from "@oz/token/ERC20/extensions/IERC20Permit.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
@@ -43,7 +42,6 @@ contract PermitEdgeCasesE2E is Test {
     OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
-    WithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     MockAccountingStakingManager internal stakingManager;
     MockRewardsAccumulator internal rewardsAccumulator;
@@ -115,12 +113,6 @@ contract PermitEdgeCasesE2E is Test {
         vm.prank(admin);
         safetyModule.setWithdrawalMinimum(0);
 
-        // ---- Deploy WithdrawalQueue (proxy) ----
-        WithdrawalQueue queueImpl = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), address(gov), 180_000);
-
         // ---- Configure mock staking manager ----
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
@@ -140,12 +132,12 @@ contract PermitEdgeCasesE2E is Test {
         );
 
         // ---- Initialize OllaVault ----
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
+        vault.initialize(asset, stAztec, address(core), address(gov));
 
         // ---- Wire contracts ----
         vm.prank(address(gov));
         core.setVault(address(vault));
-        vm.prank(admin);
+        vm.prank(address(gov));
         gov.setCore(address(core));
 
         // ---- Unpause ----
@@ -177,14 +169,6 @@ contract PermitEdgeCasesE2E is Test {
 
     function _warpPastCooldown() internal {
         vm.warp(block.timestamp + 1 hours + 1);
-    }
-
-    function _baselineRebalance() internal {
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(1_000_000 * DECIMALS);
-        stakingManager.setHarvestedRewards(0);
-        stakingManager.setUnstakedAmount(0);
-        _fullRebalance();
     }
 
     /// @dev Builds an EIP-712 permit digest for a given token.
@@ -274,41 +258,9 @@ contract PermitEdgeCasesE2E is Test {
         assertEq(stAztec.balanceOf(alice), 50 * DECIMALS, "alice should have 50e18 shares remaining");
         assertEq(stAztec.allowance(alice, address(vault)), 0, "allowance consumed by transferFrom");
 
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertEq(req.shares, 50 * DECIMALS, "request for correct share amount");
         assertFalse(req.finalized, "request not yet finalized");
-    }
-
-    /*//////////////////////////////////////////////////////////////
-        6C: INSTANT REDEEM WITH PERMIT — FRONTRUN PROTECTION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Attacker frontruns the stAztec permit but instantRedeem still succeeds.
-    function test_InstantRedeemWithPermit_FrontrunProtection() external {
-        _performDeposit(alice, 100 * DECIMALS);
-
-        uint256 deadline = block.timestamp + 1 hours;
-        (uint8 v, bytes32 r, bytes32 s) =
-            _signPermit(address(stAztec), aliceKey, alice, address(vault), 30 * DECIMALS, deadline);
-
-        // Attacker frontruns the stAztec permit
-        address attacker = makeAddr("attacker");
-        vm.prank(attacker);
-        IERC20Permit(address(stAztec)).permit(alice, address(vault), 30 * DECIMALS, deadline, v, r, s);
-
-        assertEq(stAztec.allowance(alice, address(vault)), 30 * DECIMALS, "stAztec allowance set by attacker");
-
-        // Alice's instantRedeemWithPermit succeeds via catch block fallthrough
-        vm.prank(alice);
-        uint256 assetsOut = vault.instantRedeemWithPermit(30 * DECIMALS, alice, 0, deadline, v, r, s);
-
-        // 5% instant redemption fee: 30e18 shares → 30e18 gross - 1.5e18 fee = 28.5e18 net
-        uint256 grossAssets = 30 * DECIMALS;
-        uint256 fee = grossAssets * 500 / BP_DIVISOR;
-        uint256 expectedNet = grossAssets - fee;
-        assertEq(assetsOut, expectedNet, "alice receives correct net assets after fee");
-        assertEq(stAztec.balanceOf(alice), 70 * DECIMALS, "alice should have 70e18 shares remaining");
-        assertEq(stAztec.allowance(alice, address(vault)), 0, "allowance consumed by transferFrom");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -395,7 +347,7 @@ contract PermitEdgeCasesE2E is Test {
         assertGt(requestId, 0, "redeem request created by operator");
         assertEq(stAztec.balanceOf(alice), 50 * DECIMALS, "alice shares burned by operator request");
 
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertEq(req.shares, 50 * DECIMALS, "request for 50e18 shares");
         assertFalse(req.finalized, "request not finalized");
     }
@@ -404,15 +356,16 @@ contract PermitEdgeCasesE2E is Test {
         6G: OPERATOR REDEMPTION — UNAUTHORIZED
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Non-approved operator cannot requestRedeem on behalf of another user.
+    /// @notice Caller without operator approval or share allowance cannot requestRedeem on behalf of another user.
     function test_OperatorRedemption_Unauthorized() external {
         _performDeposit(alice, 100 * DECIMALS);
 
-        // Bob is NOT approved as operator
+        // Bob is NOT approved as operator and has no share allowance
         assertFalse(vault.isOperator(alice, bob), "bob should not be alice's operator");
+        assertEq(stAztec.allowance(alice, bob), 0, "no share allowance");
 
         vm.prank(bob);
-        vm.expectRevert(IOllaVault.OllaVault__Unauthorized.selector);
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, bob, 0, 50 * DECIMALS));
         vault.requestRedeem(50 * DECIMALS, alice, alice);
 
         assertEq(stAztec.balanceOf(alice), 100 * DECIMALS, "alice shares unchanged");
@@ -513,7 +466,7 @@ contract PermitEdgeCasesE2E is Test {
         6K: OPERATOR — REVOKE AND VERIFY
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Operator approval can be revoked, blocking subsequent requests.
+    /// @notice Operator approval can be revoked, blocking subsequent requests when no share allowance exists.
     function test_OperatorRevoke_BlocksSubsequentRequests() external {
         _performDeposit(alice, 100 * DECIMALS);
 
@@ -523,10 +476,11 @@ contract PermitEdgeCasesE2E is Test {
         vm.prank(alice);
         vault.setOperator(bob, false);
         assertFalse(vault.isOperator(alice, bob), "bob should no longer be operator");
+        assertEq(stAztec.allowance(alice, bob), 0, "no share allowance");
 
         // Bob's request should now fail
         vm.prank(bob);
-        vm.expectRevert(IOllaVault.OllaVault__Unauthorized.selector);
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, bob, 0, 50 * DECIMALS));
         vault.requestRedeem(50 * DECIMALS, alice, alice);
 
         assertEq(stAztec.balanceOf(alice), 100 * DECIMALS, "alice shares unchanged");

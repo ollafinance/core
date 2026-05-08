@@ -81,11 +81,6 @@ interface IOllaCore {
     /// @param newSplitBP The new split in basis points.
     event TreasuryFeeSplitUpdated(uint256 oldSplitBP, uint256 newSplitBP);
 
-    /// @notice Emitted when the target buffer is updated.
-    /// @param oldBuffer The old target buffer.
-    /// @param newBuffer The new target buffer.
-    event TargetBufferedAssetsUpdated(uint256 oldBuffer, uint256 newBuffer);
-
     /// @notice Emitted when the rebalance gas threshold is updated.
     /// @param oldThreshold The old gas threshold.
     /// @param newThreshold The new gas threshold.
@@ -187,9 +182,6 @@ interface IOllaCore {
     /// @notice Thrown when deposits are blocked by the safety module pause.
     error OllaCore__SafetyModulePaused();
 
-    /// @notice Thrown when a slashing delta is invalid.
-    error OllaCore__InvalidSlashingDelta(uint256 previous, uint256 current);
-
     /// @notice Thrown when an amount is zero or otherwise invalid.
     error OllaCore__InvalidAmount();
 
@@ -204,9 +196,6 @@ interface IOllaCore {
 
     /// @notice Thrown when stake operation fails.
     error OllaCore__StakeFailed(uint256 amount);
-
-    /// @notice Thrown when the target buffer is invalid.
-    error OllaCore__InvalidTargetBufferedAssets(uint256 newBuffer);
 
     /// @notice Thrown when an action requires rebalance completion.
     error OllaCore__RebalanceInProgress();
@@ -307,10 +296,6 @@ interface IOllaCore {
     /// @param newSafetyModule The new safety module address.
     function setSafetyModule(address newSafetyModule) external;
 
-    /// @notice Sets the target buffer used to reserve liquid assets.
-    /// @param newBuffer The new target buffer.
-    function setTargetBufferedAssets(uint256 newBuffer) external;
-
     /// @notice Sets the gas threshold used for rebalance step gating.
     /// @param newThreshold The new gas threshold.
     function setRebalanceGasThreshold(uint256 newThreshold) external;
@@ -347,15 +332,15 @@ interface IOllaCore {
     /// @return The safety module address.
     function safetyModule() external view returns (address);
 
-    /// @notice Returns the target liquid assets buffer.
-    /// @return The target liquid assets buffer.
-    function targetBufferedAssets() external view returns (uint256);
-
     /// @notice Returns the rebalance gas threshold.
     /// @return The rebalance gas threshold.
     function rebalanceGasThreshold() external view returns (uint32);
 
     /// @notice Returns the latest accounting report snapshot.
+    /// @dev `LatestReport.totalAssets` is an accounting snapshot used for rewards and flow deltas.
+    ///      It subtracts raw locked pending withdrawal liabilities. The live `totalAssets()` view
+    ///      can differ while withdrawals are pending because it subtracts slash-adjusted pending
+    ///      liabilities for share pricing.
     /// @return The latest accounting report snapshot.
     function latestReport() external view returns (LatestReport memory);
 
@@ -371,13 +356,25 @@ interface IOllaCore {
     /// @return The accounting buckets snapshot.
     function accountingState() external view returns (AccountingState memory);
 
-    /// @notice Returns the current total assets held by the protocol.
-    /// @return The current total assets held by the protocol.
+    /// @notice Returns the current total assets attributable to live shares for pricing.
+    /// @dev Pending withdrawals are deducted at a slash-adjusted pricing value capped by their raw
+    ///      locked liability. This may differ from `latestReport().totalAssets`, which preserves raw
+    ///      pending liabilities for reward/accounting deltas.
+    /// @return The current live-pricing total assets.
     function totalAssets() external view returns (uint256);
 
     /// @notice Returns the current exchange rate in 18-decimal fixed-point units.
     /// @return The current exchange rate in 18-decimal fixed-point units.
     function exchangeRate() external view returns (uint256);
+
+    /// @notice Returns the withdrawal-queue settlement rate in 18-decimal fixed-point units.
+    /// @dev Uses gross total assets (before subtracting pending withdrawals) and gross total supply
+    ///      (including shares burned for pending requests). Live redemption requests use
+    ///      `exchangeRate()`/`convertToAssets()` to lock their net request-time price; finalization
+    ///      recomputes this gross rate after each finalized request so the slashing gate compares
+    ///      against the current backing of the remaining pending shares.
+    /// @return The withdrawal-queue settlement rate in 18-decimal fixed-point units.
+    function withdrawalRate() external view returns (uint256);
 
     /// @notice Computes the shares for an asset amount.
     /// @param assets The amount of assets to convert.

@@ -334,8 +334,8 @@ contract StakingManagerInvariantTest is Test {
 
         // Setup mock contracts
         stakingAsset = new MockAztec(address(this));
-        rollupRegistry = new MockAztecRollupRegistry(address(0));
         rollup = new MockAztecRollup(stakingAsset, 100e18); // 100 AZTEC activation threshold
+        rollupRegistry = new MockAztecRollupRegistry(address(rollup), stakingAsset);
         rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(stakingAsset)), core);
 
         // Set canonical rollup

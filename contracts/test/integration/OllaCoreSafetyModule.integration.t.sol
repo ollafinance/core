@@ -15,29 +15,10 @@ import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-
-contract OllaCoreSafetyModuleHarness is OllaCore {
-    /*//////////////////////////////////////////////////////////////
-                             CORE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    function exposedApplyAccountingUpdates(
-        uint256 newStakedPrincipal,
-        uint256 newRewardsAccumulatorBalance,
-        uint256 newClaimableRewards,
-        uint256 newRewardsDelta,
-        uint256 newSlashingDelta
-    ) external {
-        _applyAccountingUpdates(
-            newStakedPrincipal, newRewardsAccumulatorBalance, newClaimableRewards, newRewardsDelta, newSlashingDelta
-        );
-    }
-}
 
 contract OllaCoreSafetyModuleTest is Test {
     /*//////////////////////////////////////////////////////////////
@@ -57,11 +38,10 @@ contract OllaCoreSafetyModuleTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     MockAztec internal asset;
-    OllaCoreSafetyModuleHarness internal core;
+    OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    MockWithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     address internal governance;
     address internal admin;
@@ -78,16 +58,15 @@ contract OllaCoreSafetyModuleTest is Test {
     function setUp() external {
         asset = new MockAztec(address(this));
 
-        OllaCoreSafetyModuleHarness coreImplementation = new OllaCoreSafetyModuleHarness();
+        OllaCore coreImplementation = new OllaCore();
         ERC1967Proxy coreProxy = new ERC1967Proxy(address(coreImplementation), "");
-        core = OllaCoreSafetyModuleHarness(address(coreProxy));
+        core = OllaCore(address(coreProxy));
 
         OllaVault vaultImplementation = new OllaVault();
         ERC1967Proxy vaultProxy = new ERC1967Proxy(address(vaultImplementation), "");
         vault = OllaVault(address(vaultProxy));
 
         stakingManager = new MockAccountingStakingManager();
-        withdrawalQueue = new MockWithdrawalQueue();
         governance = makeAddr("governance");
         stAztec = new StAztec(address(vault));
         admin = makeAddr("admin");
@@ -114,7 +93,7 @@ contract OllaCoreSafetyModuleTest is Test {
             address(safetyModule)
         );
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -181,8 +160,9 @@ contract OllaCoreSafetyModuleTest is Test {
         vm.prank(admin);
         safetyModule.setDepositCap(cap);
 
-        vm.prank(operator);
-        core.exposedApplyAccountingUpdates(0, 60 * DECIMALS, 0, 0, 0);
+        // Seed totalAssets by funding the accumulator directly; totalAssets() now reads the
+        // accumulator's live balance via rewardsAccumulator.balance().
+        deal(address(asset), address(rewardsAccumulator), 60 * DECIMALS);
 
         uint256 depositAmount = 100 * DECIMALS;
         asset.mint(alice, depositAmount);

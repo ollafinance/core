@@ -9,6 +9,9 @@ import { IRollup } from "@az/core/interfaces/IRollup.sol";
 import {
     IAztecRollupRegistry as OllaOverrideIAztecRollupRegistry
 } from "src/staking/interfaces/IAztecRollupRegistry.sol";
+import {
+    IAztecRewardDistributor as OllaOverrideIAztecRewardDistributor
+} from "src/staking/interfaces/IAztecRewardDistributor.sol";
 import { IRegistry } from "@az/governance/interfaces/IRegistry.sol";
 import { G1Point as OllaOverrideG1Point, G2Point as OllaOverrideG2Point } from "src/staking/libraries/BN254Lib.sol";
 import { G1Point, G2Point } from "@az/shared/libraries/BN254Lib.sol";
@@ -121,5 +124,23 @@ contract AztecInterfaceCompatibilityTest is Test {
         bytes4 actualSelector = OllaOverrideIAztecRollupRegistry.getGovernance.selector;
 
         assertEq(expectedSelector, actualSelector, "GetGovernance selector mismatch");
+    }
+
+    function test_Conformance_GetRewardDistributorSignature() public pure {
+        bytes4 expectedSelector = IRegistry.getRewardDistributor.selector;
+        bytes4 actualSelector = OllaOverrideIAztecRollupRegistry.getRewardDistributor.selector;
+
+        assertEq(expectedSelector, actualSelector, "GetRewardDistributor selector mismatch");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              IAztecRewardDistributor
+    //////////////////////////////////////////////////////////////*/
+
+    function test_Conformance_RewardDistributorAssetSignature() public pure {
+        bytes4 expectedSelector = bytes4(keccak256("ASSET()"));
+        bytes4 actualSelector = OllaOverrideIAztecRewardDistributor.ASSET.selector;
+
+        assertEq(expectedSelector, actualSelector, "RewardDistributor ASSET selector mismatch");
     }
 }

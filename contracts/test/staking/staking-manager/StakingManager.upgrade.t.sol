@@ -57,7 +57,7 @@ contract StakingManagerUpgradeTest is Test {
 
         aztec = new MockAztec(address(this));
         rollup = new MockAztecRollup(IERC20(address(aztec)), ACTIVATION_THRESHOLD);
-        rollupRegistry = new MockAztecRollupRegistry(address(rollup));
+        rollupRegistry = new MockAztecRollupRegistry(address(rollup), IERC20(address(aztec)));
         rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(aztec)), core);
 
         StakingManager implementation = new StakingManager();
@@ -189,5 +189,18 @@ contract StakingManagerUpgradeTest is Test {
 
         v2.setV2Value(123);
         assertEq(v2.v2Value(), 123, "v2 storage works");
+    }
+
+    function test_GovernanceCanUpgrade_AfterCoreOwnerDrift() external {
+        StakingManagerUpgradeMock newImplementation = new StakingManagerUpgradeMock();
+
+        mockCore.setOwner(makeAddr("newCoreOwner"));
+
+        vm.prank(defaultAdmin);
+        stakingManager.upgradeToAndCall(address(newImplementation), "");
+
+        assertEq(
+            StakingManagerUpgradeMock(address(stakingManager)).version(), 2, "upgrade should ignore core owner drift"
+        );
     }
 }

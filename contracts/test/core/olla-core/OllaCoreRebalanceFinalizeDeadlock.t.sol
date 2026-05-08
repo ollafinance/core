@@ -7,9 +7,7 @@ import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { OllaCore } from "src/core/OllaCore.sol";
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
@@ -24,7 +22,7 @@ import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 ///         `_finalizeWithdrawals()` returns `finalizedAmount = 0` but `pending > 0 && buffer > 0`
 ///         caused the state machine to early-return instead of advancing to InitiateUnstake.
 ///
-///         Change 1: FinalizeWithdrawals now also advances when `finalizedAmount == 0`.
+///         Change 1: FinalizeWithdrawals now advances when the queue cursor makes no progress.
 ///         Change 2: `_rebalanceCompletionSatisfied` allows completion when `pending > 0 && buffer > 0`
 ///         provided there are no pending unstakes (the protocol has done all it can).
 contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
@@ -43,7 +41,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     OllaVault internal vault;
     StAztec internal stAztec;
     MockAccountingStakingManager internal stakingManager;
-    WithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal governance;
@@ -72,13 +69,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
 
-        WithdrawalQueue queueImplementation = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(
-            address(queueImplementation),
-            abi.encodeCall(WithdrawalQueue.initialize, (address(vault), governance, 180_000))
-        );
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
@@ -88,7 +78,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -123,7 +113,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     {
         vm.prank(owner);
         requestId = vault.requestRedeem(shares, recipient, owner);
-        IWithdrawalQueue.WithdrawalRequest memory request = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         assetsExpected = request.assetsExpected;
         return (requestId, assetsExpected);
     }
@@ -170,9 +160,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         When `_finalizeWithdrawals()` returns 0 (request larger than buffer),
     ///         the state machine must advance past FinalizeWithdrawals to InitiateUnstake.
     function test_Rebalance_FinalizeAdvancesWhenRequestExceedsBuffer() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 10 * DECIMALS;
         uint256 shares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -225,9 +212,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice End-to-end test: deposit -> stake -> request large withdrawal -> rebalance through
     ///         all steps until claim succeeds.
     function test_Rebalance_FullCycleLargeWithdrawal_UnstakeAndFinalize() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 100 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -287,7 +271,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         assertEq(uint256(p2.step), uint256(IOllaCore.RebalanceStep.Done), "second cycle should reach Done");
 
         // Withdrawal should now be finalized -- verify user can claim
-        assertEq(withdrawalQueue.totalPendingAssets(), 0, "all pending withdrawals should be finalized");
+        assertEq(vault.pendingWithdrawalAssets(), 0, "all pending withdrawals should be finalized");
 
         vm.prank(alice);
         uint256 claimed = vault.claimRequestById(requestId);
@@ -301,9 +285,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice Tests Change 2: completion is satisfied when `pending > 0 && buffer > 0`
     ///         but `pendingUnstakes == 0` (protocol has done all it can).
     function test_Rebalance_CompletesWhenNoPendingUnstakes() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 50 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -345,9 +326,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice When unstakes are in-flight, rebalance still reaches Done and
     ///         user operations (deposit) are not blocked.
     function test_Rebalance_CompletesAndAllowsDepositsWithPendingUnstakes() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 50 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -393,9 +371,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice Edge case: buffer can finalize some requests but not the next one.
     ///         Verifies partial progress followed by advancement when stuck.
     function test_Rebalance_MultipleSmallRequests_PartialFinalizeThenAdvance() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Deposit enough to cover all redemption shares with margin
         uint256 depositAmount = 100 * DECIMALS;
         _performDeposit(alice, depositAmount);
@@ -421,7 +396,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         assertLe(ae1 + ae2, 7 * DECIMALS, "first two requests should fit in buffer");
         assertGt(ae3, 7 * DECIMALS - ae1 - ae2, "third request should NOT fit in remaining buffer");
 
-        uint256 pendingBefore = withdrawalQueue.totalPendingAssets();
+        uint256 pendingBefore = vault.pendingWithdrawalAssets();
         assertEq(pendingBefore, ae1 + ae2 + ae3, "total pending matches sum of requests");
 
         // First rebalance: should finalize first two requests (ae1 + ae2), but not the third
@@ -434,7 +409,7 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
 
         assertEq(finalizedAmount, ae1 + ae2, "should finalize first two requests");
 
-        uint256 pendingAfterFirst = withdrawalQueue.totalPendingAssets();
+        uint256 pendingAfterFirst = vault.pendingWithdrawalAssets();
         assertEq(pendingAfterFirst, ae3, "only third request remaining");
 
         // Second rebalance: buffer < ae3 -> finalizedAmount = 0 -> advances past FinalizeWithdrawals
@@ -457,9 +432,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     ///         When FinalizeWithdrawals returns finalizedAmount = 0 while pending > 0 and buffer > 0,
     ///         the state machine must advance to InitiateUnstake.
     function test_Rebalance_ZeroFinalizedAdvancesToInitiateUnstake() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 20 * DECIMALS;
         uint256 allShares = _performDeposit(alice, depositAmount);
         _stakeAll(depositAmount);
@@ -496,6 +468,50 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
         );
     }
 
+    /// @notice Zero-payout slashed requests still move the queue cursor, so they should not
+    ///         be treated as a no-progress finalization pass merely because finalizedAmount is 0.
+    function test_Rebalance_ZeroPayoutSlashKeepsFinalizingWhenQueueAdvances() external {
+        uint256 depositAmount = 100 * DECIMALS;
+        uint256 allShares = _performDeposit(alice, depositAmount);
+        _stakeAll(depositAmount);
+
+        // Keep a nonzero buffer, but small enough that the first request's post-slash payout
+        // floors to zero.
+        _injectBuffer(1);
+
+        uint256 zeroPayoutShares = allShares / 10_000;
+        uint256 largeShares = allShares - zeroPayoutShares;
+        (, uint256 zeroPayoutAssetsExpected) = _requestRedeem(alice, zeroPayoutShares, alice);
+        (, uint256 largeAssetsExpected) = _requestRedeem(alice, largeShares, alice);
+        assertGt(zeroPayoutAssetsExpected, 0, "first request starts with nonzero expected assets");
+        assertGt(largeAssetsExpected, vault.bufferedAssets(), "second request should exceed remaining buffer");
+
+        // Slash all assets except less than one scaled-rate unit per pending share. The first
+        // request finalizes with zero payout after floor rounding and advances
+        // nextUnfinalizedWithdrawalRequestId, while the second request remains underfunded.
+        stakingManager.setTotalStaked(1);
+        stakingManager.setHarvestedRewards(0);
+        stakingManager.setUnstakedAmount(0);
+        stakingManager.setStakeReturnAmount(0);
+        stakingManager.setPendingUnstakes(0);
+
+        uint256 nextBefore = vault.nextUnfinalizedWithdrawalRequestId();
+
+        vm.prank(operator);
+        (, uint256 finalizedAmount,,) = core.rebalance();
+
+        uint256 nextAfter = vault.nextUnfinalizedWithdrawalRequestId();
+        IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
+
+        assertEq(finalizedAmount, 0, "zero-payout slash consumes no buffer");
+        assertGt(nextAfter, nextBefore, "queue cursor should advance");
+        assertEq(
+            uint256(progress.step),
+            uint256(IOllaCore.RebalanceStep.FinalizeWithdrawals),
+            "cursor progress should remain in FinalizeWithdrawals"
+        );
+    }
+
     /*//////////////////////////////////////////////////////////////
                IDLE GUARD AFTER UNPRODUCTIVE CYCLE
     //////////////////////////////////////////////////////////////*/
@@ -503,9 +519,6 @@ contract OllaCoreRebalanceFinalizeDeadlockTest is Test {
     /// @notice Ensures the fix doesn't break the idle guard for legitimate unproductive cycles.
     ///         When a cycle completes with no productive work, subsequent rebalance calls skip.
     function test_Rebalance_IdleGuardKicksInAfterUnproductiveCycles() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         uint256 depositAmount = 5 * DECIMALS;
         _performDeposit(alice, depositAmount);
 

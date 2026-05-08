@@ -52,6 +52,9 @@ contract MockStakingManager is IStakingManager {
     /// @notice Configurable hasFinalizedUnstakes return value. Default false.
     bool private _hasFinalizedUnstakes;
 
+    /// @notice Configurable claimableUnstakedFunds return value. Default 0.
+    uint256 private _claimableUnstakedFunds;
+
     /*//////////////////////////////////////////////////////////////
                             EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -148,6 +151,12 @@ contract MockStakingManager is IStakingManager {
         _hasFinalizedUnstakes = value;
     }
 
+    /// @notice Sets the claimable unstaked funds return value.
+    /// @param amount The claimable unstaked funds amount.
+    function mockSetClaimableUnstakedFunds(uint256 amount) external {
+        _claimableUnstakedFunds = amount;
+    }
+
     // solhint-enable comprehensive-interface
 
     /*//////////////////////////////////////////////////////////////
@@ -197,6 +206,11 @@ contract MockStakingManager is IStakingManager {
     /// @inheritdoc IStakingManager
     function hasFinalizedUnstakes() external view override returns (bool) {
         return _hasFinalizedUnstakes;
+    }
+
+    /// @inheritdoc IStakingManager
+    function claimableUnstakedFunds() external view override returns (uint256) {
+        return _claimableUnstakedFunds;
     }
 
     /// @inheritdoc IStakingManager

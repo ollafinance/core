@@ -153,6 +153,6 @@ ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/PrintState.s.sol --rpc
 - [ ] On strict chains, `OllaCore.vault()` is either unset (pre-activation) or points to `OllaVault` after `GovSetVault`.
 - [ ] On non-strict chains with `TIMELOCK_DURATION==0`: `OllaCore.vault()` points to `OllaVault` proxy.
 - [ ] On non-strict chains with `TIMELOCK_DURATION>0`: `OllaCore.vault()` stays unset until `GovSetVault` executes.
-- [ ] `OllaCore.safetyModule()` and `OllaVault.withdrawalQueue()` point to deployed addresses.
+- [ ] `OllaCore.safetyModule()` points to the deployed SafetyModule.
 - [ ] If `TIMELOCK_DURATION>0`: core and vault are unpaused only after governance ops scripts complete.
 - [ ] On strict chains, deployer no longer retains governance admin roles (and, for non-mock deploys, SafetyModule guardian).

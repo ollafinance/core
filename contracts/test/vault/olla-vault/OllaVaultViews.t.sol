@@ -14,7 +14,6 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaCoreHarness } from "test/core/olla-core/OllaCoreHarness.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
@@ -39,7 +38,6 @@ contract OllaVaultViewsTest is Test {
     address internal governance;
     address internal alice;
     address internal bob;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
 
@@ -63,14 +61,13 @@ contract OllaVaultViewsTest is Test {
         stAztec = new StAztec(address(vault));
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
-        withdrawalQueue = new MockWithdrawalQueue();
 
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -106,7 +103,7 @@ contract OllaVaultViewsTest is Test {
 
     function _finalizeAll(uint256 assets) internal {
         vm.prank(address(core));
-        vault.finalizeWithdrawals(assets, type(uint256).max);
+        vault.finalizeWithdrawals(assets, type(uint256).max, type(uint256).max);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -168,6 +165,7 @@ contract OllaVaultViewsTest is Test {
     /// @notice maxDeposit returns zero when safety module is paused.
     function test_MaxDeposit_ReturnsZeroWhenSafetyModulePaused() external {
         safetyModule.pause();
+        safetyModule.mockSetDepositPaused(true);
 
         assertEq(vault.maxDeposit(alice), 0, "maxDeposit zero when SM paused");
     }

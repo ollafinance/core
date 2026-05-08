@@ -83,6 +83,11 @@ contract OllaGovernancePassthroughsAndGuardsTest is OllaGovernanceSetup {
         );
     }
 
+    function test_Initialize_RevokesExternalDefaultAdminRole() external view {
+        assertFalse(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), admin), "admin should not retain DEFAULT_ADMIN_ROLE");
+        assertTrue(gov.hasRole(gov.DEFAULT_ADMIN_ROLE(), address(gov)), "timelock should retain DEFAULT_ADMIN_ROLE");
+    }
+
     /*//////////////////////////////////////////////////////////////
                           SET CORE GUARDS
     //////////////////////////////////////////////////////////////*/
@@ -101,14 +106,31 @@ contract OllaGovernancePassthroughsAndGuardsTest is OllaGovernanceSetup {
         OllaGovernance freshGov = OllaGovernance(payable(address(freshProxy)));
 
         vm.expectRevert(abi.encodeWithSelector(IOllaGovernance.OllaGovernance__ZeroAddress.selector, "core"));
-        vm.prank(admin);
+        vm.prank(address(freshGov));
         freshGov.setCore(address(0));
+    }
+
+    function test_RevertWhen_SetCore_DirectExternalAdminAfterInitialization() external {
+        OllaGovernance freshImpl = new OllaGovernance();
+        address[] memory proposers = new address[](1);
+        proposers[0] = admin;
+        address[] memory executors = new address[](1);
+        executors[0] = admin;
+        ERC1967Proxy freshProxy = new ERC1967Proxy(
+            address(freshImpl),
+            abi.encodeCall(OllaGovernance.initialize, (1 days, proposers, executors, admin, treasuryAddr))
+        );
+        OllaGovernance freshGov = OllaGovernance(payable(address(freshProxy)));
+
+        vm.expectRevert();
+        vm.prank(admin);
+        freshGov.setCore(makeAddr("newCore"));
     }
 
     function test_RevertWhen_SetCoreAlreadySet() external {
         // In setUp, gov.setCore(address(core)) was already called
         vm.expectRevert(IOllaGovernance.OllaGovernance__CoreAlreadySet.selector);
-        vm.prank(admin);
+        vm.prank(address(gov));
         gov.setCore(makeAddr("newCore"));
     }
 
@@ -119,7 +141,8 @@ contract OllaGovernancePassthroughsAndGuardsTest is OllaGovernanceSetup {
     function test_UpgradeSatellite_Vault_ViaTimelock() external {
         OllaVaultV2Mock newVaultImpl = new OllaVaultV2Mock();
 
-        bytes memory data = abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(vault), address(newVaultImpl)));
+        bytes memory data =
+            abi.encodeCall(IOllaGovernance.upgradeSatellite, (address(vault), address(newVaultImpl), bytes("")));
         _scheduleAndExecute(address(gov), data);
 
         uint256 ver = OllaVaultV2Mock(address(vault)).version();

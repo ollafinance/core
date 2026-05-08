@@ -44,23 +44,6 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
     }
 
     /*//////////////////////////////////////////////////////////////
-                     setTargetBufferedAssets
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SetTargetBufferedAssets_ViaTimelock() external {
-        uint256 newBuffer = 100 * DECIMALS;
-        bytes memory data = abi.encodeCall(IOllaGovernance.setTargetBufferedAssets, (newBuffer));
-        _scheduleAndExecute(address(gov), data);
-        assertEq(core.targetBufferedAssets(), newBuffer, "target buffer updated");
-    }
-
-    function test_RevertWhen_SetTargetBufferedAssets_DirectCall() external {
-        vm.expectRevert(IOllaGovernance.OllaGovernance__OnlySelf.selector);
-        vm.prank(admin);
-        gov.setTargetBufferedAssets(100 * DECIMALS);
-    }
-
-    /*//////////////////////////////////////////////////////////////
                      setRebalanceGasThreshold
     //////////////////////////////////////////////////////////////*/
 
@@ -75,23 +58,6 @@ contract OllaGovernancePassthroughsTest is OllaGovernanceSetup {
         vm.expectRevert(IOllaGovernance.OllaGovernance__OnlySelf.selector);
         vm.prank(admin);
         gov.setRebalanceGasThreshold(200_000);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                    setInstantRedemptionFeeBP
-    //////////////////////////////////////////////////////////////*/
-
-    function test_SetInstantRedemptionFeeBP_ViaTimelock() external {
-        uint256 newFee = 50;
-        bytes memory data = abi.encodeCall(IOllaGovernance.setInstantRedemptionFeeBP, (newFee));
-        _scheduleAndExecute(address(gov), data);
-        assertEq(vault.instantRedemptionFeeBP(), newFee, "instant redemption fee updated");
-    }
-
-    function test_RevertWhen_SetInstantRedemptionFeeBP_DirectCall() external {
-        vm.expectRevert(IOllaGovernance.OllaGovernance__OnlySelf.selector);
-        vm.prank(admin);
-        gov.setInstantRedemptionFeeBP(50);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -234,6 +200,10 @@ contract MockSafetyModuleStub {
         return false;
     }
 
+    function isDepositPaused() external pure returns (bool) {
+        return false;
+    }
+
     function checkDepositAllowed(uint256, uint256) external pure returns (bool) {
         return true;
     }
@@ -245,6 +215,7 @@ contract MockSafetyModuleStub {
     function setDepositCap(uint256) external pure { }
     function setWithdrawalMinimum(uint256) external pure { }
     function setMinRateDropBps(uint256) external pure { }
+    function setRateHighWaterMark(uint256) external pure { }
     function setMaxQueueRatioBps(uint256) external pure { }
     function setMaxAccountingDelay(uint256) external pure { }
     function setLatestAccountingTimestamp(uint256) external pure { }

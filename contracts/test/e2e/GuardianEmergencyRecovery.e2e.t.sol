@@ -6,7 +6,6 @@ import { PausableUpgradeable } from "@oz-upgradeable/utils/PausableUpgradeable.s
 import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { IOllaGovernance } from "src/governance/IOllaGovernance.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { IWithdrawalQueue } from "src/vault/interfaces/IWithdrawalQueue.sol";
 import { E2EBaseWithRealStaking } from "./E2EBaseWithRealStaking.sol";
 
 /// @title GuardianEmergencyRecoveryE2E
@@ -27,11 +26,6 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
 
     function setUp() external {
         _deployFullStack();
-
-        // Set target buffer to 0 so all deposited funds go to staking
-        _scheduleAndExecute(
-            address(gov), abi.encodeCall(gov.setTargetBufferedAssets, (0)), keccak256("setTargetBufferedAssets-0")
-        );
 
         // Add attester keys
         _addKeys(10);
@@ -173,7 +167,7 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 8. Claim the finalized withdrawal
-        IWithdrawalQueue.WithdrawalRequest memory req = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory req = vault.getWithdrawalRequest(requestId);
         assertTrue(req.finalized, "Withdrawal request must be finalized after recovery");
 
         vm.prank(alice);
@@ -200,10 +194,6 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         // All governance actions with whenRebalanceDone should revert
         vm.prank(address(gov));
         vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
-        core.setTargetBufferedAssets(100);
-
-        vm.prank(address(gov));
-        vm.expectRevert(abi.encodeWithSelector(IOllaCore.OllaCore__RebalanceInProgress.selector));
         core.setProtocolFeeBP(1_000);
 
         vm.prank(address(gov));
@@ -221,9 +211,6 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         // Force reset -> governance actions should now succeed
         vm.prank(address(gov));
         core.forceRebalanceReset();
-
-        vm.prank(address(gov));
-        core.setTargetBufferedAssets(100);
 
         vm.prank(address(gov));
         core.setProtocolFeeBP(1_000);
@@ -269,11 +256,6 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
         vault.requestRedeem(shares, alice, alice);
-
-        // instantRedeem reverts
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(PausableUpgradeable.EnforcedPause.selector));
-        vault.instantRedeem(shares, alice, 0);
 
         // Guardian unpauses vault
         vm.prank(address(gov));
@@ -453,7 +435,7 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         _completeRebalance();
 
         // 4. Verify withdrawal request is not yet finalized (needs rollup exit finalization)
-        IWithdrawalQueue.WithdrawalRequest memory reqBefore = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqBefore = vault.getWithdrawalRequest(requestId);
         assertFalse(reqBefore.finalized, "Request should not be finalized yet");
 
         // 5. Bob deposits extra funds and add only 1 key to cause stall at StakeSurplus
@@ -486,7 +468,7 @@ contract GuardianEmergencyRecoveryE2E is E2EBaseWithRealStaking {
         _rebalanceToCompletion(20);
 
         // 9. Withdrawal should now be finalized
-        IWithdrawalQueue.WithdrawalRequest memory reqAfter = withdrawalQueue.getRequest(requestId);
+        IOllaVault.WithdrawalRequest memory reqAfter = vault.getWithdrawalRequest(requestId);
         assertTrue(reqAfter.finalized, "Request should be finalized after recovery");
 
         // 10. Alice can claim

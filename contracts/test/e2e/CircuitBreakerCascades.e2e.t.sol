@@ -10,7 +10,6 @@ import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
 import { StAztec } from "src/vault/StAztec.sol";
-import { WithdrawalQueue } from "src/vault/WithdrawalQueue.sol";
 import { SafetyModule } from "src/safetymodule/SafetyModule.sol";
 import { ISafetyModule } from "src/safetymodule/ISafetyModule.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
@@ -48,7 +47,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
     OllaCore internal core;
     OllaVault internal vault;
     StAztec internal stAztec;
-    WithdrawalQueue internal withdrawalQueue;
     SafetyModule internal safetyModule;
     MockAccountingStakingManager internal stakingManager;
     MockRewardsAccumulator internal rewardsAccumulator;
@@ -116,12 +114,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         vm.prank(admin);
         safetyModule.setWithdrawalMinimum(0);
 
-        // ---- Deploy WithdrawalQueue (proxy) ----
-        WithdrawalQueue queueImpl = new WithdrawalQueue();
-        ERC1967Proxy queueProxy = new ERC1967Proxy(address(queueImpl), "");
-        withdrawalQueue = WithdrawalQueue(address(queueProxy));
-        withdrawalQueue.initialize(address(vault), address(gov), 180_000);
-
         // ---- Configure mock staking manager ----
         stakingManager.setRewardsToken(asset);
         stakingManager.setRewardsAccumulator(address(rewardsAccumulator));
@@ -141,12 +133,12 @@ contract CircuitBreakerCascadesE2ETest is Test {
         );
 
         // ---- Initialize OllaVault ----
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), address(gov));
+        vault.initialize(asset, stAztec, address(core), address(gov));
 
         // ---- Wire contracts ----
         vm.prank(address(gov));
         core.setVault(address(vault));
-        vm.prank(admin);
+        vm.prank(address(gov));
         gov.setCore(address(core));
 
         // ---- Unpause ----
@@ -189,10 +181,9 @@ contract CircuitBreakerCascadesE2ETest is Test {
         vault.deposit(amount, depositor, 0);
     }
 
-    function _assertInstantRedeemBlocked(address redeemer, uint256 shares) internal {
-        vm.expectRevert(abi.encodeWithSelector(IOllaVault.OllaVault__SafetyModulePaused.selector));
-        vm.prank(redeemer);
-        vault.instantRedeem(shares, redeemer, 0);
+    function _assertDepositAllowed(address depositor, uint256 amount) internal returns (uint256 shares) {
+        shares = _performDeposit(depositor, amount);
+        assertGt(shares, 0, "deposit should be allowed");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -236,9 +227,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // --- Verify deposit blocked ---
         _assertDepositBlocked(bob, 10 * DECIMALS);
 
-        // --- Verify instant redeem blocked ---
-        _assertInstantRedeemBlocked(alice, 1 * DECIMALS);
-
         // --- Recovery: guardian unpause ---
         vm.expectEmit(true, true, true, true, address(safetyModule));
         emit Unpaused();
@@ -250,12 +238,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // --- Verify all operations succeed after unpause ---
         uint256 bobShares = _performDeposit(bob, 10 * DECIMALS);
         assertGt(bobShares, 0, "recovery: bob deposit should mint shares");
-
-        // Instant redeem works
-        uint256 bobAssetsBefore = asset.balanceOf(bob);
-        vm.prank(bob);
-        vault.instantRedeem(bobShares / 2, bob, 0);
-        assertGt(asset.balanceOf(bob), bobAssetsBefore, "recovery: bob instant redeem should return assets");
 
         // Request redeem works
         vm.prank(bob);
@@ -302,8 +284,8 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // --- Verify paused ---
         assertTrue(safetyModule.isPaused(), "should be paused after queue ratio breach");
 
-        // --- Verify deposit blocked ---
-        _assertDepositBlocked(bob, 10 * DECIMALS);
+        // --- Verify queue-ratio pauses still allow deposits ---
+        _assertDepositAllowed(bob, 10 * DECIMALS);
 
         // --- Recovery: guardian unpause ---
         vm.prank(guardian);
@@ -370,18 +352,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         _warpPastCooldown();
         _fullRebalance();
 
-        // --- Verify all operations succeed ---
-        uint256 bobShares = _performDeposit(bob, 10 * DECIMALS);
-        assertGt(bobShares, 0, "recovery: bob deposit should mint shares");
-
-        // Instant redeem works
-        vm.prank(bob);
-        vault.instantRedeem(bobShares / 2, bob, 0);
-
-        // Request redeem works
-        vm.prank(bob);
-        vault.requestRedeem(bobShares / 4, bob, bob);
-
         // --- Verify liveness doesn't re-trigger within delay ---
         _warpPastCooldown();
         _fullRebalance();
@@ -429,7 +399,7 @@ contract CircuitBreakerCascadesE2ETest is Test {
         _fullRebalance();
 
         assertTrue(safetyModule.isPaused(), "should be paused after first breaker (queue ratio)");
-        _assertDepositBlocked(bob, 10 * DECIMALS);
+        _assertDepositAllowed(bob, 10 * DECIMALS);
 
         // --- Guardian unpause after first breaker ---
         vm.prank(guardian);
@@ -443,7 +413,7 @@ contract CircuitBreakerCascadesE2ETest is Test {
         _fullRebalance();
 
         assertTrue(safetyModule.isPaused(), "should be paused after second breaker");
-        _assertDepositBlocked(bob, 10 * DECIMALS);
+        _assertDepositAllowed(bob, 10 * DECIMALS);
 
         // --- Final recovery: admin raises queue ratio threshold, guardian unpauses ---
         vm.prank(admin);
@@ -541,12 +511,6 @@ contract CircuitBreakerCascadesE2ETest is Test {
         // Exchange rate still reflects slashing but is stable
         IOllaCore.LatestReport memory report2 = core.latestReport();
         assertApproxEqAbs(report2.exchangeRate, report.exchangeRate, 1, "exchange rate should be stable after recovery");
-
-        // Instant redeem works (while buffer is still available from bob's deposit)
-        uint256 bobAssetsBefore = asset.balanceOf(bob);
-        vm.prank(bob);
-        vault.instantRedeem(bobShares / 4, bob, 0);
-        assertGt(asset.balanceOf(bob), bobAssetsBefore, "recovery: instant redeem returns assets");
 
         // Request redeem works
         vm.prank(bob);

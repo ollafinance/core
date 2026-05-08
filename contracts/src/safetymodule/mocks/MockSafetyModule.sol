@@ -32,6 +32,9 @@ contract MockSafetyModule is ISafetyModule {
 
     bool internal _paused;
 
+    /// @notice Tracks whether the current pause should still allow deposits.
+    bool public mockDepositPaused;
+
     /*//////////////////////////////////////////////////////////////
                         CONFIGURABLE THRESHOLDS
     //////////////////////////////////////////////////////////////*/
@@ -126,6 +129,12 @@ contract MockSafetyModule is ISafetyModule {
         mockWithdrawalMinimumShares = minimum;
     }
 
+    /// @notice Sets whether a mock pause blocks deposits.
+    /// @param value True to block deposits while paused.
+    function mockSetDepositPaused(bool value) external {
+        mockDepositPaused = value;
+    }
+
     // solhint-enable comprehensive-interface
 
     /*//////////////////////////////////////////////////////////////
@@ -206,6 +215,12 @@ contract MockSafetyModule is ISafetyModule {
         return _paused;
     }
 
+    /// @notice Returns whether deposits should be blocked by the mock pause.
+    /// @return pausedState True when deposits should be blocked.
+    function isDepositPaused() external view override returns (bool pausedState) {
+        return _paused && mockDepositPaused;
+    }
+
     // solhint-disable func-name-mixedcase
     /// @notice Returns the core address.
     /// @return The core contract address.
@@ -271,6 +286,12 @@ contract MockSafetyModule is ISafetyModule {
     /// @param minRateDropBps The minimum rate-drop in basis points.
     function setMinRateDropBps(uint256 minRateDropBps) external pure override {
         _noop(minRateDropBps);
+    }
+
+    /// @notice No-op high-water mark setter for tests.
+    /// @param rateHighWaterMark The new high-water mark.
+    function setRateHighWaterMark(uint256 rateHighWaterMark) external pure override {
+        _noop(rateHighWaterMark);
     }
 
     /// @notice No-op queue ratio threshold setter for tests.

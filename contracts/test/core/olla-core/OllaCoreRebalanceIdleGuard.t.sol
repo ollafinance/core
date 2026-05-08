@@ -11,7 +11,6 @@ import { StAztec } from "src/vault/StAztec.sol";
 import { MockAztec } from "src/staking/mocks/MockAztec.sol";
 import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
 import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockWithdrawalQueue } from "src/vault/mocks/MockWithdrawalQueue.sol";
 import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
 import { OllaVault } from "src/vault/OllaVault.sol";
 import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
@@ -33,7 +32,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
     MockAccountingStakingManager internal stakingManager;
     address internal governance;
     address internal alice;
-    MockWithdrawalQueue internal withdrawalQueue;
     MockRewardsAccumulator internal rewardsAccumulator;
     MockSafetyModule internal safetyModule;
     address internal operator;
@@ -55,7 +53,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockAccountingStakingManager();
         operator = makeAddr("operator");
-        withdrawalQueue = new MockWithdrawalQueue();
         rewardsAccumulator = new MockRewardsAccumulator(asset, address(core));
         safetyModule = new MockSafetyModule(address(core), address(vault));
 
@@ -64,7 +61,7 @@ contract OllaCoreRebalanceIdleGuard is Test {
 
         core.initialize(asset, stAztec, stakingManager, 0, 5_000, governance, rewardsAccumulator, address(safetyModule));
 
-        vault.initialize(asset, stAztec, address(withdrawalQueue), address(core), governance);
+        vault.initialize(asset, stAztec, address(core), governance);
 
         vm.prank(governance);
         core.setVault(address(vault));
@@ -91,17 +88,13 @@ contract OllaCoreRebalanceIdleGuard is Test {
     /// @notice Tests that after an unproductive rebalance cycle completes (step=Done, pause=false),
     ///         subsequent rebalance calls do not trigger full unnecessary cycles.
     ///
-    ///         After a large deposit with targetBuffer=0, the first rebalance stakes most assets
+    ///         After a large deposit, the first rebalance stakes most assets
     ///         but leaves a small remainder (2 AZTEC). The second rebalance call advances StakeSurplus
     ///         to Done (stake returns 0), clears pause.
     ///
     ///         The fix ensures that the 4th call does not trigger a Rebalanced event, proving
     ///         that the idle buffer guard prevents infinite restarts.
     function test_RebalanceDoesNotInfinitelyRestart() external {
-        // Target buffer = 0, so all buffered assets are "surplus" to stake
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
         _performDeposit(alice, 200_002 * DECIMALS);
 
@@ -176,9 +169,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
     ///         productive work in prior calls (e.g. staking). Once set, rebalance() may
     ///         incorrectly no-op and skip harvesting/pulling newly available funds.
     function test_RebalanceIdleGuardDoesNotBlockPullingNewRewardsAccumulatorFunds() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _performDeposit(alice, 200_002 * DECIMALS);
 
         // Call 1: stake most assets; leaves 2 AZTEC buffered and progress at StakeSurplus.
@@ -198,7 +188,8 @@ contract OllaCoreRebalanceIdleGuard is Test {
         assertEq(bufferedBefore, 2 * DECIMALS, "setup: 2 AZTEC buffered");
 
         // Simulate out-of-band rewards arriving to the rewards vault.
-        uint256 newRewards = 1 * DECIMALS;
+        // Must exceed REWARDS_ACCUMULATOR_DUST_THRESHOLD (10_000 AZTEC) to bypass the idle fast-path.
+        uint256 newRewards = 10_001 * DECIMALS;
         asset.mint(address(rewardsAccumulator), newRewards);
         assertEq(rewardsAccumulator.balance(), newRewards, "rewards vault funded");
 
@@ -216,9 +207,6 @@ contract OllaCoreRebalanceIdleGuard is Test {
     /// @notice Tests that repeatedly calling rebalance does not trigger unnecessary cycles.
     ///         The idle buffer guard prevents starting new cycles when no productive work is possible.
     function test_RebalanceRepeatedCycling() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         // Deposit 200,002 AZTEC (2 AZTEC above the 200k stake threshold)
         _performDeposit(alice, 200_002 * DECIMALS);
 
@@ -264,12 +252,69 @@ contract OllaCoreRebalanceIdleGuard is Test {
         );
     }
 
+    /// @notice Rebalance ignores RewardsAccumulator balances at or below the hardcoded dust
+    ///         threshold: the idle fast-path is preserved (no Rebalanced event, no cooldown
+    ///         consumption, dust stays in the accumulator), while balances above the threshold
+    ///         still trigger a productive cycle.
+    function test_RebalanceIgnoresDustBelowAccumulatorThreshold() external {
+        _performDeposit(alice, 200_002 * DECIMALS);
+
+        // Drive the protocol to an idle Done state with a stable 2 AZTEC buffer.
+        stakingManager.setStakeReturnAmount(200_000 * DECIMALS);
+        stakingManager.setAllowStakeReturnExceeds(true);
+        vm.prank(operator);
+        core.rebalance();
+
+        stakingManager.setStakeReturnAmount(0);
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(uint256(core.rebalanceProgress().step), uint256(IOllaCore.RebalanceStep.Done), "setup: step Done");
+
+        uint256 dustThreshold = core.REWARDS_ACCUMULATOR_DUST_THRESHOLD();
+        assertEq(dustThreshold, 10_000 * DECIMALS, "sanity: dust threshold is 10,000 AZTEC");
+
+        uint256 bufferedBefore = vault.bufferedAssets();
+        uint48 lastTimestampBefore = core.lastRebalanceTimestamp();
+
+        // Donate exactly the threshold to the accumulator: this is still "dust".
+        asset.mint(address(rewardsAccumulator), dustThreshold);
+        assertEq(rewardsAccumulator.balance(), dustThreshold, "setup: dust deposited");
+
+        // Advance past the cooldown so the only thing that could trigger work is the dust.
+        vm.warp(block.timestamp + 1 hours);
+
+        bytes32 rebalancedSig = keccak256("Rebalanced(uint256,uint256,uint256,uint256)");
+
+        // --- Dust at threshold: idle fast-path must hold. ---
+        vm.recordLogs();
+        vm.prank(operator);
+        core.rebalance();
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 rebalancedCount = 0;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == rebalancedSig) rebalancedCount++;
+        }
+        assertEq(rebalancedCount, 0, "dust donation should not trigger a rebalance cycle");
+        assertEq(vault.bufferedAssets(), bufferedBefore, "buffer should be unchanged");
+        assertEq(rewardsAccumulator.balance(), dustThreshold, "dust should remain in accumulator");
+        assertEq(core.lastRebalanceTimestamp(), lastTimestampBefore, "cooldown should not be consumed");
+
+        // --- One wei above threshold: a productive cycle must run. ---
+        asset.mint(address(rewardsAccumulator), 1);
+        assertEq(rewardsAccumulator.balance(), dustThreshold + 1, "setup: balance just above threshold");
+
+        vm.prank(operator);
+        core.rebalance();
+
+        assertEq(rewardsAccumulator.balance(), 0, "above-threshold balance should be pulled");
+        assertEq(vault.bufferedAssets(), bufferedBefore + dustThreshold + 1, "rewards should reach the buffer");
+    }
+
     /// @notice Ensures claimable rollup rewards allow rebalance to start a new cycle
     ///         even when rewards vault balance is still zero.
     function test_RebalanceIdleGuardDoesNotBlockClaimableRewards() external {
-        vm.prank(governance);
-        core.setTargetBufferedAssets(0);
-
         _performDeposit(alice, 200_002 * DECIMALS);
 
         // Call 1: stake most assets; leaves 2 AZTEC buffered and progress at StakeSurplus.
