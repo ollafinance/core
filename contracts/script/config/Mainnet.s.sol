@@ -47,18 +47,18 @@ contract MainnetConfig is ConfigHelper {
             asset: vm.envAddress("ASSET"),
             rollupRegistry: vm.envAddress("ROLLUP_REGISTRY"),
             // Protocol fee config
-            protocolFeeBP: vm.envOr("PROTOCOL_FEE_BP", uint256(500)),
+            protocolFeeBP: vm.envOr("PROTOCOL_FEE_BP", uint256(1000)),
             treasuryFeeSplitBP: vm.envOr("TREASURY_FEE_SPLIT_BP", uint256(5000)),
             // Safety module config
-            safetyDepositCap: vm.envOr("SAFETY_DEPOSIT_CAP", uint256(1_000_000_000e18)),
+            safetyDepositCap: vm.envOr("SAFETY_DEPOSIT_CAP", uint256(100_000_000e18)),
             safetyMinRateDropBps: vm.envOr("SAFETY_MIN_RATE_DROP_BPS", uint256(500)),
-            safetyMaxQueueRatioBps: vm.envOr("SAFETY_MAX_QUEUE_RATIO_BPS", uint256(5_000)),
-            safetyMaxAccountingDelay: vm.envOr("SAFETY_MAX_ACCOUNTING_DELAY", uint256(2 hours)),
+            safetyMaxQueueRatioBps: vm.envOr("SAFETY_MAX_QUEUE_RATIO_BPS", uint256(2_500)),
+            safetyMaxAccountingDelay: vm.envOr("SAFETY_MAX_ACCOUNTING_DELAY", uint256(48 hours)),
             // Governance config
             governance: vm.envAddress("GOVERNANCE"),
             treasury: vm.envAddress("TREASURY"),
             providerAdmin: vm.envAddress("PROVIDER_ADMIN"),
-            providerRewardsRecipient: vm.envOr("PROVIDER_REWARDS_RECIPIENT", vm.envAddress("PROVIDER_ADMIN")),
+            providerRewardsRecipient: vm.envOr("PROVIDER_REWARDS_RECIPIENT", vm.envAddress("TREASURY")),
             guardian: vm.envAddress("GUARDIAN"),
             timelockMinDelay: timelockDuration,
             // Satellite addresses - populated during deployment

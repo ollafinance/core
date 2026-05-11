@@ -190,7 +190,7 @@ contract OllaCore is
         // slither-disable-next-line timestamp
         _latestReport.timestamp = block.timestamp;
 
-        rebalanceCooldown = SafeCast.toUint32(1 hours);
+        rebalanceCooldown = SafeCast.toUint32(24 hours);
         // Initial rebalance timestamp set at deployment; miner manipulation is negligible.
         // slither-disable-next-line timestamp
         lastRebalanceTimestamp = SafeCast.toUint48(block.timestamp);
