@@ -44,11 +44,11 @@ contract DeployScript is BaseDeployer {
     uint256 internal constant _CHAIN_SEPOLIA = 11155111;
     uint256 internal constant _CHAIN_MAINNET = 1;
 
-    bytes32 internal constant _CORE_PROXY_SALT = keccak256("olla.core.proxy.v1");
-    bytes32 internal constant _VAULT_PROXY_SALT = keccak256("olla.vault.proxy.v1");
-    bytes32 internal constant _STAKING_MANAGER_PROXY_SALT = keccak256("olla.staking.manager.proxy.v1");
+    bytes32 internal constant _CORE_PROXY_SALT = keccak256("olla.core.proxy.v1_1");
+    bytes32 internal constant _VAULT_PROXY_SALT = keccak256("olla.vault.proxy.v1_1");
+    bytes32 internal constant _STAKING_MANAGER_PROXY_SALT = keccak256("olla.staking.manager.proxy.v1_1");
     bytes32 internal constant _STAKING_PROVIDER_REGISTRY_PROXY_SALT =
-        keccak256("olla.staking.providerRegistry.proxy.v1");
+        keccak256("olla.staking.providerRegistry.proxy.v1_1");
 
     // Deployers
     MocksDeployer internal _mocksDeployer;
