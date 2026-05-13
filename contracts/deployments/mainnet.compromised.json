@@ -1,4 +1,5 @@
 {
+  "_compromisedReason": "StakingManager and StakingProviderRegistry proxies were front-run on mainnet: the StakingStack.s.sol deploy script created the ERC1967 proxies with empty init data, leaving a window in which an attacker called initialize() on the proxies before the legitimate initializer transaction landed. Activation was cancelled and a redeploy using CREATE2 with atomic initialization was prepared.",
   "network": "mainnet",
   "chainId": 1,
   "deployer": "0x7edd188593117111aec2540e6694d00bff3259f2",
