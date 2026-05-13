@@ -1,0 +1,46 @@
+{
+  "_compromisedReason": "StakingManager and StakingProviderRegistry proxies were front-run on mainnet: the StakingStack.s.sol deploy script created the ERC1967 proxies with empty init data, leaving a window in which an attacker called initialize() on the proxies before the legitimate initializer transaction landed. Activation was cancelled and a redeploy using CREATE2 with atomic initialization was prepared.",
+  "network": "mainnet",
+  "chainId": 1,
+  "deployer": "0x7edd188593117111aec2540e6694d00bff3259f2",
+  "mode": {
+    "mockAztec": false
+  },
+  "inputs": {
+    "asset": "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
+    "rollupRegistry": "0x35b22e09ee0390539439e24f06da43d83f90e298",
+    "lzEndpoint": "0x1a44076050125825900e736c501f859c50fe728c"
+  },
+  "addresses": {
+    "AtomicProxyFactory": "0xc05d442f4e0b8c1f5afc21a89fec0a0878337c22",
+    "OllaGovernanceImplementation": "0xe20e978d438ef99a92c6f800bec013f4e0616ec3",
+    "OllaGovernanceProxy": "0x73bf888d6418248c262b7de26e211ed613b162d3",
+    "OllaCoreImplementation": "0x12f0b6747754a2b5cd491a8910feadfe57f94f64",
+    "OllaVaultImplementation": "0x0658e89369651c2fe9fa63607a1e5029ffd88e33",
+    "Asset": "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
+    "StAztec": "0x3d5416ac3b3c1c45a152190fe6311b631aaa5f6e",
+    "StAztecOFTAdapter": "0x1d7b80cc072ccd032a33d5f0da91dcb59ea5f1da",
+    "RewardsAccumulatorImplementation": "0x548a2ee3f350664ceed3c07bf9c7b465b6a7e1c7",
+    "RewardsAccumulatorProxy": "0xf1228380ec6e347ce4a276833f23a3fb63ae00b4",
+    "StakingManagerImplementation": "0x18a87ee0607aa4fe273d9e637f46b66bf507b2fb",
+    "StakingManagerProxy": "0x404f45b01bb60b235e36c61e58ef439a5125f601",
+    "StakingProviderRegistryImplementation": "0x0bc796e1a4301f51abf8933c5c9d420f961729d0",
+    "StakingProviderRegistryProxy": "0x9f8634cdd9d6f9a0b652c7f58acf26d6a1407184",
+    "SafetyModule": "0x0fa32cbc66647843b1211f054f43eb25eb249b40",
+    "StakingManager": "0x404f45b01bb60b235e36c61e58ef439a5125f601",
+    "OllaCoreProxy": "0x33447d5dcd279e2d6365ff09c147e030f0f4ce07",
+    "OllaVaultProxy": "0x87f90694672b71f03385a6a931632a68f13a7685"
+  },
+  "status": {
+    "phase": "D",
+    "completed": true,
+    "updatedAtBlock": 25071932,
+    "flags": {
+      "coreInitialized": true,
+      "vaultInitialized": true
+    }
+  },
+  "genesisBlock": 25071907,
+  "stAztecName": "stAztec",
+  "stAztecVersion": "1"
+}

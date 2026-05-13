@@ -1,0 +1,45 @@
+{
+  "network": "mainnet",
+  "chainId": 1,
+  "deployer": "0x7edd188593117111aec2540e6694d00bff3259f2",
+  "mode": {
+    "mockAztec": false
+  },
+  "inputs": {
+    "asset": "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
+    "rollupRegistry": "0x35b22e09ee0390539439e24f06da43d83f90e298",
+    "lzEndpoint": "0x1a44076050125825900e736c501f859c50fe728c"
+  },
+  "addresses": {
+    "AtomicProxyFactory": "0x6751a69539947069b8fe363f3ee1b82f1e5068e7",
+    "OllaGovernanceImplementation": "0x556a3485b6b430914b248da5541a21d198d398a6",
+    "OllaGovernanceProxy": "0x1bd1e21553f8897681550d7fab1c1e9e6b7ae602",
+    "OllaCoreImplementation": "0x5219d4d59d729e385514af2cef24b3fdf53c38f8",
+    "OllaVaultImplementation": "0x2dc808d84994b19e11f3702ab2d061302525ee1f",
+    "Asset": "0xa27ec0006e59f245217ff08cd52a7e8b169e62d2",
+    "StAztec": "0x5d422936ce2636f8a890cd73ac01e7f1523d20ca",
+    "StAztecOFTAdapter": "0x79eafedc3c019eaa6a5d09b6bc0a435403181f52",
+    "RewardsAccumulatorImplementation": "0x3de8995ca4240d3ba4fa7cfb764e9bc027087b27",
+    "RewardsAccumulatorProxy": "0x76ade5cfe7c3f24d4f49613606e8148e94bf6812",
+    "StakingManagerImplementation": "0x26981807bad5167dd6e224ce726c44d7fcc9172b",
+    "StakingManagerProxy": "0x69f8432e33038a539f067bb6a34e4f1e8d3e269a",
+    "StakingProviderRegistryImplementation": "0x023bb6c893025cbe96cb2a00ef75b50c4bd6f1ab",
+    "StakingProviderRegistryProxy": "0xd976012942ca93e11951e750299bb86e0e995a14",
+    "SafetyModule": "0x3e3dca35511358fca87998aae73ff320ff79f8cd",
+    "StakingManager": "0x69f8432e33038a539f067bb6a34e4f1e8d3e269a",
+    "OllaCoreProxy": "0x376d61a13d3b98817c53f8fb0916718183723409",
+    "OllaVaultProxy": "0x561c7cff430d2351dba8d75bfc48b7a6aae6187a"
+  },
+  "status": {
+    "phase": "D",
+    "completed": true,
+    "updatedAtBlock": 25072492,
+    "flags": {
+      "coreInitialized": true,
+      "vaultInitialized": true
+    }
+  },
+  "genesisBlock": 25072473,
+  "stAztecName": "stAztec",
+  "stAztecVersion": "1"
+}

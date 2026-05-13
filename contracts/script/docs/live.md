@@ -96,7 +96,7 @@ Notes:
 - `SAFETY_MAX_QUEUE_RATIO_BPS`: SafetyModule initial queued-withdrawal ratio threshold, default `5000`.
 - `SAFETY_MAX_ACCOUNTING_DELAY`: SafetyModule initial accounting-liveness delay in seconds, default `7200`.
 - `PROVIDER_REWARDS_RECIPIENT`: initial staking provider rewards recipient, default `PROVIDER_ADMIN`.
-- `REBALANCE_COOLDOWN` is not an initializer env var today. OllaCore initializes to `1 hours`; set it after activation through governance with `setRebalanceCooldown(86400)`.
+- `REBALANCE_COOLDOWN` is not an initializer env var today. OllaCore initializes to `1 hours`; the canonical activation chain (`PrintNextActivationPayload.s.sol`) raises it to `86400` (24h) via governance between `unpauseCore` and `unpauseVault`. Override the target with `REBALANCE_COOLDOWN=<seconds>` when generating activation payloads.
 - `REBALANCE_GAS_THRESHOLD` is not an initializer env var today. OllaCore initializes to `180000`; set it after activation through governance with `setRebalanceGasThreshold(...)` if needed.
 
 ## Post-deploy expectations
@@ -149,10 +149,16 @@ forge script script/ops/GovSetVault.s.sol --broadcast --rpc-url <sepolia-or-main
 ETHEREUM_CHAIN_ID=<11155111-or-1> \
 forge script script/ops/GovUnpauseCore.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
 
-# 3) Unpause OllaVault
+# 3) Set rebalance cooldown to 24h (requires Core unpaused; setter has whenNotPaused)
+ETHEREUM_CHAIN_ID=<11155111-or-1> REBALANCE_COOLDOWN=86400 \
+forge script script/ops/GovSetRebalanceCooldown.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
+
+# 4) Unpause OllaVault
 ETHEREUM_CHAIN_ID=<11155111-or-1> \
 forge script script/ops/GovUnpauseVault.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
 ```
+
+`PrintNextActivationPayload.s.sol` reflects the same 4-step chain (8 total payloads — schedule + execute for each step) with predecessor chaining enforced through the timelock. Override the cooldown target with `REBALANCE_COOLDOWN=<seconds>`; default is `86400` (24 hours).
 
 Expected behavior per run:
 

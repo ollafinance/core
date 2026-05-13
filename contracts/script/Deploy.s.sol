@@ -44,8 +44,11 @@ contract DeployScript is BaseDeployer {
     uint256 internal constant _CHAIN_SEPOLIA = 11155111;
     uint256 internal constant _CHAIN_MAINNET = 1;
 
-    bytes32 internal constant _CORE_PROXY_SALT = keccak256("olla.core.proxy.v1");
-    bytes32 internal constant _VAULT_PROXY_SALT = keccak256("olla.vault.proxy.v1");
+    bytes32 internal constant _CORE_PROXY_SALT = keccak256("olla.core.proxy.v1_1");
+    bytes32 internal constant _VAULT_PROXY_SALT = keccak256("olla.vault.proxy.v1_1");
+    bytes32 internal constant _STAKING_MANAGER_PROXY_SALT = keccak256("olla.staking.manager.proxy.v1_1");
+    bytes32 internal constant _STAKING_PROVIDER_REGISTRY_PROXY_SALT =
+        keccak256("olla.staking.providerRegistry.proxy.v1_1");
 
     // Deployers
     MocksDeployer internal _mocksDeployer;
@@ -75,7 +78,9 @@ contract DeployScript is BaseDeployer {
         _stAztecDeployer = new StAztecDeployer();
         _stAztecOFTAdapterDeployer = new StAztecOFTAdapterDeployer();
         _rewardsAccumulatorDeployer = new RewardsAccumulatorDeployer();
-        _stakingStackDeployer = new StakingStackDeployer();
+        // _stakingStackDeployer is created after _atomicProxyFactory is resolved in run() because
+        // it now routes proxy creation through the factory to avoid the front-run window between
+        // proxy CREATE and initialize() (mainnet incident 2026-05-11).
     }
 
     function run() public {
@@ -126,6 +131,7 @@ contract DeployScript is BaseDeployer {
         _atomicProxyFactory = _resolveOrDeployAtomicProxyFactory(config);
         _ollaCoreDeployer = new OllaCoreDeployer(_atomicProxyFactory);
         _ollaVaultDeployer = new OllaVaultDeployer(_atomicProxyFactory);
+        _stakingStackDeployer = new StakingStackDeployer(_atomicProxyFactory);
 
         address configuredGovernance = config.governance;
         // Keep deployer roles when explicitly using mock flows with governance == deployer.
@@ -188,7 +194,9 @@ contract DeployScript is BaseDeployer {
         (rewardsAccumulatorImpl, rewardsAccumulator) =
             _resolveOrDeployRewardsAccumulator(config, asset, predictedCoreProxy, ollaGovProxy);
 
-        // 6. Deploy staking stack (always — StakingManager + StakingProviderRegistry behind proxies)
+        // 6. Deploy staking stack: StakingManager + StakingProviderRegistry behind proxies.
+        // Proxy CREATE and both initialize() calls are wrapped in a single factory call so the
+        // pair is never observable in an uninitialized state.
         (stakingManagerImpl, stakingManager, stakingProviderRegistryImpl, stakingProviderRegistry) = _resolveOrDeployStakingStack(
             config, predictedCoreProxy, rewardsAccumulator, asset, rollupRegistry, ollaGovProxy
         );
@@ -742,8 +750,25 @@ contract DeployScript is BaseDeployer {
             return (stakingManagerImpl, stakingManagerProxy, stakingProviderRegistryImpl, stakingProviderRegistryProxy);
         }
 
-        (stakingManagerImpl, stakingManagerProxy, stakingProviderRegistryImpl, stakingProviderRegistryProxy) =
-            _stakingStackDeployer.deploy(config, core, rewardsAccumulator, asset, rollupRegistry, governanceAdmin);
+        (stakingManagerImpl, stakingManagerProxy, stakingProviderRegistryImpl, stakingProviderRegistryProxy) = _stakingStackDeployer.deploy(
+            config,
+            core,
+            rewardsAccumulator,
+            asset,
+            rollupRegistry,
+            governanceAdmin,
+            _STAKING_MANAGER_PROXY_SALT,
+            _STAKING_PROVIDER_REGISTRY_PROXY_SALT
+        );
+        require(
+            stakingManagerProxy == _predictProxyAddress(stakingManagerImpl, _STAKING_MANAGER_PROXY_SALT),
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingManagerProxy.predicted"
+        );
+        require(
+            stakingProviderRegistryProxy
+                == _predictProxyAddress(stakingProviderRegistryImpl, _STAKING_PROVIDER_REGISTRY_PROXY_SALT),
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingProviderRegistryProxy.predicted"
+        );
         _recordAddress("StakingManagerImplementation", stakingManagerImpl);
         _recordAddress("StakingManagerProxy", stakingManagerProxy);
         _recordAddress("StakingProviderRegistryImplementation", stakingProviderRegistryImpl);

@@ -19,7 +19,8 @@ contract PrintNextActivationPayload is BaseScript {
         uint256 timestamp;
     }
 
-    uint256 internal constant _TOTAL_STEPS = 6;
+    uint256 internal constant _TOTAL_STEPS = 8;
+    uint256 internal constant _DEFAULT_REBALANCE_COOLDOWN = 86400;
 
     function run() external view {
         string memory env = _deployEnv();
@@ -33,9 +34,11 @@ contract PrintNextActivationPayload is BaseScript {
         bytes32 predecessor = bytes32(0);
         bytes32 salt = bytes32(vm.envOr("SALT", uint256(0)));
         uint256 delay = gov.getMinDelay();
+        uint256 desiredCooldown = vm.envOr("REBALANCE_COOLDOWN", _DEFAULT_REBALANCE_COOLDOWN);
 
         bytes memory setVaultData = abi.encodeCall(OllaCore.setVault, (vault));
         bytes memory unpauseCoreData = abi.encodeCall(OllaCore.unpause, ());
+        bytes memory setCooldownData = abi.encodeCall(OllaCore.setRebalanceCooldown, (desiredCooldown));
         bytes memory unpauseVaultData = abi.encodeCall(OllaVault.unpause, ());
 
         bytes32 setVaultOpId = gov.hashOperation(core, 0, setVaultData, predecessor, salt);
@@ -45,7 +48,12 @@ contract PrintNextActivationPayload is BaseScript {
         bytes32 unpauseCoreOpId = gov.hashOperation(core, 0, unpauseCoreData, unpauseCorePredecessor, salt);
         OperationState memory unpauseCoreOp = _operationState(gov, unpauseCoreOpId);
 
-        bytes32 unpauseVaultPredecessor = _selectUnpauseVaultPredecessor(core, unpauseCoreOpId, unpauseCoreOp);
+        bytes32 setCooldownPredecessor = _selectSetCooldownPredecessor(core, unpauseCoreOpId, unpauseCoreOp);
+        bytes32 setCooldownOpId = gov.hashOperation(core, 0, setCooldownData, setCooldownPredecessor, salt);
+        OperationState memory setCooldownOp = _operationState(gov, setCooldownOpId);
+
+        bytes32 unpauseVaultPredecessor =
+            _selectUnpauseVaultPredecessor(core, desiredCooldown, setCooldownOpId, setCooldownOp);
         bytes32 unpauseVaultOpId = gov.hashOperation(vault, 0, unpauseVaultData, unpauseVaultPredecessor, salt);
         OperationState memory unpauseVaultOp = _operationState(gov, unpauseVaultOpId);
 
@@ -59,6 +67,8 @@ contract PrintNextActivationPayload is BaseScript {
         console2.log("core.vault(current)", OllaCore(core).vault());
         console2.log("core.paused", OllaCore(core).paused());
         console2.log("vault.paused", OllaVault(vault).paused());
+        console2.log("core.rebalanceCooldown(current)", OllaCore(core).rebalanceCooldown());
+        console2.log("core.rebalanceCooldown(desired)", desiredCooldown);
 
         if (OllaCore(core).vault() != vault) {
             _printNextAction(
@@ -93,6 +103,25 @@ contract PrintNextActivationPayload is BaseScript {
                 unpauseCoreOp,
                 3,
                 4,
+                "After execution, rerun to generate setRebalanceCooldown payload."
+            );
+            return;
+        }
+
+        if (OllaCore(core).rebalanceCooldown() != desiredCooldown) {
+            _printNextAction(
+                gov,
+                "setRebalanceCooldown",
+                "OllaCore.setRebalanceCooldown(desired)",
+                governance,
+                core,
+                setCooldownData,
+                setCooldownPredecessor,
+                salt,
+                delay,
+                setCooldownOp,
+                5,
+                6,
                 "After execution, rerun to generate unpauseVault payload."
             );
             return;
@@ -110,15 +139,15 @@ contract PrintNextActivationPayload is BaseScript {
                 salt,
                 delay,
                 unpauseVaultOp,
-                5,
-                6,
+                7,
+                8,
                 "After execution, rerun to confirm activation complete."
             );
             return;
         }
 
-        console2.log("step", "Step 6/6: Activation complete");
-        console2.log("step.index", uint256(6));
+        console2.log("step", "Step 8/8: Activation complete");
+        console2.log("step.index", uint256(8));
         console2.log("step.total", _TOTAL_STEPS);
         console2.log("next.action", "none");
         console2.log("next.status", "activation_complete");
@@ -284,7 +313,7 @@ contract PrintNextActivationPayload is BaseScript {
         return setVaultOpId;
     }
 
-    function _selectUnpauseVaultPredecessor(address core, bytes32 unpauseCoreOpId, OperationState memory unpauseCoreOp)
+    function _selectSetCooldownPredecessor(address core, bytes32 unpauseCoreOpId, OperationState memory unpauseCoreOp)
         internal
         view
         returns (bytes32)
@@ -294,12 +323,31 @@ contract PrintNextActivationPayload is BaseScript {
         }
 
         // If core is already unpaused but the canonical unpauseCore op was never done
-        // (e.g. direct guardian unpause), avoid locking unpauseVault behind an unreachable predecessor.
+        // (e.g. direct guardian unpause), avoid locking setRebalanceCooldown behind an unreachable predecessor.
         if (!unpauseCoreOp.done) {
             return bytes32(0);
         }
 
         return unpauseCoreOpId;
+    }
+
+    function _selectUnpauseVaultPredecessor(
+        address core,
+        uint256 desiredCooldown,
+        bytes32 setCooldownOpId,
+        OperationState memory setCooldownOp
+    ) internal view returns (bytes32) {
+        if (OllaCore(core).rebalanceCooldown() != desiredCooldown) {
+            return setCooldownOpId;
+        }
+
+        // If cooldown is already at desired but the canonical setRebalanceCooldown op was never done
+        // (e.g. direct owner call), avoid locking unpauseVault behind an unreachable predecessor.
+        if (!setCooldownOp.done) {
+            return bytes32(0);
+        }
+
+        return setCooldownOpId;
     }
 
     function _toString(uint256 value) internal pure returns (string memory) {
