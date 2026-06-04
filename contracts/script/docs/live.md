@@ -135,6 +135,28 @@ The SafetyModule circuit breaker can also auto-pause on rate drops, queue ratio 
 - Alternatively, use the governance timelock scripts (`GovUnpauseCore.s.sol`, `GovUnpauseVault.s.sol`).
 - If the guardian key is compromised: revoke `GUARDIAN_ROLE` via governance, grant to a new address, then unpause.
 
+### Stuck-rebalance recovery (`forceRebalanceReset`)
+
+If a rebalance is wedged in a non-`Done` state, simply unpausing is not enough: governance setters and
+accounting paths guarded by `whenRebalanceDone` stay blocked until the rebalance state machine is reset.
+`OllaCore.forceRebalanceReset()` clears the rebalance state machine (idle/snapshot fields,
+`lastRebalanceTimestamp`) and emits `RebalanceReset`. It does not modify accounting or move funds.
+
+`forceRebalanceReset()` is gated by Core `GUARDIAN_ROLE`. In the default deployment that role is held by
+the `OllaGovernance` timelock contract — **not** the `governanceAdmin` EOA — so unlike
+`emergencyPauseAll`/`emergencyUnpauseAll`, the reset is **not** an instant admin action. It must be
+scheduled and executed as a timelock operation (use `PrintForceRebalanceResetPayload.s.sol` /
+`GovForceRebalanceReset.s.sol`), unless a separate Core guardian wallet has been granted, in which case
+that wallet can call `forceRebalanceReset()` directly.
+
+Stuck-rebalance recovery sequence:
+
+1. `emergencyPauseAll()` by the governance admin (instant).
+2. `forceRebalanceReset()` through the timelock (schedule, wait for delay, execute), or directly by a
+   configured separate Core guardian.
+3. `emergencyUnpauseAll()` by the governance admin (instant).
+4. Refresh attester state and resume `rebalance()` after the cooldown elapses.
+
 ## Post-deploy activation (strict chains)
 
 On strict chains, deployment is complete but protocol activation is an explicit governance flow.
@@ -172,7 +194,41 @@ Optional address overrides:
 
 ## Post-deploy bridge hardening (LayerZero)
 
-After deploying `StAztecOFTAdapter`, set enforced options via governance as a hardening step.
+Deploying `StAztecOFTAdapter` and the canonical endpoint is **not** sufficient for a working bridge.
+The adapter is a thin `OFTAdapter` wrapper over the inherited OApp/OFT implementation, which requires
+a trusted peer to be configured per destination before any outbound `quoteSend`/`send` works and before
+inbound messages are accepted.
+
+### Step 1 (mandatory): set and verify LayerZero peers
+
+`OAppCore.setPeer(uint32 eid, bytes32 peer)` is `onlyOwner` (the production owner/delegate, i.e. governance).
+Until `peers[destEid]` is nonzero, `quoteSend`/`send` revert with `NoPeer(destEid)`, and inbound receive
+rejects any source whose sender does not match the configured peer. Skipping this step leaves a deployed,
+"hardened" adapter that is still nonfunctional.
+
+For each destination EID:
+
+1. Encode the destination peer address to `bytes32` (left-padded; use `OptionsBuilder`/`addressToBytes32`
+   semantics — the 20-byte EVM address right-aligned in 32 bytes).
+2. Call `setPeer(destEid, peerBytes32)` on this chain's adapter through governance.
+3. Configure the **reciprocal** peer on the destination: `setPeer(homeEid, homeAdapterBytes32)` on the
+   destination OFT/adapter so the return path resolves back to this adapter.
+4. Verify before treating the bridge as ready:
+
+```bash
+# Peer configured for each destination EID (must be nonzero and equal the expected peer bytes32)
+cast call <ADAPTER> "peers(uint32)(bytes32)" <DEST_EID> --rpc-url <sepolia-or-mainnet>
+
+# Owner/delegate is governance, not the deployer
+cast call <ADAPTER> "owner()(address)" --rpc-url <sepolia-or-mainnet>
+```
+
+Only after every configured EID has a verified peer (both directions) and enforced options set should the
+bridge be reported as activated. `setEnforcedOptions` alone is **not** complete bridge hardening.
+
+### Step 2: set enforced options
+
+After peers are configured, set enforced options via governance as a hardening step.
 
 Example (`SEND`, msgType `1`):
 
@@ -190,6 +246,39 @@ StAztecOFTAdapter(adapter).setEnforcedOptions(params);
 ```
 
 If `SEND_AND_CALL` is enabled in your flow, also set msgType `2` with an execution budget around `350k-500k` gas.
+
+### Adapter is a single non-replaceable lockbox — peer rotation procedure
+
+`StAztecOFTAdapter` is a lock/unlock adapter: outbound sends **lock** stAztec in the adapter holding the
+backing, and returning sends **unlock** by transferring stAztec out of the *receiving* adapter's own
+balance. The home-chain adapter set as the destination peer must therefore be the same adapter that holds
+the locked stAztec backing outstanding destination supply. Only one funded adapter may exist per global OFT
+mesh.
+
+Consequence: if you rotate the destination peer from a funded home adapter to a fresh replacement adapter
+while destination supply is still outstanding (and locked stAztec has not been migrated), a user returning
+from the destination chain burns their bridged token first, then the home unlock fails because the
+replacement adapter has no stAztec to release. The packet strands and the returning user's funds are
+unavailable until operators fund/migrate the replacement adapter or otherwise remediate.
+
+Before any `setPeer` that changes a home adapter address, treat the adapter as non-replaceable unless:
+
+1. Outstanding destination supply is zero, **or**
+2. Locked stAztec has first been migrated from the old adapter to the replacement, and no packets are
+   in flight to the old adapter.
+
+Pre-rotation checklist:
+
+```bash
+# Old adapter must hold no locked backing (or you must migrate it first)
+cast call <OLD_ADAPTER> "balanceOf"  # via the stAztec token: stAztec.balanceOf(oldAdapter) == 0
+# Replacement adapter balance and reciprocal peer state
+# Confirm: outstanding destination supply == 0, no in-flight packets to old/new adapter,
+#          reciprocal peer on the destination points at the intended adapter
+```
+
+If a packet has already been created against a replacement adapter that cannot unlock it, recovery is to
+fund/migrate the replacement adapter with the equivalent locked stAztec so the pending unlock can complete.
 
 ## Final verification after activation
 
@@ -209,10 +298,21 @@ Role checks (`cast`) to confirm operational posture:
 ## Post-Governance Transfer
 
 After `OllaGovernance.acceptGovernance()` completes, the new governance address automatically
-receives `PROPOSER_ROLE`, `EXECUTOR_ROLE`, and `CANCELLER_ROLE` on `OllaGovernance`, and
-`DEFAULT_ADMIN_ROLE` is propagated to satellite contracts. The old governance roles are revoked.
+receives `PROPOSER_ROLE`, `EXECUTOR_ROLE`, and `CANCELLER_ROLE` on `OllaGovernance` and becomes
+the `governanceAdmin`. The old governance admin's timelock roles and its `DEFAULT_ADMIN_ROLE`
+on `OllaGovernance` are revoked.
+
+`DEFAULT_ADMIN_ROLE` is **not** granted to the incoming external wallet — neither on
+`OllaGovernance` nor on the satellite contracts. Satellite `DEFAULT_ADMIN_ROLE` / owner authority
+stays with the `OllaGovernance` contract address, which does not change on rotation; the new admin
+steers satellites by scheduling timelock actions, not by holding satellite admin directly.
 
 Notes:
 
-- `OllaCore` owner remains `OllaGovernance`; transfer updates timelock roles/admin roles.
+- `OllaCore` owner remains `OllaGovernance`; transfer updates only the timelock roles and the `governanceAdmin` pointer.
 - `STAKING_PROVIDER_ADMIN_ROLE` belongs to staking provider ops and is not changed by governance transfer.
+
+Post-transfer verification:
+
+- Confirm `address(gov)` still holds satellite `DEFAULT_ADMIN_ROLE` / owner authority on Core, Vault, SafetyModule, RewardsAccumulator, StakingManager, and StakingProviderRegistry.
+- Confirm the new governance wallet holds `PROPOSER_ROLE`/`EXECUTOR_ROLE`/`CANCELLER_ROLE` and is `governanceAdmin`, but does **not** hold satellite `DEFAULT_ADMIN_ROLE`. Do not grant it directly unless governance intentionally wants to bypass the timelock-admin model.

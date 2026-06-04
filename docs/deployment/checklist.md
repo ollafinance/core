@@ -136,9 +136,17 @@ Optional override env vars for ops scripts:
 
 ## 7. Post-deploy bridge hardening (LayerZero)
 
+Peers must be configured before enforced options — a deployed adapter with no peer reverts on
+`quoteSend`/`send` (`NoPeer`) and rejects inbound messages. See
+`contracts/script/docs/live.md` (Post-deploy bridge hardening) for the full procedure.
+
+- [ ] For each destination EID, `setPeer(destEid, peerBytes32)` on this chain's adapter (via governance).
+- [ ] Configure the reciprocal `setPeer(homeEid, homeAdapterBytes32)` on the destination OFT/adapter.
+- [ ] Verify `peers(destEid)` is nonzero and equals the expected peer for every EID, and that `owner()` is governance (not the deployer).
 - [ ] Configure `StAztecOFTAdapter.setEnforcedOptions(...)` for each destination EID.
 - [ ] Set msgType `1` (`SEND`) with a baseline receive gas budget (for example `200_000`).
 - [ ] If `SEND_AND_CALL` is enabled, also set msgType `2` with a higher budget (`~350k-500k`).
+- [ ] Treat the bridge as activated only after peers (both directions) and enforced options are verified.
 
 ## 8. Final verification
 
