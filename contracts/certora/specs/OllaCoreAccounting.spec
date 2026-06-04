@@ -9,8 +9,10 @@
  *   5. forceRebalanceReset -- always resets to Done
  *   6. updateAccounting gating -- reverts when rebalance in progress
  *   7. Parameter setter bounds -- all setters enforce their bounds
- *   8. Report timestamp monotonicity -- timestamp only increases via updateAccounting
- *   9. Flow counter snapshot monotonicity -- report snapshots never decrease
+ *   8. Report timestamp monotonicity -- timestamp only advances via accounting writers
+ *      (updateAccounting, rebalance on completion, and the fee setters), never backward
+ *   9. Flow counter snapshot monotonicity -- report snapshots (deposits, withdrawals, and
+ *      slashing adjustments) never decrease, and the slashing snapshot syncs on updateAccounting
  *  10. Rebalance FSM transition edges -- only forward or self-loop, never backward
  *  11. Rebalance step stability -- only rebalance() and forceRebalanceReset() modify step
  *
@@ -37,6 +39,7 @@ methods {
     function getClaimableRewards() external returns (uint256) envfree;
     function getCumulativeDeposits() external returns (uint256) envfree;
     function getCumulativeWithdrawals() external returns (uint256) envfree;
+    function getCumulativeSlashingAdjustments() external returns (uint256) envfree;
     function getLatestReportTotalAssets() external returns (uint256) envfree;
     function getLatestReportExchangeRate() external returns (uint256) envfree;
     function getLatestReportTimestamp() external returns (uint256) envfree;
@@ -44,6 +47,7 @@ methods {
     // Harness getters -- flow counter snapshots
     function getLatestReportCumulativeDeposits() external returns (uint256) envfree;
     function getLatestReportCumulativeWithdrawals() external returns (uint256) envfree;
+    function getLatestReportCumulativeSlashingAdjustments() external returns (uint256) envfree;
 
     // Mutating functions
     function rebalance() external returns (uint256, uint256, uint256, uint256);
@@ -361,20 +365,26 @@ rule setGasThresholdRespectsBounds(env e) {
 
 
 /// @title Flow counter snapshots never decrease after updateAccounting
-/// @notice latestReportCumulativeDeposits and latestReportCumulativeWithdrawals are updated
-///         to the current vault counters during updateAccounting. Since vault counters only
-///         grow (+=), the snapshots must be monotonically non-decreasing.
-/// @dev We require getCumulativeDeposits() >= snapshot (vault counter monotonicity) because
+/// @notice latestReportCumulativeDeposits, latestReportCumulativeWithdrawals, and
+///         latestReportCumulativeSlashingAdjustments are updated to the current vault counters
+///         during updateAccounting. Since vault counters only grow (+=), the snapshots must be
+///         monotonically non-decreasing. The slashing snapshot is the subtrahend in
+///         _computeNetFlows() (adjustmentsSinceReport = cumulative - latestReport snapshot), so its
+///         monotonicity is as security-relevant as the deposit/withdrawal snapshots.
+/// @dev We require getCumulative*() >= snapshot (vault counter monotonicity) because
 ///      vault counters are summarized as NONDET -- Certora can't verify vault-side monotonicity
 ///      here. This models the real invariant: vault counters only increase.
 rule flowCounterSnapshotsMonotonicOnUpdate(env e) {
     uint256 depsBefore = getLatestReportCumulativeDeposits();
     uint256 wdsBefore = getLatestReportCumulativeWithdrawals();
+    uint256 slashBefore = getLatestReportCumulativeSlashingAdjustments();
 
     // Model vault counter monotonicity: vault counters are always >= the last snapshot.
-    // This holds because OllaVault only does cumulativeDeposits += and cumulativeWithdrawals +=.
+    // This holds because OllaVault only does cumulativeDeposits +=, cumulativeWithdrawals +=,
+    // and cumulativeSlashingAdjustments +=.
     require getCumulativeDeposits() >= depsBefore;
     require getCumulativeWithdrawals() >= wdsBefore;
+    require getCumulativeSlashingAdjustments() >= slashBefore;
 
     updateAccounting@withrevert(e);
     bool reverted = lastReverted;
@@ -383,22 +393,66 @@ rule flowCounterSnapshotsMonotonicOnUpdate(env e) {
         "latestReportCumulativeDeposits must not decrease after updateAccounting";
     assert !reverted => getLatestReportCumulativeWithdrawals() >= wdsBefore,
         "latestReportCumulativeWithdrawals must not decrease after updateAccounting";
+    assert !reverted => getLatestReportCumulativeSlashingAdjustments() >= slashBefore,
+        "latestReportCumulativeSlashingAdjustments must not decrease after updateAccounting";
+}
+
+/// @title updateAccounting syncs the slashing snapshot to the current cumulative counter
+/// @notice After a successful updateAccounting, the latest-report slashing snapshot equals the
+///         current cumulative slashing adjustments counter. This is the stronger equality the
+///         monotonic rule cannot express, and it guards the _computeNetFlows() delta directly:
+///         adjustmentsSinceReport must reset to 0 immediately after a report is taken.
+/// @dev Vault counters are summarized PER_CALLEE_CONSTANT, so the cumulative value observed during
+///      the report equals the value observed by getCumulativeSlashingAdjustments() in the same env.
+rule updateAccountingSyncsSlashingSnapshot(env e) {
+    updateAccounting@withrevert(e);
+    bool reverted = lastReverted;
+
+    assert !reverted =>
+        getLatestReportCumulativeSlashingAdjustments() == getCumulativeSlashingAdjustments(),
+        "latestReportCumulativeSlashingAdjustments must equal cumulativeSlashingAdjustments after updateAccounting";
 }
 
 /// @title Report timestamp stable under non-accounting operations
-/// @notice Only updateAccounting and rebalance (on completion) update the report timestamp.
-///         All other operations must leave it unchanged.
-/// @dev rebalance() calls _updateAccountingInternal() when _rebalanceCompletionSatisfied(),
-///      so it must be excluded alongside updateAccounting.
+/// @notice Only the accounting-writer functions update the report timestamp. All other operations
+///         must leave it unchanged.
+/// @dev The accounting writers are: updateAccounting(); rebalance() (calls _updateAccountingInternal()
+///      when _rebalanceCompletionSatisfied()); and the fee setters setProtocolFeeBP()/
+///      setTreasuryFeeSplitBP(), which each call _updateAccountingInternal() to settle accrued
+///      rewards at the OLD fee before applying the new parameter (the L-11 remediation). All four
+///      are excluded here; their timestamp behavior is proven by the targeted rules below.
 rule reportTimestampStableUnderOtherOps(env e, method f, calldataarg args)
     filtered { f -> !isInitOrUpgrade(f)
                   && f.selector != sig:updateAccounting().selector
-                  && f.selector != sig:rebalance().selector }
+                  && f.selector != sig:rebalance().selector
+                  && f.selector != sig:setProtocolFeeBP(uint256).selector
+                  && f.selector != sig:setTreasuryFeeSplitBP(uint256).selector }
 {
     uint256 tsBefore = getLatestReportTimestamp();
 
     f(e, args);
 
     assert getLatestReportTimestamp() == tsBefore,
-        "report timestamp must not change except via updateAccounting or rebalance";
+        "report timestamp must not change except via updateAccounting, rebalance, or the fee setters";
+}
+
+/// @title Fee setters are accounting writers that advance the report timestamp monotonically
+/// @notice setProtocolFeeBP and setTreasuryFeeSplitBP call _updateAccountingInternal() before
+///         applying the new parameter, so they are accounting writers: a successful call may advance
+///         latestReport.timestamp, but must never move it backward.
+/// @dev Modeled with e.block.timestamp >= tsBefore (block time never goes backward), matching the
+///      real invariant. Parameter bounds for these setters are proven by setFeeBPRespectsMax and
+///      setTreasurySplitBPRespectsBounds.
+rule feeSettersAdvanceReportTimestampMonotonically(env e, method f, calldataarg args)
+    filtered { f -> f.selector == sig:setProtocolFeeBP(uint256).selector
+                 || f.selector == sig:setTreasuryFeeSplitBP(uint256).selector }
+{
+    uint256 tsBefore = getLatestReportTimestamp();
+    require e.block.timestamp >= tsBefore;
+
+    f@withrevert(e, args);
+    bool reverted = lastReverted;
+
+    assert !reverted => getLatestReportTimestamp() >= tsBefore,
+        "fee setters must not move the report timestamp backward";
 }

@@ -433,6 +433,23 @@ rule nonCoreCannotFinalize(env e) {
         "callers without CORE_ROLE must be rejected by finalizeWithdrawals";
 }
 
+/// @title mintFees reverts for non-CORE_ROLE callers
+/// @notice Only addresses with CORE_ROLE can call mintFees. mintFees is the only CORE_ROLE path
+///         that mints treasury/provider stAztec fee shares (via StAztec.mint, which itself only
+///         accepts the immutable OLLA_VAULT), so this guard is the authorization barrier for that
+///         fee-mint path. Without this rule a future weakening of the mintFees guard could pass the
+///         role-gating suite while opening a path to mint unbacked stAztec.
+rule nonCoreCannotMintFees(env e) {
+    require e.msg.sender != core();
+    require !vault.hasRole(vault.CORE_ROLE(), e.msg.sender);
+
+    address treasury; uint256 treasuryShares; address provider; uint256 providerShares;
+    mintFees@withrevert(e, treasury, treasuryShares, provider, providerShares);
+
+    assert lastReverted,
+        "callers without CORE_ROLE must be rejected by mintFees";
+}
+
 /*//////////////////////////////////////////////////////////////
                      PAUSE BEHAVIOR
 //////////////////////////////////////////////////////////////*/
