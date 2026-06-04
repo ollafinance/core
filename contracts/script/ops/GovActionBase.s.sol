@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import { console2 } from "@forge-std/console2.sol";
+import { VmSafe } from "@forge-std/Vm.sol";
 import { OllaGovernance } from "src/governance/OllaGovernance.sol";
 import { BaseScript } from "../base/BaseScript.s.sol";
 
@@ -38,6 +39,8 @@ abstract contract GovActionBase is BaseScript {
             revert("GovActionBase: caller lacks PROPOSER_ROLE");
         }
 
+        _requireBroadcastOrResume();
+
         vm.startBroadcast(pk);
 
         if (!isKnown) {
@@ -63,6 +66,14 @@ abstract contract GovActionBase is BaseScript {
         vm.stopBroadcast();
 
         _logOperation("after", gov, operationId);
+    }
+
+    /// @notice Reverts unless the script is running under `--broadcast` (or `--resume`).
+    /// @dev Prevents a live-RPC dry-run from logging "scheduled"/"executed" while nothing is mined.
+    function _requireBroadcastOrResume() internal view {
+        if (!vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) && !vm.isContext(VmSafe.ForgeContext.ScriptResume)) {
+            revert("GovActionBase: --broadcast required");
+        }
     }
 
     function _governanceAddress() internal view returns (address) {

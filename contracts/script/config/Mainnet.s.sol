@@ -30,6 +30,7 @@ contract MainnetConfig is ConfigHelper {
             revert("MainnetConfig: LZ_ENDPOINT must be defined");
         }
         address lzEndpoint = vm.envAddress("LZ_ENDPOINT");
+        require(lzEndpoint != address(0), "MainnetConfig: LZ_ENDPOINT must be nonzero");
 
         return DeployConfig({
             // Network

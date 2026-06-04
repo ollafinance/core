@@ -34,14 +34,24 @@ script/
 
 OllaCore starts **paused** after `initialize()`. Local dev deploys (`deployMocks`) auto-unpause during the deploy script. Production deploys remain paused — governance must call `unpause()` (requires `GUARDIAN_ROLE`) when ready to accept deposits.
 
-On strict chains (Sepolia/Mainnet), activation is a timelock flow:
+On strict chains (Sepolia/Mainnet), activation is a timelock flow over 5 governance operations
+(10 schedule + execute payloads):
 
-1. schedule `OllaCore.setVault(vault)`
-2. execute `OllaCore.setVault(vault)`
-3. schedule `OllaCore.unpause()`
-4. execute `OllaCore.unpause()`
-5. schedule `OllaVault.unpause()`
-6. execute `OllaVault.unpause()`
+1. schedule `OllaGovernance.setCore(core)` — already scheduled at deploy (salt 0); operators usually only execute it
+2. execute `OllaGovernance.setCore(core)`
+3. schedule `OllaCore.setVault(vault)`
+4. execute `OllaCore.setVault(vault)`
+5. schedule `OllaCore.unpause()`
+6. execute `OllaCore.unpause()`
+7. schedule `OllaCore.setRebalanceCooldown(86400)` — raise the 1h initializer default to 24h before the vault opens
+8. execute `OllaCore.setRebalanceCooldown(86400)`
+9. schedule `OllaVault.unpause()`
+10. execute `OllaVault.unpause()`
+
+`OllaGovernance.setCore` binds the timelock to Core; until it is executed, `emergencyPauseAll`/
+`emergencyUnpauseAll` and the governance passthroughs are unusable. `setRebalanceCooldown` must run
+before `OllaVault.unpause()` so the permissionless rebalance cadence is the intended 24h, not the 1h
+initializer default. Override the cooldown target with `REBALANCE_COOLDOWN=<seconds>` (default `86400`).
 
 Use `script/ops/PrintNextActivationPayload.s.sol` to print exactly one next payload based on current on-chain state:
 
@@ -51,11 +61,13 @@ ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/PrintNextActivationPay
 
 The script prints:
 
-- current step (`Step x/6`)
+- current step (`Step x/10`)
 - multisig address (`governanceAdmin`)
 - contract to call (`OllaGovernance`)
 - one payload for the next action when actionable
 - wait information (`timelock.readyAt`) when execution is not yet possible
+
+`PrintAllSchedulePayloads.s.sol` / `PrintAllExecutePayloads.s.sol` print the whole batch at once.
 
 ## Docs
 

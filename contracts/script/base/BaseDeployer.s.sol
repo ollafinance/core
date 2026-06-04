@@ -11,6 +11,11 @@ abstract contract BaseDeployer is Script {
     /// @notice Path to deployments directory
     string internal constant _DEPLOYMENTS_PATH = "deployments/";
 
+    /// @notice True only while the deploy flow's stage->write->commit cycle is active. Scopes
+    /// staged (`.json.tmp`) artifact selection to the deploy run that created it, so non-deploy
+    /// ops/broadcast/resume helpers never read uncommitted staged addresses (#473).
+    bool internal _stagingActive;
+
     /// @notice Write deployment JSON to file
     function _writeDeploymentJson(string memory env, string memory json) internal {
         if (!_artifactWriteEnabled()) {
@@ -186,6 +191,25 @@ abstract contract BaseDeployer is Script {
         }
     }
 
+    /// @notice Persist/validate a uint input under `.inputs.<key>`. On first run writes the value;
+    /// on resume reverts if the current env value differs from the persisted artifact value (#431).
+    function _ensureInputUintCompatibility(
+        string memory path,
+        string memory existing,
+        string memory key,
+        uint256 value
+    ) internal {
+        bool canWriteArtifact = _artifactWriteEnabled();
+        string memory jsonPath = string.concat(".inputs.", key);
+        try vm.parseJsonUint(existing, jsonPath) returns (uint256 parsed) {
+            require(parsed == value, string.concat("Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.", key));
+        } catch {
+            if (canWriteArtifact) {
+                vm.writeJson(_uint256ToString(value), path, jsonPath);
+            }
+        }
+    }
+
     function _ensureStatusScaffold(string memory env) internal {
         if (!_artifactWriteEnabled()) {
             return;
@@ -274,16 +298,26 @@ abstract contract BaseDeployer is Script {
             return;
         }
 
-        string memory path = _getDeploymentPath(env);
+        // Mark staging active so this deploy run (and only this run) selects the staged artifact.
+        _stagingActive = true;
+
         string memory stagedPath = _getStagedDeploymentPath(env);
+        string memory finalPath = _getFinalDeploymentPath(env);
         vm.createDir(_DEPLOYMENTS_PATH, true);
+
+        // Preserve a pre-existing staged file when it carries newer progress than the final
+        // artifact (e.g. a CREATE2 proxy recorded on a prior retry that failed before commit).
+        // Discarding it would replay the same deterministic deploy and collide (#463).
+        if (vm.isFile(stagedPath) && _stagedArtifactIsNewer(stagedPath, finalPath)) {
+            return;
+        }
 
         if (vm.isFile(stagedPath)) {
             vm.removeFile(stagedPath);
         }
 
-        if (vm.isFile(path)) {
-            vm.copyFile(path, stagedPath);
+        if (vm.isFile(finalPath)) {
+            vm.copyFile(finalPath, stagedPath);
         }
     }
 
@@ -297,9 +331,11 @@ abstract contract BaseDeployer is Script {
             vm.copyFile(stagedPath, _getFinalDeploymentPath(env));
             vm.removeFile(stagedPath);
         }
+        _stagingActive = false;
     }
 
     function _discardDeploymentArtifactWrites(string memory env) internal {
+        _stagingActive = false;
         if (!_useStagedDeploymentArtifact()) {
             return;
         }
@@ -307,6 +343,27 @@ abstract contract BaseDeployer is Script {
         string memory stagedPath = _getStagedDeploymentPath(env);
         if (vm.isFile(stagedPath)) {
             vm.removeFile(stagedPath);
+        }
+    }
+
+    /// @notice Returns true when the staged artifact records at least as many addresses as the final
+    /// artifact, i.e. it contains progress that must not be discarded on the next retry (#463).
+    function _stagedArtifactIsNewer(string memory stagedPath, string memory finalPath) internal view returns (bool) {
+        if (!vm.isFile(finalPath)) {
+            // No final artifact yet: any staged progress is strictly newer.
+            return true;
+        }
+        return _addressCount(stagedPath) > _addressCount(finalPath);
+    }
+
+    function _addressCount(string memory path) internal view returns (uint256) {
+        if (!vm.isFile(path)) {
+            return 0;
+        }
+        try vm.parseJsonKeys(vm.readFile(path), ".addresses") returns (string[] memory keys) {
+            return keys.length;
+        } catch {
+            return 0;
         }
     }
 
@@ -358,11 +415,62 @@ abstract contract BaseDeployer is Script {
         if (!vm.isFile(path)) {
             return address(0);
         }
+        _assertArtifactNotQuarantined(env, path);
         try vm.parseJsonAddress(vm.readFile(path), string.concat(".addresses.", key)) returns (address addr) {
             return addr;
         } catch {
             return address(0);
         }
+    }
+
+    /// @notice Fail closed when the selected deployment artifact is archived/compromised or does not
+    /// match the selected environment. Prevents ops scripts from reading a quarantined or mismatched
+    /// artifact (#467). Bypassable only with ALLOW_ARCHIVED_DEPLOYMENT_ARTIFACT=true.
+    function _assertArtifactNotQuarantined(string memory env, string memory path) internal view {
+        if (vm.envOr("ALLOW_ARCHIVED_DEPLOYMENT_ARTIFACT", false)) {
+            return;
+        }
+
+        string memory json = vm.readFile(path);
+
+        try vm.parseJsonString(json, "._compromisedReason") returns (string memory reason) {
+            revert(
+                string.concat(
+                    "Deploy: COMPROMISED_DEPLOYMENT_ARTIFACT.",
+                    env,
+                    " (set ALLOW_ARCHIVED_DEPLOYMENT_ARTIFACT=true to override). Reason: ",
+                    reason
+                )
+            );
+        } catch { }
+
+        try vm.parseJsonBool(json, ".status.compromised") returns (bool compromised) {
+            require(
+                !compromised,
+                "Deploy: COMPROMISED_DEPLOYMENT_ARTIFACT.status.compromised (set ALLOW_ARCHIVED_DEPLOYMENT_ARTIFACT=true to override)"
+            );
+        } catch { }
+
+        try vm.parseJsonBool(json, ".status.archived") returns (bool archived) {
+            require(
+                !archived,
+                "Deploy: ARCHIVED_DEPLOYMENT_ARTIFACT.status.archived (set ALLOW_ARCHIVED_DEPLOYMENT_ARTIFACT=true to override)"
+            );
+        } catch { }
+
+        try vm.parseJsonString(json, ".network") returns (string memory network) {
+            require(
+                keccak256(bytes(network)) == keccak256(bytes(env)),
+                "Deploy: DEPLOYMENT_ARTIFACT_NETWORK_MISMATCH (artifact .network does not match selected env)"
+            );
+        } catch { }
+
+        try vm.parseJsonUint(json, ".chainId") returns (uint256 chainId) {
+            require(
+                chainId == block.chainid,
+                "Deploy: DEPLOYMENT_ARTIFACT_CHAINID_MISMATCH (artifact .chainId does not match current chain)"
+            );
+        } catch { }
     }
 
     /// @notice Get the deployment file path for a given environment
@@ -374,8 +482,11 @@ abstract contract BaseDeployer is Script {
     }
 
     function _getStagedOrFinalDeploymentPath(string memory env) internal view returns (string memory) {
+        // Only the active deploy run (which staged the file) reads the staged `.json.tmp`. Non-deploy
+        // ops/broadcast/resume helpers always read the committed final artifact, so a stale staged file
+        // left behind by a failed deploy is never silently consumed (#473).
         string memory stagedPath = _getStagedDeploymentPath(env);
-        if (_useStagedDeploymentArtifact() && vm.isFile(stagedPath)) {
+        if (_stagingActive && _useStagedDeploymentArtifact() && vm.isFile(stagedPath)) {
             return stagedPath;
         }
         return _getFinalDeploymentPath(env);

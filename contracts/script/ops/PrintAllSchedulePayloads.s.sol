@@ -45,10 +45,17 @@ contract PrintAllSchedulePayloads is BaseScript {
         console2.log("multisig (governanceAdmin)", gov.governanceAdmin());
         console2.log("timelock.minDelay (seconds)", delay);
         console2.log("desiredCooldown (seconds)", desiredCooldown);
+        console2.log("gov.core(current)", gov.core());
         console2.log("salt");
         console2.logBytes32(salt);
         console2.log("");
-        console2.log("Submit all 4 calls below as ONE Safe MultiSendCallOnly batch.");
+
+        // setCore (step 0) is normally scheduled at deploy; only emit a schedule payload if it is not.
+        // Handled in a helper to keep run()'s stack within the non-via-ir limit.
+        _printSetCoreScheduleSection(gov, governance, core, delay);
+
+        console2.log("");
+        console2.log("Submit all calls below (plus any step 0 above) as ONE Safe MultiSendCallOnly batch.");
         console2.log("Each call targets the OllaGovernance proxy with value=0.");
         console2.log("After 3 days, submit the corresponding 4 execute() calls as a second batch.");
         console2.log("============================================================");
@@ -66,6 +73,40 @@ contract PrintAllSchedulePayloads is BaseScript {
         console2.log("FOR THE EXECUTE PHASE (after 3 days), use PrintAllExecutePayloads");
         console2.log("with the SAME SALT and REBALANCE_COOLDOWN values.");
         console2.log("============================================================");
+    }
+
+    /// @notice Emit the OllaGovernance.setCore(core) step-0 schedule payload when needed.
+    /// @dev setCore is scheduled at deploy with salt 0 / predecessor 0 and target = governance proxy.
+    ///      It must be executed before activation is complete; otherwise emergencyPauseAll/unpauseAll
+    ///      and the governance passthroughs that dereference core are unusable. Only emit a schedule
+    ///      payload if it was not already scheduled at deploy.
+    function _printSetCoreScheduleSection(OllaGovernance gov, address governance, address core, uint256 delay)
+        internal
+        view
+    {
+        if (gov.core() != address(0)) {
+            console2.log("setCore: gov.core() already set; no setCore schedule payload required.");
+            return;
+        }
+
+        bytes memory setCoreData = abi.encodeCall(OllaGovernance.setCore, (core));
+        bytes32 setCoreOpId = gov.hashOperation(governance, 0, setCoreData, bytes32(0), bytes32(0));
+
+        if (
+            gov.isOperationPending(setCoreOpId) || gov.isOperationReady(setCoreOpId)
+                || gov.isOperationDone(setCoreOpId)
+        ) {
+            console2.log(
+                "setCore: already scheduled at deploy (salt 0). Execute it via PrintAllExecutePayloads;"
+                " no schedule payload needed."
+            );
+            return;
+        }
+
+        console2.log("setCore NOT scheduled. Include the step 0 schedule payload below in the batch.");
+        _printSchedule(
+            0, "setGovernanceCore", governance, governance, setCoreData, bytes32(0), bytes32(0), delay, setCoreOpId
+        );
     }
 
     function _printSchedule(

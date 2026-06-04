@@ -34,6 +34,8 @@
   "status": {
     "phase": "D",
     "completed": true,
+    "archived": true,
+    "compromised": true,
     "updatedAtBlock": 25071932,
     "flags": {
       "coreInitialized": true,

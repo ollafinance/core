@@ -35,6 +35,11 @@ contract PrintAllExecutePayloads is BaseScript {
         bytes32 setCooldownOpId = gov.hashOperation(core, 0, setCooldownData, unpauseCoreOpId, salt);
         bytes32 unpauseVaultOpId = gov.hashOperation(vault, 0, unpauseVaultData, setCooldownOpId, salt);
 
+        // OllaGovernance.setCore(core) is scheduled at deploy time with salt 0 / predecessor 0 and
+        // target = governance proxy. It must be executed before activation is complete.
+        bytes memory setCoreData = abi.encodeCall(OllaGovernance.setCore, (core));
+        bytes32 setCoreOpId = gov.hashOperation(governance, 0, setCoreData, bytes32(0), bytes32(0));
+
         console2.log("============================================================");
         console2.log("BATCHED ACTIVATION EXECUTE PAYLOADS");
         console2.log("============================================================");
@@ -43,8 +48,10 @@ contract PrintAllExecutePayloads is BaseScript {
         console2.log("desiredCooldown (seconds)", desiredCooldown);
         console2.log("salt");
         console2.logBytes32(salt);
+        console2.log("gov.core(current)", gov.core());
         console2.log("");
         console2.log("Readiness check:");
+        _logReadiness(gov, "setGovernanceCore", setCoreOpId);
         _logReadiness(gov, "setVault", setVaultOpId);
         _logReadiness(gov, "unpauseCore", unpauseCoreOpId);
         _logReadiness(gov, "setRebalanceCooldown", setCooldownOpId);
@@ -53,6 +60,16 @@ contract PrintAllExecutePayloads is BaseScript {
         console2.log("Submit all 4 calls below as ONE Safe MultiSendCallOnly batch, in this order.");
         console2.log("Each call targets the OllaGovernance proxy with value=0.");
         console2.log("============================================================");
+
+        // setCore (step 0) must be executed before activation is complete. It is independent of the
+        // core/vault predecessor chain (salt 0, predecessor 0) and is skipped once gov.core() is set.
+        if (gov.core() == address(0)) {
+            _printExecute(
+                0, "setGovernanceCore", governance, governance, setCoreData, bytes32(0), bytes32(0), setCoreOpId
+            );
+        } else {
+            console2.log("setCore: gov.core() already set; skipping setCore execute payload.");
+        }
 
         _printExecute(1, "setVault", governance, core, setVaultData, bytes32(0), salt, setVaultOpId);
         _printExecute(2, "unpauseCore", governance, core, unpauseCoreData, setVaultOpId, salt, unpauseCoreOpId);

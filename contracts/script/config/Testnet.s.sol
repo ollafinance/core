@@ -28,6 +28,10 @@ contract TestnetConfig is ConfigHelper {
             revert("TestnetConfig: LZ_ENDPOINT must be defined");
         }
         address lzEndpoint = vm.envAddress("LZ_ENDPOINT");
+        // Strict non-mock Sepolia requires a real bridge endpoint; mock Sepolia may run bridge-less.
+        if (!mockAztec) {
+            require(lzEndpoint != address(0), "TestnetConfig: LZ_ENDPOINT must be nonzero when MOCK_AZTEC=false");
+        }
 
         return DeployConfig({
             // Network
