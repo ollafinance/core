@@ -401,7 +401,9 @@ contract OllaCoreUpdateAccountingReentrancyTest is Test {
         stAztec = new StAztec(address(vault));
         stakingManager = new MockStakingManager();
         rewardsAccumulator = new MockRewardsAccumulator(IERC20(address(asset)), address(core));
-        safetyModule = new MaliciousSafetyModule(address(implementation), address(vault));
+        // Bind to the core PROXY (not the implementation): production GovernanceLib expects a
+        // SafetyModule whose CORE() is the proxy, and the onlyCoreOrVault guard authorizes the proxy.
+        safetyModule = new MaliciousSafetyModule(address(core), address(vault));
 
         core.initialize(
             asset,

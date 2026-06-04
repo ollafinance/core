@@ -45,6 +45,19 @@ contract StakingManagerHandler is Test {
     uint256 public ghost_totalRewardsSet;
     address[] public ghost_attesters;
 
+    /// @notice Cumulative principal that has entered the staked aggregate via stake() (queued + active).
+    /// @dev Production stake() leaves new attesters Queued: stakedAmount grows immediately while
+    ///      getActivatedAttesterCount() stays flat until a later refresh. This ghost is the correct
+    ///      upper bound for stakedAmount + pendingUnstakeAmount, which ghost_keysActivated is not.
+    uint256 public ghost_stakedPrincipal;
+    /// @notice Cumulative principal reclassified out of staked into pending refund via purgeFailedQueueEntry.
+    uint256 public ghost_purgedPrincipal;
+    /// @notice Attesters that have been staked but not yet promoted (Queued in StakingManager).
+    /// @dev Appended when stake() queues a new attester; cleared when a refresh promotes it (the mock
+    ///      rollup reports VALIDATING immediately after deposit, so any refresh activates queued entries)
+    ///      or when purgeFailedQueueEntry removes it.
+    address[] public ghost_queued;
+
     constructor(
         StakingManager _stakingManager,
         StakingProviderRegistry _stakingProviderRegistry,
@@ -136,7 +149,11 @@ contract StakingManagerHandler is Test {
         vm.stopPrank();
     }
 
-    /// @notice Stake tokens (only core can call)
+    /// @notice Stake tokens (only core can call). Leaves new stakes in the production Queued state.
+    /// @dev Unlike before, this does NOT immediately refresh/promote the new attesters. Production
+    ///      stake() records them as Queued (stakedAmount grows, getActivatedAttesterCount() does not)
+    ///      until a later permissionless refresh. Promotion is exercised by the separate
+    ///      refreshAllAttesters action, so the invariants can observe the queued-principal window.
     function stake(uint256 amount) external {
         vm.startPrank(core);
 
@@ -153,24 +170,54 @@ contract StakingManagerHandler is Test {
         // Mint tokens to core contract for staking
         stakingAsset.mint(core, amount);
 
-        uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
+        uint256 stakedBefore = stakingManager.getStakingState().stakedAmount;
+
+        // Snapshot which known attesters are already deposited so we can identify the newly-queued ones.
+        uint256 n = ghost_attesters.length;
+        bool[] memory depositedBefore = new bool[](n);
+        for (uint256 i; i < n; ++i) {
+            depositedBefore[i] = rollup.getAttesterView(ghost_attesters[i]).effectiveBalance > 0;
+        }
 
         try stakingManager.stake(amount) {
-            // Promote newly staked Queued attesters to Active
-            // (mock rollup returns VALIDATING after deposit)
-            vm.stopPrank();
-            stakingManager.refreshAttesterState(_allAttesterAddresses());
-            vm.startPrank(core);
-
-            uint256 activatedAfter = stakingManager.getActivatedAttesterCount();
-            uint256 newlyActivated = activatedAfter - activatedBefore;
-            ghost_keysActivated += newlyActivated;
-            ghost_totalStaked += newlyActivated * activationThreshold;
+            // New stakes remain Queued: stakedAmount grows now, but the attesters are NOT activated
+            // until a later refresh. Track the queued principal and the queued addresses so the
+            // purge action can target real Queued entries.
+            uint256 stakedAfter = stakingManager.getStakingState().stakedAmount;
+            ghost_stakedPrincipal += stakedAfter - stakedBefore;
+            for (uint256 i; i < n; ++i) {
+                if (!depositedBefore[i] && rollup.getAttesterView(ghost_attesters[i]).effectiveBalance > 0) {
+                    ghost_queued.push(ghost_attesters[i]);
+                }
+            }
         } catch {
             // Expected if insufficient keys or amount below threshold
         }
 
         vm.stopPrank();
+    }
+
+    /// @notice Purge a failed queued entry whose deposit never materialized on the rollup.
+    /// @dev Models a failed queue flush: clears the queued attester on the mock rollup (NONE state),
+    ///      then calls production purgeFailedQueueEntry, which reclassifies the cached queued principal
+    ///      into pending refund and removes the attester. Only operates on tracked Queued attesters, so
+    ///      it can never clear an Active attester out from under StakingManager. If the production
+    ///      preconditions are not met the whole action reverts atomically (clearAttester is rolled back).
+    function purgeFailedQueueEntry(uint256 seed) external {
+        if (ghost_queued.length == 0) return;
+
+        uint256 idx = bound(seed, 0, ghost_queued.length - 1);
+        address attester = ghost_queued[idx];
+
+        // Simulate the deposit failing to flush: the rollup no longer knows this attester.
+        rollup.clearAttester(attester);
+
+        uint256 stakedBefore = stakingManager.getStakingState().stakedAmount;
+        stakingManager.purgeFailedQueueEntry(attester);
+        uint256 stakedAfter = stakingManager.getStakingState().stakedAmount;
+
+        ghost_purgedPrincipal += stakedBefore - stakedAfter;
+        _removeFromQueued(attester);
     }
 
     /// @notice Unstake tokens (only core can call)
@@ -231,13 +278,20 @@ contract StakingManagerHandler is Test {
         // Refresh to reconcile StakingManager state
         address[] memory attesters = new address[](1);
         attesters[0] = attester;
+        uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
         stakingManager.refreshAttesterState(attesters);
+        _syncActivations(activatedBefore);
     }
 
-    /// @notice Refresh attester state for all known attesters.
+    /// @notice Refresh attester state for all known attesters, promoting queued ones to Active.
     function refreshAllAttesters() external {
         if (ghost_attesters.length == 0) return;
+        uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
         stakingManager.refreshAttesterState(ghost_attesters);
+        _syncActivations(activatedBefore);
+        // The mock rollup reports VALIDATING immediately after deposit, so refreshing every attester
+        // promotes all VALIDATING-queued entries: none remain queued afterward.
+        delete ghost_queued;
     }
 
     uint256 public ghost_externallyFinalized;
@@ -271,6 +325,11 @@ contract StakingManagerHandler is Test {
         uint256 idx = bound(attesterSeed, 0, ghost_attesters.length - 1);
         address attester = ghost_attesters[idx];
 
+        // Only slash promoted (Active) attesters. A queued-but-unrefreshed attester is VALIDATING on
+        // the rollup too, but slashing it would create pending principal without a prior activation,
+        // which is out of scope for slash modeling and would break the activated-count invariants.
+        if (_isQueued(attester)) return;
+
         // Only slash currently Active attesters (VALIDATING on rollup, no exit)
         AttesterView memory view_ = rollup.getAttesterView(attester);
         if (view_.status != Status.VALIDATING) return;
@@ -289,7 +348,40 @@ contract StakingManagerHandler is Test {
         // Refresh so StakingManager picks up the change
         address[] memory attesters = new address[](1);
         attesters[0] = attester;
+        uint256 activatedBefore = stakingManager.getActivatedAttesterCount();
         stakingManager.refreshAttesterState(attesters);
+        _syncActivations(activatedBefore);
+    }
+
+    /// @notice Increment the cumulative activated-keys ghost by the positive change in active count.
+    /// @dev Over-counts on re-activations (safe for the `<=` activation invariants); never under-counts,
+    ///      so currentActivated + pending can never exceed ghost_keysActivated.
+    function _syncActivations(uint256 activatedBefore) internal {
+        uint256 activatedAfter = stakingManager.getActivatedAttesterCount();
+        if (activatedAfter > activatedBefore) {
+            ghost_keysActivated += activatedAfter - activatedBefore;
+        }
+    }
+
+    /// @notice True if the attester is currently tracked as Queued (staked but not yet promoted).
+    function _isQueued(address attester) internal view returns (bool) {
+        uint256 len = ghost_queued.length;
+        for (uint256 i; i < len; ++i) {
+            if (ghost_queued[i] == attester) return true;
+        }
+        return false;
+    }
+
+    /// @notice Remove an attester from the queued-tracking list (swap-and-pop).
+    function _removeFromQueued(address attester) internal {
+        uint256 len = ghost_queued.length;
+        for (uint256 i; i < len; ++i) {
+            if (ghost_queued[i] == attester) {
+                ghost_queued[i] = ghost_queued[len - 1];
+                ghost_queued.pop();
+                return;
+            }
+        }
     }
 
     function ghostAttestersLength() external view returns (uint256) {
@@ -390,15 +482,19 @@ contract StakingManagerInvariantTest is Test {
                            CORE INVARIANTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Staking state amounts are bounded by the number of activated keys times the activation threshold.
+    /// @notice Staking state amounts are bounded by the cumulative staked principal.
+    /// @dev Bounded by ghost_stakedPrincipal (queued + activated), not ghost_keysActivated * threshold:
+    ///      production stake() records queued principal in stakedAmount before activation, so the
+    ///      activated-key bound would spuriously fail during the queued window.
     function invariant_StakingStateBounded() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
-        uint256 activationThreshold = rollup.getActivationThreshold();
-        uint256 maxStakeable = handler.ghost_keysActivated() * activationThreshold;
+        uint256 maxStakeable = handler.ghost_stakedPrincipal();
 
-        assertLe(state.stakedAmount, maxStakeable, "stakedAmount should not exceed keysActivated * threshold");
+        assertLe(state.stakedAmount, maxStakeable, "stakedAmount should not exceed cumulative staked principal");
         assertLe(
-            state.pendingUnstakeAmount, maxStakeable, "pendingUnstakeAmount should not exceed keysActivated * threshold"
+            state.pendingUnstakeAmount,
+            maxStakeable,
+            "pendingUnstakeAmount should not exceed cumulative staked principal"
         );
     }
 
@@ -446,15 +542,17 @@ contract StakingManagerInvariantTest is Test {
     }
 
     /// @notice Total assets consistency across all states
+    /// @dev Bounded by cumulative staked principal: staked + pendingUnstake can never exceed the
+    ///      principal that has entered staking. Purge moves principal out of stakedAmount into pending
+    ///      refund (outside this sum), so the bound still holds across purge/recovery transitions.
     function invariant_TotalAssetsConsistency() external view {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
-        uint256 activationThreshold = rollup.getActivationThreshold();
 
-        // The sum of all states should not exceed the total amount ever activated
+        // The sum of staked + pending should not exceed the total principal ever staked
         uint256 totalInStates = state.stakedAmount + state.pendingUnstakeAmount;
-        uint256 maxActivated = handler.ghost_keysActivated() * activationThreshold;
+        uint256 maxStaked = handler.ghost_stakedPrincipal();
 
-        assertLe(totalInStates, maxActivated, "total assets in all states should not exceed keysActivated * threshold");
+        assertLe(totalInStates, maxStaked, "total assets in all states should not exceed cumulative staked principal");
     }
 
     /// @notice Queue operations maintain FIFO property
@@ -527,11 +625,13 @@ contract StakingManagerInvariantTest is Test {
         IStakingManager.StakingState memory state = stakingManager.getStakingState();
         uint256 queueLength = stakingProviderRegistry.getQueueLength();
 
-        // If there are staked assets, there should be corresponding active or exiting attesters
-        // (stakedAmount includes both Active and Exiting attesters)
+        // If there are staked assets, there should be corresponding attesters backing them. Staked
+        // principal is backed by Active, Exiting, OR Queued attesters: production stake() records
+        // queued principal in stakedAmount before activation, and queued attesters are VALIDATING on
+        // the rollup. Count rollup-eligible attesters rather than only active/exiting so the queued
+        // window does not spuriously trip this check (consistent with invariant_InactiveEntriesNotStaked).
         if (state.stakedAmount > 0) {
-            uint256 activeOrExiting = activatedCount() + stakingManager.getPendingUnstakeCount();
-            assertGt(activeOrExiting, 0, "staked amount should correspond to active or exiting attesters");
+            assertGt(_countRollupEligible(), 0, "staked amount should correspond to rollup-eligible attesters");
         }
 
         // Should not be able to stake without keys in queue

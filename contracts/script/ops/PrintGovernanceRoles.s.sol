@@ -43,6 +43,10 @@ contract PrintGovernanceRoles is BaseScript {
         console2.log("open.executor(address(0))", executorOpen);
         console2.log("open.canceller(address(0))", cancellerOpen);
 
+        _logCandidate(
+            "governanceAdmin", gov.governanceAdmin(), gov, proposerRole, executorRole, cancellerRole, defaultAdminRole
+        );
+
         address caller = address(0);
         bool hasPk = vm.envExists("PRIVATE_KEY");
         if (hasPk) {

@@ -44,6 +44,11 @@ contract DeployScript is BaseDeployer {
     uint256 internal constant _CHAIN_SEPOLIA = 11155111;
     uint256 internal constant _CHAIN_MAINNET = 1;
 
+    // Canonical LayerZero EndpointV2 addresses per chain (defense-in-depth allowlist).
+    // Sourced from in-repo .example-mainnet.env / .example-sepolia.env and deployments/{mainnet,sepolia}.json.
+    address internal constant _CANONICAL_LZ_ENDPOINT_MAINNET = 0x1a44076050125825900e736c501f859c50fE728c;
+    address internal constant _CANONICAL_LZ_ENDPOINT_SEPOLIA = 0x6EDCE65403992e310A62460808c4b910D972f10f;
+
     bytes32 internal constant _CORE_PROXY_SALT = keccak256("olla.core.proxy.v1_1");
     bytes32 internal constant _VAULT_PROXY_SALT = keccak256("olla.vault.proxy.v1_1");
     bytes32 internal constant _STAKING_MANAGER_PROXY_SALT = keccak256("olla.staking.manager.proxy.v1_1");
@@ -127,6 +132,9 @@ contract DeployScript is BaseDeployer {
                 config.rollupRegistry,
                 config.lzEndpoint
             );
+            // Persist/validate every security-relevant role and config input under `.inputs` so a
+            // corrected strict-chain rerun cannot complete while reusing stale privileged inputs (#431).
+            _ensureRoleConfigCompatibility(_artifactEnv, config);
         }
         _atomicProxyFactory = _resolveOrDeployAtomicProxyFactory(config);
         _ollaCoreDeployer = new OllaCoreDeployer(_atomicProxyFactory);
@@ -184,9 +192,21 @@ contract DeployScript is BaseDeployer {
             lzEndpoint = config.lzEndpoint;
         }
 
+        // On strict non-mock chains the bridge is mandatory: the endpoint must be the canonical
+        // LayerZero EndpointV2 for the chain (defense-in-depth against a fake endpoint binding) and
+        // the deployment may not complete without the adapter (#434/#448).
+        bool bridgeRequired = _isStrictChain(config.chainId) && !config.deployMocks;
+        if (bridgeRequired) {
+            _validateCanonicalLzEndpoint(config.chainId, lzEndpoint);
+        }
+
         if (lzEndpoint != address(0)) {
             address oftDelegate = config.deployMocks ? config.deployer : ollaGovProxy;
             oftAdapter = _resolveOrDeployOftAdapter(config, stAztec, lzEndpoint, oftDelegate);
+        }
+
+        if (bridgeRequired) {
+            require(oftAdapter != address(0), "Deploy: StAztecOFTAdapter required on strict non-mock chain");
         }
 
         // 5.1 Deploy RewardsAccumulator (linked to OllaCore proxy)
@@ -335,6 +355,8 @@ contract DeployScript is BaseDeployer {
             safetyModule
         );
 
+        _validateBridgeDeploymentState(config, stAztec, lzEndpoint, oftAdapter, ollaGovProxy);
+
         // Add StAztec metadata for frontend signature generation
         string memory stAztecName = StAztec(stAztec).name();
 
@@ -368,6 +390,7 @@ contract DeployScript is BaseDeployer {
                 implementation != address(0) && proxy != address(0),
                 "Deploy: MISSING_REQUIRED_PREVIOUS_PHASE_OUTPUT.OllaGovernance"
             );
+            _validateReusedGovernanceState(config, proxy);
             return (implementation, proxy);
         }
 
@@ -489,8 +512,23 @@ contract DeployScript is BaseDeployer {
             _assertCoreInitialized(
                 proxy, asset, stAztec, stakingManager, config.rewardsAccumulator, safetyModule, config.governance
             );
+            _validateReusedCoreFeeState(config, proxy);
             _recordFlag("coreInitialized", true);
             return proxy;
+        }
+
+        // The artifact key is absent (e.g. a prior retry deployed the deterministic proxy into a
+        // staged artifact that was lost before commit). If the predicted CREATE2 address already has
+        // code, adopt it after validation instead of replaying the deploy into a collision (#463).
+        address predicted = _predictProxyAddress(implementation, salt);
+        if (_hasCode(predicted)) {
+            _assertCoreInitialized(
+                predicted, asset, stAztec, stakingManager, config.rewardsAccumulator, safetyModule, config.governance
+            );
+            _validateReusedCoreFeeState(config, predicted);
+            _recordAddress("OllaCoreProxy", predicted);
+            _recordFlag("coreInitialized", true);
+            return predicted;
         }
 
         (/*implementation*/, proxy) =
@@ -519,6 +557,16 @@ contract DeployScript is BaseDeployer {
             _assertVaultInitialized(proxy, asset, core, governance);
             _recordFlag("vaultInitialized", true);
             return proxy;
+        }
+
+        // Adopt a previously-deployed deterministic proxy at the predicted CREATE2 address if its
+        // record was lost across a retry, rather than redeploying into a collision (#463).
+        address predicted = _predictProxyAddress(implementation, salt);
+        if (_hasCode(predicted)) {
+            _assertVaultInitialized(predicted, asset, core, governance);
+            _recordAddress("OllaVaultProxy", predicted);
+            _recordFlag("vaultInitialized", true);
+            return predicted;
         }
 
         (/*implementation*/, proxy) =
@@ -630,6 +678,16 @@ contract DeployScript is BaseDeployer {
         }
 
         adapter = _stAztecOFTAdapterDeployer.deploy(config, stAztec, lzEndpoint, delegate);
+
+        // After a FRESH adapter deployment validate the on-chain binding so a strict deploy cannot
+        // silently record an adapter wired to the wrong token/endpoint/owner/delegate (#448).
+        if (_isStrictChain(config.chainId) && !config.deployMocks) {
+            require(
+                _matchesOftAdapter(adapter, stAztec, lzEndpoint, delegate),
+                "Deploy: ADDRESS_STATE_MISMATCH.StAztecOFTAdapter.binding"
+            );
+        }
+
         _recordAddress("StAztecOFTAdapter", adapter);
     }
 
@@ -747,7 +805,41 @@ contract DeployScript is BaseDeployer {
                 AccessControlUpgradeable(stakingProviderRegistryProxy).hasRole(bytes32(0), governanceAdmin),
                 "Deploy: ADDRESS_STATE_MISMATCH.StakingProviderRegistry.admin"
             );
+            _validateReusedProviderRegistryState(config, stakingProviderRegistryProxy);
             return (stakingManagerImpl, stakingManagerProxy, stakingProviderRegistryImpl, stakingProviderRegistryProxy);
+        }
+
+        // Adopt a previously-deployed deterministic staking pair if its proxy records were lost across
+        // a retry but the implementations (which seed the CREATE2 salt) are still recorded. Re-deploying
+        // the pair into the same predicted addresses would collide (#463).
+        {
+            address recordedManagerImpl = _readAddress("StakingManagerImplementation");
+            address recordedRegistryImpl = _readAddress("StakingProviderRegistryImplementation");
+            if (
+                recordedManagerImpl != address(0) && _hasCode(recordedManagerImpl) && recordedRegistryImpl != address(0)
+                    && _hasCode(recordedRegistryImpl)
+            ) {
+                address predictedManager = _predictProxyAddress(recordedManagerImpl, _STAKING_MANAGER_PROXY_SALT);
+                address predictedRegistry =
+                    _predictProxyAddress(recordedRegistryImpl, _STAKING_PROVIDER_REGISTRY_PROXY_SALT);
+                if (_hasCode(predictedManager) && _hasCode(predictedRegistry)) {
+                    _assertStakingStackInitialized(
+                        config,
+                        predictedManager,
+                        predictedRegistry,
+                        core,
+                        rewardsAccumulator,
+                        asset,
+                        rollupRegistry,
+                        governanceAdmin
+                    );
+                    _recordAddress("StakingManagerImplementation", recordedManagerImpl);
+                    _recordAddress("StakingManagerProxy", predictedManager);
+                    _recordAddress("StakingProviderRegistryImplementation", recordedRegistryImpl);
+                    _recordAddress("StakingProviderRegistryProxy", predictedRegistry);
+                    return (recordedManagerImpl, predictedManager, recordedRegistryImpl, predictedRegistry);
+                }
+            }
         }
 
         (stakingManagerImpl, stakingManagerProxy, stakingProviderRegistryImpl, stakingProviderRegistryProxy) = _stakingStackDeployer.deploy(
@@ -787,6 +879,7 @@ contract DeployScript is BaseDeployer {
                 AccessControlUpgradeable(safetyModule).hasRole(bytes32(0), admin),
                 "Deploy: ADDRESS_STATE_MISMATCH.SafetyModule.admin"
             );
+            _validateReusedSafetyModuleState(config, safetyModule);
             return safetyModule;
         }
 
@@ -880,6 +973,33 @@ contract DeployScript is BaseDeployer {
             return;
         }
         _setDeploymentFlag(_artifactEnv, key, value);
+    }
+
+    /// @notice Persists (first run) and validates (resume) every security-relevant role/config input
+    /// under `.inputs`. On a strict-chain resume where the current env value differs from the persisted
+    /// artifact value, this reverts with CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.<key> (#431).
+    function _ensureRoleConfigCompatibility(string memory env, DeployConfig memory config) internal {
+        string memory path = _getDeploymentPath(env);
+        if (!vm.isFile(path)) {
+            return;
+        }
+        string memory existing = vm.readFile(path);
+
+        // Privileged role addresses.
+        _ensureInputAddressCompatibility(path, existing, "governance", config.governance);
+        _ensureInputAddressCompatibility(path, existing, "treasury", config.treasury);
+        _ensureInputAddressCompatibility(path, existing, "providerAdmin", config.providerAdmin);
+        _ensureInputAddressCompatibility(path, existing, "providerRewardsRecipient", config.providerRewardsRecipient);
+        _ensureInputAddressCompatibility(path, existing, "guardian", config.guardian);
+
+        // Privileged / economic uint parameters.
+        _ensureInputUintCompatibility(path, existing, "timelockMinDelay", config.timelockMinDelay);
+        _ensureInputUintCompatibility(path, existing, "protocolFeeBP", config.protocolFeeBP);
+        _ensureInputUintCompatibility(path, existing, "treasuryFeeSplitBP", config.treasuryFeeSplitBP);
+        _ensureInputUintCompatibility(path, existing, "safetyDepositCap", config.safetyDepositCap);
+        _ensureInputUintCompatibility(path, existing, "safetyMinRateDropBps", config.safetyMinRateDropBps);
+        _ensureInputUintCompatibility(path, existing, "safetyMaxQueueRatioBps", config.safetyMaxQueueRatioBps);
+        _ensureInputUintCompatibility(path, existing, "safetyMaxAccountingDelay", config.safetyMaxAccountingDelay);
     }
 
     function _matchesOftAdapter(address adapter, address stAztec, address lzEndpoint, address delegate)
@@ -1160,6 +1280,173 @@ contract DeployScript is BaseDeployer {
         }
     }
 
+    /// @notice Validates live OllaGovernance state (treasury, timelock min delay, governanceAdmin)
+    /// against current config before reusing an existing governance module on resume (#431).
+    function _validateReusedGovernanceState(DeployConfig memory config, address governanceProxy) internal view {
+        if (!_shouldValidateReusedLiveState(config)) {
+            return;
+        }
+        OllaGovernance gov = OllaGovernance(payable(governanceProxy));
+        require(gov.treasury() == config.treasury, "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.treasury");
+        require(
+            gov.getMinDelay() == config.timelockMinDelay,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.timelockMinDelay"
+        );
+        require(
+            gov.governanceAdmin() == config.governance, "Deploy: ADDRESS_STATE_MISMATCH.OllaGovernance.governanceAdmin"
+        );
+    }
+
+    /// @notice Validates live SafetyModule state (guardian role + safety parameters) against current
+    /// config before reusing an existing SafetyModule on resume (#431).
+    function _validateReusedSafetyModuleState(DeployConfig memory config, address safetyModule) internal view {
+        if (!_shouldValidateReusedLiveState(config)) {
+            return;
+        }
+        SafetyModule sm = SafetyModule(safetyModule);
+        require(
+            AccessControlUpgradeable(safetyModule).hasRole(sm.GUARDIAN_ROLE(), config.guardian),
+            "Deploy: ADDRESS_STATE_MISMATCH.SafetyModule.guardian"
+        );
+        require(
+            sm.depositCap() == config.safetyDepositCap,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.safetyDepositCap"
+        );
+        require(
+            sm.minRateDropBps() == config.safetyMinRateDropBps,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.safetyMinRateDropBps"
+        );
+        require(
+            sm.maxQueueRatioBps() == config.safetyMaxQueueRatioBps,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.safetyMaxQueueRatioBps"
+        );
+        require(
+            sm.maxAccountingDelay() == config.safetyMaxAccountingDelay,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.safetyMaxAccountingDelay"
+        );
+    }
+
+    /// @notice Validates live StakingProviderRegistry state (provider-admin role + rewards recipient)
+    /// against current config before reusing an existing registry on resume (#431).
+    function _validateReusedProviderRegistryState(DeployConfig memory config, address providerRegistry) internal view {
+        if (!_shouldValidateReusedLiveState(config)) {
+            return;
+        }
+        StakingProviderRegistry registry = StakingProviderRegistry(providerRegistry);
+        require(
+            AccessControlUpgradeable(providerRegistry)
+                .hasRole(registry.STAKING_PROVIDER_ADMIN_ROLE(), config.providerAdmin),
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingProviderRegistry.providerAdmin"
+        );
+        require(
+            registry.getStakingProviderConfig().rewardsRecipient == config.providerRewardsRecipient,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.providerRewardsRecipient"
+        );
+    }
+
+    /// @notice Validates live OllaCore fee parameters against current config before reusing an existing
+    /// OllaCore proxy on resume (#431).
+    function _validateReusedCoreFeeState(DeployConfig memory config, address coreProxy) internal view {
+        if (!_shouldValidateReusedLiveState(config)) {
+            return;
+        }
+        require(
+            OllaCore(coreProxy).protocolFeeBP() == config.protocolFeeBP,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.protocolFeeBP"
+        );
+        require(
+            OllaCore(coreProxy).treasuryFeeSplitBP() == config.treasuryFeeSplitBP,
+            "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.treasuryFeeSplitBP"
+        );
+    }
+
+    /// @notice Validates a staking pair (manager + registry) is fully and correctly initialized.
+    /// Mirrors the resume-reuse checks; used when adopting a deterministic pair recovered by predicted
+    /// CREATE2 address after a lost retry record (#463).
+    function _assertStakingStackInitialized(
+        DeployConfig memory config,
+        address stakingManagerProxy,
+        address stakingProviderRegistryProxy,
+        address core,
+        address rewardsAccumulator,
+        address asset,
+        address rollupRegistry,
+        address governanceAdmin
+    ) internal view {
+        require(
+            StakingManager(stakingManagerProxy).core() == core, "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.core"
+        );
+        require(
+            StakingManager(stakingManagerProxy).rewardsAccumulator() == rewardsAccumulator,
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.rewardsAccumulator"
+        );
+        require(
+            address(StakingManager(stakingManagerProxy).stakingAsset()) == asset,
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.asset"
+        );
+        require(
+            address(StakingManager(stakingManagerProxy).rollupRegistry()) == rollupRegistry,
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.rollupRegistry"
+        );
+        require(
+            address(StakingManager(stakingManagerProxy).stakingProviderRegistry()) == stakingProviderRegistryProxy,
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.providerRegistry"
+        );
+        require(
+            StakingProviderRegistry(stakingProviderRegistryProxy).stakingManager() == stakingManagerProxy,
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingProviderRegistry.stakingManager"
+        );
+        require(
+            AccessControlUpgradeable(stakingManagerProxy).hasRole(bytes32(0), governanceAdmin),
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.admin"
+        );
+        require(
+            AccessControlUpgradeable(stakingProviderRegistryProxy).hasRole(bytes32(0), governanceAdmin),
+            "Deploy: ADDRESS_STATE_MISMATCH.StakingProviderRegistry.admin"
+        );
+        _validateReusedProviderRegistryState(config, stakingProviderRegistryProxy);
+    }
+
+    /// @notice Enforces that, when the bridge is required, the configured LayerZero endpoint is the
+    /// canonical EndpointV2 for the chain and is a deployed contract (defense-in-depth, #448).
+    function _validateCanonicalLzEndpoint(uint256 chainId, address lzEndpoint) internal view {
+        require(lzEndpoint != address(0), "Deploy: lzEndpoint required on strict non-mock chain");
+
+        address expected;
+        if (chainId == _CHAIN_MAINNET) {
+            expected = _CANONICAL_LZ_ENDPOINT_MAINNET;
+        } else if (chainId == _CHAIN_SEPOLIA) {
+            expected = _CANONICAL_LZ_ENDPOINT_SEPOLIA;
+        } else {
+            revert("Deploy: no canonical LZ endpoint for chain");
+        }
+
+        require(lzEndpoint == expected, "Deploy: LZ_ENDPOINT is not the canonical LayerZero EndpointV2");
+        require(lzEndpoint.code.length > 0, "Deploy: LZ_ENDPOINT must be a deployed contract");
+    }
+
+    /// @notice Validates the bridge (StAztecOFTAdapter + LayerZero endpoint) as part of final
+    /// deployment-state validation so a missing or mis-bound adapter cannot pass as complete (#434/#448).
+    function _validateBridgeDeploymentState(
+        DeployConfig memory config,
+        address stAztec,
+        address lzEndpoint,
+        address oftAdapter,
+        address ollaGovProxy
+    ) internal view {
+        if (!(_isStrictChain(config.chainId) && !config.deployMocks)) {
+            return;
+        }
+
+        _validateCanonicalLzEndpoint(config.chainId, lzEndpoint);
+        require(oftAdapter != address(0), "Deploy: StAztecOFTAdapter required on strict non-mock chain");
+        require(oftAdapter.code.length > 0, "Deploy: StAztecOFTAdapter must be a deployed contract");
+        require(
+            _matchesOftAdapter(oftAdapter, stAztec, lzEndpoint, ollaGovProxy),
+            "Deploy: ADDRESS_STATE_MISMATCH.StAztecOFTAdapter"
+        );
+    }
+
     function _requireSafeGovernanceRoleHandover(address governance, address deployer, address configuredGovernance)
         internal
         view
@@ -1212,6 +1499,12 @@ contract DeployScript is BaseDeployer {
 
     function _isStrictChain(uint256 chainId) internal pure returns (bool) {
         return chainId == _CHAIN_SEPOLIA || chainId == _CHAIN_MAINNET;
+    }
+
+    /// @notice True when reused modules must be re-validated against current config/role inputs on
+    /// resume (strict non-mock chains only). Mock/local resume flows iterate freely and are exempt.
+    function _shouldValidateReusedLiveState(DeployConfig memory config) internal pure returns (bool) {
+        return _isStrictChain(config.chainId) && !config.deployMocks;
     }
 
     function _shouldFailFastOnMissingResumeCode(DeployConfig memory config) internal pure returns (bool) {

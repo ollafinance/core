@@ -8,11 +8,13 @@ ASSET_ADDRESS=${ASSET_ADDRESS:-0x7a9ec1d04904907de0ed7b6839ccdd59c3716ac9}
 CORE_ADDRESS=${CORE_ADDRESS:-0x4c2f7092c2ae51d986befee378e50bd4db99c901}
 AMOUNT_WEI=${AMOUNT_WEI:-1000000000000000000}
 
+VAULT_ADDRESS=$(cast call "$CORE_ADDRESS" "vault()(address)" --rpc-url "$RPC_URL")
+
 cast send --rpc-url "$RPC_URL" --private-key "$USER_KEY" "$ASSET_ADDRESS" \
   "mint(address,uint256)" "$USER_ADDRESS" "$AMOUNT_WEI"
 
 cast send --rpc-url "$RPC_URL" --private-key "$USER_KEY" "$ASSET_ADDRESS" \
-  "approve(address,uint256)" "$CORE_ADDRESS" "$AMOUNT_WEI"
+  "approve(address,uint256)" "$VAULT_ADDRESS" "$AMOUNT_WEI"
 
-cast send --rpc-url "$RPC_URL" --private-key "$USER_KEY" "$CORE_ADDRESS" \
+cast send --rpc-url "$RPC_URL" --private-key "$USER_KEY" "$VAULT_ADDRESS" \
   "deposit(uint256,address,uint256)" "$AMOUNT_WEI" "$USER_ADDRESS" 0

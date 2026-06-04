@@ -43,6 +43,11 @@ contract OllaCoreHarness is OllaCore {
         return this.flowCounters().cumulativeWithdrawals;
     }
 
+    /// @notice Returns the cumulative slashing adjustments from flow counters.
+    function getCumulativeSlashingAdjustments() external view returns (uint256) {
+        return this.flowCounters().cumulativeSlashingAdjustments;
+    }
+
     /// @notice Returns the latest report total assets.
     function getLatestReportTotalAssets() external view returns (uint256) {
         return this.latestReport().totalAssets;
@@ -70,5 +75,12 @@ contract OllaCoreHarness is OllaCore {
     ///      not from external calls. flowCounters() only overwrites cumulative* fields.
     function getLatestReportCumulativeWithdrawals() external view returns (uint256) {
         return this.flowCounters().latestReportCumulativeWithdrawals;
+    }
+
+    /// @notice Returns the latest-report snapshot of cumulative slashing adjustments.
+    /// @dev The latestReportCumulativeSlashingAdjustments field comes from _flowCounters storage,
+    ///      not from external calls. flowCounters() only overwrites cumulative* fields.
+    function getLatestReportCumulativeSlashingAdjustments() external view returns (uint256) {
+        return this.flowCounters().latestReportCumulativeSlashingAdjustments;
     }
 }

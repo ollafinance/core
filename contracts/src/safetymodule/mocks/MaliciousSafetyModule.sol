@@ -31,6 +31,21 @@ contract MaliciousSafetyModule is IMaliciousSafetyModule, ISafetyModule {
     bool private _reenterOnCheckAccountingLiveness;
 
     /*//////////////////////////////////////////////////////////////
+                              MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Mirrors the production SafetyModule.onlyCoreOrVault envelope so this adversarial mock
+    ///         rejects callers other than the configured core/vault exactly as production would. This
+    ///         keeps the reentrancy evidence production-faithful: the reentry hook is only reachable
+    ///         when the caller is the real core/vault, not under wrong-address fixture wiring.
+    modifier onlyCoreOrVault() {
+        if (msg.sender != CORE_ADDRESS && msg.sender != VAULT_ADDRESS) {
+            revert ISafetyModule.SafetyModule__UnauthorizedCore(msg.sender);
+        }
+        _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
                            CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
@@ -70,8 +85,8 @@ contract MaliciousSafetyModule is IMaliciousSafetyModule, ISafetyModule {
         _paused = false;
     }
 
-    /// @notice Attempts re-entry when called, then acts as no-op.
-    function checkAccountingLiveness() external override {
+    /// @notice Attempts re-entry when called, then acts as no-op. Guarded like production.
+    function checkAccountingLiveness() external override onlyCoreOrVault {
         if (_reenterOnCheckAccountingLiveness) {
             _reenterOnCheckAccountingLiveness = false;
             _reentryTarget.functionCall(_reentryCalldata);

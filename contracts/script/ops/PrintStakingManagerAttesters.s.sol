@@ -8,9 +8,13 @@ import { BaseScript } from "../base/BaseScript.s.sol";
 
 /// @title PrintStakingManagerAttesters
 /// @notice Prints attester addresses across staking phases available on-chain:
-///         - provider queue (queued)
+///         - provider registry queue (StakingProviderRegistry._providerQueue)
 ///         - staking manager active set (active)
 ///         - exiting count (address enumeration not available in current storage design)
+/// @dev StakingManager._setQueued() records attesters into the StakingManager-local _attesterMap with
+///      Queued status and adds their principal to totalStaked(), WITHOUT enrolling them in the active set
+///      or the provider registry queue. Such mapping-backed Queued principal is not enumerable from any of
+///      the arrays scanned here; this script prints totalStaked() and warns when it detects that case.
 /// @dev Default resolution:
 ///      1) STAKING_MANAGER env var
 ///      2) deployments/<DEPLOY_ENV>.json (DEPLOY_ENV defaults to "sepolia") key: StakingManagerProxy
@@ -25,21 +29,38 @@ contract PrintStakingManagerAttesters is BaseScript {
         IStakingManager manager = IStakingManager(stakingManager);
         uint256 activeCount = manager.getActivatedAttesterCount();
         uint256 exitingCount = manager.getPendingUnstakeCount();
+        uint256 totalStaked = manager.totalStaked();
         address providerRegistry = address(manager.stakingProviderRegistry());
-        uint256 queueLength = IStakingProviderRegistry(providerRegistry).getQueueLength();
+        uint256 providerRegistryQueued = IStakingProviderRegistry(providerRegistry).getQueueLength();
 
         console2.log("stakingManager", stakingManager);
         console2.log("stakingManagerImplementation", stakingManagerImplementation);
         console2.log("stakingProviderRegistry", providerRegistry);
+        console2.log("totalStaked", totalStaked);
         console2.log("activeCount", activeCount);
         console2.log("exitingCount", exitingCount);
-        console2.log("queueLength", queueLength);
+        console2.log("providerRegistryQueued", providerRegistryQueued);
 
-        _printQueuedAttesters(providerRegistry, queueLength);
+        _printQueuedAttesters(providerRegistry, providerRegistryQueued);
         _printActiveAttesters(stakingManager, activeCount);
 
         if (exitingCount > 0) {
             console2.log("exitingAttesterAddresses", "not enumerable (count only)");
+        }
+
+        // StakingManager._setQueued() holds mapping-backed Queued attester principal in _attesterMap that is
+        // not enrolled in the active set or the provider registry queue, so it is invisible to the arrays
+        // scanned above. Detect that case: principal is live yet none of the enumerable phases account for it.
+        if (totalStaked > 0 && providerRegistryQueued == 0 && activeCount == 0 && exitingCount == 0) {
+            console2.log("WARNING: hidden mapping-backed Queued principal detected");
+            console2.log(
+                "StakingManager holds Queued attester principal in _attesterMap not enumerable from the provider"
+                " registry queue or active/exiting sets."
+            );
+            console2.log(
+                "Reconstruct queued attester addresses from StakedWithProvider / AttesterRemoved events (or pass"
+                " known addresses) to call refreshAttesterState(address[]) / purgeFailedQueueEntry(address)."
+            );
         }
     }
 
@@ -62,14 +83,14 @@ contract PrintStakingManagerAttesters is BaseScript {
         (uint128 first, uint128 last) = _readQueueBounds(registry, queueMappingSlot + 1);
         require(last >= first, "Invalid queue bounds");
 
-        console2.log("queuedAttestersStart");
+        console2.log("providerRegistryQueuedAttestersStart");
         for (uint256 i = first; i < last; ++i) {
             address attester = _readQueuedAttester(registry, queueMappingSlot, i);
             if (attester != address(0)) {
                 console2.log(attester);
             }
         }
-        console2.log("queuedAttestersEnd");
+        console2.log("providerRegistryQueuedAttestersEnd");
     }
 
     function _printActiveAttesters(address stakingManager, uint256 activeCount) internal view {

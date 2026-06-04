@@ -19,6 +19,11 @@ contract UserClaimWithdrawals is BaseScript {
         vm.startBroadcast(pk);
         for (uint256 i; i < ids.length; ++i) {
             uint256 id = ids[i];
+            // activeRequestIds includes pending (unfinalized) requests; claimRequestById reverts
+            // OllaVault__NotFinalized for those. Skip them so the batch claims only finalized requests.
+            if (!IOllaVault(vaultAddr).getWithdrawalRequest(id).finalized) {
+                continue;
+            }
             IOllaVault(vaultAddr).claimRequestById(id);
         }
         vm.stopBroadcast();

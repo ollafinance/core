@@ -17,6 +17,7 @@ contract PrintDeployment is BaseScript {
         _logAddr(env, "OllaCoreProxy");
         _logAddr(env, "RewardsAccumulatorProxy");
         _logAddr(env, "StAztec");
+        _logAddr(env, "StAztecOFTAdapter");
         _logAddr(env, "SafetyModule");
         _logAddr(env, "StakingManagerProxy");
         _logAddr(env, "StakingProviderRegistryProxy");

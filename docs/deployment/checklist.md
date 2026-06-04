@@ -122,23 +122,46 @@ Rules:
 On strict chains (Sepolia/Mainnet), deployment is complete but protocol is not fully operational
 until governance actions execute (including when `TIMELOCK_DURATION=0`).
 
+The canonical activation chain is 5 governance operations: `OllaGovernance.setCore` (scheduled at
+deploy — execute it before reporting activation complete, or `emergencyPauseAll`/`emergencyUnpauseAll`
+and the governance passthroughs stay unusable), then `OllaCore.setVault` → `OllaCore.unpause` →
+`OllaCore.setRebalanceCooldown(86400)` → `OllaVault.unpause`. The cooldown step must run before the
+vault is unpaused, otherwise the permissionless rebalance cadence stays at the 1h initializer default
+instead of the intended 24h.
+
 ```bash
+# Execute the deploy-scheduled OllaGovernance.setCore op (binds the timelock to Core).
+# Use the activation payload printers below; setCore is step 1/2.
 ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/GovSetVault.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
 ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/GovUnpauseCore.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
-ETHEREUM_CHAIN_ID=<11155111-or-1> forge script script/ops/GovUnpauseVault.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
+ETHEREUM_CHAIN_ID=<11155111-or-1> REBALANCE_COOLDOWN=86400 \
+  forge script script/ops/GovSetRebalanceCooldown.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
+ETHEREUM_CHAIN_ID=<11155111-or-1> REBALANCE_COOLDOWN=86400 \
+  forge script script/ops/GovUnpauseVault.s.sol --broadcast --rpc-url <sepolia-or-mainnet>
 ```
 
-Each ops script is idempotent: first run may schedule, later run executes, re-runs become no-op.
+`PrintNextActivationPayload.s.sol` (10 steps) or `PrintAllSchedulePayloads.s.sol` /
+`PrintAllExecutePayloads.s.sol` generate the Safe payloads, including the `setCore` step and the
+`setRebalanceCooldown` step. Each ops script is idempotent: first run may schedule, later run executes,
+re-runs become no-op.
 
 Optional override env vars for ops scripts:
 
-- `GOVERNANCE_PROXY`, `CORE`, `VAULT`
+- `GOVERNANCE_PROXY`, `CORE`, `VAULT`, `REBALANCE_COOLDOWN`
 
 ## 7. Post-deploy bridge hardening (LayerZero)
 
+Peers must be configured before enforced options — a deployed adapter with no peer reverts on
+`quoteSend`/`send` (`NoPeer`) and rejects inbound messages. See
+`contracts/script/docs/live.md` (Post-deploy bridge hardening) for the full procedure.
+
+- [ ] For each destination EID, `setPeer(destEid, peerBytes32)` on this chain's adapter (via governance).
+- [ ] Configure the reciprocal `setPeer(homeEid, homeAdapterBytes32)` on the destination OFT/adapter.
+- [ ] Verify `peers(destEid)` is nonzero and equals the expected peer for every EID, and that `owner()` is governance (not the deployer).
 - [ ] Configure `StAztecOFTAdapter.setEnforcedOptions(...)` for each destination EID.
 - [ ] Set msgType `1` (`SEND`) with a baseline receive gas budget (for example `200_000`).
 - [ ] If `SEND_AND_CALL` is enabled, also set msgType `2` with a higher budget (`~350k-500k`).
+- [ ] Treat the bridge as activated only after peers (both directions) and enforced options are verified.
 
 ## 8. Final verification
 

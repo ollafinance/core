@@ -51,7 +51,7 @@ sequenceDiagram
 
 ## Governance transfer (two-step)
 
-Governance transfer is initiated via the timelock but accepted directly by the new governance address. On acceptance, `OllaGovernance` atomically transfers timelock roles (proposer/executor/canceller) and `DEFAULT_ADMIN_ROLE` from the old governance admin to the new one.
+Governance transfer is initiated via the timelock but accepted directly by the new governance address. On acceptance, `OllaGovernance` grants the new governance admin only the timelock roles (`PROPOSER_ROLE`, `EXECUTOR_ROLE`, `CANCELLER_ROLE`), updates the `governanceAdmin` pointer, and revokes the old admin's timelock roles (and the old admin's `DEFAULT_ADMIN_ROLE` on `OllaGovernance`). It does **not** grant `DEFAULT_ADMIN_ROLE` — on `OllaGovernance` or on any satellite — to the external wallet.
 
 The `OllaGovernance` *contract address itself* is the `DEFAULT_ADMIN_ROLE` holder on every satellite (`OllaCore`, `OllaVault`, `SafetyModule`, `RewardsAccumulator`, `StakingManager`, `StakingProviderRegistry`). Because the contract address does not change when the governance admin wallet is rotated, no per-satellite role propagation is needed; the new governance admin steers those roles by scheduling timelock actions on `OllaGovernance`, which holds them on every satellite.
 
@@ -69,8 +69,9 @@ sequenceDiagram
 
     NEW->>OG: acceptGovernance()
     Note right of OG: Direct call, not timelocked
-    OG->>OG: grant PROPOSER/EXECUTOR/CANCELLER/DEFAULT_ADMIN_ROLE to newGov
+    OG->>OG: grant PROPOSER/EXECUTOR/CANCELLER to newGov
     OG->>OG: revoke PROPOSER/EXECUTOR/CANCELLER/DEFAULT_ADMIN_ROLE from oldGov
+    Note right of OG: newGov is NOT granted DEFAULT_ADMIN_ROLE
     OG->>OG: governanceAdmin = newGov
     OG-->>NEW: GovernanceTransferAccepted(oldGov, newGov)
     Note right of OG: Satellites are unaffected; OllaGovernance itself remains their admin

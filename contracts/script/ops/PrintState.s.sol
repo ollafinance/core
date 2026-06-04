@@ -88,8 +88,10 @@ contract PrintState is BaseScript {
         IOllaCore.FlowCounters memory f = c.flowCounters();
         console2.log("flows.cumulativeDeposits", f.cumulativeDeposits);
         console2.log("flows.cumulativeWithdrawals", f.cumulativeWithdrawals);
+        console2.log("flows.cumulativeSlashingAdjustments", f.cumulativeSlashingAdjustments);
         console2.log("flows.latestReportCumulativeDeposits", f.latestReportCumulativeDeposits);
         console2.log("flows.latestReportCumulativeWithdrawals", f.latestReportCumulativeWithdrawals);
+        console2.log("flows.latestReportCumulativeSlashingAdjustments", f.latestReportCumulativeSlashingAdjustments);
 
         if (vaultAddr != address(0)) {
             IOllaVault v = IOllaVault(vaultAddr);

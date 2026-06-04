@@ -19,7 +19,7 @@ contract PrintNextActivationPayload is BaseScript {
         uint256 timestamp;
     }
 
-    uint256 internal constant _TOTAL_STEPS = 8;
+    uint256 internal constant _TOTAL_STEPS = 10;
     uint256 internal constant _DEFAULT_REBALANCE_COOLDOWN = 86400;
 
     function run() external view {
@@ -35,6 +35,15 @@ contract PrintNextActivationPayload is BaseScript {
         bytes32 salt = bytes32(vm.envOr("SALT", uint256(0)));
         uint256 delay = gov.getMinDelay();
         uint256 desiredCooldown = vm.envOr("REBALANCE_COOLDOWN", _DEFAULT_REBALANCE_COOLDOWN);
+
+        // OllaGovernance.setCore(core) is scheduled at deploy time (target = governance proxy,
+        // predecessor = 0, salt = 0). On strict chains with a nonzero delay it stays pending until
+        // executed here; until then OllaGovernance.core() is unset and the emergency wrappers and
+        // every governance passthrough that dereferences core are unusable. setCore is one-time
+        // (it reverts once core is set), so this step is gated on gov.core() == address(0).
+        bytes memory setCoreData = abi.encodeCall(OllaGovernance.setCore, (core));
+        bytes32 setCoreOpId = gov.hashOperation(governance, 0, setCoreData, bytes32(0), bytes32(0));
+        OperationState memory setCoreOp = _operationState(gov, setCoreOpId);
 
         bytes memory setVaultData = abi.encodeCall(OllaCore.setVault, (vault));
         bytes memory unpauseCoreData = abi.encodeCall(OllaCore.unpause, ());
@@ -64,11 +73,32 @@ contract PrintNextActivationPayload is BaseScript {
         console2.log("timelock.minDelay", delay);
         console2.log("core", core);
         console2.log("vault", vault);
+        console2.log("gov.core(current)", gov.core());
+        console2.log("gov.core(desired)", core);
         console2.log("core.vault(current)", OllaCore(core).vault());
         console2.log("core.paused", OllaCore(core).paused());
         console2.log("vault.paused", OllaVault(vault).paused());
         console2.log("core.rebalanceCooldown(current)", OllaCore(core).rebalanceCooldown());
         console2.log("core.rebalanceCooldown(desired)", desiredCooldown);
+
+        if (gov.core() == address(0)) {
+            _printNextAction(
+                gov,
+                "setGovernanceCore",
+                "OllaGovernance.setCore(core)",
+                governance,
+                governance,
+                setCoreData,
+                bytes32(0),
+                bytes32(0),
+                delay,
+                setCoreOp,
+                1,
+                2,
+                "After execution, rerun to generate setVault payload."
+            );
+            return;
+        }
 
         if (OllaCore(core).vault() != vault) {
             _printNextAction(
@@ -82,8 +112,8 @@ contract PrintNextActivationPayload is BaseScript {
                 salt,
                 delay,
                 setVaultOp,
-                1,
-                2,
+                3,
+                4,
                 "After execution, rerun to generate unpauseCore payload."
             );
             return;
@@ -101,8 +131,8 @@ contract PrintNextActivationPayload is BaseScript {
                 salt,
                 delay,
                 unpauseCoreOp,
-                3,
-                4,
+                5,
+                6,
                 "After execution, rerun to generate setRebalanceCooldown payload."
             );
             return;
@@ -120,8 +150,8 @@ contract PrintNextActivationPayload is BaseScript {
                 salt,
                 delay,
                 setCooldownOp,
-                5,
-                6,
+                7,
+                8,
                 "After execution, rerun to generate unpauseVault payload."
             );
             return;
@@ -139,15 +169,15 @@ contract PrintNextActivationPayload is BaseScript {
                 salt,
                 delay,
                 unpauseVaultOp,
-                7,
-                8,
+                9,
+                10,
                 "After execution, rerun to confirm activation complete."
             );
             return;
         }
 
-        console2.log("step", "Step 8/8: Activation complete");
-        console2.log("step.index", uint256(8));
+        console2.log("step", "Step 10/10: Activation complete");
+        console2.log("step.index", uint256(10));
         console2.log("step.total", _TOTAL_STEPS);
         console2.log("next.action", "none");
         console2.log("next.status", "activation_complete");
