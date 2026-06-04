@@ -15,8 +15,7 @@ contract PrintSafetyModuleUnpausePayload is BaseScript {
     function run() external view {
         string memory env = _deployEnv();
         address governance = _addrOrDeployment("GOVERNANCE_PROXY", "OllaGovernanceProxy", "GOVERNANCE_PROXY missing");
-        address artifactSafetyModule =
-            _addrOrDeployment("SAFETY_MODULE", "SafetyModule", "SAFETY_MODULE missing");
+        address artifactSafetyModule = _addrOrDeployment("SAFETY_MODULE", "SafetyModule", "SAFETY_MODULE missing");
 
         OllaGovernance gov = OllaGovernance(payable(governance));
         address core = gov.core();

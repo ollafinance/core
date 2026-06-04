@@ -93,8 +93,7 @@ contract PrintAllSchedulePayloads is BaseScript {
         bytes32 setCoreOpId = gov.hashOperation(governance, 0, setCoreData, bytes32(0), bytes32(0));
 
         if (
-            gov.isOperationPending(setCoreOpId) || gov.isOperationReady(setCoreOpId)
-                || gov.isOperationDone(setCoreOpId)
+            gov.isOperationPending(setCoreOpId) || gov.isOperationReady(setCoreOpId) || gov.isOperationDone(setCoreOpId)
         ) {
             console2.log(
                 "setCore: already scheduled at deploy (salt 0). Execute it via PrintAllExecutePayloads;"

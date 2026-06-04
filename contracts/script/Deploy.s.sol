@@ -815,8 +815,10 @@ contract DeployScript is BaseDeployer {
         {
             address recordedManagerImpl = _readAddress("StakingManagerImplementation");
             address recordedRegistryImpl = _readAddress("StakingProviderRegistryImplementation");
-            if (recordedManagerImpl != address(0) && _hasCode(recordedManagerImpl) && recordedRegistryImpl != address(0)
-                && _hasCode(recordedRegistryImpl)) {
+            if (
+                recordedManagerImpl != address(0) && _hasCode(recordedManagerImpl) && recordedRegistryImpl != address(0)
+                    && _hasCode(recordedRegistryImpl)
+            ) {
                 address predictedManager = _predictProxyAddress(recordedManagerImpl, _STAKING_MANAGER_PROXY_SALT);
                 address predictedRegistry =
                     _predictProxyAddress(recordedRegistryImpl, _STAKING_PROVIDER_REGISTRY_PROXY_SALT);
@@ -1291,8 +1293,7 @@ contract DeployScript is BaseDeployer {
             "Deploy: CONFIG_MISMATCH_WITH_EXISTING_DEPLOYMENT.inputs.timelockMinDelay"
         );
         require(
-            gov.governanceAdmin() == config.governance,
-            "Deploy: ADDRESS_STATE_MISMATCH.OllaGovernance.governanceAdmin"
+            gov.governanceAdmin() == config.governance, "Deploy: ADDRESS_STATE_MISMATCH.OllaGovernance.governanceAdmin"
         );
     }
 
@@ -1372,7 +1373,9 @@ contract DeployScript is BaseDeployer {
         address rollupRegistry,
         address governanceAdmin
     ) internal view {
-        require(StakingManager(stakingManagerProxy).core() == core, "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.core");
+        require(
+            StakingManager(stakingManagerProxy).core() == core, "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.core"
+        );
         require(
             StakingManager(stakingManagerProxy).rewardsAccumulator() == rewardsAccumulator,
             "Deploy: ADDRESS_STATE_MISMATCH.StakingManager.rewardsAccumulator"

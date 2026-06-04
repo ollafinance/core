@@ -553,6 +553,8 @@ contract OllaCoreLifecycleHandler is Test {
 
     uint256[] internal _pendingRequestIds;
     uint256[] internal _finalizedRequestIds;
+    /// @notice Maps each tracked withdrawal request id to its controller (the actor authorized to claim).
+    mapping(uint256 => address) internal _requestController;
 
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
@@ -636,11 +638,20 @@ contract OllaCoreLifecycleHandler is Test {
         uint256 requestId = vault.requestRedeem(sharesToRedeem, actor, actor);
 
         _pendingRequestIds.push(requestId);
+        // Track the controller so the finalized request can later be claimed by an authorized caller.
+        _requestController[requestId] = actor;
     }
 
     function rebalanceSingleStep() external {
         IOllaCore.RebalanceProgress memory progressBefore = core.rebalanceProgress();
         IOllaCore.RebalanceStep stepBefore = progressBefore.step;
+
+        // A new cycle cannot start until the rebalance cooldown elapses. When the FSM is idle (Done),
+        // advance time past the cooldown so the rebalance -> finalize -> claim lifecycle is actually
+        // reachable during fuzz sequences instead of always reverting on the cooldown gate.
+        if (stepBefore == IOllaCore.RebalanceStep.Done) {
+            vm.warp(block.timestamp + core.rebalanceCooldown() + 1);
+        }
 
         vm.prank(operator);
         try core.rebalance() { }
@@ -669,13 +680,17 @@ contract OllaCoreLifecycleHandler is Test {
         uint256 idx = bound(idSeed, 0, _finalizedRequestIds.length - 1);
         uint256 requestId = _finalizedRequestIds[idx];
 
-        _finalizedRequestIds[idx] = _finalizedRequestIds[_finalizedRequestIds.length - 1];
-        _finalizedRequestIds.pop();
-
         IOllaVault.WithdrawalRequest memory request = vault.getWithdrawalRequest(requestId);
         uint256 assetsExpected = request.assetsExpected;
 
+        // Production claimRequestById authorizes the request controller (or an approved operator), not
+        // an arbitrary caller. Claim as the controller so the finalized-claim path is actually reachable.
+        vm.prank(_requestController[requestId]);
         vault.claimRequestById(requestId);
+
+        // Only drop the id after a successful claim (a revert reverts the whole action and keeps the id).
+        _finalizedRequestIds[idx] = _finalizedRequestIds[_finalizedRequestIds.length - 1];
+        _finalizedRequestIds.pop();
 
         ghost_totalWithdrawn += assetsExpected;
     }
@@ -901,6 +916,8 @@ contract OllaCoreProtocolPropertyHandler is Test {
     /// @notice Request tracking for lifecycle operations
     uint256[] internal _pendingRequestIds;
     uint256[] internal _finalizedRequestIds;
+    /// @notice Maps each tracked withdrawal request id to its controller (the actor authorized to claim).
+    mapping(uint256 => address) internal _requestController;
 
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
@@ -1007,6 +1024,8 @@ contract OllaCoreProtocolPropertyHandler is Test {
         vm.prank(actor);
         try vault.requestRedeem(sharesToRedeem, actor, actor) returns (uint256 requestId) {
             _pendingRequestIds.push(requestId);
+            // Track the controller so the finalized request can later be claimed by an authorized caller.
+            _requestController[requestId] = actor;
         } catch {
             return;
         }
@@ -1018,6 +1037,12 @@ contract OllaCoreProtocolPropertyHandler is Test {
     function rebalanceSingleStep() external {
         // Snapshot slashing delta from accounting state before rebalance
         _snapshotSlashingDelta();
+
+        // When the FSM is idle (Done), advance past the rebalance cooldown so a new cycle can start and
+        // the rebalance -> finalize -> claim lifecycle is reachable instead of reverting on the cooldown.
+        if (core.rebalanceProgress().step == IOllaCore.RebalanceStep.Done) {
+            vm.warp(block.timestamp + core.rebalanceCooldown() + 1);
+        }
 
         vm.prank(operator);
         try core.rebalance() { }
@@ -1044,10 +1069,14 @@ contract OllaCoreProtocolPropertyHandler is Test {
         uint256 idx = bound(idSeed, 0, _finalizedRequestIds.length - 1);
         uint256 requestId = _finalizedRequestIds[idx];
 
+        // Production claimRequestById authorizes the request controller (or an approved operator), not
+        // an arbitrary caller. Claim as the controller so the finalized-claim path is actually reachable.
+        vm.prank(_requestController[requestId]);
+        vault.claimRequestById(requestId);
+
+        // Only drop the id after a successful claim (a revert reverts the whole action and keeps the id).
         _finalizedRequestIds[idx] = _finalizedRequestIds[_finalizedRequestIds.length - 1];
         _finalizedRequestIds.pop();
-
-        vault.claimRequestById(requestId);
     }
 
     function updateAccounting() external {
