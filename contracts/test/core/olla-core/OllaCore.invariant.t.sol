@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import { Test } from "@forge-std/Test.sol";
+import {Test} from "@forge-std/Test.sol";
 
-import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import { Math } from "@oz/utils/math/Math.sol";
-import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
+import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import {Math} from "@oz/utils/math/Math.sol";
+import {IERC20} from "@oz/token/ERC20/IERC20.sol";
 
-import { OllaCore } from "src/core/OllaCore.sol";
-import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
-import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
-import { StAztec } from "src/vault/StAztec.sol";
-import { MockAztec } from "src/staking/mocks/MockAztec.sol";
-import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
-import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
-import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
-import { OllaVault } from "src/vault/OllaVault.sol";
-import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
-import { MockCacheCoherentStakingManager } from "test/core/olla-core/OllaCoreCacheCoherence.t.sol";
+import {OllaCore} from "src/core/OllaCore.sol";
+import {IOllaCore} from "src/core/interfaces/IOllaCore.sol";
+import {IRewardsAccumulator} from "src/core/interfaces/IRewardsAccumulator.sol";
+import {StAztec} from "src/vault/StAztec.sol";
+import {MockAztec} from "src/staking/mocks/MockAztec.sol";
+import {MockSafetyModule} from "src/safetymodule/mocks/MockSafetyModule.sol";
+import {MockRewardsAccumulator} from "src/core/mocks/MockRewardsAccumulator.sol";
+import {MockStakingManager} from "src/staking/mocks/MockStakingManager.sol";
+import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
+import {MockAccountingStakingManager} from "test/mocks/MockAccountingStakingManager.sol";
+import {OllaVault} from "src/vault/OllaVault.sol";
+import {IOllaVault} from "src/vault/interfaces/IOllaVault.sol";
+import {MockCacheCoherentStakingManager} from "test/core/olla-core/OllaCoreCacheCoherence.t.sol";
 
 contract OllaCoreHandler is Test {
     using Math for uint256;
@@ -209,7 +209,7 @@ contract OllaCoreAccountingHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        try vault.deposit(assets, actor, 0) { }
+        try vault.deposit(assets, actor, 0) {}
         catch {
             vm.stopPrank();
             return;
@@ -654,7 +654,7 @@ contract OllaCoreLifecycleHandler is Test {
         }
 
         vm.prank(operator);
-        try core.rebalance() { }
+        try core.rebalance() {}
         catch {
             return;
         }
@@ -702,7 +702,7 @@ contract OllaCoreLifecycleHandler is Test {
         uint256 rateBefore = core.exchangeRate();
 
         vm.prank(operator);
-        try core.updateAccounting() { }
+        try core.updateAccounting() {}
         catch {
             return;
         }
@@ -976,13 +976,13 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (deposit is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
+        ghost_vaultHealthyAtPreviousRate = _isExchangeRateMonotonicityHealthy();
 
         asset.mint(actor, assets);
         ghost_totalMinted += assets;
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        try vault.deposit(assets, actor, 0) { }
+        try vault.deposit(assets, actor, 0) {}
         catch {
             vm.stopPrank();
             return;
@@ -1019,7 +1019,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (requestRedeem is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
+        ghost_vaultHealthyAtPreviousRate = _isExchangeRateMonotonicityHealthy();
 
         vm.prank(actor);
         try vault.requestRedeem(sharesToRedeem, actor, actor) returns (uint256 requestId) {
@@ -1045,7 +1045,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         }
 
         vm.prank(operator);
-        try core.rebalance() { }
+        try core.rebalance() {}
         catch {
             return;
         }
@@ -1092,14 +1092,14 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (updateAccounting is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        // Vault is healthy only when both accounting state AND the mock staking manager
-        // have no pending slashing. updateAccounting() syncs the mock's slashingDelta
-        // into accounting state, so a pending increase on the mock will cause a rate drop.
-        ghost_vaultHealthyAtPreviousRate =
-            core.accountingState().slashingDelta == 0 && stakingManager.slashingDelta() == 0;
+        // Vault is healthy only when both accounting state and pending mock state have
+        // no slashing/withdrawal overhang. updateAccounting() syncs the mock's
+        // slashingDelta into accounting state, so a pending increase on the mock will
+        // cause a rate drop.
+        ghost_vaultHealthyAtPreviousRate = _isExchangeRateMonotonicityHealthy() && stakingManager.slashingDelta() == 0;
 
         vm.prank(operator);
-        try core.updateAccounting() { }
+        try core.updateAccounting() {}
         catch {
             return;
         }
@@ -1196,6 +1196,19 @@ contract OllaCoreProtocolPropertyHandler is Test {
     function _snapshotCumulativeRewards() internal {
         IOllaCore.AccountingState memory accounting = core.accountingState();
         ghost_previousCumulativeRewards = accounting.cumulativeRewards;
+    }
+
+    function _isExchangeRateMonotonicityHealthy() internal view returns (bool) {
+        if (core.accountingState().slashingDelta != 0) return false;
+
+        // A mocked rebalance can leave the vault with pending withdrawals larger than
+        // live assets because MockAccountingStakingManager.stake() transfers tokens
+        // but deliberately does not update totalStakedAmount. totalAssets() clamps
+        // that under-collateralized state to zero; the next deposit first fills the
+        // overhang and can legitimately lower the virtual-offset exchange rate.
+        if (stAztec.totalSupply() != 0 && core.totalAssets() == 0) return false;
+
+        return true;
     }
 }
 
@@ -1309,6 +1322,22 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             handler.ghost_latestExchangeRate(),
             handler.ghost_previousExchangeRate(),
             "exchange rate must be non-decreasing across protocol operations"
+        );
+    }
+
+    function test_ReplayExchangeRateDecreaseAfterPendingWithdrawalOverhangIsExcluded() external {
+        handler.deposit(3656, 8632);
+        handler.rebalanceSingleStep();
+        handler.requestRedeem(7803267713125961776654347116958213233437030322663219);
+
+        assertEq(core.totalAssets(), 0, "replay enters pending-withdrawal overhang");
+        handler.deposit(106550275, 116406392884465892988848652990647);
+
+        assertFalse(handler.ghost_vaultHealthyAtPreviousRate(), "overhang transition excluded from monotonicity");
+        assertLt(
+            handler.ghost_latestExchangeRate(),
+            handler.ghost_previousExchangeRate(),
+            "regression sequence demonstrates non-monotonic overhang fill"
         );
     }
 
@@ -1515,7 +1544,7 @@ contract OllaCoreCacheCoherenceHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        try vault.deposit(assets, actor, 0) { }
+        try vault.deposit(assets, actor, 0) {}
         catch {
             vm.stopPrank();
             return;
@@ -1546,14 +1575,14 @@ contract OllaCoreCacheCoherenceHandler is Test {
         uint256 gasLimit = bound(gasSeed, 250_000, 800_000);
         vm.prank(operator);
         // solhint-disable-next-line avoid-low-level-calls
-        (bool ok,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
+        (bool ok,) = address(core).call{gas: gasLimit}(abi.encodeCall(core.rebalance, ()));
         ok; // ignore outcome — tight gas may partially progress or revert
     }
 
     function rebalance() external {
         vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(operator);
-        try core.rebalance() { }
+        try core.rebalance() {}
         catch {
             return;
         }
@@ -1563,7 +1592,7 @@ contract OllaCoreCacheCoherenceHandler is Test {
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         if (progress.step != IOllaCore.RebalanceStep.Done) return;
         vm.prank(operator);
-        try core.updateAccounting() { }
+        try core.updateAccounting() {}
         catch {
             return;
         }
@@ -1655,7 +1684,7 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
         selectors[3] = handler.handler_tickTime.selector;
         selectors[4] = handler.handler_startRebalanceWithTightGas.selector;
         selectors[5] = handler.rebalance.selector;
-        targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
     /*//////////////////////////////////////////////////////////////
