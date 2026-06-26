@@ -39,7 +39,7 @@ exclude_lints = ["mixed-case-variable"]
 "@openzeppelin-contracts" = "5.5.0"
 "@openzeppelin-contracts-upgradeable" = "5.5.0"
 forge-std = "1.11.0"
-aztec-contracts = { version = "4.0.0", git = "https://github.com/AztecProtocol/l1-contracts.git", branch = "rc" }
+aztec-contracts = { version = "5.0.0", git = "https://github.com/AztecProtocol/l1-contracts.git", branch = "rc" }
 "@layerzerolabs-oapp-evm" = "0.4.1"
 "@layerzerolabs-oft-evm" = "4.0.1"
 "@layerzerolabs-lz-evm-protocol-v2" = "3.0.160"

@@ -6,6 +6,18 @@ import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
+contract MockAztecV5RewardRollup {
+    mapping(address sequencer => uint256 rewards) private _pendingRewards;
+
+    function setRewards(address sequencer, uint256 amount) external {
+        _pendingRewards[sequencer] = amount;
+    }
+
+    function getSequencerRewards(address sequencer) external view returns (uint256) {
+        return _pendingRewards[sequencer];
+    }
+}
+
 /// @title StakingManagerHarvestTest
 /// @notice Comprehensive tests for StakingManager.harvestRewards() functionality.
 /// @dev Uses MockRewardsAccumulator to properly test reward harvesting flow.
@@ -311,6 +323,18 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         uint256 claimable = stakingManager.getClaimableRewards();
 
         assertEq(claimable, 0, "Should return zero while rollup rewards are not claimable");
+    }
+
+    function test_GetClaimableRewards_SumsV5RollupWithoutClaimabilitySelector() external {
+        uint256 rewardAmount = 10 ether;
+        MockAztecV5RewardRollup v5Rollup = new MockAztecV5RewardRollup();
+        v5Rollup.setRewards(address(rewardsAccumulator), rewardAmount);
+        rollupRegistry.setCanonicalRollup(address(v5Rollup));
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, rewardAmount, "Should treat missing v4 claimability selector as claimable");
     }
 
     function test_GetClaimableRewards_SumsMultipleAttesters() external {

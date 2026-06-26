@@ -40,6 +40,9 @@ contract StakingManager is
     /// @notice Maximum allowed gas threshold (30 million).
     uint256 private constant _MAX_GAS_THRESHOLD = 30_000_000;
 
+    /// @notice v4 reward-claimability guard removed from Aztec v5 rollups.
+    bytes4 private constant _IS_REWARDS_CLAIMABLE_SELECTOR = 0xfcb3f6ba;
+
     /// @notice Event field value for aggregate stakedAmount underflow clamps.
     bytes32 private constant _AGGREGATE_FIELD_STAKED_AMOUNT = keccak256("stakedAmount");
 
@@ -122,6 +125,9 @@ contract StakingManager is
 
     /// @notice Thrown when a caller is not authorized governance.
     error StakingManager__UnauthorizedGovernance(address caller);
+
+    /// @notice Thrown when a legacy Aztec rollup claimability probe reverts.
+    error StakingManager__RewardClaimabilityProbeFailed(address rollup);
 
     /*//////////////////////////////////////////////////////////////
                                  MODIFIERS
@@ -421,14 +427,14 @@ contract StakingManager is
             if (rollupAddress == canonicalRollup) {
                 includedCanonical = true;
             }
-            if (!IAztecRollup(rollupAddress).isRewardsClaimable()) {
+            if (!_isRewardsClaimable(rollupAddress)) {
                 continue;
             }
             uint256 unclaimedRewards = IAztecRollup(rollupAddress).getSequencerRewards(address(rewardsAccumulator));
             claimableRewards += unclaimedRewards;
         }
 
-        if (!includedCanonical && _isExpectedRewardAsset() && IAztecRollup(canonicalRollup).isRewardsClaimable()) {
+        if (!includedCanonical && _isExpectedRewardAsset() && _isRewardsClaimable(canonicalRollup)) {
             claimableRewards += IAztecRollup(canonicalRollup).getSequencerRewards(address(rewardsAccumulator));
         }
 
@@ -1049,6 +1055,21 @@ contract StakingManager is
     /// @return True if the registry reward distributor uses the expected reward asset.
     function _isExpectedRewardAsset() internal view returns (bool) {
         return rollupRegistry.getRewardDistributor().ASSET() == stakingAsset;
+    }
+
+    /// @notice Returns the v4 claimability gate when present; treats missing selector as Aztec v5 claimable.
+    /// @param rollupAddress The rollup to probe.
+    /// @return True when rewards should be included in claimable reward views.
+    function _isRewardsClaimable(address rollupAddress) internal view returns (bool) {
+        // slither-disable-next-line low-level-calls,calls-loop
+        (bool ok, bytes memory data) = rollupAddress.staticcall(abi.encodeWithSelector(_IS_REWARDS_CLAIMABLE_SELECTOR));
+        if (ok && data.length >= 32) {
+            return abi.decode(data, (bool));
+        }
+        if (!ok && data.length > 0) {
+            revert StakingManager__RewardClaimabilityProbeFailed(rollupAddress);
+        }
+        return true;
     }
 
     /// @notice Returns true if an exit is present and finalizable through governance.
