@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.27;
 
-import {Test} from "@forge-std/Test.sol";
+import { Test } from "@forge-std/Test.sol";
 
-import {ERC1967Proxy} from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
-import {Math} from "@oz/utils/math/Math.sol";
-import {IERC20} from "@oz/token/ERC20/IERC20.sol";
+import { ERC1967Proxy } from "@oz/proxy/ERC1967/ERC1967Proxy.sol";
+import { Math } from "@oz/utils/math/Math.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 
-import {OllaCore} from "src/core/OllaCore.sol";
-import {IOllaCore} from "src/core/interfaces/IOllaCore.sol";
-import {IRewardsAccumulator} from "src/core/interfaces/IRewardsAccumulator.sol";
-import {StAztec} from "src/vault/StAztec.sol";
-import {MockAztec} from "src/staking/mocks/MockAztec.sol";
-import {MockSafetyModule} from "src/safetymodule/mocks/MockSafetyModule.sol";
-import {MockRewardsAccumulator} from "src/core/mocks/MockRewardsAccumulator.sol";
-import {MockStakingManager} from "src/staking/mocks/MockStakingManager.sol";
-import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
-import {MockAccountingStakingManager} from "test/mocks/MockAccountingStakingManager.sol";
-import {OllaVault} from "src/vault/OllaVault.sol";
-import {IOllaVault} from "src/vault/interfaces/IOllaVault.sol";
-import {MockCacheCoherentStakingManager} from "test/core/olla-core/OllaCoreCacheCoherence.t.sol";
+import { OllaCore } from "src/core/OllaCore.sol";
+import { IOllaCore } from "src/core/interfaces/IOllaCore.sol";
+import { IRewardsAccumulator } from "src/core/interfaces/IRewardsAccumulator.sol";
+import { StAztec } from "src/vault/StAztec.sol";
+import { MockAztec } from "src/staking/mocks/MockAztec.sol";
+import { MockSafetyModule } from "src/safetymodule/mocks/MockSafetyModule.sol";
+import { MockRewardsAccumulator } from "src/core/mocks/MockRewardsAccumulator.sol";
+import { MockStakingManager } from "src/staking/mocks/MockStakingManager.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { MockAccountingStakingManager } from "test/mocks/MockAccountingStakingManager.sol";
+import { OllaVault } from "src/vault/OllaVault.sol";
+import { IOllaVault } from "src/vault/interfaces/IOllaVault.sol";
+import { MockCacheCoherentStakingManager } from "test/core/olla-core/OllaCoreCacheCoherence.t.sol";
 
 contract OllaCoreHandler is Test {
     using Math for uint256;
@@ -209,7 +209,7 @@ contract OllaCoreAccountingHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        try vault.deposit(assets, actor, 0) {}
+        try vault.deposit(assets, actor, 0) { }
         catch {
             vm.stopPrank();
             return;
@@ -654,7 +654,7 @@ contract OllaCoreLifecycleHandler is Test {
         }
 
         vm.prank(operator);
-        try core.rebalance() {}
+        try core.rebalance() { }
         catch {
             return;
         }
@@ -702,7 +702,7 @@ contract OllaCoreLifecycleHandler is Test {
         uint256 rateBefore = core.exchangeRate();
 
         vm.prank(operator);
-        try core.updateAccounting() {}
+        try core.updateAccounting() { }
         catch {
             return;
         }
@@ -982,7 +982,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         ghost_totalMinted += assets;
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        try vault.deposit(assets, actor, 0) {}
+        try vault.deposit(assets, actor, 0) { }
         catch {
             vm.stopPrank();
             return;
@@ -1045,7 +1045,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         }
 
         vm.prank(operator);
-        try core.rebalance() {}
+        try core.rebalance() { }
         catch {
             return;
         }
@@ -1099,7 +1099,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         ghost_vaultHealthyAtPreviousRate = _isExchangeRateMonotonicityHealthy() && stakingManager.slashingDelta() == 0;
 
         vm.prank(operator);
-        try core.updateAccounting() {}
+        try core.updateAccounting() { }
         catch {
             return;
         }
@@ -1544,7 +1544,7 @@ contract OllaCoreCacheCoherenceHandler is Test {
         asset.mint(actor, assets);
         vm.startPrank(actor);
         asset.approve(address(vault), assets);
-        try vault.deposit(assets, actor, 0) {}
+        try vault.deposit(assets, actor, 0) { }
         catch {
             vm.stopPrank();
             return;
@@ -1575,14 +1575,14 @@ contract OllaCoreCacheCoherenceHandler is Test {
         uint256 gasLimit = bound(gasSeed, 250_000, 800_000);
         vm.prank(operator);
         // solhint-disable-next-line avoid-low-level-calls
-        (bool ok,) = address(core).call{gas: gasLimit}(abi.encodeCall(core.rebalance, ()));
+        (bool ok,) = address(core).call{ gas: gasLimit }(abi.encodeCall(core.rebalance, ()));
         ok; // ignore outcome — tight gas may partially progress or revert
     }
 
     function rebalance() external {
         vm.warp(block.timestamp + 1 hours + 1);
         vm.prank(operator);
-        try core.rebalance() {}
+        try core.rebalance() { }
         catch {
             return;
         }
@@ -1592,7 +1592,7 @@ contract OllaCoreCacheCoherenceHandler is Test {
         IOllaCore.RebalanceProgress memory progress = core.rebalanceProgress();
         if (progress.step != IOllaCore.RebalanceStep.Done) return;
         vm.prank(operator);
-        try core.updateAccounting() {}
+        try core.updateAccounting() { }
         catch {
             return;
         }
@@ -1684,7 +1684,7 @@ contract OllaCoreCacheCoherenceInvariantTest is Test {
         selectors[3] = handler.handler_tickTime.selector;
         selectors[4] = handler.handler_startRebalanceWithTightGas.selector;
         selectors[5] = handler.rebalance.selector;
-        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+        targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
 
     /*//////////////////////////////////////////////////////////////
