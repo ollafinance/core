@@ -1182,7 +1182,7 @@ contract DeployScript is BaseDeployer {
         uint256 activationThreshold = IAztecRollup(canonicalRollup).getActivationThreshold();
         require(activationThreshold > 0, "Deploy: invalid canonical rollup");
 
-        IAztecRollup(canonicalRollup).isRewardsClaimable();
+        IAztecRollup(canonicalRollup).getSequencerRewards(address(0));
     }
 
     function _predictProxyAddress(address implementation, bytes32 salt) internal view returns (address) {

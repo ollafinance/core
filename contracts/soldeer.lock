@@ -56,9 +56,9 @@ integrity = "ede37ded73bb7dff1325cdfcc124d83afff3d92e646a9418d79ac0d6a9721b05"
 
 [[dependencies]]
 name = "aztec-contracts"
-version = "4.0.0"
+version = "5.0.0"
 git = "https://github.com/AztecProtocol/l1-contracts.git"
-rev = "49f0b55939143d4d0e45948d9288576afe3bf7fb"
+rev = "17750f6168954375279ac2c397a854a63007d3db"
 
 [[dependencies]]
 name = "forge-std"

@@ -14,7 +14,7 @@
       "label": "rollupRegistry",
       "offset": 0,
       "slot": "1",
-      "type": "t_contract(IAztecRollupRegistry)12523"
+      "type": "t_contract(IAztecRollupRegistry)12494"
     },
     {
       "astId": 9507,
@@ -38,7 +38,7 @@
       "label": "stakingProviderRegistry",
       "offset": 0,
       "slot": "4",
-      "type": "t_contract(IStakingProviderRegistry)13010"
+      "type": "t_contract(IStakingProviderRegistry)12981"
     },
     {
       "astId": 9517,
@@ -94,7 +94,7 @@
       "label": "_attesterMap",
       "offset": 0,
       "slot": "8",
-      "type": "t_mapping(t_address,t_struct(AttesterInfo)12567_storage)"
+      "type": "t_mapping(t_address,t_struct(AttesterInfo)12538_storage)"
     },
     {
       "astId": 9542,
@@ -102,7 +102,7 @@
       "label": "_aggregateState",
       "offset": 0,
       "slot": "9",
-      "type": "t_struct(StakingState)12579_storage"
+      "type": "t_struct(StakingState)12550_storage"
     },
     {
       "astId": 9546,
@@ -179,7 +179,7 @@
       "label": "bytes32",
       "numberOfBytes": "32"
     },
-    "t_contract(IAztecRollupRegistry)12523": {
+    "t_contract(IAztecRollupRegistry)12494": {
       "encoding": "inplace",
       "label": "contract IAztecRollupRegistry",
       "numberOfBytes": "20"
@@ -189,12 +189,12 @@
       "label": "contract IERC20",
       "numberOfBytes": "20"
     },
-    "t_contract(IStakingProviderRegistry)13010": {
+    "t_contract(IStakingProviderRegistry)12981": {
       "encoding": "inplace",
       "label": "contract IStakingProviderRegistry",
       "numberOfBytes": "20"
     },
-    "t_enum(InternalAttesterStatus)12539": {
+    "t_enum(InternalAttesterStatus)12510": {
       "encoding": "inplace",
       "label": "enum IStakingManager.InternalAttesterStatus",
       "numberOfBytes": "1"
@@ -206,12 +206,12 @@
       "numberOfBytes": "32",
       "value": "t_bool"
     },
-    "t_mapping(t_address,t_struct(AttesterInfo)12567_storage)": {
+    "t_mapping(t_address,t_struct(AttesterInfo)12538_storage)": {
       "encoding": "mapping",
       "key": "t_address",
       "label": "mapping(address => struct IStakingManager.AttesterInfo)",
       "numberOfBytes": "32",
-      "value": "t_struct(AttesterInfo)12567_storage"
+      "value": "t_struct(AttesterInfo)12538_storage"
     },
     "t_mapping(t_bytes32,t_uint256)": {
       "encoding": "mapping",
@@ -235,13 +235,13 @@
         }
       ]
     },
-    "t_struct(AttesterInfo)12567_storage": {
+    "t_struct(AttesterInfo)12538_storage": {
       "encoding": "inplace",
       "label": "struct IStakingManager.AttesterInfo",
       "numberOfBytes": "160",
       "members": [
         {
-          "astId": 12555,
+          "astId": 12526,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "attester",
           "offset": 0,
@@ -249,7 +249,7 @@
           "type": "t_address"
         },
         {
-          "astId": 12557,
+          "astId": 12528,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "stakedAmount",
           "offset": 0,
@@ -257,7 +257,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 12559,
+          "astId": 12530,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "queueRollup",
           "offset": 0,
@@ -265,7 +265,7 @@
           "type": "t_address"
         },
         {
-          "astId": 12561,
+          "astId": 12532,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "exitRollup",
           "offset": 0,
@@ -273,7 +273,7 @@
           "type": "t_address"
         },
         {
-          "astId": 12563,
+          "astId": 12534,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "pendingExitAmount",
           "offset": 20,
@@ -281,12 +281,12 @@
           "type": "t_uint96"
         },
         {
-          "astId": 12566,
+          "astId": 12537,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "status",
           "offset": 0,
           "slot": "4",
-          "type": "t_enum(InternalAttesterStatus)12539"
+          "type": "t_enum(InternalAttesterStatus)12510"
         }
       ]
     },
@@ -313,13 +313,13 @@
         }
       ]
     },
-    "t_struct(StakingState)12579_storage": {
+    "t_struct(StakingState)12550_storage": {
       "encoding": "inplace",
       "label": "struct IStakingManager.StakingState",
       "numberOfBytes": "96",
       "members": [
         {
-          "astId": 12574,
+          "astId": 12545,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "slashingDelta",
           "offset": 0,
@@ -327,7 +327,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 12576,
+          "astId": 12547,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "stakedAmount",
           "offset": 0,
@@ -335,7 +335,7 @@
           "type": "t_uint256"
         },
         {
-          "astId": 12578,
+          "astId": 12549,
           "contract": "src/staking/StakingManager.sol:StakingManager",
           "label": "pendingUnstakeAmount",
           "offset": 0,

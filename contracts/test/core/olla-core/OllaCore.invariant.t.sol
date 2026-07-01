@@ -976,7 +976,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (deposit is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
+        ghost_vaultHealthyAtPreviousRate = _isExchangeRateMonotonicityHealthy();
 
         asset.mint(actor, assets);
         ghost_totalMinted += assets;
@@ -1019,7 +1019,7 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (requestRedeem is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        ghost_vaultHealthyAtPreviousRate = core.accountingState().slashingDelta == 0;
+        ghost_vaultHealthyAtPreviousRate = _isExchangeRateMonotonicityHealthy();
 
         vm.prank(actor);
         try vault.requestRedeem(sharesToRedeem, actor, actor) returns (uint256 requestId) {
@@ -1092,11 +1092,11 @@ contract OllaCoreProtocolPropertyHandler is Test {
         // Snapshot rate before (updateAccounting is a protocol op)
         ghost_previousExchangeRate = ghost_latestExchangeRate;
         ghost_rateTransitionIsProtocolOp = true;
-        // Vault is healthy only when both accounting state AND the mock staking manager
-        // have no pending slashing. updateAccounting() syncs the mock's slashingDelta
-        // into accounting state, so a pending increase on the mock will cause a rate drop.
-        ghost_vaultHealthyAtPreviousRate =
-            core.accountingState().slashingDelta == 0 && stakingManager.slashingDelta() == 0;
+        // Vault is healthy only when both accounting state and pending mock state have
+        // no slashing/withdrawal overhang. updateAccounting() syncs the mock's
+        // slashingDelta into accounting state, so a pending increase on the mock will
+        // cause a rate drop.
+        ghost_vaultHealthyAtPreviousRate = _isExchangeRateMonotonicityHealthy() && stakingManager.slashingDelta() == 0;
 
         vm.prank(operator);
         try core.updateAccounting() { }
@@ -1196,6 +1196,19 @@ contract OllaCoreProtocolPropertyHandler is Test {
     function _snapshotCumulativeRewards() internal {
         IOllaCore.AccountingState memory accounting = core.accountingState();
         ghost_previousCumulativeRewards = accounting.cumulativeRewards;
+    }
+
+    function _isExchangeRateMonotonicityHealthy() internal view returns (bool) {
+        if (core.accountingState().slashingDelta != 0) return false;
+
+        // A mocked rebalance can leave the vault with pending withdrawals larger than
+        // live assets because MockAccountingStakingManager.stake() transfers tokens
+        // but deliberately does not update totalStakedAmount. totalAssets() clamps
+        // that under-collateralized state to zero; the next deposit first fills the
+        // overhang and can legitimately lower the virtual-offset exchange rate.
+        if (stAztec.totalSupply() != 0 && core.totalAssets() == 0) return false;
+
+        return true;
     }
 }
 
@@ -1309,6 +1322,22 @@ contract OllaCoreProtocolPropertyInvariantTest is Test {
             handler.ghost_latestExchangeRate(),
             handler.ghost_previousExchangeRate(),
             "exchange rate must be non-decreasing across protocol operations"
+        );
+    }
+
+    function test_ReplayExchangeRateDecreaseAfterPendingWithdrawalOverhangIsExcluded() external {
+        handler.deposit(3656, 8632);
+        handler.rebalanceSingleStep();
+        handler.requestRedeem(7803267713125961776654347116958213233437030322663219);
+
+        assertEq(core.totalAssets(), 0, "replay enters pending-withdrawal overhang");
+        handler.deposit(106550275, 116406392884465892988848652990647);
+
+        assertFalse(handler.ghost_vaultHealthyAtPreviousRate(), "overhang transition excluded from monotonicity");
+        assertLt(
+            handler.ghost_latestExchangeRate(),
+            handler.ghost_previousExchangeRate(),
+            "regression sequence demonstrates non-monotonic overhang fill"
         );
     }
 
