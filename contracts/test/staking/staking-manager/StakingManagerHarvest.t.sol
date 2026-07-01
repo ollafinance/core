@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import {Vm} from "@forge-std/Test.sol";
-import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
-import {IMockAztecRollup} from "src/staking/mocks/IMockAztecRollup.sol";
-import {StakingManagerBaseTest} from "./StakingManagerBase.t.sol";
+import { Vm } from "@forge-std/Test.sol";
+import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
+import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
+import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
 contract MockAztecV5RewardRollup {
     mapping(address sequencer => uint256 rewards) private _pendingRewards;
