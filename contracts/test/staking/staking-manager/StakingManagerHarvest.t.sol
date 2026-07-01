@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity >=0.8.27 <0.9.0;
 
-import { Vm } from "@forge-std/Test.sol";
-import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
-import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
-import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
+import {Vm} from "@forge-std/Test.sol";
+import {IStakingManager} from "src/staking/interfaces/IStakingManager.sol";
+import {IMockAztecRollup} from "src/staking/mocks/IMockAztecRollup.sol";
+import {StakingManagerBaseTest} from "./StakingManagerBase.t.sol";
 
 contract MockAztecV5RewardRollup {
     mapping(address sequencer => uint256 rewards) private _pendingRewards;
@@ -314,18 +314,7 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         assertEq(claimable, rewardAmount, "Should return correct reward amount");
     }
 
-    function test_GetClaimableRewards_ReturnsZeroWhenRewardsNotClaimable() external {
-        uint256 rewardAmount = 10 ether;
-        _setupAttestersWithRewards(1, rewardAmount);
-        rollup.setRewardsClaimable(false);
-
-        vm.prank(core);
-        uint256 claimable = stakingManager.getClaimableRewards();
-
-        assertEq(claimable, 0, "Should return zero while rollup rewards are not claimable");
-    }
-
-    function test_GetClaimableRewards_SumsV5RollupWithoutClaimabilitySelector() external {
+    function test_GetClaimableRewards_SumsRollupWithoutLegacyGateSelector() external {
         uint256 rewardAmount = 10 ether;
         MockAztecV5RewardRollup v5Rollup = new MockAztecV5RewardRollup();
         v5Rollup.setRewards(address(rewardsAccumulator), rewardAmount);
@@ -334,7 +323,7 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         vm.prank(core);
         uint256 claimable = stakingManager.getClaimableRewards();
 
-        assertEq(claimable, rewardAmount, "Should treat missing v4 claimability selector as claimable");
+        assertEq(claimable, rewardAmount, "Should read rewards without probing legacy gate");
     }
 
     function test_GetClaimableRewards_SumsMultipleAttesters() external {

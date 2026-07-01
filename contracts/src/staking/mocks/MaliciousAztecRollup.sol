@@ -55,9 +55,6 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @notice Whether getSequencerRewards should fail for a sequencer/coinbase.
     mapping(address sequencer => bool shouldFail) public override getRewardsShouldFail;
 
-    /// @inheritdoc IMockAztecRollup
-    bool public override isRewardsClaimable;
-
     /// @notice Rewards accrued per second when `tick` is called.
     uint256 public rewardRatePerSecond;
     /// @notice Last timestamp used for reward accrual.
@@ -86,7 +83,6 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
         STAKING_ASSET = stakingAsset;
         _activationThreshold = activationThreshold == 0 ? DEFAULT_ACTIVATION_THRESHOLD : activationThreshold;
         lastTick = block.timestamp;
-        isRewardsClaimable = true;
     }
 
     /// @notice Configure the call to perform during a reentrancy attempt.
@@ -241,7 +237,7 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
             reentryTarget.functionCall(reentryCalldata);
         }
 
-        if (!isRewardsClaimable || claimShouldFail[_coinbase]) {
+        if (claimShouldFail[_coinbase]) {
             revert MockAztecRollup__ClaimFailed();
         }
         amount = pendingRewards[_coinbase];
@@ -331,11 +327,6 @@ contract MaliciousAztecRollup is IMaliciousAztecRollup {
     /// @inheritdoc IMockAztecRollup
     function setGetRewardsShouldFail(address _sequencer, bool _shouldFail) external override {
         getRewardsShouldFail[_sequencer] = _shouldFail;
-    }
-
-    /// @inheritdoc IMockAztecRollup
-    function setRewardsClaimable(bool _claimable) external override {
-        isRewardsClaimable = _claimable;
     }
 
     /// @inheritdoc IMockAztecRollup

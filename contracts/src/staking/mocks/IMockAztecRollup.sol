@@ -151,10 +151,6 @@ interface IMockAztecRollup {
     /// @param shouldFail Whether the read should revert.
     function setGetRewardsShouldFail(address coinbase, bool shouldFail) external;
 
-    /// @notice Sets whether rewards can be claimed (test helper).
-    /// @param claimable Whether rewards are claimable.
-    function setRewardsClaimable(bool claimable) external;
-
     /// @notice Sets the exit recipient for an attester (test helper).
     /// @param attester The attester address.
     /// @param recipient The recipient address.
@@ -282,10 +278,6 @@ interface IMockAztecRollup {
     /// @param sequencer The sequencer address.
     /// @return The sequencer rewards amount.
     function getSequencerRewards(address sequencer) external view returns (uint256);
-
-    /// @notice Returns whether rewards are currently claimable.
-    /// @return Whether rewards are claimable.
-    function isRewardsClaimable() external view returns (bool);
 
     /// @notice Returns the full attester view for an attester.
     /// @param attester The attester address.
