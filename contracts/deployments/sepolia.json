@@ -21,7 +21,7 @@
     "StAztecOFTAdapter": "0x3faa22188f3dfd2f7fe446cbc83ed1a663983a92",
     "RewardsAccumulatorImplementation": "0x1d994677e1782e19aa754dbfa3a6a4853b7ea89f",
     "RewardsAccumulatorProxy": "0x24f14b07af574928bc6b4640c9a90530fc78689b",
-    "StakingManagerImplementation": "0x90914b1a9ae6b4be13201d9e816fb9c5b88c903b",
+    "StakingManagerImplementation": "0xf1a30cf14cdfe56162cabbbb3d720bd1b3735f24",
     "StakingManagerProxy": "0x5e6440b92bc292b21f72ad245ab0a1fa7ca7b158",
     "StakingProviderRegistryImplementation": "0x81ecb18ee95cdd38d906aa11a8d06a7ca17a426f",
     "StakingProviderRegistryProxy": "0xfb0012715d426c060276fbecab08f4b126cd8662",
@@ -33,7 +33,7 @@
   "status": {
     "phase": "D",
     "completed": true,
-    "updatedAtBlock": 10807513,
+    "updatedAtBlock": 11180292,
     "flags": {
       "coreInitialized": true,
       "vaultInitialized": true
