@@ -326,3 +326,9 @@ sequenceDiagram
     Note right of C: does NOT update lastRebalanceTimestamp (cooldown unaffected)
     Note right of C: emits AccountingUpdated + AttestersStateRead
 ```
+
+Reward pricing uses `StakingManager.getClaimableRewards()`, which sums `getSequencerRewards()` for tracked
+rollups without consulting the legacy v4 `isRewardsClaimable()` gate. During a transitional state where a tracked
+v4 rollup still time-locks `claimSequencerRewards()`, those reported rewards can increase `totalAssets()` and the
+stAztec exchange rate before they are harvestable; this is a timing/liquidity consideration, while fresh v5 rollups
+are unaffected.

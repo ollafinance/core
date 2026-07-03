@@ -2,8 +2,10 @@
 pragma solidity >=0.8.27 <0.9.0;
 
 import { Vm } from "@forge-std/Test.sol";
+import { IERC20 } from "@oz/token/ERC20/IERC20.sol";
 import { IStakingManager } from "src/staking/interfaces/IStakingManager.sol";
 import { IMockAztecRollup } from "src/staking/mocks/IMockAztecRollup.sol";
+import { MockAztecRollup } from "src/staking/mocks/MockAztecRollup.sol";
 import { StakingManagerBaseTest } from "./StakingManagerBase.t.sol";
 
 contract MockAztecV5RewardRollup {
@@ -15,6 +17,14 @@ contract MockAztecV5RewardRollup {
 
     function getSequencerRewards(address sequencer) external view returns (uint256) {
         return _pendingRewards[sequencer];
+    }
+}
+
+contract MockLegacyGatedRewardRollup is MockAztecRollup {
+    constructor(IERC20 stakingAsset, uint256 activationThreshold) MockAztecRollup(stakingAsset, activationThreshold) { }
+
+    function isRewardsClaimable() external pure returns (bool) {
+        return false;
     }
 }
 
@@ -324,6 +334,18 @@ contract StakingManagerHarvestTest is StakingManagerBaseTest {
         uint256 claimable = stakingManager.getClaimableRewards();
 
         assertEq(claimable, rewardAmount, "Should read rewards without probing legacy gate");
+    }
+
+    function test_GetClaimableRewards_IncludesRewardsWhenLegacyGateReportsNotClaimable() external {
+        uint256 rewardAmount = 10 ether;
+        MockLegacyGatedRewardRollup gatedRollup = new MockLegacyGatedRewardRollup(aztec, ACTIVATION_THRESHOLD);
+        gatedRollup.setRewards(address(rewardsAccumulator), rewardAmount);
+        rollupRegistry.setCanonicalRollup(address(gatedRollup));
+
+        vm.prank(core);
+        uint256 claimable = stakingManager.getClaimableRewards();
+
+        assertEq(claimable, rewardAmount, "Should price rewards from legacy-gated rollups");
     }
 
     function test_GetClaimableRewards_SumsMultipleAttesters() external {
